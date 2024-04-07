@@ -1,0 +1,15 @@
+if (POLICY CMP0048)
+    cmake_policy(SET CMP0048 NEW)
+endif (POLICY CMP0048)
+project(libpfm)
+cmake_minimum_required (VERSION 3.12.0)
+
+set(PMU_FILE_DIR ${PROJECT_TOP_DIR}/pmu)
+set(PFM_FILE_DIR ${PROJECT_TOP_DIR}/pmu/pfm)
+file(GLOB PFM_SRC ${PFM_FILE_DIR}/*c ${PFM_FILE_DIR}/*cpp)
+include_directories(${PROJECT_TOP_DIR}/include)
+include_directories(${PMU_FILE_DIR}/)
+include_directories(PFM_FILE_DIR)
+
+ADD_LIBRARY(pfm SHARED ${PFM_SRC})
+target_compile_options(pfm PRIVATE -fPIC)
