@@ -10,31 +10,11 @@
  * See the Mulan PSL v2 for more details.
  * Author: Mr.Ye
  * Create: 2024-04-03
- * Description: trace point event configuration query
+ * Description: trace point event query interface
  ******************************************************************************/
-#include <fstream>
-#include "common.h"
-#include "trace.h"
+#ifndef TRACE_H
+#define TRACE_H
 
-using namespace std;
+int64_t GetTraceEventConfig(const std::string &name);
 
-int64_t GetTraceEventConfig(const std::string &name)
-{
-    size_t colon = name.find(':');
-    string systemName = name.substr(0, colon);
-    string eventName = name.substr(colon + 1);
-
-    string eventPath = "/sys/kernel/tracing/events/" + systemName + "/" + eventName + "/id";
-    string realPath = GetRealPath(eventPath);
-    if (!IsValidPath(realPath)) {
-        return -1;
-    }
-    ifstream typeIn(realPath);
-    if (!typeIn.is_open()) {
-        return -1;
-    }
-    string typeStr;
-    typeIn >> typeStr;
-
-    return stoi(typeStr);
-}
+#endif

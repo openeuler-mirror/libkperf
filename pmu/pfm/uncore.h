@@ -10,19 +10,14 @@
  * See the Mulan PSL v2 for more details.
  * Author: Mr.Ye
  * Create: 2024-04-03
- * Description: uncore event map declaration
+ * Description: uncore event query interface
  ******************************************************************************/
 #ifndef UNCORE_H
 #define UNCORE_H
-#include <unordered_map>
-#include "pfm_event.h"
-#include "pfm_name.h"
+#include "pmu_event.h"
 
-namespace KUNPENG_PMU {
-    extern const KUNPENG_PMU::UNCORE_EVT_MAP L3C_EVENT_MAP;
-    extern const KUNPENG_PMU::UNCORE_EVT_MAP HHA_EVENT_MAP;
-    extern const KUNPENG_PMU::UNCORE_EVT_MAP DDRC_EVENT_MAP;
-    extern const KUNPENG_PMU::UNCORE_EVT_MAP PCIE_EVENT_MAP;
-}  // namespace KUNPENG_PMU
+int64_t GetUncoreEventConfig(const char* pmuName);
+
+int FillUncoreFields(const char* pmuName, PmuEvt *evt);
 
 #endif

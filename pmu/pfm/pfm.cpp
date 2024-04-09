@@ -47,17 +47,7 @@ static struct PmuEvt* ConstructPmuEvtFromCore(KUNPENG_PMU::CoreConfig config, in
     pmuEvtPtr->config = config.config;
     pmuEvtPtr->name = config.eventName;
     pmuEvtPtr->type = config.type;
-    pmuEvtPtr->collectType = collectType;
-    return std::move(pmuEvtPtr);
-}
-
-static struct PmuEvt* ConstructPmuEvtFromUncore(KUNPENG_PMU::UncoreConfig config, int collectType)
-{
-    struct PmuEvt* pmuEvtPtr = new PmuEvt;
-    pmuEvtPtr->config = config.config;
-    pmuEvtPtr->name = config.eventName;
-    pmuEvtPtr->type = config.type;
-    pmuEvtPtr->pmuType = config.pmuType;
+    pmuEvtPtr->pmuType = CORE_TYPE;
     pmuEvtPtr->collectType = collectType;
     return std::move(pmuEvtPtr);
 }
@@ -71,35 +61,23 @@ static struct PmuEvt* GetCoreEvent(const char* pmuName, int collectType)
            : nullptr;
 }
 
-static struct PmuEvt* GetUncoreDDRCEvent(const char* pmuName, int collectType)
+static struct PmuEvt* GetUncoreEvent(const char* pmuName, int collectType)
 {
-    return KUNPENG_PMU::DDRC_EVENT_MAP.at(g_chipType).find(pmuName) !=
-           KUNPENG_PMU::DDRC_EVENT_MAP.at(g_chipType).end()
-           ? ConstructPmuEvtFromUncore(KUNPENG_PMU::DDRC_EVENT_MAP.at(g_chipType).at(pmuName), collectType)
-           : nullptr;
-}
-
-static struct PmuEvt* GetUncoreHHAEvent(const char* pmuName, int collectType)
-{
-    return KUNPENG_PMU::HHA_EVENT_MAP.at(g_chipType).find(pmuName) !=
-           KUNPENG_PMU::HHA_EVENT_MAP.at(g_chipType).end()
-           ? ConstructPmuEvtFromUncore(
-                    KUNPENG_PMU::HHA_EVENT_MAP.at(g_chipType).at(pmuName), collectType)
-           : nullptr;
-}
-
-static struct PmuEvt* GetUncoreLLCEvent(const char* pmuName, int collectType)
-{
-    return KUNPENG_PMU::L3C_EVENT_MAP.at(g_chipType).find(pmuName) !=
-           KUNPENG_PMU::L3C_EVENT_MAP.at(g_chipType).end()
-           ? ConstructPmuEvtFromUncore(
-                    KUNPENG_PMU::L3C_EVENT_MAP.at(g_chipType).at(pmuName), collectType)
-           : nullptr;
+    int64_t config = GetUncoreEventConfig(pmuName);
+    if (config == -1) {
+        return nullptr;
+    }
+    auto* pmuEvtPtr = new PmuEvt;
+    pmuEvtPtr->config = config;
+    pmuEvtPtr->name = pmuName;
+    pmuEvtPtr->pmuType = UNCORE_TYPE;
+    pmuEvtPtr->collectType = collectType;
+    return pmuEvtPtr;
 }
 
 static struct PmuEvt* GetKernelTraceEvent(const char* pmuName, int collectType)
 {
-    int64_t config = GetTraceEventID(pmuName);
+    int64_t config = GetTraceEventConfig(pmuName);
     if (config == -1) {
         return nullptr;
     }
@@ -138,13 +116,11 @@ using EvtRetriever = std::function<struct PmuEvt*(const char*, int)>;
 
 static const std::unordered_map<int, EvtRetriever> EvtMap{
         {KUNPENG_PMU::CORE_TYPE, GetCoreEvent},
-        {KUNPENG_PMU::HHA_TYPE, GetUncoreHHAEvent},
-        {KUNPENG_PMU::L3C_TYPE, GetUncoreLLCEvent},
-        {KUNPENG_PMU::DDRC_TYPE, GetUncoreDDRCEvent},
+        {KUNPENG_PMU::UNCORE_TYPE, GetUncoreEvent},
         {KUNPENG_PMU::TRACE_TYPE, GetKernelTraceEvent},
 };
 
-static int GetEventType(const char *pmuName, string &evtName, string &devName)
+static int GetEventType(const char *pmuName, string &evtName)
 {
     auto coreMap = CORE_EVENT_MAP.at(g_chipType);
     auto findCoreEvent = coreMap.find(pmuName);
@@ -165,99 +141,12 @@ static int GetEventType(const char *pmuName, string &evtName, string &devName)
     if (findSlash == string::npos) {
         return -1;
     }
-    devName = strName.substr(0, findSlash);
     findSlash = strName.find('/', findSlash);
     if (findSlash == string::npos) {
         return -1;
     }
-    evtName = strName.substr(devName.size() + 1, strName.size() - 1 - (devName.size() + 1));
-    auto ddrMap = DDRC_EVENT_MAP.at(g_chipType);
-    auto findDDrEvent = ddrMap.find(evtName);
-    if (findDDrEvent != ddrMap.end()) {
-        return DDRC_TYPE;
-    }
-
-    return -1;
-}
-
-static int GetDeviceType(const string &devName)
-{
-    string typePath = "/sys/devices/" + devName + "/type";
-    std::string realPath = GetRealPath(typePath);
-    if (!IsValidPath(realPath)) {
-        return -1;
-    }
-    ifstream typeIn(realPath);
-    if (!typeIn.is_open()) {
-        return -1;
-    }
-    string typeStr;
-    typeIn >> typeStr;
-
-    return stoi(typeStr);
-}
-
-static int GetCpuMask(const string &devName)
-{
-    string maskPath = "/sys/devices/" + devName + "/cpumask";
-    std::string realPath = GetRealPath(maskPath);
-    if (!IsValidPath(realPath)) {
-        return -1;
-    }
-    ifstream maskIn(realPath);
-    if (!maskIn.is_open()) {
-        return -1;
-    }
-    // Cpumask is a comma-separated list of integers,
-    // but now make it simple for ddrc event.
-    string maskStr;
-    maskIn >> maskStr;
-
-    return stoi(maskStr);
-}
-
-static bool GetEvtConfig(const string &devName, const char* pmuName, const string &evtName, __u64 &config)
-{
-    string evtPath = "/sys/devices/" + devName + "/events/" + evtName;
-    std::string realPath = GetRealPath(evtPath);
-    if (!IsValidPath(realPath)) {
-        return false;
-    }
-    ifstream evtIn(realPath);
-    if (!evtIn.is_open()) {
-        return false;
-    }
-    string configStr;
-    evtIn >> configStr;
-    auto findEq = configStr.find("=");
-    if (findEq == string::npos) {
-        return false;
-    }
-    auto subStr = configStr.substr(findEq + 1, configStr.size() - findEq);
-    std::istringstream iss(subStr);
-    iss >> std::hex >> config;
-
-    return true;
-}
-
-static int FillUncoreFields(const string &devName, const char* pmuName, const string &evtName, PmuEvt *evt)
-{
-    int devType = GetDeviceType(devName);
-    if (devType == -1) {
-        return UNKNOWN_ERROR;
-    }
-    evt->type = devType;
-    int cpuMask = GetCpuMask(devName);
-    if (cpuMask == -1) {
-        return UNKNOWN_ERROR;
-    }
-    if (!GetEvtConfig(devName, pmuName, evtName, evt->config)) {
-        return LIBPERF_ERR_INVALID_EVENT;
-    }
-
-    evt->cpumask = cpuMask;
-    evt->name = pmuName;
-    return SUCCESS;
+    evtName = pmuName;
+    return UNCORE_TYPE;
 }
 
 struct PmuEvt* PfmGetPmuEvent(const char* pmuName, int collectType)
@@ -268,12 +157,11 @@ struct PmuEvt* PfmGetPmuEvent(const char* pmuName, int collectType)
         return evt;
     }
     string evtName;
-    string devName;
     g_chipType = GetCpuType();
     if (g_chipType == UNDEFINED_TYPE) {
         return nullptr;
     }
-    auto type = GetEventType(pmuName, evtName, devName);
+    auto type = GetEventType(pmuName, evtName);
     if (type == -1) {
         return nullptr;
     }
@@ -282,9 +170,9 @@ struct PmuEvt* PfmGetPmuEvent(const char* pmuName, int collectType)
     if (evt == nullptr) {
         return evt;
     }
-    if (!devName.empty()) {
+    if (evt->pmuType == UNCORE_TYPE) {
         // Fill fields for uncore devices.
-        auto err = FillUncoreFields(devName, pmuName, evtName, evt);
+        auto err = FillUncoreFields(pmuName, evt);
         if (err != SUCCESS) {
             return nullptr;
         }

@@ -23,10 +23,7 @@
 namespace KUNPENG_PMU {
     enum PMU_TYPE {
         CORE_TYPE,
-        DDRC_TYPE,
-        HHA_TYPE,
-        L3C_TYPE,
-        PCIE_TYPE,
+        UNCORE_TYPE,
         TRACE_TYPE,
     };
 
