@@ -15,9 +15,12 @@
 #include <fstream>
 #include "common.h"
 #include "pcerr.h"
+#include "pfm_event.h"
+#include "pmu_event.h"
 #include "uncore.h"
 
 using namespace std;
+using namespace KUNPENG_PMU;
 
 static int GetDeviceType(const string &devName)
 {
@@ -55,7 +58,7 @@ static int GetCpuMask(const string &devName)
     return stoi(maskStr);
 }
 
-int64_t GetUncoreEventConfig(const char* pmuName)
+static int64_t GetUncoreEventConfig(const char* pmuName)
 {
     int64_t config;
     string strName(pmuName);
@@ -106,4 +109,24 @@ int FillUncoreFields(const char* pmuName, PmuEvt *evt)
     evt->cpumask = cpuMask;
     evt->name = pmuName;
     return SUCCESS;
+}
+
+struct PmuEvt* GetUncoreEvent(const char* pmuName, int collectType)
+{
+    int64_t config = GetUncoreEventConfig(pmuName);
+    if (config == -1) {
+        return nullptr;
+    }
+    auto* pmuEvtPtr = new PmuEvt;
+    pmuEvtPtr->config = config;
+    pmuEvtPtr->name = pmuName;
+    pmuEvtPtr->pmuType = UNCORE_TYPE;
+    pmuEvtPtr->collectType = collectType;
+
+    // Fill fields for uncore devices.
+    auto err = FillUncoreFields(pmuName, pmuEvtPtr);
+    if (err != SUCCESS) {
+        return nullptr;
+    }
+    return pmuEvtPtr;
 }

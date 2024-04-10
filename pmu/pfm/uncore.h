@@ -16,8 +16,6 @@
 #define UNCORE_H
 #include "pmu_event.h"
 
-int64_t GetUncoreEventConfig(const char* pmuName);
-
-int FillUncoreFields(const char* pmuName, PmuEvt *evt);
+struct PmuEvt* GetUncoreEvent(const char* pmuName, int collectType);
 
 #endif

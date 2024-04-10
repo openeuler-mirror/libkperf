@@ -48,6 +48,7 @@ static struct PmuEvt* ConstructPmuEvtFromCore(KUNPENG_PMU::CoreConfig config, in
     pmuEvtPtr->type = config.type;
     pmuEvtPtr->pmuType = CORE_TYPE;
     pmuEvtPtr->collectType = collectType;
+    pmuEvtPtr->cpumask = -1;
     return std::move(pmuEvtPtr);
 }
 
@@ -58,34 +59,6 @@ static struct PmuEvt* GetCoreEvent(const char* pmuName, int collectType)
            ? ConstructPmuEvtFromCore(
                     KUNPENG_PMU::CORE_EVENT_MAP.at(g_chipType).at(pmuName), collectType)
            : nullptr;
-}
-
-static struct PmuEvt* GetUncoreEvent(const char* pmuName, int collectType)
-{
-    int64_t config = GetUncoreEventConfig(pmuName);
-    if (config == -1) {
-        return nullptr;
-    }
-    auto* pmuEvtPtr = new PmuEvt;
-    pmuEvtPtr->config = config;
-    pmuEvtPtr->name = pmuName;
-    pmuEvtPtr->pmuType = UNCORE_TYPE;
-    pmuEvtPtr->collectType = collectType;
-    return pmuEvtPtr;
-}
-
-static struct PmuEvt* GetKernelTraceEvent(const char* pmuName, int collectType)
-{
-    int64_t config = GetTraceEventConfig(pmuName);
-    if (config == -1) {
-        return nullptr;
-    }
-    auto* pmuEvtPtr = new PmuEvt;
-    pmuEvtPtr->config = config;
-    pmuEvtPtr->name = pmuName;
-    pmuEvtPtr->type = PERF_TYPE_TRACEPOINT;
-    pmuEvtPtr->collectType = collectType;
-    return pmuEvtPtr;
 }
 
 static int GetSpeType(void)
@@ -168,15 +141,6 @@ struct PmuEvt* PfmGetPmuEvent(const char* pmuName, int collectType)
                          EvtMap.at(type)(evtName.c_str(), collectType) : nullptr;
     if (evt == nullptr) {
         return evt;
-    }
-    if (evt->pmuType == UNCORE_TYPE) {
-        // Fill fields for uncore devices.
-        auto err = FillUncoreFields(pmuName, evt);
-        if (err != SUCCESS) {
-            return nullptr;
-        }
-    } else if (evt != nullptr) {
-        evt->cpumask = -1;
     }
     return evt;
 }

@@ -14,11 +14,13 @@
  ******************************************************************************/
 #include <fstream>
 #include "common.h"
+#include "pmu_event.h"
 #include "trace.h"
 
 using namespace std;
+using namespace KUNPENG_PMU;
 
-int64_t GetTraceEventConfig(const std::string &name)
+static int64_t GetTraceEventConfig(const std::string &name)
 {
     size_t colon = name.find(':');
     string systemName = name.substr(0, colon);
@@ -37,4 +39,19 @@ int64_t GetTraceEventConfig(const std::string &name)
     typeIn >> typeStr;
 
     return stoi(typeStr);
+}
+
+struct PmuEvt* GetKernelTraceEvent(const char* pmuName, int collectType)
+{
+    int64_t config = GetTraceEventConfig(pmuName);
+    if (config == -1) {
+        return nullptr;
+    }
+    auto* pmuEvtPtr = new PmuEvt;
+    pmuEvtPtr->config = config;
+    pmuEvtPtr->name = pmuName;
+    pmuEvtPtr->type = PERF_TYPE_TRACEPOINT;
+    pmuEvtPtr->collectType = collectType;
+    pmuEvtPtr->cpumask = -1;
+    return pmuEvtPtr;
 }

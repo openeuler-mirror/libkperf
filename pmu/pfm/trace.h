@@ -15,6 +15,6 @@
 #ifndef TRACE_H
 #define TRACE_H
 
-int64_t GetTraceEventConfig(const std::string &name);
+struct PmuEvt* GetKernelTraceEvent(const char* pmuName, int collectType);
 
 #endif
