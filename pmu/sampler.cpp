@@ -34,9 +34,8 @@
 
 using namespace std;
 
-static constexpr int PAGE_SIZE = 1024;
+static constexpr int PAGE_SIZE = 4096;
 static constexpr int MAX_ATTR_SIZE = 120;
-static constexpr int SAMPLE_FREQ = 1000;
 int KUNPENG_PMU::PerfSampler::pages = 128;
 
 template <typename T>
@@ -78,11 +77,6 @@ int KUNPENG_PMU::PerfSampler::MapPerfAttr()
 union KUNPENG_PMU::PerfEvent *KUNPENG_PMU::PerfSampler::SampleReadEvent()
 {
     return ReadEvent(*this->sampleMmap);
-}
-
-bool KUNPENG_PMU::PerfSampler::Close()
-{
-    return PerfEvt::Close();
 }
 
 int KUNPENG_PMU::PerfSampler::Mmap()

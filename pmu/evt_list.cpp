@@ -69,8 +69,9 @@ int KUNPENG_PMU::EvtList::CollectorXYArrayDoTask(int cpuCnt, int pidCnt, std::ve
 {
     for (int row = 0; row < cpuCnt; row++) {
         for (int col = 0; col < pidCnt; col++) {
-            if (!CollectorDoTask(xyArray[row][col], task)) {
-                continue;
+            auto err = CollectorDoTask(xyArray[row][col], task);
+            if (err != SUCCESS) {
+                return err;
             }
         }
     }
@@ -132,6 +133,11 @@ int KUNPENG_PMU::EvtList::Close()
     return SUCCESS;
 }
 
+int KUNPENG_PMU::EvtList::Reset()
+{
+    return CollectorXYArrayDoTask(this->numCpu, this->numPid, this->xyCounterArray, RESET);
+}
+
 void KUNPENG_PMU::EvtList::FillFields(
         const size_t &start, const size_t &end, CpuTopology *cpuTopo, ProcTopology *procTopo, vector<PmuData> &data)
 {
@@ -147,6 +153,15 @@ void KUNPENG_PMU::EvtList::FillFields(
 
 int KUNPENG_PMU::EvtList::Read(vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps)
 {
+    for (unsigned int row = 0; row < numCpu; row++) {
+        for (unsigned int col = 0; col < numPid; col++) {
+            int err = this->xyCounterArray[row][col]->BeginRead();
+            if (err != SUCCESS) {
+                return err;
+            }
+        }
+    }
+
     struct PmuEvtData* head = nullptr;
     for (unsigned int row = 0; row < numCpu; row++) {
         auto cpuTopo = this->cpuList[row].get();
@@ -162,6 +177,15 @@ int KUNPENG_PMU::EvtList::Read(vector<PmuData> &data, std::vector<PerfSampleIps>
             }
             // Fill event name and cpu topology.
             FillFields(cnt, data.size(), cpuTopo, pidList[col].get(), data);
+        }
+    }
+
+    for (unsigned int row = 0; row < numCpu; row++) {
+        for (unsigned int col = 0; col < numPid; col++) {
+            int err = this->xyCounterArray[row][col]->EndRead();
+            if (err != SUCCESS) {
+                return err;
+            }
         }
     }
     return SUCCESS;

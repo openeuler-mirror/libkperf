@@ -151,17 +151,13 @@ public:
     /**
      * @brief Start collect.
      * @param clearPrevRecords whether clear all records from previos collection.
-     * @return true
-     * @return false
      */
-    bool Enable(bool clearPrevRecords = true);
+    int Enable(bool clearPrevRecords = true);
 
     /**
      * @brief Stop collect.
-     * @return true
-     * @return false
      */
-    bool Disable();
+    int Disable();
 
     /**
      * @brief Free ring buffer.

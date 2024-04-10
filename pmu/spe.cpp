@@ -239,41 +239,59 @@ int SpeOpen(PmuEvt *attr, int cpu, SpeContext *ctx)
 static int CoreSpeEnable(struct SpeCoreContext *ctx)
 {
     if (ctx->dummyFd <= 0 || ctx->speFd <= 0) {
-        return -1;
+        return LIBPERF_ERR_FAILED_PMU_ENABLE;
     }
 
-    ioctl(ctx->dummyFd, PERF_EVENT_IOC_ENABLE, 0);
-    ioctl(ctx->speFd, PERF_EVENT_IOC_ENABLE, 0);
-    return 0;
+    auto err = ioctl(ctx->dummyFd, PERF_EVENT_IOC_ENABLE, 0);
+    if (err != SUCCESS) {
+        return LIBPERF_ERR_FAILED_PMU_ENABLE;
+    }
+    err = ioctl(ctx->speFd, PERF_EVENT_IOC_ENABLE, 0);
+    if (err != SUCCESS) {
+        return LIBPERF_ERR_FAILED_PMU_ENABLE;
+    }
+    return SUCCESS;
 }
 
 int SpeEnable(struct SpeContext *ctx)
 {
     for (int i = 0; i < ctx->cpuNum; i++) {
-        CoreSpeEnable(&ctx->coreCtxes[i]);
+        auto err = CoreSpeEnable(&ctx->coreCtxes[i]);
+        if (err != SUCCESS) {
+            return err;
+        }
     }
 
-    return 0;
+    return SUCCESS;
 }
 
 static int CoreSpeDisable(struct SpeCoreContext *ctx)
 {
     if (ctx->dummyFd <= 0 || ctx->speFd <= 0) {
-        return -1;
+        return LIBPERF_ERR_FAILED_PMU_DISABLE;
     }
 
-    ioctl(ctx->speFd, PERF_EVENT_IOC_DISABLE, 0);
-    ioctl(ctx->dummyFd, PERF_EVENT_IOC_DISABLE, 0);
-    return 0;
+    auto err = ioctl(ctx->speFd, PERF_EVENT_IOC_DISABLE, 0);
+    if (err != SUCCESS) {
+        return LIBPERF_ERR_FAILED_PMU_DISABLE;
+    }
+    err = ioctl(ctx->dummyFd, PERF_EVENT_IOC_DISABLE, 0);
+    if (err != SUCCESS) {
+        return LIBPERF_ERR_FAILED_PMU_DISABLE;
+    }
+    return SUCCESS;
 }
 
-void SpeDisable(struct SpeContext *ctx)
+int SpeDisable(struct SpeContext *ctx)
 {
     for (int i = 0; i < ctx->cpuNum; i++) {
-        CoreSpeDisable(&ctx->coreCtxes[i]);
+        auto err = CoreSpeDisable(&ctx->coreCtxes[i]);
+        if (err != SUCCESS) {
+            return err;
+        }
     }
 
-    return;
+    return SUCCESS;
 }
 
 void SpeClose(struct SpeContext *ctx)
@@ -523,36 +541,42 @@ int Spe::Open(PmuEvt *attr)
 
     return SUCCESS;
 }
-bool Spe::Enable(bool clearPrevRecords)
+int Spe::Enable(bool clearPrevRecords)
 {
     if (clearPrevRecords) {
         pidRecords.clear();
     }
 
     if (!(status & OPENED)) {
-        return false;
+        return LIBPERF_ERR_FAILED_PMU_ENABLE;
     }
     if (status & ENABLED) {
-        return true;
+        return SUCCESS;
     }
-    SpeEnable(ctx);
+    auto err = SpeEnable(ctx);
+    if (err != SUCCESS) {
+        return err;
+    }
     status &= ~DISABLED;
     status &= ~READ;
     status |= ENABLED;
-    return true;
+    return SUCCESS;
 }
-bool Spe::Disable()
+int Spe::Disable()
 {
     if (!(status & OPENED)) {
-        return false;
+        return LIBPERF_ERR_FAILED_PMU_DISABLE;
     }
     if (status & DISABLED) {
-        return true;
+        return SUCCESS;
     }
-    SpeDisable(ctx);
+    auto err = SpeDisable(ctx);
+    if (err != SUCCESS) {
+        return err;
+    }
     status &= ~ENABLED;
     status |= DISABLED;
-    return true;
+    return SUCCESS;
 }
 bool Spe::Close()
 {

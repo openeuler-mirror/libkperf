@@ -41,10 +41,12 @@ namespace KUNPENG_PMU {
         int MapPerfAttr() override;
         bool Mmap();
 
-        bool Disable() override;
-        bool Enable() override;
-        bool Close() override;
+        int Disable() override;
+        int Enable() override;
+        int Close() override;
 
+        int BeginRead() override;
+        int EndRead() override;
     private:
         bool SpeExist(int cpu) const;
         void InsertSpeRecords(const int &tid, const std::vector<SpeRecord *> &speRecords, std::vector<PmuData> &data,

@@ -54,6 +54,7 @@ public:
      * @return std::vector<PmuData>&
      */
     std::vector<PmuData>& Read(const int pd);
+    int AppendData(PmuData *fromData, PmuData **toData, int &len);
     int Start(const int pd);
     int Pause(const int pd);
     void Close(const int pd);
@@ -105,8 +106,7 @@ private:
     int PrepareCpuTopoList(
         const unsigned& pd, PmuTaskAttr* pmuTaskAttrHead, std::vector<CpuPtr>& cpuTopoList);
     int PrepareProcTopoList(PmuTaskAttr* pmuTaskAttrHead, std::vector<ProcPtr>& procTopoList) const;
-    int CheckRlimit(const std::vector<CpuPtr>& cpuTopoList, const std::vector<ProcPtr> procTopoList,
-        const PmuTaskAttr* head);
+    int CheckRlimit(const unsigned fdNum);
     static void AggregateData(const std::vector<PmuData>& evData, std::vector<PmuData>& newEvData);
     std::vector<PmuData>& GetPreviousData(const unsigned pd);
 

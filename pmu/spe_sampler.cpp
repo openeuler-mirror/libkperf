@@ -148,31 +148,41 @@ namespace KUNPENG_PMU {
         }
     }
 
-    bool PerfSpe::Enable()
+    int PerfSpe::BeginRead()
+    {
+        return Disable();
+    }
+
+    int PerfSpe::EndRead()
+    {
+        return Enable();
+    }
+
+    int PerfSpe::Enable()
     {
         auto findSpe = speSet.find(this->cpu);
         if (findSpe == speSet.end()) {
-            return false;
+            return LIBPERF_ERR_NOT_OPENED;
         }
 
         return findSpe->second.Enable();
     }
 
-    bool PerfSpe::Disable()
+    int PerfSpe::Disable()
     {
         auto findSpe = speSet.find(this->cpu);
         if (findSpe == speSet.end()) {
-            return false;
+            return LIBPERF_ERR_NOT_OPENED;
         }
 
         return findSpe->second.Disable();
     }
 
-    bool PerfSpe::Close()
+    int PerfSpe::Close()
     {
         auto findSpe = speSet.find(this->cpu);
         if (findSpe == speSet.end()) {
-            return true;
+            return SUCCESS;
         }
 
         findSpe->second.Close();
@@ -181,7 +191,7 @@ namespace KUNPENG_PMU {
             delete[] extPtr;
         }
         extPool.clear();
-        return true;
+        return SUCCESS;
     }
 
 

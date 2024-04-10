@@ -115,6 +115,20 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr);
 
 /**
  * @brief
+ * Enable counting or sampling of task <pd>.
+ * On error, -1 is returned.
+ */
+int PmuEnable(int pd);
+
+/**
+ * @brief
+ * Disable counting or sampling of task <pd>.
+ * On error, -1 is returned.
+ */
+int PmuDisable(int pd);
+
+/**
+ * @brief
  * Collect <milliseconds> milliseconds. If <milliseconds> is equal to - 1 and the PID list is not empty, the collection
  * is performed until all processes are complete.
  * @param milliseconds
@@ -143,6 +157,17 @@ void PmuStop(int pd);
  * @param struct PmuData*
  */
 int PmuRead(int pd, struct PmuData** pmuData);
+
+/**
+ * @brief
+ * Append data list <fromData> to another data list <*toData>.
+ * The pointer of data list <*toData> will be refreshed after this function is called.
+ * On success, length of <*toData> is returned.
+ * On error, -1 is returned.
+ * @param fromData data list which will be copied to <*toData>
+ * @param toData pointer to target data list. If data list <*toData> is NULL, a new list will be created.
+ */
+int PmuAppendData(struct PmuData *fromData, struct PmuData **toData);
 
 /**
  * @brief Close all the file descriptor opened during collecting process

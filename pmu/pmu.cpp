@@ -172,6 +172,23 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
     }
 }
 
+int PmuEnable(int pd)
+{
+    return PmuCollectStart(pd);
+}
+
+int PmuDisable(int pd)
+{
+    return PmuCollectPause(pd);
+}
+
+int PmuAppendData(struct PmuData *fromData, struct PmuData **toData)
+{
+    int toLen = 0;
+    PmuList::GetInstance()->AppendData(fromData, toData, toLen);
+    return toLen;
+}
+
 static int DoCollectCounting(int pd, int milliseconds)
 {
     constexpr int collectInterval = 100;

@@ -19,6 +19,7 @@
 #include <sys/ioctl.h>
 #include <poll.h>
 #include <linux/perf_event.h>
+#include "pcerrc.h"
 #include "evt.h"
 
 enum class HEAD_SIZE {
@@ -34,34 +35,53 @@ int KUNPENG_PMU::PerfEventOpen(struct perf_event_attr *attr, pid_t pid, int cpu,
     return syscall(__NR_perf_event_open, attr, pid, cpu, groupFd, flags);
 }
 
-bool KUNPENG_PMU::PerfEvt::Enable()
+int KUNPENG_PMU::PerfEvt::Enable()
 {
-    return (ioctl(this->fd, PERF_EVENT_IOC_ENABLE, 0) == 0);
+    if (ioctl(this->fd, PERF_EVENT_IOC_ENABLE, 0) == 0) {
+        return SUCCESS;
+    }
+    return LIBPERF_ERR_FAILED_PMU_ENABLE;
 }
 
-bool KUNPENG_PMU::PerfEvt::Reset()
+int KUNPENG_PMU::PerfEvt::Reset()
 {
-    return (ioctl(this->fd, PERF_EVENT_IOC_RESET, 0) == 0);
+    if (ioctl(this->fd, PERF_EVENT_IOC_RESET, 0) == 0) {
+        return SUCCESS;
+    }
+    return LIBPERF_ERR_FAILED_PMU_RESET;
 }
 
-bool KUNPENG_PMU::PerfEvt::Disable()
+int KUNPENG_PMU::PerfEvt::Disable()
 {
-    return ioctl(this->fd, PERF_EVENT_IOC_DISABLE, 0);
+    if (ioctl(this->fd, PERF_EVENT_IOC_DISABLE, 0)) {
+        return SUCCESS;
+    }
+    return LIBPERF_ERR_FAILED_PMU_DISABLE;
 }
 
-bool KUNPENG_PMU::PerfEvt::Close()
+int KUNPENG_PMU::PerfEvt::Close()
 {
     close(this->fd);
-    return true;
+    return SUCCESS;
 }
 
-bool KUNPENG_PMU::PerfEvt::Start()
+int KUNPENG_PMU::PerfEvt::BeginRead()
+{
+    return SUCCESS;
+}
+
+int KUNPENG_PMU::PerfEvt::EndRead()
+{
+    return SUCCESS;
+}
+
+int KUNPENG_PMU::PerfEvt::Start()
 {
     this->Reset();
     return this->Enable();
 }
 
-bool KUNPENG_PMU::PerfEvt::Pause()
+int KUNPENG_PMU::PerfEvt::Pause()
 {
     return this->Disable();
 }

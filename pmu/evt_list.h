@@ -44,6 +44,7 @@ public:
     int Start();
     int Enable();
     int Stop();
+    int Reset();
     int Read(std::vector<PmuData> &pmuData, std::vector<PerfSampleIps> &sampleIps);
 
     void SetTimeStamp(const int64_t &timestamp)

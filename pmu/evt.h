@@ -33,12 +33,14 @@ public:
     {}
     ~PerfEvt()
     {}
-    virtual bool Start();
-    virtual bool Pause();
-    virtual bool Disable();
-    virtual bool Enable();
-    virtual bool Reset();
-    virtual bool Close();
+    virtual int Start();
+    virtual int Pause();
+    virtual int Disable();
+    virtual int Enable();
+    virtual int Reset();
+    virtual int Close();
+    virtual int BeginRead();
+    virtual int EndRead();
 
     virtual int Init() = 0;
 

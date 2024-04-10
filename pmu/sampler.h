@@ -41,7 +41,6 @@ namespace KUNPENG_PMU {
 
         int Init() override;
         int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps) override;
-        bool Close() override;
 
         int MapPerfAttr() override;
 

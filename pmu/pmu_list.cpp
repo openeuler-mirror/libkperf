@@ -33,23 +33,17 @@ namespace KUNPENG_PMU {
     std::mutex PmuList::pmuListMtx;
     std::mutex PmuList::dataListMtx;
 
-    int PmuList::CheckRlimit(const std::vector<CpuPtr>& cpuTopoList, const std::vector<ProcPtr> procTopoList,
-                             const PmuTaskAttr* head)
+    int PmuList::CheckRlimit(const unsigned fdNum)
     {
-        unsigned long length = 0;
-        const PmuTaskAttr* current = head;
-        while (current != nullptr) {
-            ++length;
-            current = current->next;
-        }
-        unsigned long need = length * cpuTopoList.size() * procTopoList.size();
-        return RaiseNumFd(need);
+        return RaiseNumFd(fdNum);
     }
 
     int PmuList::Register(const int pd, PmuTaskAttr* taskParam)
     {
-        SymResolverInit();
-        SymResolverRecordKernel();
+        if (taskParam->pmuEvt->collectType != COUNTING) {
+            SymResolverInit();
+            SymResolverRecordKernel();
+        }
         /* Use libpfm to get the basic config for this pmu event */
         struct PmuTaskAttr* pmuTaskAttrHead = taskParam;
         // Init collect type for pmu data,
@@ -59,31 +53,35 @@ namespace KUNPENG_PMU {
             evtData.collectType = static_cast<PmuTaskType>(pmuTaskAttrHead->pmuEvt->collectType);
             evtData.pd = pd;
         }
-        /**
-         * Create cpu topology list
-         */
-        std::vector<CpuPtr> cpuTopoList;
-        auto err = PrepareCpuTopoList(pd, pmuTaskAttrHead, cpuTopoList);
-        if (err != SUCCESS) {
-            return err;
-        }
-
-        /**
-        * Create process topology list
-        */
-        std::vector<ProcPtr> procTopoList;
-        err = PrepareProcTopoList(pmuTaskAttrHead, procTopoList);
-        if (err != SUCCESS) {
-            return err;
-        }
-        err = CheckRlimit(cpuTopoList, procTopoList, pmuTaskAttrHead);
-        if (err != SUCCESS) {
-            return err;
-        }
+        
+        unsigned fdNum = 0;
         while (pmuTaskAttrHead) {
+            /**
+             * Create cpu topology list
+             */
+            std::vector<CpuPtr> cpuTopoList;
+            auto err = PrepareCpuTopoList(pd, pmuTaskAttrHead, cpuTopoList);
+            if (err != SUCCESS) {
+                return err;
+            }
+
+            /**
+             * Create process topology list
+             */
+            std::vector<ProcPtr> procTopoList;
+            err = PrepareProcTopoList(pmuTaskAttrHead, procTopoList);
+            if (err != SUCCESS) {
+                return err;
+            }
+            fdNum += cpuTopoList.size(); + procTopoList.size();
             std::shared_ptr<EvtList> evtList =
                     std::make_shared<EvtList>(cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt);
-            err = evtList->Init();
+            InsertEvtList(pd, evtList);
+            pmuTaskAttrHead = pmuTaskAttrHead->next;
+        }
+
+        for (auto evtList : GetEvtList(pd)) {
+            auto err = evtList->Init();
             if (err != SUCCESS) {
                 return err;
             }
@@ -91,8 +89,11 @@ namespace KUNPENG_PMU {
             if (err != SUCCESS) {
                 return err;
             }
-            InsertEvtList(pd, evtList);
-            pmuTaskAttrHead = pmuTaskAttrHead->next;
+        }
+
+        auto err = CheckRlimit(fdNum);
+        if (err != SUCCESS) {
+            return err;
         }
         return SUCCESS;
     }
@@ -101,7 +102,10 @@ namespace KUNPENG_PMU {
     {
         auto pmuList = GetEvtList(pd);
         for (auto item : pmuList) {
-            item->Start();
+            auto err = item->Start();
+            if (err != SUCCESS) {
+                return err;
+            }
         }
         return SUCCESS;
     }
@@ -110,7 +114,10 @@ namespace KUNPENG_PMU {
     {
         auto pmuList = GetEvtList(pd);
         for (auto item : pmuList) {
-            item->Pause();
+            auto err = item->Pause();
+            if (err != SUCCESS) {
+                return err;
+            }
         }
         return SUCCESS;
     }
@@ -119,7 +126,25 @@ namespace KUNPENG_PMU {
     {
         // Exchange data in <dataList> to <userDataList>.
         // Return a pointer to data.
+
+        auto &evtData = GetDataList(pd);
+        if (evtData.data.empty()) {
+            // Have not read ring buffer yet.
+            // Mostly caller is using PmuEnable and PmuDisable mode.
+            auto err = ReadDataToBuffer(pd);
+            if (err != SUCCESS) {
+                return userDataList[nullptr].data;
+            }
+        }
         auto& userData = ExchangeToUserData(pd);
+        if (GetTaskType(pd) == COUNTING) {
+            // Reset counter after Read is called,
+            // thus count in PmuData is pmu count in last epoch.
+            auto evtList = GetEvtList(pd);
+            for (auto item : evtList) {
+                item->Reset();
+            }
+        }
         return userData;
     }
 
@@ -138,6 +163,49 @@ namespace KUNPENG_PMU {
             }
         }
 
+        return SUCCESS;
+    }
+
+    int PmuList::AppendData(PmuData *fromData, PmuData **toData, int &len)
+    {
+        if (toData == nullptr || fromData == nullptr) {
+            return LIBPERF_ERR_INVALID_PMU_DATA;
+        }
+
+        lock_guard<mutex> lg(dataListMtx);
+        auto findFromData = userDataList.find(fromData);
+        if (findFromData == userDataList.end()) {
+            return LIBPERF_ERR_INVALID_PMU_DATA;
+        }
+
+        if (*toData == nullptr) {
+            // For null target data list, copy source list to target.
+            // A new pointer to data list is created and is assigned to <*toData>.
+            EventData newData = findFromData->second;
+            len = newData.data.size();
+            auto pData = newData.data.data();
+            userDataList[pData] = move(newData);
+            *toData = pData;
+            return SUCCESS;
+        }
+
+        auto findToData = userDataList.find(*toData);
+        if (findFromData == userDataList.end()) {
+            return LIBPERF_ERR_INVALID_PMU_DATA;
+        }
+        // For non-null target data list, append source list to end of target vector.
+        auto &dataVec = findToData->second.data;
+        dataVec.insert(dataVec.end(), findFromData->second.data.begin(), findFromData->second.data.end());
+        len = dataVec.size();
+
+        if (*toData != dataVec.data()) {
+            // As target vector grows, pointer to list may change.
+            // Update the pointer and assign to <*toData>.
+            auto newDataPtr = dataVec.data();
+            userDataList[newDataPtr] = move(findToData->second);
+            userDataList.erase(*toData);
+            *toData = newDataPtr;
+        }
         return SUCCESS;
     }
 
