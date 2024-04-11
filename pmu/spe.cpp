@@ -62,6 +62,8 @@ static int OpenSpeEvent(PmuEvt *pmuAttr, int cpu)
     attr.sample_type = PERF_SAMPLE_TID;
     attr.sample_id_all = 1;
     attr.read_format = PERF_FORMAT_ID;
+    attr.exclude_kernel = pmuAttr->excludeKernel;
+    attr.exclude_user = pmuAttr->excludeUser;
 
     return PerfEventOpen(&attr, -1, cpu, -1, 0);
 }
