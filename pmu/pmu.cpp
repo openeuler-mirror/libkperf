@@ -517,6 +517,8 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
     taskParam->pmuEvt = shared_ptr<PmuEvt>(pmuEvt, PmuEvtFree);
     taskParam->pmuEvt->useFreq = attr->useFreq;
     taskParam->pmuEvt->period = attr->period;
+    taskParam->pmuEvt->excludeKernel = attr->excludeKernel;
+    taskParam->pmuEvt->excludeUser = attr->excludeUser;
     return taskParam.release();
 }
 

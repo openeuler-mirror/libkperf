@@ -56,6 +56,8 @@ int KUNPENG_PMU::PerfSampler::MapPerfAttr()
     attr.freq = this->evt->useFreq;
     attr.sample_period = this->evt->period;
     attr.read_format = PERF_FORMAT_ID;
+    attr.exclude_kernel = this->evt->excludeKernel;
+    attr.exclude_user = this->evt->excludeUser;
     attr.pinned = 1;
     attr.disabled = 1;
     attr.inherit = 1;
@@ -134,6 +136,7 @@ void KUNPENG_PMU::PerfSampler::RawSampleProcess(
     current->cpu = static_cast<unsigned>(sample->cpu);
     current->pid = static_cast<pid_t>(sample->pid);
     current->tid = static_cast<int>(sample->tid);
+    current->period = static_cast<int>(sample->period);
 }
 
 void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<PerfSampleIps> &sampleIps)

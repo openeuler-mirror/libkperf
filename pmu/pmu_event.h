@@ -37,6 +37,8 @@ struct PmuEvt {
     int collectType;
     std::string name;   // string name of this pmu event
     int cpumask;    // a representative CPU number for each socket (package) in the motherboard.
+    unsigned excludeUser : 1;     // don't count user
+    unsigned excludeKernel : 1;   //  don't count kernel
     union {
         unsigned period;            // sample period
         unsigned freq;              // sample frequency

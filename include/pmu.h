@@ -69,6 +69,8 @@ struct PmuAttr {
         unsigned freq;              // sample frequency
     };
     unsigned useFreq : 1;
+    unsigned excludeUser : 1;     // don't count user
+    unsigned excludeKernel : 1;   //  don't count kernel
 
     // SPE related fields.
     enum SpeFilter dataFilter;      // spe data filter
@@ -91,7 +93,7 @@ struct PmuData {
     unsigned cpu;                   // cpu id
     struct CpuTopology *cpuTopo;    // cpu topology
     const char *comm;               // process command
-
+    int period;                     // number of Samples
     union {
         uint64_t count;             // event count. Only available for Counting.
         struct PmuDataExt *ext;     // extension. Only available for Spe.

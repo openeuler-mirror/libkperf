@@ -12,7 +12,6 @@
 # Description: Set general configuration information.
 
 
-
 set(CMAKE_CXX_FLAGS_DEBUG " -O0 -g -Wall -pg -fno-gnu-unique -DDEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE " -O3 -DNDEBUG -fstack-protector-all -Wl,-z,relro,-z,now -Wall -fPIE -s -fno-gnu-unique")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 -g")
@@ -23,47 +22,13 @@ set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O3 -g")
 set(CMAKE_C_FLAGS_MINSIZEREL "-Os -DNDEBUG")
 
 set(CMAKE_EXE_LINKER_FLAGS_RELEASE " -Wl,-z,relro,-z,now,-z,noexecstack -pie -s")
-set(THIRD_PARTY ${PROJECT_TOP_DIR}/../opensource)
+set(THIRD_PARTY ${PROJECT_TOP_DIR}/third_party)
 add_compile_options(-w) # 调试阶段先去除告警
 
-if(NOT DEFINED OPEN_SOURCE_DIR)
-    set(OPEN_SOURCE_DIR "${PROJECT_SOURCE_DIR}/../opensource")
-endif()
-
-# 添加一个library
-#GIT_REPOSITORY ssh://git@codehub-dg-y.huawei.com:2222/hwsecurec_group/huawei_secure_c.git
-#GIT_TAG        tag_Huawei_Secure_C_V100R001C01SPC012B002_00001
-
-# GIT_REPOSITORY ssh://git@szv-open.codehub.huawei.com:2222/OpenSourceCenter/www.sqlite.org/sqlite.git
-# GIT_TAG        3.40.1
-
 add_library(elf_static STATIC IMPORTED)
-set_property(TARGET elf_static PROPERTY IMPORTED_LOCATION ${OPEN_SOURCE_DIR}/local/elfin-parser/libelf++.a)
+set_property(TARGET elf_static PROPERTY IMPORTED_LOCATION ${THIRD_PART}/local/libelf++.a)
 
-add_library(dwarf_static STATIC IMPORTED
-        include/pcerrc.h
-        util/pcerr.h
-        symbol/name_resolve.cpp
-        symbol/name_resolve.h
-        symbol/symbol.cpp
-        symbol/symbol.h
-        symbol/symbol_resolve.cpp)
-set_property(TARGET dwarf_static PROPERTY IMPORTED_LOCATION ${OPEN_SOURCE_DIR}/local/elfin-parser/libdwarf++.a)
+add_library(dwarf_static STATIC IMPORTED)
+set_property(TARGET dwarf_static PROPERTY IMPORTED_LOCATION ${THIRD_PART}/local/libdwarf++.a)
 include_directories(${THIRD_PARTY}/elfin-parser/dwarf)
 include_directories(${THIRD_PARTY}/elfin-parser/elf)
-
-#GIT_REPOSITORY ssh://git@szv-open.codehub.huawei.com:2222/OpenSourceCenter/nlohmann/json.git
-set(nlohmann_json_SOURCE_DIR  ${OPEN_SOURCE_DIR}/json)
-message("nlohmann_json_SOURCE_DIR:${nlohmann_json_SOURCE_DIR}")
-
-#GIT_REPOSITORY ssh://git@szv-open.codehub.huawei.com:2222/OpenSourceCenter/google/googletest.git
-#GIT_TAG        release-1.12.1 #
-include_directories("${OPEN_SOURCE_DIR}/local/googletest/include")
-add_library(gtest_main STATIC IMPORTED)
-set_property(TARGET gtest_main PROPERTY IMPORTED_LOCATION ${OPEN_SOURCE_DIR}/local/googletest/lib64/libgtest_main.a)
-add_library(gtest STATIC IMPORTED)
-set_property(TARGET gtest PROPERTY IMPORTED_LOCATION ${OPEN_SOURCE_DIR}/local/googletest/lib64/libgtest.a)
-add_library(gmock_main STATIC IMPORTED)
-set_property(TARGET gmock_main PROPERTY IMPORTED_LOCATION ${OPEN_SOURCE_DIR}/local/googletest/lib64/libgmock_main.a)
-add_library(gmock STATIC IMPORTED)
-set_property(TARGET gmock PROPERTY IMPORTED_LOCATION ${OPEN_SOURCE_DIR}/local/googletest/lib64/libgmock.a)
