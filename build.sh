@@ -26,10 +26,10 @@ creat_dir "${BUILD_DIR}"
 export CC=gcc
 export CXX=g++
 if [ -d "${THIRD_PARTY}/local" ];then
-  echo ${THIRD_PARTY} "is exist"
-  else
-  echo ${THIRD_PARTY} "is not exist"
-  mkdir ${THIRD_PARTY}/local
+  echo ${THIRD_PARTY}/local "is exist"
+else
+  echo ${THIRD_PARTY}local "is not exist"
+  creat_dir ${THIRD_PARTY}/local
 fi
 
 # build libprof.so libraries including libprocfs.so libprocfs.a libpmu.so libpmu.a libtrace.so libtrace.so

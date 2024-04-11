@@ -26,9 +26,9 @@ set(THIRD_PARTY ${PROJECT_TOP_DIR}/third_party)
 add_compile_options(-w) # 调试阶段先去除告警
 
 add_library(elf_static STATIC IMPORTED)
-set_property(TARGET elf_static PROPERTY IMPORTED_LOCATION ${THIRD_PART}/local/libelf++.a)
+set_property(TARGET elf_static PROPERTY IMPORTED_LOCATION ${THIRD_PARTY}/local/elfin-parser/libelf++.a)
 
 add_library(dwarf_static STATIC IMPORTED)
-set_property(TARGET dwarf_static PROPERTY IMPORTED_LOCATION ${THIRD_PART}/local/libdwarf++.a)
+set_property(TARGET dwarf_static PROPERTY IMPORTED_LOCATION ${THIRD_PARTY}/local/elfin-parser/libdwarf++.a)
 include_directories(${THIRD_PARTY}/elfin-parser/dwarf)
 include_directories(${THIRD_PARTY}/elfin-parser/elf)
