@@ -88,6 +88,9 @@ int KUNPENG_PMU::PerfEvt::Pause()
 
 __u64 KUNPENG_PMU::ReadOnce(__u64 *head)
 {
+#ifndef __aarch64__
+    return *head;
+#else
     union {
         typeof(*head) val;
         char charHead[1];
@@ -122,4 +125,5 @@ __u64 KUNPENG_PMU::ReadOnce(__u64 *head)
             break;
     }
     return pointerUnion.val;
+#endif
 }

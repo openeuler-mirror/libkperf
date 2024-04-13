@@ -32,3 +32,8 @@ add_library(dwarf_static STATIC IMPORTED)
 set_property(TARGET dwarf_static PROPERTY IMPORTED_LOCATION ${THIRD_PARTY}/local/elfin-parser/libdwarf++.a)
 include_directories(${THIRD_PARTY}/elfin-parser/dwarf)
 include_directories(${THIRD_PARTY}/elfin-parser/elf)
+
+add_library(gtest_main STATIC IMPORTED)
+set_property(TARGET gtest_main PROPERTY IMPORTED_LOCATION /usr/local/lib64/libgtest_main.a)
+add_library(gtest STATIC IMPORTED)
+set_property(TARGET gtest PROPERTY IMPORTED_LOCATION /usr/local/lib64/libgtest.a)

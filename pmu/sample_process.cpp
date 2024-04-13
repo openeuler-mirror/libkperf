@@ -33,9 +33,14 @@ static constexpr int MAX_DATA_SIZE = 8192;
 
 void KUNPENG_PMU::PerfMmapConsume(PerfMmap &map)
 {
+     
     __u64 prev = map.prev;
     struct perf_event_mmap_page *base = (struct perf_event_mmap_page *)map.base;
+#ifndef __aarch64__
+    base->data_tail = prev;
+#else
     PerfRingbufferSmpStoreRelease(&base->data_tail, prev);
+#endif
 }
 
 void KUNPENG_PMU::PerfMmapReadDone(PerfMmap &map)
