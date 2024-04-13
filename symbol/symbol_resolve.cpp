@@ -23,7 +23,6 @@
 #include <dwarf++.hh>
 #include <elf++.hh>
 #include <climits>
-#include "securec.h"
 #include "name_resolve.h"
 #include "pcerr.h"
 #include "symbol_resolve.h"
@@ -85,10 +84,7 @@ namespace {
     static inline char* InitChar(int len)
     {
         char* str = new char[len + 1];
-        auto ret = memset_s(str, len + 1, 0, len + 1);
-        if (ret != EOK) {
-            return nullptr;
-        }
+        memset(str, 0, len + 1);
         if (str == nullptr) {
             return nullptr;
         }
@@ -108,9 +104,9 @@ namespace {
             }
             std::shared_ptr<ModuleMap> data = std::make_shared<ModuleMap>();
             char modNameChar[MAX_LINUX_MODULE_LEN];
-            if (!sscanf_s(line, "%lx-%lx %s %s %s %s %s",
-                          &data->start, &data->end, mode, MODE_LEN, offset, OFFSET_LEN, dev,
-                          DEV_LEN, inode, INODE_LEN, modNameChar, MODULE_NAME_LEN)) {
+            if (sscanf(line, "%lx-%lx %s %s %s %s %s",
+                          &data->start, &data->end, mode, offset,dev,
+                          inode, modNameChar) == EOF) {
                 continue;
             }
             data->moduleName = modNameChar;
@@ -157,9 +153,9 @@ namespace {
             stackAsm->funcName = InitChar(MAX_LINE_LENGTH);
             stackAsm->asmCode = nullptr;
             stackAsm->next = nullptr;
-            int ret = sscanf_s(line.c_str(), "%llx %s %*s %*s %llx", &stackAsm->funcStartAddr, stackAsm->funcName,
-                               MAX_LINE_LENGTH, &stackAsm->functFileOffset);
-            if (ret <= 0) {
+            int ret = sscanf(line.c_str(), "%llx %s %*s %*s %llx", &stackAsm->funcStartAddr, stackAsm->funcName,
+                               &stackAsm->functFileOffset);
+            if (ret == EOF) {
                 free(stackAsm->funcName);
                 stackAsm->funcName = nullptr;
                 free(stackAsm);
@@ -174,7 +170,7 @@ namespace {
     static bool MatchFileName(const std::string& line, std::string& fileName, unsigned int& lineNum)
     {
         char startStr[MAX_LINE_LENGTH + 1];
-        int ret = sscanf_s(line.c_str(), "%s", startStr, MAX_LINE_LENGTH);
+        int ret = sscanf(line.c_str(), "%s", startStr);
         if (ret < 0) {
             return false;
         }
@@ -209,8 +205,8 @@ namespace {
         }
         size_t tailLen = line.find("\n") != std::string::npos ? line.find("\n") : strlen(line.c_str());
         char startStr[MAX_LINE_LENGTH + 1];
-        int ret = sscanf_s(line.c_str(), "%*s %s", startStr, MAX_LINE_LENGTH);
-        if (ret < 0) {
+        int ret = sscanf(line.c_str(), "%*s %s", startStr);
+        if (ret == EOF) {
             delete asmCode;
             return nullptr;
         }
@@ -220,17 +216,9 @@ namespace {
             codeStr.erase(0, codeStr.find_first_not_of("\t"));
         }
         asmCode->code = InitChar(MAX_LINE_LENGTH);
-        if (strcpy_s(asmCode->code, MAX_LINE_LENGTH, codeStr.c_str()) != EOK) {
-            delete[] asmCode->code;
-            delete[] asmCode;
-            return nullptr;
-        }
+        strcpy(asmCode->code, codeStr.c_str());
         asmCode->fileName = InitChar(MAX_LINUX_FILE_NAME);
-        if (strcpy_s(asmCode->fileName, MAX_LINUX_FILE_NAME, srcFileName.c_str()) != EOK) {
-            delete[] asmCode->fileName;
-            delete[] asmCode;
-            return nullptr;
-        }
+        strcpy(asmCode->fileName, srcFileName.c_str());
         asmCode->lineNum = lineNum;
         return asmCode;
     }
@@ -402,7 +390,7 @@ int SymbolResolve::RecordModule(int pid, RecordModuleType recordModuleType)
         return 0;
     }
     char mapFile[MAP_LEN];
-    if (!snprintf_s(mapFile, MAP_LEN + 1, MAP_LEN, "/proc/%d/maps", pid)) {
+    if (snprintf(mapFile, MAP_LEN, "/proc/%d/maps", pid) < 0) {
         moduleSafeHandler.releaseLock(pid);
         return LIBSYM_ERR_SNPRINF_OPERATE_FAILED;
     }
@@ -442,7 +430,7 @@ int SymbolResolve::UpdateModule(int pid)
     }
     // Get memory maps of pid.
     char mapFile[MAP_LEN];
-    if (!snprintf_s(mapFile, MAP_LEN + 1, MAP_LEN, "/proc/%d/maps", pid)) {
+    if (snprintf(mapFile, MAP_LEN, "/proc/%d/maps", pid) < 0) {
         moduleSafeHandler.releaseLock(pid);
         return LIBSYM_ERR_SNPRINF_OPERATE_FAILED;
     }
@@ -652,26 +640,17 @@ void SymbolResolve::SearchElfInfo(
     if (start == end && elfVec[start].start <= addr && elfVec[start].end >= addr) {
         *offset = addr - elfVec[start].start;
         symbol->codeMapEndAddr = elfVec[start].end;
-        char* name = CppNameDemangle(elfVec[start].symbolName.c_str());
+        char* name = CppNamedDemangle(elfVec[start].symbolName.c_str());
         if (name) {
-            if (strcpy_s(symbol->symbolName, MAX_LINUX_MODULE_LEN, name) != EOK) {
-                delete[] symbol->symbolName;
-                symbol->symbolName = nullptr;
-            }
+            strcpy(symbol->symbolName, name);
             free(name);
             name = nullptr;
             return;
         }
-        if (strcpy_s(symbol->symbolName, MAX_LINUX_MODULE_LEN, elfVec[start].symbolName.c_str()) != EOK) {
-            delete[] symbol->symbolName;
-            symbol->symbolName = nullptr;
-        }
+        strcpy(symbol->symbolName, elfVec[start].symbolName.c_str());
         return;
     }
-    if (strcpy_s(symbol->symbolName, MAX_LINUX_MODULE_LEN, "UNKNOWN") != EOK) {
-        delete[] symbol->symbolName;
-        symbol->symbolName = nullptr;
-    }
+    strcpy(symbol->symbolName, "UNKNOWN");
     return;
 }
 
@@ -695,16 +674,10 @@ void SymbolResolve::SearchDwarfInfo(
     }
     if (findLine) {
         std::string fileName = dwarfFileArray.GetKeyByIndex(dwarfMap.fileIndex);
-        if (strcpy_s(symbol->fileName, MAX_LINUX_MODULE_LEN, fileName.c_str()) != EOK) {
-            delete[] symbol->fileName;
-            symbol->fileName = nullptr;
-        }
+        strcpy(symbol->fileName, fileName.c_str());
         symbol->lineNum = dwarfMap.lineNum;
     } else {
-        if (strcpy_s(symbol->fileName, MAX_LINUX_MODULE_LEN, "Uknown") != EOK) {
-            delete[] symbol->fileName;
-            symbol->fileName = nullptr;
-        }
+        strcpy(symbol->fileName, "Uknown");
         symbol->lineNum = 0;
     }
 }
@@ -817,10 +790,7 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
     symbol->fileName = InitChar(MAX_LINUX_FILE_NAME);
     symbol->addr = addr;
     symbol->offset = 0;
-    if (strcpy_s(symbol->module, MAX_LINUX_MODULE_LEN, module->moduleName.c_str()) != EOK) {
-        delete[] symbol->module;
-        symbol->module = nullptr;
-    }
+    strcpy(symbol->module, module->moduleName.c_str());
     unsigned long addrToSearch = addr;
     if (this->elfMap.find(module->moduleName) != this->elfMap.end()) {
         // If the largest symbol in the elf symbol table is detected to be smaller than the searched symbol, subtraction
@@ -882,27 +852,18 @@ int SymbolResolve::RecordKernel()
     char name[KERNEL_MODULE_LNE];
 
     while (fgets(line, sizeof(line), kallsyms)) {
-        if (!sscanf_s(line, "%llx %c %s%*[^\n]\n", &addr, &mode, 1, name, KERNEL_MODULE_LNE)) {
+        if (sscanf(line, "%llx %c %s%*[^\n]\n", &addr, &mode, name) == EOF) {
             continue;
         }
         ssize_t nameLen = strlen(name);
         std::shared_ptr<Symbol> data = std::make_shared<Symbol>();
         data->symbolName = InitChar(nameLen);
-        if (strcpy_s(data->symbolName, MAX_LINUX_MODULE_LEN, name) != EOK) {
-            delete[] data->symbolName;
-            data->symbolName = nullptr;
-        }
+        strcpy(data->symbolName, name);
         data->addr = addr;
         data->fileName = InitChar(KERNEL_NAME_LEN);
-        if (strcpy_s(data->fileName, MAX_LINUX_MODULE_LEN, "KERNEL") != EOK) {
-            delete[] data->fileName;
-            data->fileName = nullptr;
-        }
+        strcpy(data->fileName, "KERNEL");
         data->module = InitChar(KERNEL_NAME_LEN);
-        if (strcpy_s(data->module, MAX_LINUX_MODULE_LEN, "KERNEL") != EOK) {
-            delete[] data->module;
-            data->module = nullptr;
-        }
+        strcpy(data->module, "KERNEL");
         data->lineNum = 0;
         this->ksymArray.emplace_back(data);
     }
@@ -969,10 +930,7 @@ struct Symbol* SymbolResolve::MapUserCodeAddr(const std::string& moduleName, uns
     symbol->addr = startAddr;
     unsigned long addrToSearch = startAddr;
     symbol->codeMapAddr = addrToSearch;
-    if (strcpy_s(symbol->module, MAX_LINUX_MODULE_LEN, moduleName.c_str()) != EOK) {
-        delete[] symbol->module;
-        symbol->module = nullptr;
-    }
+    strcpy(symbol->module, moduleName.c_str());
     if (this->elfMap.find(moduleName) != this->elfMap.end()) {
         this->SearchElfInfo(this->elfMap.at(moduleName), addrToSearch, symbol, &symbol->offset);
     }
@@ -1011,7 +969,7 @@ struct StackAsm* ReadAsmCodeFromPipe(FILE* pipe)
     std::string srcFileName = "unknown";
     unsigned int srcLineNum = 0;
     while (!feof(pipe)) {
-        memset_s(line, lineLen, 0, lineLen);
+        memset(line, 0, lineLen);
         if (!fgets(line, lineLen, pipe)) {
             break;
         }
@@ -1063,12 +1021,12 @@ struct StackAsm* SymbolResolve::MapAsmCodeStack(
         pcerr::New(LIBSYM_ERR_START_SMALLER_END, "libysm the end address must be greater than the start address");
         return nullptr;
     }
-    if (!snprintf_s(startAddrStr, ADDR_LEN + 1, ADDR_LEN, "0x%lx", startAddr)) {
+    if (snprintf(startAddrStr, ADDR_LEN, "0x%lx", startAddr) < 0) {
         pcerr::New(LIBSYM_ERR_SNPRINF_OPERATE_FAILED, "libsym fails to execute snprintf");
         return nullptr;
     }
 
-    if (!snprintf_s(endAddrStr, ADDR_LEN + 1, ADDR_LEN, "0x%lx", endAddr)) {
+    if (snprintf(endAddrStr, ADDR_LEN, "0x%lx", endAddr) < 0) {
         pcerr::New(LIBSYM_ERR_SNPRINF_OPERATE_FAILED, "libsym fails to execute snprintf");
         return nullptr;
     }

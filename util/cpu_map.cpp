@@ -19,7 +19,6 @@
 #include <unistd.h>
 #include <memory>
 #include <mutex>
-#include "securec.h"
 #include "common.h"
 #include "pcerr.h"
 #include "cpu_map.h"
@@ -28,8 +27,8 @@ using namespace std;
 
 static const std::string CPU_TOPOLOGY_PACKAGE_ID = "/sys/bus/cpu/devices/cpu%d/topology/physical_package_id";
 static const std::string MIDR_EL1 = "/sys/devices/system/cpu/cpu0/regs/identification/midr_el1";
-static const std::string KUNPENG920_ID = "0x00000000481fd010";
-static const std::string KUNPENG920B_ID = "0x00000000480fd020";
+static const std::string HIPA_ID = "0x00000000481fd010";
+static const std::string HIPB_ID = "0x00000000480fd020";
 static constexpr int PATH_LEN = 256;
 
 static CHIP_TYPE g_chipType = CHIP_TYPE::UNDEFINED_TYPE;
@@ -37,7 +36,7 @@ static CHIP_TYPE g_chipType = CHIP_TYPE::UNDEFINED_TYPE;
 static inline bool ReadCpuPackageId(int coreId, CpuTopology* cpuTopo)
 {
     char filename[PATH_LEN];
-    if (snprintf_s(filename, PATH_LEN + 1, PATH_LEN, CPU_TOPOLOGY_PACKAGE_ID.c_str(), coreId) < 0) {
+    if (snprintf(filename, PATH_LEN, CPU_TOPOLOGY_PACKAGE_ID.c_str(), coreId) < 0) {
         return false;
     }
     std::string realPath = GetRealPath(filename);
@@ -61,7 +60,7 @@ static inline bool ReadCpuPackageId(int coreId, CpuTopology* cpuTopo)
 struct CpuTopology* GetCpuTopology(int coreId)
 {
     auto cpuTopo = std::unique_ptr<CpuTopology>(new CpuTopology());
-    memset_s(cpuTopo.get(), sizeof(CpuTopology), 0, sizeof(CpuTopology));
+    memset(cpuTopo.get(), 0, sizeof(CpuTopology));
     if (coreId == -1) {
         cpuTopo->coreId = coreId;
         cpuTopo->numaId = -1;
@@ -85,10 +84,10 @@ bool InitCpuType()
     std::ifstream cpuFile(MIDR_EL1);
     std::string cpuId;
     cpuFile >> cpuId;
-    if (cpuId.compare(KUNPENG920_ID) == 0) {
-        g_chipType = CHIP_TYPE::KUNPENG_920;
-    } else if (cpuId.compare(KUNPENG920B_ID) == 0) {
-        g_chipType = CHIP_TYPE::KUNPENG_920B;
+    if (cpuId.compare(HIPA_ID) == 0) {
+        g_chipType = CHIP_TYPE::HIPA;
+    } else if (cpuId.compare(HIPB_ID) == 0) {
+        g_chipType = CHIP_TYPE::HIPB;
     } else {
         pcerr::New(LIBPERF_ERR_CHIP_TYPE_INVALID, "invalid chip type");
         return false;

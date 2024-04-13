@@ -15,7 +15,6 @@
 #include <cstring>
 #include <unistd.h>
 #include <sys/mman.h>
-#include "securec.h"
 #include "pcerrc.h"
 #include "evt.h"
 #include "sample_process.h"
@@ -81,9 +80,7 @@ void CopyDataInWhileLoop(KUNPENG_PMU::PerfMmap& map, __u64 offset, unsigned char
         __u64 restSize = offset & map.mask;
         copiedData = map.mask + 1 - restSize < len ? map.mask + 1 - restSize : len;
 
-        if (memcpy_s(tmpDataPtr, MAX_DATA_SIZE, &data[restSize], copiedData) != EOK) {
-            perror("failed to memcpy_s");
-        }
+        memcpy(tmpDataPtr, &data[restSize], copiedData);
 
         offset += copiedData;
         tmpDataPtr += copiedData;

@@ -27,7 +27,7 @@ namespace KUNPENG_PMU {
 class PerfEvt {
 public:
     using ProcPtr = std::shared_ptr<ProcTopology>;
-    using ProcMap = std::shared_ptr<pid_t, ProcPtr>;
+    using ProcMap = std::unordered_map<pid_t, ProcPtr>;
 
     PerfEvt(int cpu, int pid, struct PmuEvt* evt, ProcMap& procMap) : cpu(cpu), pid(pid), evt(evt), procMap(procMap)
     {}
@@ -40,7 +40,7 @@ public:
     virtual bool Reset();
     virtual bool Close();
 
-    virtual int Init();
+    virtual int Init() = 0;
 
     virtual int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps) = 0;
 
@@ -52,7 +52,7 @@ public:
     }
 
 protected:
-    __u64 const;
+    __u64 count;
     int fd;
     int cpu;
     pid_t pid;

@@ -20,7 +20,6 @@
 #include <dirent.h>
 #include <ctype.h>
 #include <memory>
-#include "securec.h"
 #include "common.h"
 #include "process_map.h"
 
@@ -141,9 +140,7 @@ static char *GetComm(pid_t pid)
         if (comm == nullptr) {
             return nullptr;
         }
-        if (strcpy_s(comm, COMM_SIZE, commName.c_str()) != EOK) {
-            return nullptr;
-        }
+        strcpy(comm, commName.c_str());
         return comm;
     }
     std::string filePath = "/proc/" + std::to_string(pid) + "/comm";
@@ -160,9 +157,7 @@ static char *GetComm(pid_t pid)
     if (comm == nullptr) {
         return nullptr;
     }
-    if (strcpy_s(comm, COMM_SIZE, commName.c_str()) != EOK) {
-        return nullptr;
-    }
+    strcpy(comm, commName.c_str());
     return comm;
 }
 
@@ -236,7 +231,7 @@ bool GetChildTidRecursive(const char *dirPath, int **childTidList, int *count)
             }
 
             char path[PATH_LEN];
-            if (!snprintf_s(path, PATH_LEN + 1, sizeof(path), "%s/%s", dirPath, entry->d_name)) {
+            if (snprintf(path, sizeof(path), "%s/%s", dirPath, entry->d_name) < 0) {
                 continue;
             }
 
@@ -253,7 +248,7 @@ int *GetChildTid(int pid, int *numChild)
 {
     int *childTidList = nullptr;
     char dirPath[PATH_LEN];
-    if (!snprintf_s(dirPath, PATH_LEN + 1, sizeof(dirPath), "/proc/%d/task", pid)) {
+    if (snprintf(dirPath, sizeof(dirPath), "/proc/%d/task", pid) < 0) {
         return nullptr;
     }
     *numChild = 0;

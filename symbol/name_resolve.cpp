@@ -17,7 +17,7 @@
 #include <memory>
 #include <name_resolve.h>
 
-char* CppNameDemangle(const char* abiName)
+char* CppNamedDemangle(const char* abiName)
 {
     int status;
     char* name = abi::__cxa_demangle(abiName, nullptr, nullptr, &status);

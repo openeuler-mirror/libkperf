@@ -15,8 +15,5 @@ include_directories(${SYMBOL_FILE_DIR})
 include_directories(${INCLUDE_DIR})
 
 message(${THIRD_PARTY}/elfin-parser/elf)
-include_directories(${THIRD_PARTY}/json/single_include/nlohmann)
-include_directories(${THIRD_PARTY}/huawei_secure_c/include)
-
 ADD_LIBRARY(sym SHARED ${SYMBOL_SRC})
-target_link_libraries(sym elf_static dwarf_static securec pthread)
+target_link_libraries(sym elf_static dwarf_static pthread)

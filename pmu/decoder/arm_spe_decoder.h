@@ -8,32 +8,41 @@
  * IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR
  * PURPOSE.
  * See the Mulan PSL v2 for more details.
- * Author: Mr.Wang
+ * Author: Mr.Jin
  * Create: 2024-04-03
- * Description: Get CPU topology and chip type.
+ * Description: get-spe-data interface and spe-packet definitions
  ******************************************************************************/
-#ifndef CPU_MAP_H
-#define CPU_MAP_H
-#include <numa.h>
-#include "pmu.h"
-#ifdef __cplusplus
-extern "C" {
-#endif
+#ifndef __SPE__DECODER_HH__
+#define __SPE__DECODER_HH__
 
-enum CHIP_TYPE {
-    UNDEFINED_TYPE = 0,
-    HIPA = 1,
-    HIPB = 2,
+#include <cstdint>
+#include <sys/types.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <linux/perf_event.h>
+
+enum class SpePacketType {
+    SPE_PACKET_BAD,
+    SPE_PACKET_ADDRESS,
+    SPE_PACKET_CONTEXT,
+    SPE_PACKET_COUNTER,
+    SPE_PACKET_DATA_SOURCE,
+    SPE_PACKET_END,
+    SPE_PACKET_EVENTS,
+    SPE_PACKET_OP_TYPE,
+    SPE_PACKET_PAD,
+    SPE_PACKET_TIMESTAMP,
 };
 
-struct CpuTopology {
-    int coreId;
-    int numaId;
-    int socketId;
+struct SpePacket {
+    enum SpePacketType type;
+    uint64_t payload;
+    uint16_t header;
+    uint16_t payloadSize;
 };
-struct CpuTopology* GetCpuTopology(int coreId);
-CHIP_TYPE GetCpuType();
-#ifdef __cplusplus
-}
-#endif
+
+struct SpeRecord;
+
+SpeRecord *SpeGetRecord(uint8_t *buf, uint8_t *end, struct SpeRecord *rec, int *remainSize);
+
 #endif

@@ -20,7 +20,7 @@ extern "C" {
 #endif
 /** For further implementation such as support for python, rust or java name
  * demangel, APIs should be implemented here */
-char* CppNamedDemangel(const char* abiName);
+char* CppNamedDemangle(const char* abiName);
 #ifdef __cpusplus
 }
 #endif

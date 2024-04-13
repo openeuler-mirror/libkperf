@@ -21,7 +21,6 @@
 #include <sys/ioctl.h>
 #include <iostream>
 #include <linux/perf_event.h>
-#include "securec.h"
 #include "pmu.h"
 #include "linked_list.h"
 #include "pmu_event.h"
@@ -60,7 +59,8 @@ int KUNPENG_PMU::PerfCounter::Read(vector<PmuData> &data, std::vector<PerfSample
      * For now we assume PMU register was reset before each collection, so we assign the counting value to the
      * count section in data. We will implement the aggregating logic soon
      */
-    this->count = perfCountValue.value;
+    this->count = perfCountValue.value * static_cast<double>(perfCountValue.timeEnabled) /
+	    		static_cast<double>(perfCountValue.timeRunning);
     data.emplace_back(PmuData{0});
     auto& current = data.back();
     current.count = this->count;
@@ -88,9 +88,7 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr()
      * added soon
      */
     struct perf_event_attr attr;
-    if (memset_s(&attr, MAX_ATTR_SIZE, 0, sizeof(attr)) != EOK) {
-        return UNKNOWN_ERROR;
-    }
+    memset(&attr, 0, sizeof(attr));
     attr.size = sizeof(struct perf_event_attr);
     attr.type = this->evt->type;
     attr.config = this->evt->config;

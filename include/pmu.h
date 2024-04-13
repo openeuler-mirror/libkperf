@@ -86,7 +86,7 @@ struct PmuData {
     struct Stack* stack;           // call stack
     const char *evt;                // event name
     int64_t ts;                     // time stamp
-    pid_t pis;                      // process id
+    pid_t pid;                      // process id
     int tid;                        // thread id
     unsigned cpu;                   // cpu id
     struct CpuTopology *cpuTopo;    // cpu topology
@@ -116,7 +116,7 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr);
 /**
  * @brief
  * Collect <milliseconds> milliseconds. If <milliseconds> is equal to - 1 and the PID list is not empty, the collection
- * is performed until all processes are compete.
+ * is performed until all processes are complete.
  * @param milliseconds
  * @return int
  */
@@ -128,13 +128,13 @@ int PmuCollect(int pd, int milliseconds);
  * @param milliseconds
  * @return int
  */
-int PmuCollectV(int *pd, int milliseconds);
+int PmuCollectV(int *pd, unsigned len, int milliseconds);
 
 /**
  * @brief stop a sampling task in asynchronous mode
  * @param pd pmu descriptor.
  */
-int PmuStop(int pd);
+void PmuStop(int pd);
 
 /**
  * @brief
@@ -147,13 +147,13 @@ int PmuRead(int pd, struct PmuData** pmuData);
 /**
  * @brief Close all the file descriptor opened during collecting process
  */
-int PmuClose(int pd);
+void PmuClose(int pd);
 
 /**
  * @brief Free PmuData pointer.
  * @param pmuData
  */
-void PmuDataFree(struct PmuData** pmuData);
+void PmuDataFree(struct PmuData* pmuData);
 
 #pragma GCC visibility pop
 #ifdef __cplusplus

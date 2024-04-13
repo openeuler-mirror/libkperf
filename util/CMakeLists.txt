@@ -19,4 +19,4 @@ include_directories(${THIRD_PARTY}/huawei_secure_c/include)
 
 add_library(profu STATIC ${UTIL_SRC})
 target_compile_options(profu PUBLIC -fPIC)
-target_link_libraries(profu securec cap numa)
+target_link_libraries(profu numa)

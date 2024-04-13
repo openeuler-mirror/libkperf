@@ -65,7 +65,7 @@ private:
     using PerfEvtPtr = std::shared_ptr<KUNPENG_PMU::PerfEvt>;
 
     int CollectorDoTask(PerfEvtPtr collector, int task);
-    int CollectorXYArrayDoTask(int numCpu, std::vector<std::vector<PerfEvtPtr>>& xyArray, int task);
+    int CollectorXYArrayDoTask(int numCpu, int numPid, std::vector<std::vector<PerfEvtPtr>>& xyArray, int task);
     void FillFields(const size_t &start, const size_t &end, CpuTopology *cpuTopo, ProcTopology *procTopo,
         std::vector<PmuData> &pmuData);
 

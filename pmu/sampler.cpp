@@ -23,7 +23,6 @@
 #include <sys/mman.h>
 #include <cstring>
 #include <linux/perf_event.h>
-#include "securec.h"
 #include "linked_list.h"
 #include "symbol_resolve.h"
 #include "util_time.h"
@@ -49,9 +48,7 @@ static inline bool IsPowerOfTwo(T x)
 int KUNPENG_PMU::PerfSampler::MapPerfAttr()
 {
     struct perf_event_attr attr;
-    if (memset_s(&attr, MAX_ATTR_SIZE, 0, sizeof(attr)) != EOK) {
-        return UNKNOWN_ERROR;
-    }
+    memset(&attr, 0, sizeof(attr));
     attr.type = this->evt->type;
     attr.config = this->evt->config;
     attr.size = sizeof(struct perf_event_attr);

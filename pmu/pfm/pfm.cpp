@@ -22,7 +22,6 @@
 #include <cstring>
 #include <fstream>
 #include "trace.h"
-#include "securec.h"
 #include "common.h"
 #include "cpu_map.h"
 #include "pfm_event.h"
@@ -99,7 +98,7 @@ static int GetSpeType(void)
         return -1;
     }
 
-    if (fscanf_s(fp, "%d", &type, sizeof(int)) != 1) {
+    if (fscanf(fp, "%d", &type) != 1) {
         if (fclose(fp) == EOF) {
             return -1;
         }

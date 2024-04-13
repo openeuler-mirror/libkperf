@@ -17,7 +17,6 @@
 #include <unordered_set>
 #include <fstream>
 #include <linux/perf_event.h>
-#include "securec.h"
 #include "cpu_map.h"
 #include "linked_list.h"
 #include "pmu_event.h"
@@ -66,9 +65,7 @@ int KUNPENG_PMU::EvtList::CollectorDoTask(PerfEvtPtr collector, int task)
             return UNKNOWN_ERROR;
     }
 }
-
-int KUNPENG_PMU::EvtList::CollectorXYArrayDoTask(
-        int cpuCnt, int pidCnt, std::vector<std::vector<PerfEvtPtr>>& xyArray, int task)
+int KUNPENG_PMU::EvtList::CollectorXYArrayDoTask(int cpuCnt, int pidCnt, std::vector<std::vector<PerfEvtPtr>>& xyArray, int task)
 {
     for (int row = 0; row < cpuCnt; row++) {
         for (int col = 0; col < pidCnt; col++) {

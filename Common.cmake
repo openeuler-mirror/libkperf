@@ -33,15 +33,9 @@ endif()
 # 添加一个library
 #GIT_REPOSITORY ssh://git@codehub-dg-y.huawei.com:2222/hwsecurec_group/huawei_secure_c.git
 #GIT_TAG        tag_Huawei_Secure_C_V100R001C01SPC012B002_00001
-add_library(securec STATIC IMPORTED)
-set_property(TARGET securec PROPERTY IMPORTED_LOCATION ${OPEN_SOURCE_DIR}/local/huawei_secure_c/lib/libsecurec.a)
-include_directories(${THIRD_PARTY}/huawei_secure_c/include)
 
 # GIT_REPOSITORY ssh://git@szv-open.codehub.huawei.com:2222/OpenSourceCenter/www.sqlite.org/sqlite.git
 # GIT_TAG        3.40.1
-add_library(sqlite3_share STATIC IMPORTED)
-set_property(TARGET sqlite3_share PROPERTY IMPORTED_LOCATION ${OPEN_SOURCE_DIR}/local/sqlite3/lib/libsqlite3.so)
-include_directories(${OPEN_SOURCE_DIR}/local/sqlite3/include)
 
 add_library(elf_static STATIC IMPORTED)
 set_property(TARGET elf_static PROPERTY IMPORTED_LOCATION ${OPEN_SOURCE_DIR}/local/elfin-parser/libelf++.a)

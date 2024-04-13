@@ -123,14 +123,14 @@ struct PerfRecordSample {
 struct PerfRecordFork {
     struct perf_event_header header;
     __u32 pid, ppid;
-    __u32 tid, ttid;
+    __u32 tid, ptid;
     __u64 time;
 };
 
 struct PerfRecordExit {
     struct perf_event_header header;
     __u32 pid, ppid;
-    __u32 tid, ttid;
+    __u32 tid, ptid;
     __u64 time;
 };
 
@@ -155,7 +155,7 @@ union PerfEvent {
     struct PerfRecordMmap  mmap;
     struct PerfRecordComm comm;
     struct PerfRecordFork fork;
-    struct PerfRawSample sample;
+    struct PerfRecordSample sample;
     struct PerfRecordExit exit;
     struct PerfRecordMmap2 mmap2;
 };

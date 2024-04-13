@@ -19,7 +19,7 @@
 #include "pfm_name.h"
 
 namespace KUNPENG_PMU {
-    extern const KUNPENG_PMU::CORE_EVT_MAP CORE_EVENT_MAP;
+    extern const CORE_EVT_MAP CORE_EVENT_MAP;
 }
 
 #endif

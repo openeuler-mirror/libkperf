@@ -56,10 +56,10 @@ public:
     std::vector<PmuData>& Read(const int pd);
     int Start(const int pd);
     int Pause(const int pd);
-    int Close(const int pd);
-    int AllPmuDead(const int pd);
-    int IsPdAlive(const int pd) const;
-    int FreeData(PmuData* pmuData);
+    void Close(const int pd);
+    bool AllPmuDead(const int pd);
+    bool IsPdAlive(const int pd) const;
+    void FreeData(PmuData* pmuData);
     int GetTaskType(const int pd) const;
 
     int NewPd();
@@ -94,7 +94,7 @@ private:
     void FillStackInfo(EventData &eventData);
     void EraseUserData(PmuData* pmuData);
 
-    void AddToEpollFd(const int pd, const std::shared_ptr<EvtList> evtList);
+    int AddToEpollFd(const int pd, const std::shared_ptr<EvtList> &evtList);
     void RemoveEpollFd(const int pd);
     int GetEpollFd(const int pd);
     std::vector<epoll_event>& GetEpollEvents(const int epollFd);
@@ -117,9 +117,9 @@ private:
     // Value: PmuData List.
     // PmuData is stored here before user call <read>.
     std::unordered_map<unsigned, EventData> dataList;
-    // Key: pd
+    // Key: PmuData raw pointer
     // Value: PmuData vector for raw pointer.
-    // PmuData is stored here before user call <read>.
+    // PmuData is stored here after user call <read>.
     std::unordered_map<PmuData*, EventData> userDataList;
 
     // Key: pd

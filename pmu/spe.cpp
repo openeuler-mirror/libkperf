@@ -20,10 +20,8 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
-#include "securec.h"
 #include "pmu_event.h"
 #include "arm_spe_decoder.h"
-#include "profile.h"
 #include "process_map.h"
 #include "log.h"
 #include "pcerr.h"
@@ -149,7 +147,7 @@ static void CoreSpeClose(struct SpeCoreContext *ctx, struct SpeContext *speCtx)
         munmap(ctx->dummyMpage, speCtx->dummyMmapSize);
     }
 
-    memset_s(ctx, sizeof(*ctx), 0, sizeof(*ctx));
+    memset(ctx, 0, sizeof(*ctx));
 }
 
 static int CoreSpeOpenFailed(struct SpeCoreContext **ctx, struct SpeContext *speCtx)

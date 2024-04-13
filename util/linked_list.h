@@ -17,20 +17,16 @@
 #include <iostream>
 #include <cstdio>
 #include <cstdlib>
-#include "securec.h"
 
 // Function to create a new node
 template <typename ListNode>
 ListNode* CreateNode()
 {
     ListNode* newNode = (ListNode*)malloc(sizeof(ListNode));
-    auto ret = memset_s(newNode, sizeof(ListNode), 0, sizeof(ListNode));
-    if (ret != EOK) {
-        return nullptr;
-    }
     if (newNode == nullptr) {
         return nullptr;
     }
+    memset(newNode, 0, sizeof(ListNode));
 
     newNode->next = nullptr;
     return newNode;
