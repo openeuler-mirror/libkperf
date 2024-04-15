@@ -1,0 +1,3 @@
+[submodule "elfin-parser"]
+	path = third_party/elfin-parser
+	url = https://gitee.com/openeuler/elfin-parser.git
