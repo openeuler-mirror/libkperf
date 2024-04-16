@@ -78,6 +78,12 @@ struct PmuAttr {
     unsigned long minLatency;       // collect only samples with latency or higher
 };
 
+struct CpuTopology {
+    int coreId;
+    int numaId;
+    int socketId;
+};
+
 struct PmuDataExt {
     unsigned long pa;               // physical address
     unsigned long va;               // virtual address
