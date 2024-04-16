@@ -26,11 +26,6 @@ enum CHIP_TYPE {
     HIPB = 2,
 };
 
-struct CpuTopology {
-    int coreId;
-    int numaId;
-    int socketId;
-};
 struct CpuTopology* GetCpuTopology(int coreId);
 CHIP_TYPE GetCpuType();
 #ifdef __cplusplus
