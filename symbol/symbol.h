@@ -35,6 +35,7 @@ struct Symbol {
 struct Stack {
     struct Symbol* symbol;  // symbol info for current stack
     struct Stack* next;     // points to next position in stack
+    struct Stack* prev;     // points to previous position in stack
     __u64 count;
 } __attribute__((aligned(64)));
 
