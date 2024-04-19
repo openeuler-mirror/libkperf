@@ -20,8 +20,6 @@
 #include <cstdio>
 #include <algorithm>
 #include <fstream>
-#include <dwarf++.hh>
-#include <elf++.hh>
 #include <climits>
 #include "name_resolve.h"
 #include "pcerr.h"
@@ -47,6 +45,7 @@ constexpr int KERNEL_MODULE_LNE = 128;
 constexpr int CODE_LINE_RANGE_LEN = 10;
 constexpr int HEX_LEN = 16;
 constexpr int TO_TAIL_LEN = 2;
+constexpr unsigned long USER_MAX_ADDR = 0xffffffff;
 
 const std::string HUGEPAGE = "/anon_hugepage";
 const std::string DEV_ZERO = "/dev/zero";
@@ -114,35 +113,14 @@ namespace {
         }
     }
 
-    static inline void DwarfInfoRecord(DWARF_DATA_MAP& dwarfTable, const dwarf::line_table& lt,
-                                       SymbolVet<std::string>& dwarfFileArray)
-    {
-        for (const dwarf::line_table::entry& line : lt) {
-            if (line.end_sequence) {
-                continue;
-            }
-            std::string fileName = line.file->path();
-            if (fileName.empty()) {
-                continue;
-            }
-            DwarfMap data = {0};
-            data.lineNum = line.line;
-            data.fileIndex = dwarfFileArray.InsertKeyForIndex(fileName);
-            dwarfTable.insert({line.address, data});
-        }
-    }
-
-    static inline void ElfInfoRecord(std::vector<ElfMap>& elfVector, const elf::section& sec)
+    static inline void ElfInfoRecord(MyElf& myElf, const elf::section& sec)
     {
         for (const auto& sym : sec.as_symtab()) {
             auto& data = sym.get_data();
-            if (data.type() != elf::stt::func)
+            if (data.type() != elf::stt::func){
                 continue;
-            ElfMap elfData;
-            elfData.start = data.value;
-            elfData.end = data.value + data.size;
-            elfData.symbolName = sym.get_name();
-            elfVector.emplace_back(elfData);
+            }
+            myElf.Emplace(data.value, sym);
         }
     }
 
@@ -376,6 +354,146 @@ bool SymbolUtils::IsNumber(const std::string& str)
     return true;
 }
 
+bool MyElf::IsExecFile()
+{
+    return elf.get_hdr().type == elf::et::exec;
+}
+
+void MyElf::Emplace(unsigned long addr, const ELF_SYM& elfSym)
+{
+    this->symTab.insert({addr, elfSym});
+}
+
+ELF_SYM* MyElf::FindSymbol(unsigned long addr)
+{
+    if (symTab.empty()) {
+        return nullptr;
+    }
+    auto it = symTab.upper_bound(addr);
+    if(it == symTab.cbegin()) {
+        return nullptr;
+    }
+    --it;
+    if(addr > it->first + it->second.get_data().size) {
+        return nullptr;
+    }
+    return &it->second;
+}
+
+void RangeL::FindLine(unsigned long addr, struct DwarfEntry& entry)
+{
+    if (!loadLineTable) {
+        lineTab = cu.get_line_table();
+        loadLineTable = true;
+    }
+    auto rs = FindAddress(addr);
+    if (rs != lineTab.end()) {
+        entry.find = true;
+        entry.fileName = rs->file->path();
+        entry.lineNum = rs->line;
+    }
+}
+
+dwarf::line_table::iterator RangeL::FindAddress(unsigned long addr)
+{
+    auto prev = lineTab.begin();
+    auto end = lineTab.end();
+    if (prev == end) {
+        return prev;
+    }
+    auto it = prev;
+    for (++it; it != end; prev = it++) {
+        if (prev->address <= addr && it->address > addr && !prev->end_sequence) {
+            return prev;
+        }
+    }
+    if (it->address > addr && addr >= prev->address) {
+        return prev;
+    }
+    return end;
+}
+
+void RangeL::ReadRange(const DWARF_CU& cu)
+{
+    this->cu = cu;
+    // it spends most time to get data, just load one time;
+    const dwarf::die &die = cu.root();
+    if (die.has(dwarf::DW_AT::ranges) && die[dwarf::DW_AT::ranges].is_valid_rangelist()) {
+        for (auto &dwarfRange : dwarf::at_ranges(die)) {
+            if (dwarfRange.low >= dwarfRange.high) {
+                continue;
+            }
+            if (rangeMap.find(dwarfRange.low) != rangeMap.end()) {
+                continue;
+            }
+            rangeMap.insert({dwarfRange.low, dwarfRange.high});
+        }
+    }
+
+    if (rangeMap.size() > 0) {
+        return;
+    }
+
+    // if the die does not contain ranges, get_line_table obtains
+    lineTab = cu.get_line_table();
+    loadLineTable = true;
+    auto it = lineTab.begin();
+    auto end = lineTab.end();
+    unsigned long minAddr = it->address;
+    unsigned long maxAddr = it->address;
+    while (it != end) {
+        if (it->end_sequence) {
+            maxAddr = maxAddr < it->address ? it->address : maxAddr;
+            rangeMap.insert({minAddr, maxAddr});
+            ++it;
+            minAddr = it->address;
+            maxAddr = it->address;
+            continue;
+        }
+        ++it;
+    }
+    maxAddr = maxAddr < it->address ? it->address : maxAddr;
+    if (minAddr < maxAddr) {
+        rangeMap.insert({minAddr, maxAddr});
+    }
+}
+
+void MyDwarf::FindLine(unsigned long addr, struct DwarfEntry &entry)
+{
+    for (auto &range : rangeList) {
+        if (range.IsInLineTable(addr)) {
+            range.FindLine(addr, entry);
+            return;
+        }
+    }
+}
+
+void MyDwarf::LoadDwarf(unsigned long addr, DwarfEntry& entry)
+{
+    if (hasLoad) {
+        return;
+    }
+    if (cuList.empty()) {
+        for (const auto &cu : dw.compilation_units()) {
+            cuList.push_back(cu);
+        }
+    }
+    // Set hasLoad = true if it's loaded
+    while (loadNum < cuList.size())
+    {
+        const auto &cu = cuList.at(loadNum);
+        RangeL range;
+        range.ReadRange(cu);
+        rangeList.push_back(range);
+        loadNum++;
+        if (range.IsInLineTable(addr)) {
+            range.FindLine(addr, entry);
+            return;
+        }
+    }
+    hasLoad = true;
+}
+
 int SymbolResolve::RecordModule(int pid, RecordModuleType recordModuleType)
 {
     if (pid < 0) {
@@ -479,13 +597,6 @@ void SymbolResolve::FreeModule(int pid)
     return;
 }
 
-struct SortElf {
-    inline bool operator()(const ElfMap& first, const ElfMap& second)
-    {
-        return (first.start < second.start);
-    }
-};
-
 int SymbolResolve::RecordElf(const char* fileName)
 {
     SetFalse(this->isCleared);
@@ -515,23 +626,22 @@ int SymbolResolve::RecordElf(const char* fileName)
 
     std::shared_ptr<elf::loader> efLoader = elf::create_mmap_loader(fd);
     elf::elf ef(efLoader);
-    std::vector<ElfMap> elfVector;
+    MyElf myElf(ef);
 
     try {
         for (const auto& sec : ef.sections()) {
             if (sec.get_hdr().type != elf::sht::symtab && sec.get_hdr().type != elf::sht::dynsym) {
                 continue;
             }
-            ElfInfoRecord(elfVector, sec);
+            ElfInfoRecord(myElf, sec);
         }
     } catch (elf::format_error& error) {
+        close(fd);
         pcerr::New(LIBSYM_ERR_ELFIN_FOMAT_FAILED, "libsym record elf format error: " + std::string{error.what()});
         elfSafeHandler.releaseLock(file);
         return LIBSYM_ERR_ELFIN_FOMAT_FAILED;
     }
-
-    std::sort(elfVector.begin(), elfVector.end(), SortElf());
-    this->elfMap.insert({file, elfVector});
+    this->elfMap.emplace(file, myElf);
     close(fd);
     pcerr::New(0, "success");
     elfSafeHandler.releaseLock(file);
@@ -570,18 +680,10 @@ int SymbolResolve::RecordDwarf(const char* fileName)
 
     try {
         dwarf::dwarf dw(dwarf::elf::create_loader(ef));
-        DWARF_DATA_MAP dwarfTable;
-        for (const auto& cu : dw.compilation_units()) {
-            const dwarf::line_table lt = cu.get_line_table();
-            DwarfInfoRecord(dwarfTable, lt, dwarfFileArray);
-        }
-        std::vector<unsigned long> addrVet;
-        for (auto it = dwarfTable.begin(); it != dwarfTable.end(); ++it) {
-            addrVet.push_back(it->first);
-        }
-        this->dwarfMap.insert({file, dwarfTable});
-        this->dwarfVetMap.insert({file, addrVet});
+        MyDwarf myDwarf(dw, file);
+        dwarfMap.emplace(file, myDwarf);
     } catch (dwarf::format_error& error) {
+        close(fd);
         dwarfSafeHandler.releaseLock((file));
         pcerr::New(LIBSYM_ERR_DWARF_FORMAT_FAILED,
                    "libsym record dwarf file named " + file + " format error: " + std::string{error.what()});
@@ -619,63 +721,40 @@ void SymbolResolve::Clear()
     this->instance = nullptr;
 }
 
-void SymbolResolve::SearchElfInfo(
-        std::vector<ElfMap>& elfVec, unsigned long addr, struct Symbol* symbol, unsigned long* offset)
+void SymbolResolve::SearchElfInfo(MyElf& myElf, unsigned long addr, struct Symbol* symbol, unsigned long* offset)
 {
-    ssize_t start = 0;
-    ssize_t end = elfVec.size() - 1;
-    ssize_t mid;
-    unsigned long symAddr;
-
-    while (start < end) {
-        mid = start + (end - start + 1) / BINARY_HALF;
-        symAddr = elfVec[mid].start;
-        if (symAddr <= addr) {
-            start = mid;
-        } else {
-            end = mid - 1;
-        }
-    }
-
-    if (start == end && elfVec[start].start <= addr && elfVec[start].end >= addr) {
-        *offset = addr - elfVec[start].start;
-        symbol->codeMapEndAddr = elfVec[start].end;
-        char* name = CppNamedDemangle(elfVec[start].symbolName.c_str());
-        if (name) {
-            strcpy(symbol->symbolName, name);
-            free(name);
-            name = nullptr;
-            return;
-        }
-        strcpy(symbol->symbolName, elfVec[start].symbolName.c_str());
+    ELF_SYM *elfSym = myElf.FindSymbol(addr);
+    if (elfSym == nullptr) {
+        strcpy(symbol->symbolName, "UNKNOWN");
         return;
     }
-    strcpy(symbol->symbolName, "UNKNOWN");
+    symbol->codeMapEndAddr = elfSym->get_data().value + elfSym->get_data().size;
+    *offset = addr - elfSym->get_data().value;
+    std::string symName = elfSym->get_name();
+    char *name = CppNamedDemangle(symName.c_str());
+    if (name) {
+        strcpy(symbol->symbolName, name);
+        free(name);
+        name = nullptr;
+        return;
+    }
+    strcpy(symbol->symbolName, symName.c_str());
     return;
 }
 
-void SymbolResolve::SearchDwarfInfo(
-        std::vector<unsigned long>& addrVet, DWARF_DATA_MAP& dwarfDataMap, unsigned long addr, struct Symbol* symbol)
+void SymbolResolve::SearchDwarfInfo(MyDwarf& myDwarf, unsigned long addr, struct Symbol* symbol)
 {
-    DwarfMap dwarfMap = {0};
-    bool findLine = false;
-    if (dwarfDataMap.find(addr) != dwarfDataMap.end()) {
-        dwarfMap = dwarfDataMap.at(addr);
-        findLine = true;
-    } else {
-        auto it = std::upper_bound(addrVet.begin(), addrVet.end(), addr);
-        if (it > addrVet.begin() && it < addrVet.end()) {
-            --it;
-        }
-        if (it != addrVet.end()) {
-            dwarfMap = dwarfDataMap.at(*it);
-            findLine = true;
-        }
+    DwarfEntry dwarfEntry;
+    const std::string moduleName = myDwarf.GetModule();
+    dwarfLoadHandler.tryLock(moduleName);
+    myDwarf.FindLine(addr, dwarfEntry);
+    if(!dwarfEntry.find) {
+        myDwarf.LoadDwarf(addr, dwarfEntry);
     }
-    if (findLine) {
-        std::string fileName = dwarfFileArray.GetKeyByIndex(dwarfMap.fileIndex);
-        strcpy(symbol->fileName, fileName.c_str());
-        symbol->lineNum = dwarfMap.lineNum;
+    dwarfLoadHandler.releaseLock(moduleName);
+    if (dwarfEntry.find) {
+        strcpy(symbol->fileName, dwarfEntry.fileName.c_str());
+        symbol->lineNum = dwarfEntry.lineNum;
     } else {
         strcpy(symbol->fileName, "Uknown");
         symbol->lineNum = 0;
@@ -795,18 +874,16 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
     if (this->elfMap.find(module->moduleName) != this->elfMap.end()) {
         // If the largest symbol in the elf symbol table is detected to be smaller than the searched symbol, subtraction
         // is performed.
-        std::vector<ElfMap> elfVet = this->elfMap.at(module->moduleName);
-        if (!elfVet.empty()) {
-            if (elfVet.back().end < addrToSearch && addrToSearch > module->start) {
-                addrToSearch = addrToSearch - module->start;
-            }
-            this->SearchElfInfo(elfVet, addrToSearch, symbol, &symbol->offset);
+        MyElf& myElf = this->elfMap.at(module->moduleName);
+        // if the file is not exectable, subtraction is required
+        if(!myElf.IsExecFile()){
+            addrToSearch = addrToSearch - module->start;
         }
+        this->SearchElfInfo(myElf, addrToSearch, symbol, &symbol->offset);  
     }
 
     if (this->dwarfMap.find(module->moduleName) != this->dwarfMap.end()) {
-        this->SearchDwarfInfo(
-                this->dwarfVetMap.at(module->moduleName), this->dwarfMap.at(module->moduleName), addrToSearch, symbol);
+        this->SearchDwarfInfo(this->dwarfMap.at(module->moduleName), addrToSearch, symbol);
     }
     symbol->codeMapAddr = addrToSearch;
     this->symbolMap.at(pid).insert({addr, symbol});
@@ -952,8 +1029,7 @@ struct Symbol* SymbolResolve::MapCodeAddr(const char* moduleName, unsigned long 
     }
     int ret = RecordDwarf(moduleName);
     if (ret == 0) {
-        this->SearchDwarfInfo(
-                this->dwarfVetMap.at(moduleName), this->dwarfMap.at(moduleName), symbol->codeMapAddr, symbol);
+        this->SearchDwarfInfo(this->dwarfMap.at(moduleName), symbol->codeMapAddr, symbol);
     } else {
         symbol->fileName = nullptr;
     }

@@ -23,6 +23,8 @@
 #include <vector>
 #include <iostream>
 #include <string>
+#include <dwarf++.hh>
+#include <elf++.hh>
 #include <linux/types.h>
 #include "safe_handler.h"
 #include "linked_list.h"
@@ -41,49 +43,93 @@ namespace KUNPENG_SYM {
         std::string symbolName;
     } __attribute__((aligned(8)));
 
-    struct DwarfMap {
-        unsigned int lineNum;
-        unsigned int fileIndex;
-    } __attribute__((aligned(8)));
+    struct DwarfEntry {
+        unsigned int lineNum = 0;
+        std::string fileName = {};
+        bool find = false;
+    };
 
     enum class RecordModuleType { RECORD_ALL = 0, RECORD_NO_DWARF = 1 };
 
-    using SYMBOL_MAP = std::unordered_map<pid_t, std::unordered_map<__u64, struct Symbol*>>;
-    using STACK_MAP = std::unordered_map<pid_t, std::unordered_map<size_t, struct Stack*>>;
-    using MODULE_MAP = std::unordered_map<pid_t, std::vector<std::shared_ptr<ModuleMap>>>;
-    using DWARF_DATA_MAP = std::map<unsigned long, DwarfMap>;
-    using DWARF_MAP = std::unordered_map<std::string, DWARF_DATA_MAP>;
-    using DWARF_VET_MAP = std::unordered_map<std::string, std::vector<unsigned long>>;
-    using ELF_MAP = std::unordered_map<std::string, std::vector<ElfMap>>;
+    using ELF_SYM = elf::sym;
+    using ELF = elf::elf;
+    using DWARF = dwarf::dwarf;
+    using DWARF_TABEL = dwarf::line_table;
+    using DWARF_ENTRY = dwarf::line_table::entry;
+    using DWARF_CU = dwarf::compilation_unit;
 
-    template <typename Key>
-    class SymbolVet : public std::vector<Key> {
+    class RangeL {
     public:
-        unsigned int InsertKeyForIndex(const Key& key)
-        {
-            std::lock_guard<std::mutex> guard(keyMutex);
-            if (keyMap.find(key) != keyMap.end()) {
-                return keyMap.at(key);
-            }
-            this->push_back(key);
-            keyMap[key] = this->size() - 1;
-            return this->size() - 1;
-        }
+        RangeL() = default;
 
-        Key& GetKeyByIndex(const unsigned int index)
+        void FindLine(unsigned long addr, struct DwarfEntry &entry);
+
+        void ReadRange(const DWARF_CU &cu);
+
+        dwarf::line_table::iterator FindAddress(unsigned long addr);
+
+        bool IsInLineTable(unsigned long addr) const
         {
-            std::lock_guard<std::mutex> guard(keyMutex);
-            if (index < this->size()) {
-                return this->at(index);
+            auto it = rangeMap.upper_bound(addr);
+            if (it == rangeMap.cbegin()) {
+                return false;
             }
-            Key key = {};
-            return key;
+            it--;
+            const unsigned long *highAddr = &it->second;
+            return addr <= *highAddr;
         }
 
     private:
-        std::unordered_map<Key, unsigned int> keyMap;
-        std::mutex keyMutex;
+        std::map<unsigned long, unsigned long> rangeMap;
+        bool loadLineTable = false;
+        DWARF_TABEL lineTab;
+        DWARF_CU cu;
     };
+
+    class MyElf
+    {
+    public:
+        explicit MyElf(const ELF &elf) : elf(elf){};
+        ELF_SYM *FindSymbol(unsigned long addr);
+        void Emplace(unsigned long addr, const ELF_SYM &elfSym);
+        bool IsExecFile();
+
+    private:
+        ELF elf;
+        std::map<unsigned long, ELF_SYM> symTab;
+    };
+
+    class MyDwarf
+    {
+    public:
+        MyDwarf(const DWARF &dw, const std::string &moduleName) : dw(dw), moduleName(moduleName){};
+        void FindLine(unsigned long addr, struct DwarfEntry &dwarfEntry);
+        void LoadDwarf(unsigned long addr, struct DwarfEntry &dwarfEntry);
+
+        bool IsLoad() const 
+        {
+            return hasLoad;
+        }
+
+        std::string GetModule() const
+        {
+            return this->moduleName;
+        }
+
+    private:
+        DWARF dw;
+        std::string moduleName;
+        volatile bool hasLoad = false;
+        volatile int loadNum = 0;
+        std::vector<RangeL> rangeList;
+        std::vector<dwarf::compilation_unit> cuList;
+    };
+
+    using SYMBOL_MAP = std::unordered_map<pid_t, std::unordered_map<__u64, struct Symbol *>>;
+    using STACK_MAP = std::unordered_map<pid_t, std::unordered_map<size_t, struct Stack*>>;
+    using MODULE_MAP = std::unordered_map<pid_t, std::vector<std::shared_ptr<ModuleMap>>>;
+    using DWARF_MAP = std::unordered_map<std::string, MyDwarf>;
+    using ELF_MAP = std::unordered_map<std::string, MyElf>;
 
     class SymbolUtils final {
     public:
@@ -126,10 +172,8 @@ namespace KUNPENG_SYM {
         struct Symbol* MapCodeAddr(const char* moduleName, unsigned long startAddr);
 
     private:
-        void SearchElfInfo(
-                std::vector<ElfMap>& elfVec, unsigned long addr, struct Symbol* symbol, unsigned long* offset);
-        void SearchDwarfInfo(
-                std::vector<unsigned long>& addrVet, DWARF_DATA_MAP& dwalfVec, unsigned long addr, struct Symbol* symbol);
+        void SearchElfInfo(MyElf &myElf, unsigned long addr, struct Symbol *symbol, unsigned long *offset);
+        void SearchDwarfInfo(MyDwarf &myDwarf, unsigned long addr, struct Symbol *symbol);
         struct Symbol* MapKernelAddr(unsigned long addr);
         struct Symbol* MapUserAddr(int pid, unsigned long addr);
         struct Symbol* MapUserCodeAddr(const std::string& moduleName, unsigned long addr);
@@ -142,11 +186,9 @@ namespace KUNPENG_SYM {
         STACK_MAP stackMap{};
         MODULE_MAP moduleMap{};
         DWARF_MAP dwarfMap{};
-        DWARF_VET_MAP dwarfVetMap{};
         ELF_MAP elfMap{};
         bool isCleared = false;
         std::vector<std::shared_ptr<Symbol>> ksymArray;
-        SymbolVet<std::string> dwarfFileArray;
         SymbolResolve()
         {}
 
@@ -159,6 +201,7 @@ namespace KUNPENG_SYM {
         SafeHandler<std::string> dwarfSafeHandler;
         SafeHandler<std::string> elfSafeHandler;
         SafeHandler<int> symSafeHandler;
+        SafeHandler<std::string> dwarfLoadHandler;
         static std::mutex kernelMutex;
         static SymbolResolve* instance;
         static std::mutex mutex;
