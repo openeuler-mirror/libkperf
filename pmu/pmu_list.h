@@ -111,7 +111,7 @@ private:
     int PrepareProcTopoList(PmuTaskAttr* pmuTaskAttrHead, std::vector<ProcPtr>& procTopoList) const;
     int CheckRlimit(const unsigned fdNum);
     static void AggregateData(const std::vector<PmuData>& evData, std::vector<PmuData>& newEvData);
-    void AggregateUncoreData(const unsigned pd, const std::vector<PmuData> &evData, std::vector<PmuData> &newEvData);
+    void PmuList::AggregateUncoreData(const unsigned pd, const vector<PmuData>& evData, vector<PmuData>& newEvData)
     std::vector<PmuData>& GetPreviousData(const unsigned pd);
 
     static std::mutex pmuListMtx;
