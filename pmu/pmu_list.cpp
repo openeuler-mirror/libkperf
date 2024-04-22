@@ -229,7 +229,7 @@ namespace KUNPENG_PMU {
         EraseDataList(pd);
         RemoveEpollFd(pd);
         EraseSpeCpu(pd);
-        EraseParentEventMap()
+        EraseParentEventMap();
         SymResolverDestroy();
     }
 
