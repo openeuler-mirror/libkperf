@@ -34,6 +34,8 @@
 using namespace KUNPENG_SYM;
 
 static pid_t demoPid;
+static const char* SELECT_FUNC = "getitimer";
+
 class TestLibSym : public testing::Test {
 public:
     static std::string GetExePath()
@@ -55,6 +57,8 @@ public:
             execvp(exePath.c_str(), dummy);
             _exit(errno);
         }
+        // wait for child processor start 
+        sleep(1);
         std::cout << "exe pid: " << demoPid << std::endl;
     }
 
@@ -118,7 +122,7 @@ struct FuncSym {
 
 std::string GetPthreadSoPath(int pid)
 {
-    std::string cmd = "cat /proc/" + std::to_string(pid) + "/maps | grep libpthread";
+    std::string cmd = "cat /proc/" + std::to_string(pid) + "/maps | grep libc";
     FILE *pipe = popen(cmd.c_str(), "r");
     int bufferLen = 128;
     char buffer[bufferLen];
@@ -257,11 +261,10 @@ TEST(symbol, record_kernel_success)
     EXPECT_TRUE(ret == 0);
 }
 
-/** For root users, we suppose to have any access of the current running process */
-TEST(symbol, record_user_module_root_error)
+TEST(symbol, record_user_module_pid_not_exist)
 {
     SymResolverInit();
-    int ret = SymResolverRecordModule(1);
+    int ret = SymResolverRecordModule(0xffff);
     EXPECT_TRUE(ret == LIBSYM_ERR_OPEN_FILE_FAILED);
 }
 
@@ -490,7 +493,7 @@ TEST_F(TestLibSym, map_asm_code_so)
     std::vector<FuncSym> funcVets = Readelf(fileName);
     FuncSym select = {0, 0, ""};
     for (auto symFunc : funcVets) {
-        if (strstr(symFunc.name.c_str(), "pthread_mutexattr_setrobu") != nullptr) {
+        if (strstr(symFunc.name.c_str(), SELECT_FUNC) != nullptr) {
             select = symFunc;
             break;
         }
@@ -519,7 +522,7 @@ TEST_F(TestLibSym, get_src_code_so)
     std::vector<FuncSym> funcVets = Readelf(fileName);
     FuncSym select = {0, 0, ""};
     for (auto symFunc : funcVets) {
-        if (strstr(symFunc.name.c_str(), "pthread_mutexattr_setrobu") != nullptr) {
+        if (strstr(symFunc.name.c_str(), SELECT_FUNC) != nullptr) {
             select = symFunc;
             break;
         }
