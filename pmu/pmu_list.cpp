@@ -381,7 +381,34 @@ namespace KUNPENG_PMU {
         }
     }
 
-    std::vector<PmuData>& PmuList::ExchangeToUserData(const unsigned pd)
+    void PmuList::AggregateUncoreData(const unsigned pd, const vector<PmuData>& evData, vector<PmuData>& newEvData)
+    {
+        // One count for same parent according to parentEventMap.
+        auto parentMap = parentEventMap.at(pd);
+        unordered_map<string, PmuData> dataMap;
+        for (auto& pmuData : evData) {
+            auto parentName = parentMap.at(pmuData.evt);
+            if (strcmp(parentName, pmuData.evt) == 0) {
+                // event was not split
+                newEvData.emplace_back(pmuData);
+                continue;
+            }
+            if (dataMap.find(parentName) == dataMap.end()) {
+                // split uncore event which not recorded in dataMap yet
+                dataMap[parentName] = pmuData;
+                dataMap[parentName].evt = parentMap.at(pmuData.evt);
+                dataMap[parentName].cpu = 0;
+                dataMap[parentName].cpuTopo = nullptr;
+            } else {
+                dataMap.at(parentMap.at(pmuData.evt)).count += pmuData.count;
+            }
+        }
+        for (const auto& pair : dataMap) {
+            newEvData.emplace_back(pair.second);
+        }
+    }
+
+    vector<PmuData>& PmuList::ExchangeToUserData(const unsigned pd)
     {
         lock_guard<mutex> lg(dataListMtx);
         if (dataList.count(pd) == 0) {
@@ -391,7 +418,15 @@ namespace KUNPENG_PMU {
         auto& evData = dataList[pd];
         auto pData = evData.data.data();
         if (GetTaskType(pd) == COUNTING) {
-            auto inserted = userDataList.emplace(pData, move(evData));
+            std::vector<PmuData> newPmuData;
+            AggregateUncoreData(pd, evData.data, newPmuData);
+            EventData newEvData = {
+                    .pd = pd,
+                    .collectType = COUNTING,
+                    .data = newPmuData,
+            };
+
+            auto inserted = userDataList.emplace(newEvData.data.data(), move(newEvData));
             dataList.erase(pd);
             return inserted.first->second.data;
         } else {

@@ -35,7 +35,7 @@ using namespace std;
 
 static unordered_map<unsigned, bool> runningStatus;
 static SafeHandler<unsigned> pdMutex;
-static const int NINE = 9;
+static pair<unsigned, const char**> uncoreEventPair;
 
 struct PmuTaskAttr* AssignPmuTaskParam(PmuTaskType collectType, struct PmuAttr *attr);
 
@@ -127,14 +127,11 @@ void AppendChildEvents(char* evt, unordered_map<string, char*>& eventSplitMap)
     auto findSlash = strName.find('/');
     string devName = strName.substr(0, findSlash);
     string evtName = strName.substr(devName.size(), strName.size() - devName.size() + 1);
-    for (int i = 0; i <= NINE; i++) {
-        string typePath = "/sys/devices/";
-        string childName = devName;
-        typePath += devName + to_string(i) + "/type";
-        string realPath = GetRealPath(typePath);
-        childName += to_string(i) + evtName;
-        if (IsValidPath(realPath)) {
-            eventSplitMap.emplace(childName, evt);
+    auto numEvt = uncoreEventPair.first;
+    auto uncoreEventList = uncoreEventPair.second;
+    for (int i = 0; i < numEvt; ++i) {
+        if (std::strncmp(uncoreEventList[i], devName.c_str(), devName.length()) == 0) {
+            eventSplitMap.emplace(uncoreEventList[i], evt);
         }
     }
 }
@@ -144,6 +141,9 @@ static void SplitUncoreEvent(struct PmuAttr *attr, unordered_map<string, char*> 
     char** evtList = attr->evtList;
     unsigned size = attr->numEvt;
     int newSize = 0;
+    unsigned numEvt;
+    auto eventList = PmuEventList(UNCORE_EVENT, &numEvt);
+    uncoreEventPair = make_pair(numEvt, eventList);
     for (int i = 0; i < size; ++i) {
         char* evt = evtList[i];
         char* slashPos = std::strchr(evt, '/');
