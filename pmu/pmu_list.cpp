@@ -73,13 +73,18 @@ namespace KUNPENG_PMU {
             if (err != SUCCESS) {
                 return err;
             }
-            fdNum += cpuTopoList.size(); + procTopoList.size();
+            fdNum += cpuTopoList.size() + procTopoList.size();
             std::shared_ptr<EvtList> evtList =
                     std::make_shared<EvtList>(cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt);
             InsertEvtList(pd, evtList);
             pmuTaskAttrHead = pmuTaskAttrHead->next;
         }
 
+        auto err = CheckRlimit(fdNum);
+        if (err != SUCCESS) {
+            return err;
+        }
+        
         for (auto evtList : GetEvtList(pd)) {
             auto err = evtList->Init();
             if (err != SUCCESS) {
@@ -91,10 +96,6 @@ namespace KUNPENG_PMU {
             }
         }
 
-        auto err = CheckRlimit(fdNum);
-        if (err != SUCCESS) {
-            return err;
-        }
         return SUCCESS;
     }
 

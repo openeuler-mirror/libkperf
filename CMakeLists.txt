@@ -34,6 +34,5 @@ message("TOP_DIR is ${TOP_DIR}")
 include(${CMAKE_CURRENT_LIST_DIR}/Common.cmake)
 add_subdirectory(symbol)
 add_subdirectory(pmu)
-add_subdirectory(test)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS True)

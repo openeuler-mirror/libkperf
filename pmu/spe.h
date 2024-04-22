@@ -28,15 +28,9 @@
 #include "pmu_event.h"
 #include "symbol.h"
 
-#ifndef __aarch64__
-#define MB()
-#define RMB()
-#define WMB()
-#else
 #define MB() asm volatile("dsb sy")
 #define RMB() asm volatile("dsb ld")
 #define WMB() asm volatile("dsb st")
-#endif
 
 #define EVENT_EXCEPTION_GEN 0x1
 #define EVENT_RETIRED 0x2
