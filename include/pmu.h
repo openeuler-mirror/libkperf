@@ -164,9 +164,10 @@ int PmuDisable(int pd);
  * Collect <milliseconds> milliseconds. If <milliseconds> is equal to - 1 and the PID list is not empty, the collection
  * is performed until all processes are complete.
  * @param milliseconds
+ * @param interval internal collect period. Unit: millisecond. Must be larger than or equal to 100.
  * @return int
  */
-int PmuCollect(int pd, int milliseconds);
+int PmuCollect(int pd, int milliseconds, unsigned interval);
 
 /**
  * @brief

@@ -132,6 +132,7 @@ protected:
     static const unsigned numEvt = 1;
     static const string expectFilename;
     static const unsigned expectLine = 17;
+    static const unsigned collectInterval = 100;
 
     int *cpuList = nullptr;
     char *evtList[numEvt] = {"cycles"};
@@ -157,7 +158,7 @@ TEST_F(TestAPI, SampleCollectSuccess)
 {
     auto attr = GetPmuAttribute();
     pd = PmuOpen(SAMPLING, &attr);
-    int ret = PmuCollect(pd, 10);
+    int ret = PmuCollect(pd, 10, collectInterval);
     ASSERT_TRUE(ret == SUCCESS);
 }
 
@@ -165,7 +166,7 @@ TEST_F(TestAPI, SampleReadSuccess)
 {
     auto attr = GetPmuAttribute();
     pd = PmuOpen(SAMPLING, &attr);
-    int ret = PmuCollect(pd, 1000);
+    int ret = PmuCollect(pd, 1000, collectInterval);
     int len = PmuRead(pd, &data);
     EXPECT_TRUE(data != nullptr);
     ASSERT_TRUE(HasExpectSource(data, len));
@@ -183,7 +184,7 @@ TEST_F(TestAPI, SpeCollectSuccess)
     auto attr = GetSpeAttribute();
     pd = PmuOpen(SPE_SAMPLING, &attr);
     ASSERT_TRUE(pd != -1);
-    int ret = PmuCollect(pd, 10);
+    int ret = PmuCollect(pd, 10, collectInterval);
     ASSERT_TRUE(ret == SUCCESS);
 }
 
@@ -191,7 +192,7 @@ TEST_F(TestAPI, SpeReadSuccess)
 {
     auto attr = GetSpeAttribute();
     pd = PmuOpen(SPE_SAMPLING, &attr);
-    int ret = PmuCollect(pd, 1000);
+    int ret = PmuCollect(pd, 1000, collectInterval);
     ASSERT_TRUE(pd != -1);
     int len = PmuRead(pd, &data);
     EXPECT_TRUE(data != nullptr);
@@ -248,7 +249,7 @@ TEST_F(TestAPI, SampleCollectBadEvt)
 
 TEST_F(TestAPI, SampleCollectBadPd)
 {
-    auto ret = PmuCollect(3, 1000);
+    auto ret = PmuCollect(3, 1000, collectInterval);
     ASSERT_EQ(Perrorno(), LIBPERF_ERR_INVALID_PD);
 }
 
@@ -269,7 +270,7 @@ TEST_F(TestAPI, SampleSystem)
     attr.pidList = nullptr;
     attr.numPid = 0;
     pd = PmuOpen(SAMPLING, &attr);
-    int ret = PmuCollect(pd, 100);
+    int ret = PmuCollect(pd, 100, collectInterval);
     int len = PmuRead(pd, &data);
     EXPECT_TRUE(data != nullptr);
     ASSERT_TRUE(HasExpectSource(data, len));
@@ -282,7 +283,7 @@ TEST_F(TestAPI, SpeSystem)
     attr.numPid = 0;
     pd = PmuOpen(SPE_SAMPLING, &attr);
     ASSERT_TRUE(pd != -1);
-    int ret = PmuCollect(pd, 1000);
+    int ret = PmuCollect(pd, 1000, collectInterval);
     int len = PmuRead(pd, &data);
     EXPECT_TRUE(data != nullptr);
     ASSERT_TRUE(HasExpectSymbol(data, len));
@@ -300,7 +301,7 @@ TEST_F(TestAPI, StopSuccess)
     pd = PmuOpen(SAMPLING, &attr);
     thread th(Stop, pd);
     auto start = GetCurrentTime();
-    int ret = PmuCollect(pd, 1000 * 10);
+    int ret = PmuCollect(pd, 1000 * 10, collectInterval);
     auto end = GetCurrentTime();
     th.join();
     ASSERT_LE(end - start, 5000);
@@ -318,7 +319,7 @@ TEST_F(TestAPI, CollectInvalidTime)
 {
     auto attr = GetPmuAttribute();
     pd = PmuOpen(SAMPLING, &attr);
-    int ret = PmuCollect(pd, -2);
+    int ret = PmuCollect(pd, -2, collectInterval);
     ASSERT_EQ(Perrorno(), LIBPERF_ERR_INVALID_TIME);
 }
 

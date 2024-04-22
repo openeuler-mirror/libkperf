@@ -249,9 +249,8 @@ int PmuAppendData(struct PmuData *fromData, struct PmuData **toData)
     return toLen;
 }
 
-static int DoCollectCounting(int pd, int milliseconds)
+static int DoCollectCounting(int pd, int milliseconds, unsigned collectInterval)
 {
-    constexpr int collectInterval = 100;
     constexpr int usecPerMilli = 1000;
     // Collect every <collectInterval> milliseconds,
     // and read data from ring buffer.
@@ -284,9 +283,8 @@ static int DoCollectCounting(int pd, int milliseconds)
     return SUCCESS;
 }
 
-static int DoCollectNonCounting(int pd, int milliseconds)
+static int DoCollectNonCounting(int pd, int milliseconds, unsigned collectInterval)
 {
-    constexpr int collectInterval = 100;
     constexpr int usecPerMilli = 1000;
     // Collect every <collectInterval> milliseconds,
     // and read data from ring buffer.
@@ -325,15 +323,15 @@ static int DoCollectNonCounting(int pd, int milliseconds)
     return SUCCESS;
 }
 
-static int DoCollect(int pd, int milliseconds)
+static int DoCollect(int pd, int milliseconds, unsigned interval)
 {
     if (PmuList::GetInstance()->GetTaskType(pd) == COUNTING) {
-        return DoCollectCounting(pd, milliseconds);
+        return DoCollectCounting(pd, milliseconds, interval);
     }
-    return DoCollectNonCounting(pd, milliseconds);
+    return DoCollectNonCounting(pd, milliseconds, interval);
 }
 
-int PmuCollect(int pd, int milliseconds)
+int PmuCollect(int pd, int milliseconds, unsigned interval)
 {
     int err = SUCCESS;
     string errMsg = "";
@@ -346,11 +344,15 @@ int PmuCollect(int pd, int milliseconds)
             New(LIBPERF_ERR_INVALID_TIME);
             return -1;
         }
+        if (interval < 100) {
+            New(LIBPERF_ERR_INVALID_TIME);
+            return -1;
+        }
 
         pdMutex.tryLock(pd);
         runningStatus[pd] = true;
         pdMutex.releaseLock(pd);
-        err = DoCollect(pd, milliseconds);
+        err = DoCollect(pd, milliseconds, interval);
     } catch (std::bad_alloc&) {
         err = COMMON_ERR_NOMEM;
     } catch (exception& ex) {
