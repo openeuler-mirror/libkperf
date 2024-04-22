@@ -40,6 +40,25 @@ using namespace KUNPENG_PMU;
 static constexpr int MAX_STRING_LEN = 2048;
 static CHIP_TYPE g_chipType = UNDEFINED_TYPE;
 
+static struct PmuEvt* GetRawEvent(const char* pmuName, int collectType)
+{
+    // check raw event name like 'r11' or 'r60ea' is valid or not
+    const char *numStr = pmuName + 1;
+    char *endPtr;
+    __u64 config = strtol(numStr, &endPtr, 16);
+    if (*endPtr != '\0') {
+        return nullptr;
+    }
+    struct PmuEvt* pmuEvtPtr = new PmuEvt;
+    pmuEvtPtr->config = config;
+    pmuEvtPtr->name = pmuName;
+    pmuEvtPtr->type = PERF_TYPE_RAW;
+    pmuEvtPtr->pmuType = CORE_TYPE;
+    pmuEvtPtr->collectType = collectType;
+    pmuEvtPtr->cpumask = -1;
+    return std::move(pmuEvtPtr);
+}
+
 static struct PmuEvt* ConstructPmuEvtFromCore(KUNPENG_PMU::CoreConfig config, int collectType)
 {
     struct PmuEvt* pmuEvtPtr = new PmuEvt;
@@ -87,6 +106,7 @@ static int GetSpeType(void)
 using EvtRetriever = std::function<struct PmuEvt*(const char*, int)>;
 
 static const std::unordered_map<int, EvtRetriever> EvtMap{
+        {KUNPENG_PMU::RAW_TYPE, GetRawEvent},
         {KUNPENG_PMU::CORE_TYPE, GetCoreEvent},
         {KUNPENG_PMU::UNCORE_TYPE, GetUncoreEvent},
         {KUNPENG_PMU::TRACE_TYPE, GetKernelTraceEvent},
@@ -94,6 +114,10 @@ static const std::unordered_map<int, EvtRetriever> EvtMap{
 
 static int GetEventType(const char *pmuName, string &evtName)
 {
+    if (pmuName[0] == 'r') {
+        evtName = pmuName;
+        return RAW_TYPE;
+    }
     auto coreMap = CORE_EVENT_MAP.at(g_chipType);
     auto findCoreEvent = coreMap.find(pmuName);
     if (findCoreEvent != coreMap.end()) {
@@ -148,7 +172,7 @@ struct PmuEvt* PfmGetPmuEvent(const char* pmuName, int collectType)
 struct PmuEvt* PfmGetSpeEvent(
         unsigned long dataFilter, unsigned long eventFilter, unsigned long minLatency, int collectType)
 {
-    PmuEvt* evt = new PmuEvt{0};
+    auto* evt = new PmuEvt{0};
     evt->collectType = collectType;
     int type = GetSpeType();
     if (type == -1) {
@@ -165,7 +189,5 @@ struct PmuEvt* PfmGetSpeEvent(
 
 void PmuEvtFree(PmuEvt *evt)
 {
-    if (evt != nullptr) {
-        delete evt;
-    }
+    delete evt;
 }

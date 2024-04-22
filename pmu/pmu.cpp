@@ -16,6 +16,8 @@
 #include <iostream>
 #include <unistd.h>
 #include <linux/perf_event.h>
+#include <cstring>
+#include "common.h"
 #include "pfm.h"
 #include "pfm_event.h"
 #include "pmu_event.h"
@@ -33,6 +35,7 @@ using namespace std;
 
 static unordered_map<unsigned, bool> runningStatus;
 static SafeHandler<unsigned> pdMutex;
+static const int NINE = 9;
 
 struct PmuTaskAttr* AssignPmuTaskParam(PmuTaskType collectType, struct PmuAttr *attr);
 
@@ -118,6 +121,54 @@ static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
     return SUCCESS;
 }
 
+void AppendChildEvents(char* evt, unordered_map<string, char*>& eventSplitMap)
+{
+    string strName(evt);
+    auto findSlash = strName.find('/');
+    string devName = strName.substr(0, findSlash);
+    string evtName = strName.substr(devName.size(), strName.size() - devName.size() + 1);
+    for (int i = 0; i <= NINE; i++) {
+        string typePath = "/sys/devices/";
+        string childName = devName;
+        typePath += devName + to_string(i) + "/type";
+        string realPath = GetRealPath(typePath);
+        childName += to_string(i) + evtName;
+        if (IsValidPath(realPath)) {
+            eventSplitMap.emplace(childName, evt);
+        }
+    }
+}
+
+static void SplitUncoreEvent(struct PmuAttr *attr, unordered_map<string, char*> &eventSplitMap)
+{
+    char** evtList = attr->evtList;
+    unsigned size = attr->numEvt;
+    int newSize = 0;
+    for (int i = 0; i < size; ++i) {
+        char* evt = evtList[i];
+        char* slashPos = std::strchr(evt, '/');
+        if (slashPos != nullptr && slashPos != evt) {
+            char* prevChar = slashPos - 1;
+            if (!std::isdigit(*prevChar)) {
+                // 添加子事件
+                AppendChildEvents(evt, eventSplitMap);
+                continue;
+            }
+        }
+        eventSplitMap.emplace(evt, evt);
+        newSize++;
+    }
+}
+
+static unsigned GenerateSplitList(unordered_map<string, char*>& eventSplitMap, vector<char*> &newEvtlist)
+{
+    // append child event
+    for (auto& event : eventSplitMap) {
+        newEvtlist.push_back(const_cast<char*>(event.first.c_str()));
+    }
+    return newEvtlist.size();
+}
+
 static bool PdValid(const int &pd)
 {
     return PmuList::GetInstance()->IsPdAlive(pd);
@@ -143,6 +194,12 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
         if (err != SUCCESS) {
             return -1;
         }
+        unordered_map<string, char*> eventSplitMap;
+        SplitUncoreEvent(attr, eventSplitMap);
+        auto previousEventList = make_pair(attr->numEvt, attr->evtList);
+        vector<char*> newEvtlist;
+        attr->numEvt = GenerateSplitList(eventSplitMap, newEvtlist);
+        attr->evtList = newEvtlist.data();
 
         auto pTaskAttr = AssignPmuTaskParam(collectType, attr);
         if (pTaskAttr == nullptr) {
@@ -161,6 +218,9 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
             PmuList::GetInstance()->Close(pd);
             pd = -1;
         }
+        // store eventList provided by user and the mapping relationship between the user eventList and the split
+        // eventList into buff
+        KUNPENG_PMU::PmuList::GetInstance()->StoreSplitData(pd, previousEventList, eventSplitMap);
         New(err);
         return pd;
     } catch (std::bad_alloc&) {
