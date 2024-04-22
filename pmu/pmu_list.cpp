@@ -32,6 +32,7 @@ namespace KUNPENG_PMU {
 // Initializing pmu list singleton instance and global lock
     std::mutex PmuList::pmuListMtx;
     std::mutex PmuList::dataListMtx;
+    std::mutex PmuList::dataParentMtx;
 
     int PmuList::CheckRlimit(const unsigned fdNum)
     {
@@ -210,6 +211,14 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
+    void PmuList::StoreSplitData(const unsigned pd, pair<unsigned, char**> previousEventList,
+                                 unordered_map<string, char*> eventSplitMap)
+    {
+        lock_guard<mutex> lg(dataParentMtx);
+        parentEventMap.emplace(pd, move(eventSplitMap));
+        previousEventMap.emplace(pd, move(previousEventList));
+    }
+
     void PmuList::Close(const int pd)
     {
         auto evtList = GetEvtList(pd);
@@ -220,6 +229,7 @@ namespace KUNPENG_PMU {
         EraseDataList(pd);
         RemoveEpollFd(pd);
         EraseSpeCpu(pd);
+        EraseParentEventMap();
         SymResolverDestroy();
     }
 
@@ -305,6 +315,17 @@ namespace KUNPENG_PMU {
         pmuList.erase(pd);
     }
 
+    void PmuList::EraseParentEventMap()
+    {
+        lock_guard<mutex> lg(dataParentMtx);
+        for (auto& pair : parentEventMap) {
+            auto& innerMap = pair.second;
+            innerMap.clear();
+        }
+        parentEventMap.clear();
+        previousEventMap.clear();
+    }
+
     PmuList::EventData& PmuList::GetDataList(const unsigned pd)
     {
         lock_guard<mutex> lg(dataListMtx);
@@ -370,15 +391,7 @@ namespace KUNPENG_PMU {
         auto& evData = dataList[pd];
         auto pData = evData.data.data();
         if (GetTaskType(pd) == COUNTING) {
-            std::vector<PmuData> newPmuData;
-            AggregateData(evData.data, newPmuData);
-            EventData newEvData = {
-                    .pd = pd,
-                    .collectType = COUNTING,
-                    .data = newPmuData,
-            };
-
-            auto inserted = userDataList.emplace(newEvData.data.data(), move(newEvData));
+            auto inserted = userDataList.emplace(pData, move(evData));
             dataList.erase(pd);
             return inserted.first->second.data;
         } else {

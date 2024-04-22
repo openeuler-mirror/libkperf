@@ -28,6 +28,13 @@ enum PmuTaskType {
     MAX_TASK_TYPE
 };
 
+enum PmuEventType {
+    CORE_EVENT,
+    UNCORE_EVENT,
+    TRACE_EVENT,
+    ALL_EVENT
+};
+
 enum AggregateType {
     PER_SYSTEM,
     PER_CORE,
@@ -120,6 +127,23 @@ struct PmuData {
  * @return int
  */
 int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr);
+
+/**
+ * @brief
+ * Query all available event from system.
+ * @param eventType type of event chosen by user
+ * @param numEvt length of event list
+ * @return event list
+ */
+const char** PmuEventList(enum PmuEventType eventType, unsigned *numEvt);
+
+/**
+ * @brief
+ * Free eventList pointer.
+ * @param eventList event list
+ * @param numEvt length of event list
+ */
+void PmuEventListFree(const char** eventList, unsigned *numEvt);
 
 /**
  * @brief
