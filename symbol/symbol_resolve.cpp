@@ -463,7 +463,9 @@ void MyDwarf::FindLine(unsigned long addr, struct DwarfEntry &entry)
     for (auto &range : rangeList) {
         if (range.IsInLineTable(addr)) {
             range.FindLine(addr, entry);
-            return;
+            if (entry.find) {
+                return;
+            }
         }
     }
 }
@@ -488,7 +490,9 @@ void MyDwarf::LoadDwarf(unsigned long addr, DwarfEntry& entry)
         loadNum++;
         if (range.IsInLineTable(addr)) {
             range.FindLine(addr, entry);
-            return;
+            if (entry.find) {
+                return;
+            }
         }
     }
     hasLoad = true;

@@ -66,6 +66,8 @@ public:
     int NewPd();
 
     int GetHistoryData(const int pd, std::vector<PmuData>& pmuData);
+    void StoreSplitData(unsigned pd, std::pair<unsigned, char**> previousEventList,
+                        std::unordered_map<std::string, char*> eventSplitMap);
 
 private:
     using ProcPtr = std::shared_ptr<ProcTopology>;
@@ -86,6 +88,7 @@ private:
     void InsertEvtList(const unsigned pd, std::shared_ptr<EvtList> evtList);
     std::vector<std::shared_ptr<EvtList>>& GetEvtList(const unsigned pd);
     void EraseEvtList(const unsigned pd);
+    void EraseParentEventMap();
 
     EventData& GetDataList(const unsigned pd);
     void EraseDataList(const unsigned pd);
@@ -108,10 +111,12 @@ private:
     int PrepareProcTopoList(PmuTaskAttr* pmuTaskAttrHead, std::vector<ProcPtr>& procTopoList) const;
     int CheckRlimit(const unsigned fdNum);
     static void AggregateData(const std::vector<PmuData>& evData, std::vector<PmuData>& newEvData);
+    void AggregateUncoreData(const unsigned pd, const std::vector<PmuData> &evData, std::vector<PmuData> &newEvData);
     std::vector<PmuData>& GetPreviousData(const unsigned pd);
 
     static std::mutex pmuListMtx;
     static std::mutex dataListMtx;
+    static std::mutex dataParentMtx;
     std::unordered_map<unsigned, std::vector<std::shared_ptr<EvtList>>> pmuList;
     // Key: pd
     // Value: PmuData List.
@@ -121,7 +126,15 @@ private:
     // Value: PmuData vector for raw pointer.
     // PmuData is stored here after user call <read>.
     std::unordered_map<PmuData*, EventData> userDataList;
-
+    // Key1: pd
+    // Key2: parent event
+    // Value: child event name list
+    // parent event name is stored here before user call <read> to aggregate event.
+    std::unordered_map<unsigned, std::unordered_map<std::string, char*>> parentEventMap;
+    // Key: pd
+    // Value: previous event list and its length
+    // previous event list is stored here before user call <read> to aggregate event.
+    std::unordered_map<unsigned, std::pair<unsigned, char**>> previousEventMap;
     // Key: pd
     // Value: epoll fd
     std::unordered_map<unsigned, int> epollList;

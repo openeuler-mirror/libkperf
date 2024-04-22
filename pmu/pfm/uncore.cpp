@@ -76,7 +76,7 @@ static int64_t GetUncoreEventConfig(const char* pmuName)
     }
     string configStr;
     evtIn >> configStr;
-    auto findEq = configStr.find("=");
+    auto findEq = configStr.find('=');
     if (findEq == string::npos) {
         return -1;
     }
