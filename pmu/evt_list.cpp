@@ -65,11 +65,11 @@ int KUNPENG_PMU::EvtList::CollectorDoTask(PerfEvtPtr collector, int task)
             return UNKNOWN_ERROR;
     }
 }
-int KUNPENG_PMU::EvtList::CollectorXYArrayDoTask(int cpuCnt, int pidCnt, std::vector<std::vector<PerfEvtPtr>>& xyArray, int task)
+int KUNPENG_PMU::EvtList::CollectorXYArrayDoTask(std::vector<std::vector<PerfEvtPtr>>& xyArray, int task)
 {
-    for (int row = 0; row < cpuCnt; row++) {
-        for (int col = 0; col < pidCnt; col++) {
-            auto err = CollectorDoTask(xyArray[row][col], task);
+    for (auto row : xyArray) {
+        for (auto evt : row) {
+            auto err = CollectorDoTask(evt, task);
             if (err != SUCCESS) {
                 return err;
             }
@@ -109,22 +109,22 @@ int KUNPENG_PMU::EvtList::Init()
 
 int KUNPENG_PMU::EvtList::Start()
 {
-    return CollectorXYArrayDoTask(this->numCpu, this->numPid, this->xyCounterArray, START);
+    return CollectorXYArrayDoTask(this->xyCounterArray, START);
 }
 
 int KUNPENG_PMU::EvtList::Enable()
 {
-    return CollectorXYArrayDoTask(this->numCpu, this->numPid, this->xyCounterArray, ENABLE);
+    return CollectorXYArrayDoTask(this->xyCounterArray, ENABLE);
 }
 
 int KUNPENG_PMU::EvtList::Stop()
 {
-    return CollectorXYArrayDoTask(this->numCpu, this->numPid, this->xyCounterArray, STOP);
+    return CollectorXYArrayDoTask(this->xyCounterArray, STOP);
 }
 
 int KUNPENG_PMU::EvtList::Close()
 {
-    auto ret = CollectorXYArrayDoTask(this->numCpu, this->numPid, this->xyCounterArray, CLOSE);
+    auto ret = CollectorXYArrayDoTask(this->xyCounterArray, CLOSE);
     if (ret != SUCCESS) {
         return ret;
     }
@@ -135,7 +135,7 @@ int KUNPENG_PMU::EvtList::Close()
 
 int KUNPENG_PMU::EvtList::Reset()
 {
-    return CollectorXYArrayDoTask(this->numCpu, this->numPid, this->xyCounterArray, RESET);
+    return CollectorXYArrayDoTask(this->xyCounterArray, RESET);
 }
 
 void KUNPENG_PMU::EvtList::FillFields(
@@ -193,7 +193,7 @@ int KUNPENG_PMU::EvtList::Read(vector<PmuData> &data, std::vector<PerfSampleIps>
 
 int KUNPENG_PMU::EvtList::Pause()
 {
-    return CollectorXYArrayDoTask(this->numCpu, this->numPid, this->xyCounterArray, PAUSE);
+    return CollectorXYArrayDoTask(this->xyCounterArray, PAUSE);
 }
 
 std::shared_ptr<KUNPENG_PMU::PerfEvt> KUNPENG_PMU::EvtList::MapPmuAttr(int cpu, int pid, PmuEvt* pmuEvent)
