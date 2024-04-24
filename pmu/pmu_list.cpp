@@ -14,6 +14,7 @@
  * performance counters in the KUNPENG_PMU namespace
  ******************************************************************************/
 #include <memory>
+#include <algorithm>
 #include <sys/resource.h>
 #include "linked_list.h"
 #include "cpu_map.h"
@@ -381,6 +382,12 @@ namespace KUNPENG_PMU {
         }
     }
 
+
+    bool comparePmuData(const PmuData& data1, const PmuData& data2)
+    {
+        return strcmp(data1.evt, data2.evt) < 0;
+    }
+
     void PmuList::AggregateUncoreData(const unsigned pd, const vector<PmuData>& evData, vector<PmuData>& newEvData)
     {
         // One count for same parent according to parentEventMap.
@@ -406,6 +413,7 @@ namespace KUNPENG_PMU {
         for (const auto& pair : dataMap) {
             newEvData.emplace_back(pair.second);
         }
+        std::sort(newEvData.begin(), newEvData.end(), comparePmuData);
     }
 
     vector<PmuData>& PmuList::ExchangeToUserData(const unsigned pd)
