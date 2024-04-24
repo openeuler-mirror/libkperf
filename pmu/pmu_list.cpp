@@ -14,6 +14,7 @@
  * performance counters in the KUNPENG_PMU namespace
  ******************************************************************************/
 #include <memory>
+#include <algorithm>
 #include <sys/resource.h>
 #include "linked_list.h"
 #include "cpu_map.h"
