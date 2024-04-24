@@ -356,11 +356,13 @@ TEST_F(TestAPI, NoDataBeforeEnable)
     auto attr = GetPmuAttribute();
     int pd = PmuOpen(SAMPLING, &attr);
     PmuData *data = nullptr;
+    // No data before PmuEnable.
     int len = PmuRead(pd, &data);
     ASSERT_EQ(len, 0);
     int err = PmuEnable(pd);
     ASSERT_EQ(err, SUCCESS);
-    usleep(1000);
+    sleep(1);
+    // Has data after PmuEnable.
     len = PmuRead(pd, &data);
     ASSERT_GT(len, 0);
     PmuDisable(pd);
@@ -372,12 +374,73 @@ TEST_F(TestAPI, NoDataAfterDisable)
     int pd = PmuOpen(SAMPLING, &attr);
     int err = PmuEnable(pd);
     ASSERT_EQ(err, SUCCESS);
-    usleep(1000);
-    PmuData *data = nullptr;
-    int len = PmuRead(pd, &data);
-    ASSERT_GT(len, 0);
+    sleep(1);
     err = PmuDisable(pd);
     ASSERT_EQ(err, SUCCESS);
+    PmuData *data = nullptr;
+    // Read data from buffer.
+    int len = PmuRead(pd, &data);
+    ASSERT_GT(len, 0);
+    // No data after PmuDisable.
     len = PmuRead(pd, &data);
     ASSERT_EQ(len, 0);
+}
+
+TEST_F(TestAPI, AppendPmuDataToNullArray)
+{
+    auto attr = GetPmuAttribute();
+    int pd = PmuOpen(SAMPLING, &attr);
+    int err = PmuEnable(pd);
+    ASSERT_EQ(err, SUCCESS);
+
+    usleep(1000 * 100);
+    // Declare a null array.
+    PmuData *total = nullptr;
+    PmuData *data = nullptr;
+    // Append pmu data to null array, and they will have the same length.
+    int len1 = PmuRead(pd, &data);
+    int totalLen = PmuAppendData(data, &total);
+    ASSERT_EQ(len1, totalLen);
+    PmuDataFree(data);
+
+    usleep(1000 * 100);
+    // Get another pmu data array.
+    int len2 = PmuRead(pd, &data);
+    // Append to <total> again.
+    totalLen = PmuAppendData(data, &total);
+    ASSERT_EQ(len1 + len2, totalLen);
+    PmuDataFree(data);
+    PmuDataFree(total);
+}
+
+
+TEST_F(TestAPI, AppendPmuDataToExistArray)
+{
+    auto attr = GetPmuAttribute();
+    int pd = PmuOpen(COUNTING, &attr);
+    int err = PmuEnable(pd);
+    ASSERT_EQ(err, SUCCESS);
+
+    usleep(1000 * 100);
+    // Get one pmu data array.
+    PmuData *data1 = nullptr;
+    int len1 = PmuRead(pd, &data1);
+
+    usleep(1000 * 100);
+    // Get another pmu data array.
+    PmuData *data2 = nullptr;
+    int len2 = PmuRead(pd, &data2);
+    // Append <data2> to <data1>;
+    int totalLen = PmuAppendData(data2, &data1);
+    // The total length is sum of two data length.
+    ASSERT_EQ(len1 + len2, totalLen);
+
+    // Check data of the second part of <data1>,
+    // which equals to <data2>.
+    for (int i = 0; i < len2; ++i) {
+	ASSERT_EQ(data1[i + len1].count, data2[i].count);
+    }
+
+    PmuDataFree(data1);
+    PmuDataFree(data2);
 }

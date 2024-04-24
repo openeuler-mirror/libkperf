@@ -161,3 +161,24 @@ TEST_F(TestPMU, PmuProcCollectSubProc)
     ASSERT_TRUE(data != nullptr);
     ASSERT_TRUE(FoundAllChildren(data, len, appPid));
 }
+
+TEST_F(TestPMU, NoDataAfterDisable)
+{
+    // Start a 12-thread process.
+    // Threads are created on startup.
+    appPid = RunTestApp("test_12threads");
+    pid_t pidList[1] = {appPid};
+    auto attr = GetProcAttribute(pidList, 1);
+    auto pd = PmuOpen(SAMPLING, &attr);
+    PmuEnable(pd);
+    sleep(1);
+    // Disable sampling.
+    PmuDisable(pd);
+    // Read data for current sampling.
+    int len = PmuRead(pd, &data);
+    ASSERT_GT(len, 0);
+    // Read again and get no data.
+    len = PmuRead(pd, &data);
+    ASSERT_EQ(len, 0);
+}
+

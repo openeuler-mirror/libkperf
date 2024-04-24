@@ -32,10 +32,39 @@ public:
     }
 
 protected:
+    map<string, uint64_t> CollectProcessEvent(const string &caseName, const vector<string> &evtName)
+    {
+        appPid = RunTestApp(caseName);
+        int pidList[1] = {appPid};
+        char **evtList = new char *[evtName.size()];
+        for (int i = 0; i < evtName.size(); ++i)
+        {
+            evtList[i] = const_cast<char *>(evtName[i].c_str());
+        }
+        PmuAttr attr = {0};
+        attr.pidList = pidList;
+        attr.numPid = 1;
+        attr.evtList = evtList;
+        attr.numEvt = evtName.size();
+
+        pd = PmuOpen(COUNTING, &attr);
+        PmuCollect(pd, 4000, collectInterval);
+        KillApp(appPid);
+        int len = PmuRead(pd, &data);
+        map<string, uint64_t> ret;
+        for (int i = 0; i < len; ++i)
+        {
+            ret[data[i].evt] += data[i].count;
+        }
+        delete[] evtList;
+        return ret;
+    }
+
     int pd;
     pid_t appPid = 0;
     PmuData *data = nullptr;
     static const unsigned collectInterval = 100;
+    static constexpr float relativeErr = 0.01;
 };
 
 TEST_F(TestCount, CountProcess)
@@ -158,4 +187,66 @@ TEST_F(TestCount, PwritevFile)
     int len = PmuRead(pd, &data);
     ASSERT_EQ(len, 1);
     ASSERT_GT(data->count, 0);
+}
+
+TEST_F(TestCount, BranchMissRatio)
+{
+    // Check branch miss ratio of two cases.
+    // One case has bad condition and one case has a predictable condition.
+    string brMis = "branch-load-misses";
+    string brPred = "branch-loads";
+    vector<string> branchEvts = {brMis, brPred};
+    auto evtMap = CollectProcessEvent("bad_branch_pred", branchEvts);
+    auto missRatio1 = (double)evtMap[brMis]/evtMap[brPred];
+    ASSERT_LT(missRatio1, 0.2);
+    evtMap = CollectProcessEvent("good_branch_pred", branchEvts);
+    auto missRatio2 = (double)evtMap[brMis]/evtMap[brPred];
+    ASSERT_LT(missRatio2, 0.2);
+    ASSERT_GT(missRatio1, missRatio2);
+}
+
+TEST_F(TestCount, BranchMissEvents)
+{
+    // Check event count of branch-load-misses and branch-misses.
+    // They should be very close.
+    vector<string> branchEvts = {"branch-load-misses", "branch-misses", "br_mis_pred"};
+    auto evtMap = CollectProcessEvent("bad_branch_pred", branchEvts);
+    ASSERT_EQ(evtMap.size(), branchEvts.size());
+    ASSERT_NEAR(evtMap["branch-load-misses"], evtMap["branch-misses"], evtMap["branch-misses"] * relativeErr);
+    ASSERT_NEAR(evtMap["br_mis_pred"], evtMap["branch-misses"], evtMap["branch-misses"] * relativeErr);
+}
+
+TEST_F(TestCount, L1CacheMissRatio)
+{
+    // Check cache miss ratio of two cases.
+    // One case has bad locality and one case has good locality.
+    string cacheMiss = "l1d_cache_refill";
+    string cache = "l1d_cache";
+    vector<string> evts = {cacheMiss, cache};
+    auto evtMap = CollectProcessEvent("bad_cache_locality", evts);
+    ASSERT_EQ(evtMap.size(), evts.size());
+    auto missRatio1 = (double)evtMap[cacheMiss]/evtMap[cache];
+    ASSERT_GT(missRatio1, 0.01);
+    evtMap = CollectProcessEvent("good_cache_locality", evts);
+    auto missRatio2 = (double)evtMap[cacheMiss]/evtMap[cache];
+    ASSERT_LT(missRatio2, 0.01);
+    ASSERT_GT(missRatio1, missRatio2);
+}
+
+TEST_F(TestCount, LLCacheMissRatio)
+{
+    // Check last level cache miss ratio of two cases.
+    // One case has two threads in the same node, 
+    // and one case has two threads in different sockets.
+    string cacheMiss = "ll_cache_miss";
+    string cache = "ll_cache";
+    vector<string> evts = {cacheMiss, cache};
+    auto evtMap = CollectProcessEvent("cross_socket_access", evts);
+    ASSERT_EQ(evtMap.size(), evts.size());
+    auto missRatio1 = (double)evtMap[cacheMiss]/evtMap[cache];
+    ASSERT_GT(missRatio1, 0.2);
+    evtMap = CollectProcessEvent("in_node_access", evts);
+    auto missRatio2 = (double)evtMap[cacheMiss]/evtMap[cache];
+    ASSERT_LT(missRatio2, 0.01);
+    ASSERT_GT(missRatio1, missRatio2);
 }

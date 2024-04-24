@@ -489,7 +489,7 @@ int PmuRead(int pd, struct PmuData** pmuData)
     try {
         if (!PdValid(pd)) {
             New(LIBPERF_ERR_INVALID_PD);
-            return LIBPERF_ERR_INVALID_PD;
+            return -1;
         }
 
         auto& retData = KUNPENG_PMU::PmuList::GetInstance()->Read(pd);
