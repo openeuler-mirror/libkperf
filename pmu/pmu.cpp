@@ -126,13 +126,14 @@ void AppendChildEvents(char* evt, unordered_map<string, char*>& eventSplitMap)
     string strName(evt);
     auto findSlash = strName.find('/');
     string devName = strName.substr(0, findSlash);
-    string evtName = strName.substr(devName.size() + , strName.size() - 1 - devName.size() + 1);
+    string evtName = strName.substr(devName.size() + 1, strName.size() - 1 - (devName.size() + 1));
     auto numEvt = uncoreEventPair.first;
     auto uncoreEventList = uncoreEventPair.second;
     for (int i = 0; i < numEvt; ++i) {
-        if (std::strncmp(uncoreEventList[i], devName.c_str(), devName.length()) == 0 &&
-            std::strncmp(uncoreEventList[i], evtName.c_str(), evtName.length()) == 0) {
-            eventSplitMap.emplace(uncoreEventList[i], evt);
+        auto uncoreEvent = uncoreEventList[i];
+        if (strncmp(uncoreEvent, devName.c_str(), devName.length()) == 0 &&
+            strstr(uncoreEvent, evtName.c_str()) != nullptr) {
+            eventSplitMap.emplace(uncoreEvent, evt);
         }
     }
 }
