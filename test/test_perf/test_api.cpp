@@ -350,3 +350,34 @@ TEST_F(TestAPI, RaiseNumFd)
     err = RaiseNumFd(currentlim.rlim_max - 51);
     ASSERT_EQ(err, SUCCESS);
 }
+
+TEST_F(TestAPI, NoDataBeforeEnable)
+{
+    auto attr = GetPmuAttribute();
+    int pd = PmuOpen(SAMPLING, &attr);
+    PmuData *data = nullptr;
+    int len = PmuRead(pd, &data);
+    ASSERT_EQ(len, 0);
+    int err = PmuEnable(pd);
+    ASSERT_EQ(err, SUCCESS);
+    usleep(1000);
+    len = PmuRead(pd, &data);
+    ASSERT_GT(len, 0);
+    PmuDisable(pd);
+}
+
+TEST_F(TestAPI, NoDataAfterDisable)
+{
+    auto attr = GetPmuAttribute();
+    int pd = PmuOpen(SAMPLING, &attr);
+    int err = PmuEnable(pd);
+    ASSERT_EQ(err, SUCCESS);
+    usleep(1000);
+    PmuData *data = nullptr;
+    int len = PmuRead(pd, &data);
+    ASSERT_GT(len, 0);
+    err = PmuDisable(pd);
+    ASSERT_EQ(err, SUCCESS);
+    len = PmuRead(pd, &data);
+    ASSERT_EQ(len, 0);
+}
