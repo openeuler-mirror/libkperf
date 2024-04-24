@@ -354,6 +354,13 @@ bool SymbolUtils::IsNumber(const std::string& str)
     return true;
 }
 
+void SymbolUtils::StrCpy(char* dst, int dstLen, const char* src)
+{
+    int size = strlen(src) > dstLen ? dstLen + 1 : strlen(src) + 1;
+    memcpy(dst, src, size);
+    dst[dstLen] = '\0';
+}
+
 bool MyElf::IsExecFile()
 {
     return elf.get_hdr().type == elf::et::exec;
@@ -737,12 +744,12 @@ void SymbolResolve::SearchElfInfo(MyElf& myElf, unsigned long addr, struct Symbo
     std::string symName = elfSym->get_name();
     char *name = CppNamedDemangle(symName.c_str());
     if (name) {
-        strcpy(symbol->symbolName, name);
+        SymbolUtils::StrCpy(symbol->symbolName, MAX_LINUX_SYMBOL_LEN, name);
         free(name);
         name = nullptr;
         return;
     }
-    strcpy(symbol->symbolName, symName.c_str());
+    SymbolUtils::StrCpy(symbol->symbolName, MAX_LINUX_SYMBOL_LEN, symName.c_str());
     return;
 }
 
