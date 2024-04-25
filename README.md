@@ -1,23 +1,80 @@
 # libkperf
 
-#### 介绍
-Implement a low overhead pmu collection library, providing abstract interfaces for counting, sampling and symbol resolve.
+#### 描述
 
-#### 软件架构
-软件架构说明
+实现了一个低开销的pmu集合库，为计数、采样和符号解析提供了抽象接口。 
 
+#### 软件构架
 
-#### 安装教程
+这个存储库包括两个模块：pmu集合和符号解析。 
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+Pmu收集模块是在syscall perf_event_open上开发的，用于启用内核pmu计数和采样，根据用户输入使用-thread或per-core模式。
+从环形缓冲区读取Pmu数据包，并将其解析为不同的结构，进行计数，采样和spe采样。
+对于采样，根据ips或pc从数据包中解析符号。每个符号包含符号名称、地址、源文件路径和行号（如果可能）。
 
-#### 使用说明
+符号解析模块是在elfin-parser上开发的，elfin-parser是一个解析elf和dwarf的库。该模块以设计良好的数据结构管理所有符号数据，以实现快速查询。 
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+#### 安装
+
+运行bash脚本:
+
+```
+sh build.sh
+```
+
+标头和库将安装到。/输出目录。 
+
+#### 指令
+
+所有pmu功能都通过以下接口完成： 
+
+- PmuOpen
+   输入pid、core id和event，打开pmu设备。
+- PmuEnable
+  开始收集。
+- PmuRead
+   读取pmu数据并返回一个列表。
+- PmuDisable
+  停止收集。
+- PmuClose
+  关闭PMU装置。
+
+以下是一些示例： 
+
+- 获取进程的pmu计数。 
+
+```
+int pidList[1];
+pidList[0] = pid;
+char *evtList[1];
+evtList[0] = "cycles";
+// Initialize event list and pid list in PmuAttr.
+// There is one event in list, named 'cycles'.
+PmuAttr attr = {0};
+attr.evtList = evtList;
+attr.numEvt = 1;
+attr.pidList = pidList;
+attr.numPid = 1;
+// Call PmuOpen and pmu descriptor <pd> is return.
+// <pd> is an identity for current task.
+int pd = PmuOpen(COUNTING, &attr);
+// Start collection.
+PmuEnable(pd);
+// Collect for one second.
+sleep(1);
+// Stop collection.
+PmuDisable(pd);
+PmuData *data = NULL;
+// Read pmu data. You can also read data before PmuDisable.
+int len = PmuRead(pd, &data);
+for (int i = 0; i < len; ++i) {
+	...
+}
+// To free PmuData, call PmuDataFree.
+PmuDataFree(data);
+// Like fd, call PmuClose if pd will not be used.
+PmuClose(pd);
+```
 
 #### 参与贡献
 
