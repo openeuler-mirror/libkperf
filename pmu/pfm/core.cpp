@@ -14,15 +14,19 @@
  ******************************************************************************/
 #include <vector>
 #include <unordered_map>
-#include <linux/perf_event.h>
-#include "pmu.h"
+#include <fstream>
+#include "pmu_event.h"
 #include "core.h"
+#include "common.h"
+
+using namespace std;
+static CHIP_TYPE g_chipType = UNDEFINED_TYPE;
 
 const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MAP{
     {
         KUNPENG_PMU::HIP_A::CORE::BRANCH_MISSES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x5,
             KUNPENG_PMU::HIP_A::CORE::BRANCH_MISSES
         }
@@ -30,7 +34,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::BUS_CYCLES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x6,
             KUNPENG_PMU::HIP_A::CORE::BUS_CYCLES
         }
@@ -38,7 +42,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::CACHE_MISSES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x3,
             KUNPENG_PMU::HIP_A::CORE::CACHE_MISSES
         }
@@ -46,7 +50,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::CACHE_REFERENCES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x2,
             KUNPENG_PMU::HIP_A::CORE::CACHE_REFERENCES
         }
@@ -54,7 +58,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::CPU_CYCLES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x11,
             KUNPENG_PMU::HIP_A::CORE::CPU_CYCLES
         }
@@ -62,7 +66,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::CYCLES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x11,
             KUNPENG_PMU::HIP_A::CORE::CYCLES
         }
@@ -70,7 +74,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::INSTRUCTIONS,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x1,
             KUNPENG_PMU::HIP_A::CORE::INSTRUCTIONS
         }
@@ -78,7 +82,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::STALLED_CYCLES_BACKEND,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x8,
             KUNPENG_PMU::HIP_A::CORE::STALLED_CYCLES_BACKEND
         }
@@ -86,7 +90,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::STALLED_CYCLES_FRONTEND,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x7,
             KUNPENG_PMU::HIP_A::CORE::STALLED_CYCLES_FRONTEND
         }
@@ -94,7 +98,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L1_DCACHE_LOAD_MISSES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x10000,
             KUNPENG_PMU::HIP_A::CORE::L1_DCACHE_LOAD_MISSES
         }
@@ -102,7 +106,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::IDLE_CYCLES_BACKEND,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x8,
             KUNPENG_PMU::HIP_A::CORE::IDLE_CYCLES_BACKEND
         }
@@ -110,7 +114,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L1_ICACHE_LOAD_MISSES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x10001,
             KUNPENG_PMU::HIP_A::CORE::L1_ICACHE_LOAD_MISSES
         }
@@ -118,7 +122,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::IDLE_CYCLES_FRONTEND,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x7,
             KUNPENG_PMU::HIP_A::CORE::IDLE_CYCLES_FRONTEND
         }
@@ -126,7 +130,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L1_ICACHE_LOADS,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x1,
             KUNPENG_PMU::HIP_A::CORE::L1_ICACHE_LOADS
         }
@@ -134,7 +138,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::LLC_LOAD_MISSES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x10002,
             KUNPENG_PMU::HIP_A::CORE::LLC_LOAD_MISSES
         }
@@ -142,7 +146,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::LLC_LOADS,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x2,
             KUNPENG_PMU::HIP_A::CORE::LLC_LOADS
         }
@@ -150,7 +154,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::BRANCH_LOAD_MISSES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x10005,
             KUNPENG_PMU::HIP_A::CORE::BRANCH_LOAD_MISSES
         }
@@ -158,7 +162,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::BRANCH_LOADS,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x5,
             KUNPENG_PMU::HIP_A::CORE::BRANCH_LOADS
         }
@@ -166,7 +170,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::DTLB_LOAD_MISSES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x10003,
             KUNPENG_PMU::HIP_A::CORE::DTLB_LOAD_MISSES
         }
@@ -174,7 +178,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::DTLB_LOADS,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x3,
             KUNPENG_PMU::HIP_A::CORE::DTLB_LOADS
         }
@@ -182,7 +186,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::ITLB_LOAD_MISSES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x10004,
             KUNPENG_PMU::HIP_A::CORE::ITLB_LOAD_MISSES
         }
@@ -190,7 +194,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::ITLB_LOADS,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x4,
             KUNPENG_PMU::HIP_A::CORE::ITLB_LOADS
         }
@@ -433,7 +437,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::BRANCH_MISSES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x5,
             KUNPENG_PMU::HIP_B::CORE::BRANCH_MISSES
         }
@@ -441,7 +445,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::CACHE_MISSES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x3,
             KUNPENG_PMU::HIP_B::CORE::CACHE_MISSES
         }
@@ -449,7 +453,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::CACHE_REFERENCES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x2,
             KUNPENG_PMU::HIP_B::CORE::CACHE_REFERENCES
         }
@@ -457,7 +461,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::CPU_CYCLES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x11,
             KUNPENG_PMU::HIP_B::CORE::CPU_CYCLES
         }
@@ -465,7 +469,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::CYCLES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x11,
             KUNPENG_PMU::HIP_B::CORE::CYCLES
         }
@@ -473,7 +477,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::INSTRUCTIONS,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x1,
             KUNPENG_PMU::HIP_B::CORE::INSTRUCTIONS
         }
@@ -481,7 +485,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::STALLED_CYCLES_BACKEND,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x8,
             KUNPENG_PMU::HIP_B::CORE::STALLED_CYCLES_BACKEND
         }
@@ -489,7 +493,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::STALLED_CYCLES_FRONTEND,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x7,
             KUNPENG_PMU::HIP_B::CORE::STALLED_CYCLES_FRONTEND
         }
@@ -497,7 +501,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::L1_DCACHE_LOAD_MISSES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x10000,
             KUNPENG_PMU::HIP_B::CORE::L1_DCACHE_LOAD_MISSES
         }
@@ -505,7 +509,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::IDLE_CYCLES_BACKEND,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x8,
             KUNPENG_PMU::HIP_B::CORE::IDLE_CYCLES_BACKEND
         }
@@ -513,7 +517,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::L1_ICACHE_LOAD_MISSES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x10001,
             KUNPENG_PMU::HIP_B::CORE::L1_ICACHE_LOAD_MISSES
         }
@@ -521,7 +525,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::IDLE_CYCLES_FRONTEND,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HARDWARE,
             0x7,
             KUNPENG_PMU::HIP_B::CORE::IDLE_CYCLES_FRONTEND
         }
@@ -529,7 +533,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::L1_ICACHE_LOADS,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x1,
             KUNPENG_PMU::HIP_B::CORE::L1_ICACHE_LOADS
         }
@@ -537,7 +541,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::LLC_LOAD_MISSES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x10002,
             KUNPENG_PMU::HIP_B::CORE::LLC_LOAD_MISSES
         }
@@ -545,7 +549,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::LLC_LOADS,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x2,
             KUNPENG_PMU::HIP_B::CORE::LLC_LOADS
         }
@@ -553,7 +557,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::BRANCH_LOAD_MISSES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x10005,
             KUNPENG_PMU::HIP_B::CORE::BRANCH_LOAD_MISSES
         }
@@ -561,7 +565,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::BRANCH_LOADS,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x5,
             KUNPENG_PMU::HIP_B::CORE::BRANCH_LOADS
         }
@@ -569,7 +573,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::DTLB_LOAD_MISSES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x10003,
             KUNPENG_PMU::HIP_B::CORE::DTLB_LOAD_MISSES
         }
@@ -577,7 +581,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::DTLB_LOADS,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x3,
             KUNPENG_PMU::HIP_B::CORE::DTLB_LOADS
         }
@@ -585,7 +589,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::ITLB_LOAD_MISSES,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x10004,
             KUNPENG_PMU::HIP_B::CORE::ITLB_LOAD_MISSES
         }
@@ -593,7 +597,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_B::CORE::ITLB_LOADS,
         {
-            PERF_TYPE_RAW,
+            PERF_TYPE_HW_CACHE,
             0x4,
             KUNPENG_PMU::HIP_B::CORE::ITLB_LOADS
         }
@@ -604,3 +608,83 @@ const KUNPENG_PMU::CORE_EVT_MAP KUNPENG_PMU::CORE_EVENT_MAP = {
     {CHIP_TYPE::HIPA, HIP_A_CORE_PMU_MAP},
     {CHIP_TYPE::HIPB, HIP_B_CORE_PMU_MAP},
 };
+
+static struct PmuEvt* ConstructPmuEvtFromCore(KUNPENG_PMU::CoreConfig config, int collectType)
+{
+    auto* pmuEvtPtr = new PmuEvt;
+    pmuEvtPtr->config = config.config;
+    pmuEvtPtr->name = config.eventName;
+    pmuEvtPtr->type = config.type;
+    pmuEvtPtr->pmuType = KUNPENG_PMU::CORE_TYPE;
+    pmuEvtPtr->collectType = collectType;
+    pmuEvtPtr->cpumask = -1;
+    return pmuEvtPtr;
+}
+
+static int64_t GetKernelCoreEventConfig(const string &name)
+{
+    string eventPath = "/sys/devices/armv8_pmuv3_0/events/" + name;
+    string realPath = GetRealPath(eventPath);
+    if (!IsValidPath(realPath)) {
+        return -1;
+    }
+    ifstream evtIn(realPath);
+    if (!evtIn.is_open()) {
+        return -1;
+    }
+    string configStr;
+    evtIn >> configStr;
+    auto findEq = configStr.find('=');
+    if (findEq == string::npos) {
+        return -1;
+    }
+    auto subStr = configStr.substr(findEq + 1, configStr.size() - findEq);
+    return stoi(subStr, nullptr, 16);
+}
+
+static int64_t GetKernelCoreEventType()
+{
+    string eventPath = "/sys/devices/armv8_pmuv3_0/type";
+    string realPath = GetRealPath(eventPath);
+    if (!IsValidPath(realPath)) {
+    return -1;
+    }
+    ifstream typeIn(realPath);
+    if (!typeIn.is_open()) {
+    return -1;
+    }
+    string typeStr;
+    typeIn >> typeStr;
+
+    return stoi(typeStr);
+}
+
+static struct PmuEvt* ConstructPmuEvtFromKernel(const char* pmuName, int collectType)
+{
+    int64_t config = GetKernelCoreEventConfig(pmuName);
+    int64_t type = GetKernelCoreEventType();
+    if (config == -1 || type == -1) {
+    return nullptr;
+    }
+    auto* pmuEvtPtr = new PmuEvt;
+    pmuEvtPtr->config = config;
+    pmuEvtPtr->name = pmuName;
+    pmuEvtPtr->type = type;
+    pmuEvtPtr->pmuType = KUNPENG_PMU::CORE_TYPE;
+    pmuEvtPtr->collectType = collectType;
+    pmuEvtPtr->cpumask = -1;
+    return pmuEvtPtr;
+}
+
+struct PmuEvt* GetCoreEvent(const char* pmuName, int collectType)
+{
+    g_chipType = GetCpuType();
+    if (g_chipType == UNDEFINED_TYPE) {
+    return nullptr;
+    }
+    auto coreMap = KUNPENG_PMU::CORE_EVENT_MAP.at(g_chipType);
+    if (coreMap.find(pmuName) != coreMap.end()) {
+    return ConstructPmuEvtFromCore(KUNPENG_PMU::CORE_EVENT_MAP.at(g_chipType).at(pmuName), collectType);
+    }
+    return ConstructPmuEvtFromKernel(pmuName, collectType);
+}

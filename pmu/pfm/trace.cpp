@@ -14,6 +14,7 @@
  ******************************************************************************/
 #include <fstream>
 #include "common.h"
+#include "pfm_event.h"
 #include "pmu_event.h"
 #include "trace.h"
 
@@ -51,6 +52,7 @@ struct PmuEvt* GetKernelTraceEvent(const char* pmuName, int collectType)
     pmuEvtPtr->config = config;
     pmuEvtPtr->name = pmuName;
     pmuEvtPtr->type = PERF_TYPE_TRACEPOINT;
+    pmuEvtPtr->pmuType = TRACE_TYPE;
     pmuEvtPtr->collectType = collectType;
     pmuEvtPtr->cpumask = -1;
     return pmuEvtPtr;

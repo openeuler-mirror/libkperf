@@ -143,7 +143,7 @@ const char** PmuEventList(enum PmuEventType eventType, unsigned *numEvt);
  * @param eventList event list
  * @param numEvt length of event list
  */
-void PmuEventListFree(const char** eventList, unsigned *numEvt);
+void PmuEventListFree();
 
 /**
  * @brief

@@ -11,9 +11,11 @@
 #include <unordered_map>
 #include <vector>
 #include <mutex>
+#include <fstream>
 #include "core.h"
 #include "pcerr.h"
 #include "pmu.h"
+#include "common.h"
 
 using namespace pcerr;
 using namespace std;
@@ -30,6 +32,7 @@ static std::mutex pmuEventListMtx;
 
 static vector<const char*> uncoreEventList;
 static vector<const char*> traceEventList;
+static vector<const char*> coreEventList;
 
 static void GetEventName(const string& devName, vector<const char*>& eventList)
 {
@@ -50,7 +53,7 @@ static void GetEventName(const string& devName, vector<const char*>& eventList)
         eventName +=  SLASH;
         char* eventNameCopy = new char[eventName.length() + 1];
         strcpy(eventNameCopy, eventName.c_str());
-        eventList.push_back(eventNameCopy);
+        eventList.emplace_back(eventNameCopy);
     }
     closedir(dir);
 }
@@ -74,7 +77,7 @@ static void GetTraceSubFolder(const string& devName, vector<const char*>& eventL
             eventName += COLON + folderName;
             char* eventNameCopy = new char[eventName.length() + 1];
             strcpy(eventNameCopy, eventName.c_str());
-            eventList.push_back(eventNameCopy);
+            eventList.emplace_back(eventNameCopy);
         }
     }
     closedir(dir);
@@ -82,20 +85,43 @@ static void GetTraceSubFolder(const string& devName, vector<const char*>& eventL
 
 const char** QueryCoreEvent(unsigned *numEvt)
 {
-    static vector<const char*> eventList;
+    if (!coreEventList.empty()) {
+        *numEvt = coreEventList.size();
+        return coreEventList.data();
+    }
     auto coreEventMap = KUNPENG_PMU::CORE_EVENT_MAP.at(GetCpuType());
     for (auto& pair : coreEventMap) {
         auto eventName = pair.first;
         char* eventNameCopy = new char[eventName.length() + 1];
         strcpy(eventNameCopy, eventName.c_str());
-        eventList.push_back(eventNameCopy);
+        coreEventList.emplace_back(eventNameCopy);
     }
-    *numEvt = eventList.size();
-    return eventList.data();
+    DIR* dir;
+    struct dirent* entry;
+    string path = "/sys/devices/armv8_pmuv3_0/events/";
+    if ((dir = opendir(path.c_str())) == nullptr) {
+        New(LIBPERF_ERR_FOLDER_PATH_INACCESSIBLE, "Could not open " + path);
+        return nullptr;
+    }
+    while ((entry = readdir(dir)) != nullptr) {
+        if (entry->d_type == DT_REG) {
+            string evtName = entry->d_name;
+            char* eventNameCopy = new char[evtName.length() + 1];
+            strcpy(eventNameCopy, evtName.c_str());
+            coreEventList.emplace_back(eventNameCopy);
+        }
+    }
+    closedir(dir);
+    *numEvt = coreEventList.size();
+    return coreEventList.data();
 }
 
 const char** QueryUncoreEvent(unsigned *numEvt)
 {
+    if (!uncoreEventList.empty()) {
+        *numEvt = uncoreEventList.size();
+        return uncoreEventList.data();
+    }
     DIR* dir;
     struct dirent* entry;
     dir = opendir(SYS_DEVICES.c_str());
@@ -115,6 +141,10 @@ const char** QueryUncoreEvent(unsigned *numEvt)
 
 const char** QueryTraceEvent(unsigned *numEvt)
 {
+    if (!traceEventList.empty()) {
+        *numEvt = traceEventList.size();
+        return traceEventList.data();
+    }
     DIR* dir;
     struct dirent* entry;
     dir = opendir(TRACE_FOLDER.c_str());
@@ -173,13 +203,20 @@ const char** PmuEventList(enum PmuEventType eventType, unsigned *numEvt)
     return eventList;
 }
 
-void PmuEventListFree(const char** eventList, unsigned *numEvt)
+static void PmuEventListFreeSingle(vector<const char*>& eventList)
+{
+    for (auto evt : eventList) {
+        if (evt != nullptr && evt[0] != '\0')
+            delete[] evt;
+    }
+    eventList.clear();
+}
+
+void PmuEventListFree()
 {
     lock_guard<mutex> lg(pmuEventListMtx);
-    for (unsigned i = 0; i < *numEvt; i++) {
-        delete[] eventList[i];
-    }
-    uncoreEventList.clear();
-    traceEventList.clear();
+    PmuEventListFreeSingle(coreEventList);
+    PmuEventListFreeSingle(uncoreEventList);
+    PmuEventListFreeSingle(traceEventList);
     New(SUCCESS);
 }

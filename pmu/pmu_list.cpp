@@ -232,6 +232,7 @@ namespace KUNPENG_PMU {
         EraseSpeCpu(pd);
         EraseParentEventMap();
         SymResolverDestroy();
+        PmuEventListFree();
     }
 
     int PmuList::NewPd()
