@@ -626,15 +626,23 @@ static int64_t GetKernelCoreEventConfig(const string &name)
     string eventPath = "/sys/devices/armv8_pmuv3_0/events/" + name;
     string realPath = GetRealPath(eventPath);
     if (!IsValidPath(realPath)) {
-    return -1;
+        return -1;
     }
-    ifstream typeIn(realPath);
-    if (!typeIn.is_open()) {
-    return -1;
+    ifstream evtIn(realPath);
+    if (!evtIn.is_open()) {
+        return -1;
     }
-    string typeStr;
-    typeIn >> typeStr;
-    return stoi(typeStr, nullptr, 16);
+    string configStr;
+    int64_t config;
+    evtIn >> configStr;
+    auto findEq = configStr.find('=');
+    if (findEq == string::npos) {
+        return -1;
+    }
+    auto subStr = configStr.substr(findEq + 1, configStr.size() - findEq);
+    std::istringstream iss(subStr);
+    iss >> std::hex >> config;
+    return config;
 }
 
 static int64_t GetKernelCoreEventType()

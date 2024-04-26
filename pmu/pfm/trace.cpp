@@ -14,6 +14,7 @@
  ******************************************************************************/
 #include <fstream>
 #include "common.h"
+#include "pfm_event.h"
 #include "pmu_event.h"
 #include "trace.h"
 

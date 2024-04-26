@@ -203,23 +203,20 @@ const char** PmuEventList(enum PmuEventType eventType, unsigned *numEvt)
     return eventList;
 }
 
+static void PmuEventListFreeSingle(vector<const char*>& eventList)
+{
+    for (auto evt : eventList) {
+        if (evt != nullptr && evt[0] != '\0')
+            delete[] evt;
+    }
+    eventList.clear();
+}
+
 void PmuEventListFree()
 {
     lock_guard<mutex> lg(pmuEventListMtx);
-    for (auto evt : coreEventList) {
-        if (evt != nullptr && evt[0] != '\0')
-            delete[] evt;
-    }
-    for (auto evt : uncoreEventList) {
-        if (evt != nullptr && evt[0] != '\0')
-            delete[] evt;
-    }
-    for (auto evt : traceEventList) {
-        if (evt != nullptr && evt[0] != '\0')
-            delete[] evt;
-    }
-    coreEventList.clear();
-    uncoreEventList.clear();
-    traceEventList.clear();
+    PmuEventListFreeSingle(coreEventList);
+    PmuEventListFreeSingle(uncoreEventList);
+    PmuEventListFreeSingle(traceEventList);
     New(SUCCESS);
 }
