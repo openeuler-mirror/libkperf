@@ -202,7 +202,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L1D_CACHE_RD,
         {
-            8,
+            PERF_TYPE_RAW,
             0x40,
             KUNPENG_PMU::HIP_A::CORE::L1D_CACHE_RD
         }
@@ -210,7 +210,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L1D_CACHE_WR,
         {
-            8,
+            PERF_TYPE_RAW,
             0x41,
             KUNPENG_PMU::HIP_A::CORE::L1D_CACHE_WR
         }
@@ -218,7 +218,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L1D_CACHE_REFILL_RD,
         {
-            8,
+            PERF_TYPE_RAW,
             0x42,
             KUNPENG_PMU::HIP_A::CORE::L1D_CACHE_REFILL_RD
         }
@@ -226,7 +226,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L1D_CACHE_REFILL_WR,
         {
-            8,
+            PERF_TYPE_RAW,
             0x43,
             KUNPENG_PMU::HIP_A::CORE::L1D_CACHE_REFILL_WR
         }
@@ -234,7 +234,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L1D_CACHE_WB_VICTIM,
         {
-            8,
+            PERF_TYPE_RAW,
             0x46,
             KUNPENG_PMU::HIP_A::CORE::L1D_CACHE_WB_VICTIM
         }
@@ -242,7 +242,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L1D_CACHE_WB_CLEAN,
         {
-            8,
+            PERF_TYPE_RAW,
             0x47,
             KUNPENG_PMU::HIP_A::CORE::L1D_CACHE_WB_CLEAN
         }
@@ -250,7 +250,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L1D_CACHE_INVAL,
         {
-            8,
+            PERF_TYPE_RAW,
             0x48,
             KUNPENG_PMU::HIP_A::CORE::L1D_CACHE_INVAL
         }
@@ -258,7 +258,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L1D_TLB_REFILL_RD,
         {
-            8,
+            PERF_TYPE_RAW,
             0x4c,
             KUNPENG_PMU::HIP_A::CORE::L1D_TLB_REFILL_RD
         }
@@ -266,7 +266,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L1D_TLB_REFILL_WR,
         {
-            8,
+            PERF_TYPE_RAW,
             0x4d,
             KUNPENG_PMU::HIP_A::CORE::L1D_TLB_REFILL_WR
         }
@@ -274,7 +274,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L1D_TLB_RD,
         {
-            8,
+            PERF_TYPE_RAW,
             0x4e,
             KUNPENG_PMU::HIP_A::CORE::L1D_TLB_RD
         }
@@ -282,7 +282,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L1D_TLB_WR,
         {
-            8,
+            PERF_TYPE_RAW,
             0x4f,
             KUNPENG_PMU::HIP_A::CORE::L1D_TLB_WR
         }
@@ -290,7 +290,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L2D_CACHE_RD,
         {
-            8,
+            PERF_TYPE_RAW,
             0x50,
             KUNPENG_PMU::HIP_A::CORE::L2D_CACHE_RD
         }
@@ -298,7 +298,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L2D_CACHE_WR,
         {
-            8,
+            PERF_TYPE_RAW,
             0x51,
             KUNPENG_PMU::HIP_A::CORE::L2D_CACHE_WR
         }
@@ -306,7 +306,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L2D_CACHE_REFILL_RD,
         {
-            8,
+            PERF_TYPE_RAW,
             0x52,
             KUNPENG_PMU::HIP_A::CORE::L2D_CACHE_REFILL_RD
         }
@@ -314,7 +314,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L2D_CACHE_REFILL_WR,
         {
-            8,
+            PERF_TYPE_RAW,
             0x53,
             KUNPENG_PMU::HIP_A::CORE::L2D_CACHE_REFILL_WR
         }
@@ -322,7 +322,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L2D_CACHE_WB_VICTIM,
         {
-            8,
+            PERF_TYPE_RAW,
             0x56,
             KUNPENG_PMU::HIP_A::CORE::L2D_CACHE_WB_VICTIM
         }
@@ -330,7 +330,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L2D_CACHE_WB_CLEAN,
         {
-            8,
+            PERF_TYPE_RAW,
             0x57,
             KUNPENG_PMU::HIP_A::CORE::L2D_CACHE_WB_CLEAN
         }
@@ -338,7 +338,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L2D_CACHE_INVAL,
         {
-            8,
+            PERF_TYPE_RAW,
             0x58,
             KUNPENG_PMU::HIP_A::CORE::L2D_CACHE_INVAL
         }
@@ -346,7 +346,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L1I_CACHE_PRF,
         {
-            8,
+            PERF_TYPE_RAW,
             0x102e,
             KUNPENG_PMU::HIP_A::CORE::L1I_CACHE_PRF
         }
@@ -354,7 +354,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::L1I_CACHE_PRF_REFILL,
         {
-            8,
+            PERF_TYPE_RAW,
             0x102f,
             KUNPENG_PMU::HIP_A::CORE::L1I_CACHE_PRF_REFILL
         }
@@ -362,7 +362,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::IQ_IS_EMPTY,
         {
-            8,
+            PERF_TYPE_RAW,
             0x1043,
             KUNPENG_PMU::HIP_A::CORE::IQ_IS_EMPTY
         }
@@ -370,7 +370,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::IF_IS_STALL,
         {
-            8,
+            PERF_TYPE_RAW,
             0x1044,
             KUNPENG_PMU::HIP_A::CORE::IF_IS_STALL
         }
@@ -378,7 +378,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::FETCH_BUBBLE,
         {
-            8,
+            PERF_TYPE_RAW,
             0x2014,
             KUNPENG_PMU::HIP_A::CORE::FETCH_BUBBLE
         }
@@ -386,7 +386,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::PRF_REQ,
         {
-            8,
+            PERF_TYPE_RAW,
             0x6013,
             KUNPENG_PMU::HIP_A::CORE::PRF_REQ
         }
@@ -394,7 +394,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::HIT_ON_PRF,
         {
-            8,
+            PERF_TYPE_RAW,
             0x6014,
             KUNPENG_PMU::HIP_A::CORE::HIT_ON_PRF
         }
@@ -402,7 +402,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::EXE_STALL_CYCLE,
         {
-            8,
+            PERF_TYPE_RAW,
             0x7001,
             KUNPENG_PMU::HIP_A::CORE::EXE_STALL_CYCLE
         }
@@ -410,7 +410,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::MEM_STALL_ANYLOAD,
         {
-            8,
+            PERF_TYPE_RAW,
             0x7004,
             KUNPENG_PMU::HIP_A::CORE::MEM_STALL_ANYLOAD
         }
@@ -418,7 +418,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::MEM_STALL_L1MISS,
         {
-            8,
+            PERF_TYPE_RAW,
             0x7006,
             KUNPENG_PMU::HIP_A::CORE::MEM_STALL_L1MISS
         }
@@ -426,7 +426,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
     {
         KUNPENG_PMU::HIP_A::CORE::MEM_STALL_L2MISS,
         {
-            8,
+            PERF_TYPE_RAW,
             0x7007,
             KUNPENG_PMU::HIP_A::CORE::MEM_STALL_L2MISS
         }
@@ -633,16 +633,13 @@ static int64_t GetKernelCoreEventConfig(const string &name)
         return -1;
     }
     string configStr;
-    int64_t config;
     evtIn >> configStr;
     auto findEq = configStr.find('=');
     if (findEq == string::npos) {
         return -1;
     }
     auto subStr = configStr.substr(findEq + 1, configStr.size() - findEq);
-    std::istringstream iss(subStr);
-    iss >> std::hex >> config;
-    return config;
+    return stoi(subStr, nullptr, 16);
 }
 
 static int64_t GetKernelCoreEventType()
