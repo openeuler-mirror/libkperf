@@ -38,7 +38,6 @@ using namespace pcerr;
 using namespace KUNPENG_PMU;
 
 static constexpr int MAX_STRING_LEN = 2048;
-static CHIP_TYPE g_chipType = UNDEFINED_TYPE;
 
 static struct PmuEvt* GetRawEvent(const char* pmuName, int collectType)
 {
@@ -49,35 +48,14 @@ static struct PmuEvt* GetRawEvent(const char* pmuName, int collectType)
     if (*endPtr != '\0') {
         return nullptr;
     }
-    struct PmuEvt* pmuEvtPtr = new PmuEvt;
+    auto* pmuEvtPtr = new PmuEvt;
     pmuEvtPtr->config = config;
     pmuEvtPtr->name = pmuName;
     pmuEvtPtr->type = PERF_TYPE_RAW;
     pmuEvtPtr->pmuType = CORE_TYPE;
     pmuEvtPtr->collectType = collectType;
     pmuEvtPtr->cpumask = -1;
-    return std::move(pmuEvtPtr);
-}
-
-static struct PmuEvt* ConstructPmuEvtFromCore(KUNPENG_PMU::CoreConfig config, int collectType)
-{
-    struct PmuEvt* pmuEvtPtr = new PmuEvt;
-    pmuEvtPtr->config = config.config;
-    pmuEvtPtr->name = config.eventName;
-    pmuEvtPtr->type = config.type;
-    pmuEvtPtr->pmuType = CORE_TYPE;
-    pmuEvtPtr->collectType = collectType;
-    pmuEvtPtr->cpumask = -1;
-    return std::move(pmuEvtPtr);
-}
-
-static struct PmuEvt* GetCoreEvent(const char* pmuName, int collectType)
-{
-    return KUNPENG_PMU::CORE_EVENT_MAP.at(g_chipType).find(pmuName) !=
-           KUNPENG_PMU::CORE_EVENT_MAP.at(g_chipType).end()
-           ? ConstructPmuEvtFromCore(
-                    KUNPENG_PMU::CORE_EVENT_MAP.at(g_chipType).at(pmuName), collectType)
-           : nullptr;
+    return pmuEvtPtr;
 }
 
 static int GetSpeType(void)
@@ -112,37 +90,36 @@ static const std::unordered_map<int, EvtRetriever> EvtMap{
         {KUNPENG_PMU::TRACE_TYPE, GetKernelTraceEvent},
 };
 
-static int GetEventType(const char *pmuName, string &evtName)
+static bool CheckEventInList(enum PmuEventType eventType, const char *pmuName)
+{
+    unsigned numEvt;
+    auto eventList = PmuEventList(eventType, &numEvt);
+    for (int j=0;j<numEvt;++j) {
+        if (strcmp(eventList[j], pmuName) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static int GetEventType(const char *pmuName)
 {
     if (pmuName[0] == 'r') {
-        evtName = pmuName;
         return RAW_TYPE;
     }
-    auto coreMap = CORE_EVENT_MAP.at(g_chipType);
-    auto findCoreEvent = coreMap.find(pmuName);
-    if (findCoreEvent != coreMap.end()) {
-        evtName = pmuName;
+    if (CheckEventInList(CORE_EVENT, pmuName)) {
         return CORE_TYPE;
     }
     std::string strName(pmuName);
-
     // Kernel trace point event name like 'block:block_bio_complete'
-    if (strName.find(':') != string::npos) {
-        evtName = pmuName;
+    if (CheckEventInList(TRACE_EVENT, pmuName)) {
         return TRACE_TYPE;
     }
-
     // Parse uncore event name like 'hisi_sccl3_ddrc0/flux_rd/'
-    auto findSlash = strName.find('/');
-    if (findSlash == string::npos) {
-        return -1;
+    if (CheckEventInList(UNCORE_EVENT, pmuName)) {
+        return UNCORE_TYPE;
     }
-    findSlash = strName.find('/', findSlash);
-    if (findSlash == string::npos) {
-        return -1;
-    }
-    evtName = pmuName;
-    return UNCORE_TYPE;
+    return -1;
 }
 
 struct PmuEvt* PfmGetPmuEvent(const char* pmuName, int collectType)
@@ -152,17 +129,12 @@ struct PmuEvt* PfmGetPmuEvent(const char* pmuName, int collectType)
         evt->collectType = collectType;
         return evt;
     }
-    string evtName;
-    g_chipType = GetCpuType();
-    if (g_chipType == UNDEFINED_TYPE) {
-        return nullptr;
-    }
-    auto type = GetEventType(pmuName, evtName);
+    auto type = GetEventType(pmuName);
     if (type == -1) {
         return nullptr;
     }
     struct PmuEvt* evt = (EvtMap.find(type) != EvtMap.end()) ?
-                         EvtMap.at(type)(evtName.c_str(), collectType) : nullptr;
+                         EvtMap.at(type)(pmuName, collectType) : nullptr;
     if (evt == nullptr) {
         return evt;
     }

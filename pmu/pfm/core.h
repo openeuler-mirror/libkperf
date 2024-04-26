@@ -22,5 +22,7 @@ namespace KUNPENG_PMU {
     extern const CORE_EVT_MAP CORE_EVENT_MAP;
 }
 
+struct PmuEvt* GetCoreEvent(const char* pmuName, int collectType);
+
 #endif
 
