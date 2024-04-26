@@ -1,4 +1,4 @@
-set(source_files simple.cpp test_12threads.cpp test_create_thread.cpp test_fork.cpp write_on_numa2.cpp pwritev_file.cpp)
+file(GLOB source_files ./*.cpp)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O0")
 set(CMAKE_CXX_FLAGS_RELEASE "")

@@ -405,7 +405,7 @@ static void SetTidByTimestamp(struct ContextSwitchData *dummyData, int *dummyIdx
         start->cpu = cpu;
         start->timestamp = recordTime;
 
-        if (start->tid != 0) {
+        if (start->tid != -1) {
             // In some kernel versions, tid is contained in spe packet,
             // which has been decoded in arm_spe_decoder.cpp.
             // Then we do not need dummy events to derive tid for this packet.

@@ -41,12 +41,22 @@ struct PmuTaskAttr* AssignPmuTaskParam(PmuTaskType collectType, struct PmuAttr *
 
 static int PmuCollectStart(const int pd)
 {
-    return KUNPENG_PMU::PmuList::GetInstance()->Start(pd);
+    auto err = KUNPENG_PMU::PmuList::GetInstance()->Start(pd);
+    if (err != SUCCESS) {
+        New(err);
+        return -1;
+    }
+    return SUCCESS;
 }
 
 static int PmuCollectPause(const int pd)
 {
-    return KUNPENG_PMU::PmuList::GetInstance()->Pause(pd);
+    auto err = KUNPENG_PMU::PmuList::GetInstance()->Pause(pd);
+    if (err != SUCCESS) {
+        New(err);
+        return -1;
+    }
+    return SUCCESS;
 }
 
 static int CheckCpuList(unsigned numCpu, int* cpuList)
@@ -479,7 +489,7 @@ int PmuRead(int pd, struct PmuData** pmuData)
     try {
         if (!PdValid(pd)) {
             New(LIBPERF_ERR_INVALID_PD);
-            return LIBPERF_ERR_INVALID_PD;
+            return -1;
         }
 
         auto& retData = KUNPENG_PMU::PmuList::GetInstance()->Read(pd);
