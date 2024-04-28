@@ -48,7 +48,7 @@ static struct PmuEvt* GetRawEvent(const char* pmuName, int collectType)
     if (*endPtr != '\0') {
         return nullptr;
     }
-    auto* pmuEvtPtr = new PmuEvt;
+    auto* pmuEvtPtr = new PmuEvt {0};
     pmuEvtPtr->config = config;
     pmuEvtPtr->name = pmuName;
     pmuEvtPtr->type = PERF_TYPE_RAW;
@@ -144,7 +144,7 @@ struct PmuEvt* PfmGetPmuEvent(const char* pmuName, int collectType)
 struct PmuEvt* PfmGetSpeEvent(
         unsigned long dataFilter, unsigned long eventFilter, unsigned long minLatency, int collectType)
 {
-    auto* evt = new PmuEvt{0};
+    auto* evt = new PmuEvt {0};
     evt->collectType = collectType;
     int type = GetSpeType();
     if (type == -1) {

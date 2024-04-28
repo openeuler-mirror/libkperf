@@ -124,7 +124,10 @@ const char** QueryUncoreEvent(unsigned *numEvt)
     }
     DIR* dir;
     struct dirent* entry;
-    dir = opendir(SYS_DEVICES.c_str());
+    if ((dir = opendir(SYS_DEVICES.c_str())) == nullptr) {
+        New(LIBPERF_ERR_FOLDER_PATH_INACCESSIBLE, "Could not open \"/sys/devices/\"");
+        return;
+    }
     while ((entry = readdir(dir)) != nullptr) {
         if (entry->d_type == DT_DIR) {
             string folderName = entry->d_name;
@@ -147,7 +150,10 @@ const char** QueryTraceEvent(unsigned *numEvt)
     }
     DIR* dir;
     struct dirent* entry;
-    dir = opendir(TRACE_FOLDER.c_str());
+    if (dir = opendir(TRACE_FOLDER.c_str())) == nullptr) {
+        New(LIBPERF_ERR_FOLDER_PATH_INACCESSIBLE, "Could not open \"/sys/kernel/tracing/events/\"");
+        return;
+    }
     while ((entry = readdir(dir)) != nullptr) {
         if (entry->d_type == DT_DIR) {
             string folderName = entry->d_name;
