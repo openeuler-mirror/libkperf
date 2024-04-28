@@ -94,6 +94,9 @@ static bool CheckEventInList(enum PmuEventType eventType, const char *pmuName)
 {
     unsigned numEvt;
     auto eventList = PmuEventList(eventType, &numEvt);
+    if (eventList == nullptr) {
+        return false;
+    }
     for (int j=0;j<numEvt;++j) {
         if (strcmp(eventList[j], pmuName) == 0) {
             return true;
