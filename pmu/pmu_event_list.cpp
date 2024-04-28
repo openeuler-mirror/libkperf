@@ -39,12 +39,13 @@ static void GetEventName(const string& devName, vector<const char*>& eventList)
     DIR* dir;
     struct dirent* entry;
     auto path = SYS_DEVICES + devName + EVENT_DIR;
-    if ((dir = opendir(path.c_str())) == nullptr) {
-        New(LIBPERF_ERR_FOLDER_PATH_INACCESSIBLE, "Could not open \"/sys/devices/\"");
+    dir = opendir(path.c_str());
+    if (dir == nullptr) {
         return;
     }
     while ((entry = readdir(dir)) != nullptr) {
         if (entry->d_type != DT_REG) { // Check if it is a regular file
+
             continue;
         }
         string fileName(entry->d_name);
@@ -63,8 +64,8 @@ static void GetTraceSubFolder(const string& devName, vector<const char*>& eventL
     DIR* dir;
     struct dirent* entry;
     auto path = TRACE_FOLDER + devName;
-    if ((dir = opendir(path.c_str())) == nullptr) {
-        New(LIBPERF_ERR_FOLDER_PATH_INACCESSIBLE, "Could not open " + path);
+    dir = opendir(path.c_str());
+    if (dir == nullptr) {
         return;
     }
     while ((entry = readdir(dir)) != nullptr) {
@@ -99,8 +100,8 @@ const char** QueryCoreEvent(unsigned *numEvt)
     DIR* dir;
     struct dirent* entry;
     string path = "/sys/devices/armv8_pmuv3_0/events/";
-    if ((dir = opendir(path.c_str())) == nullptr) {
-        New(LIBPERF_ERR_FOLDER_PATH_INACCESSIBLE, "Could not open " + path);
+    dir = opendir(path.c_str());
+    if (dir == nullptr) {
         return nullptr;
     }
     while ((entry = readdir(dir)) != nullptr) {
@@ -125,6 +126,9 @@ const char** QueryUncoreEvent(unsigned *numEvt)
     DIR* dir;
     struct dirent* entry;
     dir = opendir(SYS_DEVICES.c_str());
+    if (dir == nullptr) {
+        return nullptr;
+    }
     while ((entry = readdir(dir)) != nullptr) {
         if (entry->d_type == DT_DIR) {
             string folderName = entry->d_name;
@@ -148,6 +152,9 @@ const char** QueryTraceEvent(unsigned *numEvt)
     DIR* dir;
     struct dirent* entry;
     dir = opendir(TRACE_FOLDER.c_str());
+    if (dir == nullptr) {
+        return nullptr;
+    }
     while ((entry = readdir(dir)) != nullptr) {
         if (entry->d_type == DT_DIR) {
             string folderName = entry->d_name;
@@ -162,19 +169,39 @@ const char** QueryTraceEvent(unsigned *numEvt)
     return traceEventList.data();
 }
 
-const char** QueryAllEvent(unsigned *numEvt)
-{
-    unsigned coreNum;
-    unsigned uncoreNum;
-    unsigned traceNum;
-    auto coreList = QueryCoreEvent(&coreNum);
-    auto uncoreList = QueryUncoreEvent(&uncoreNum);
-    auto traceList = QueryTraceEvent(&traceNum);
-    *numEvt = coreNum + uncoreNum + traceNum;
-    const char** combinedList = new const char* [*numEvt];
-    memcpy(combinedList, coreList, coreNum * sizeof(char*));
-    memcpy(combinedList + coreNum, uncoreList, uncoreNum * sizeof(char*));
-    memcpy(combinedList + coreNum + uncoreNum, traceList, traceNum * sizeof(char*));
+const char** QueryAllEvent(unsigned *numEvt) {
+    unsigned coreNum, uncoreNum, traceNum;
+    const char** coreList = QueryCoreEvent(&coreNum);
+    const char** uncoreList = QueryUncoreEvent(&uncoreNum);
+    const char** traceList = QueryTraceEvent(&traceNum);
+
+    unsigned totalSize = 0;
+    if (coreList != nullptr) {
+        totalSize += coreNum;
+    }
+    if (uncoreList != nullptr) {
+        totalSize += uncoreNum;
+    }
+    if (traceList != nullptr) {
+        totalSize += traceNum;
+    }
+
+    const char** combinedList = new const char*[totalSize];
+    unsigned index = 0;
+
+    if (coreList != nullptr) {
+        memcpy(combinedList, coreList, coreNum * sizeof(const char*));
+        index += coreNum;
+    }
+    if (uncoreList != nullptr) {
+        memcpy(combinedList + index, uncoreList, uncoreNum * sizeof(const char*));
+        index += uncoreNum;
+    }
+    if (traceList != nullptr) {
+        memcpy(combinedList + index, traceList, traceNum * sizeof(const char*));
+    }
+
+    *numEvt = totalSize;
     return combinedList;
 }
 

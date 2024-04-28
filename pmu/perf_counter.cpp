@@ -23,6 +23,7 @@
 #include <linux/perf_event.h>
 #include "pmu.h"
 #include "linked_list.h"
+#include "pfm_event.h"
 #include "pmu_event.h"
 #include "pcerr.h"
 #include "log.h"
@@ -103,7 +104,11 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr()
      * For now we set the format id bit to implement grouping logic in the future
      */
     attr.read_format = PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING | PERF_FORMAT_ID;
-    this->fd = PerfEventOpen(&attr, this->pid, this->cpu, -1, 0);
+    if (this->evt->pmuType == KUNPENG_PMU::UNCORE_TYPE) {
+        this->fd = PerfEventOpen(&attr, -1, this->cpu, -1, 0);
+    } else {
+        this->fd = PerfEventOpen(&attr, this->pid, this->cpu, -1, 0);
+    }
     DBG_PRINT("type: %d cpu: %d config: %X\n", attr.type, cpu, attr.config);
     if (__glibc_unlikely(this->fd < 0)) {
         return MapErrno(errno);

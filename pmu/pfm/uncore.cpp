@@ -117,7 +117,7 @@ struct PmuEvt* GetUncoreEvent(const char* pmuName, int collectType)
     if (config == -1) {
         return nullptr;
     }
-    auto* pmuEvtPtr = new PmuEvt;
+    auto* pmuEvtPtr = new PmuEvt {0};
     pmuEvtPtr->config = config;
     pmuEvtPtr->name = pmuName;
     pmuEvtPtr->pmuType = UNCORE_TYPE;

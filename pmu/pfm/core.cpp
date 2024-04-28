@@ -611,7 +611,7 @@ const KUNPENG_PMU::CORE_EVT_MAP KUNPENG_PMU::CORE_EVENT_MAP = {
 
 static struct PmuEvt* ConstructPmuEvtFromCore(KUNPENG_PMU::CoreConfig config, int collectType)
 {
-    auto* pmuEvtPtr = new PmuEvt;
+    auto* pmuEvtPtr = new PmuEvt {0};
     pmuEvtPtr->config = config.config;
     pmuEvtPtr->name = config.eventName;
     pmuEvtPtr->type = config.type;
@@ -666,7 +666,7 @@ static struct PmuEvt* ConstructPmuEvtFromKernel(const char* pmuName, int collect
     if (config == -1 || type == -1) {
         return nullptr;
     }
-    auto* pmuEvtPtr = new PmuEvt;
+    auto* pmuEvtPtr = new PmuEvt {0};
     pmuEvtPtr->config = config;
     pmuEvtPtr->name = pmuName;
     pmuEvtPtr->type = type;

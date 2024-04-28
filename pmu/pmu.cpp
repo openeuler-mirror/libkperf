@@ -139,6 +139,10 @@ void AppendChildEvents(char* evt, unordered_map<string, char*>& eventSplitMap)
     string evtName = strName.substr(devName.size() + 1, strName.size() - 1 - (devName.size() + 1));
     auto numEvt = uncoreEventPair.first;
     auto uncoreEventList = uncoreEventPair.second;
+    if (uncoreEventList == nullptr) {
+        New(LIBPERF_ERR_INVALID_EVENT, "Invalid uncore event list");
+        return;
+    }
     for (int i = 0; i < numEvt; ++i) {
         auto uncoreEvent = uncoreEventList[i];
         if (strncmp(uncoreEvent, devName.c_str(), devName.length()) == 0 &&
