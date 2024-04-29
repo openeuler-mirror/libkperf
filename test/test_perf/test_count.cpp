@@ -164,6 +164,40 @@ TEST_F(TestCount, NumaFluxWr)
     ASSERT_GE(cntSum, (1024 * 256 * 4 * 64) / 32);
 }
 
+TEST_F(TestCount, AggregateUncoreEvents)
+{
+    // Test aggregate of uncore events.
+
+    char* aggreUncore[1] = {"hisi_sccl1_ddrc/flux_rd/"};
+    char* uncoreList[4] = {"hisi_sccl1_ddrc0/flux_rd/", "hisi_sccl1_ddrc1/flux_rd/", "hisi_sccl1_ddrc2/flux_rd/", "hisi_sccl1_ddrc3/flux_rd/"};
+    PmuAttr attr = {0};
+    attr.evtList = aggreUncore;
+    attr.numEvt = 1;
+    int pd1 = PmuOpen(COUNTING, &attr);
+    attr.evtList = uncoreList;
+    attr.numEvt = 4;
+    int pd2 = PmuOpen(COUNTING, &attr);
+    PmuEnable(pd1);
+    PmuEnable(pd2);
+    sleep(2);
+    PmuDisable(pd1);
+    PmuDisable(pd2);
+
+    PmuData *data1 = nullptr;
+    int len1 = PmuRead(pd1, &data1);
+    ASSERT_EQ(len1, 1);
+    PmuData *data2 = nullptr;
+    int len2 = PmuRead(pd2, &data2);
+    ASSERT_EQ(len1, 4);
+
+    uint64_t aggreCnt = data1[0].count;
+    unsigned long uncoreSum = 0;
+    for (int i = 0; i < len2; ++i) {
+        uncoreSum += data2[i].count;
+    }
+    ASSERT_NEAR(aggreCnt, uncoreSum, uncoreSum * 0.5);
+}
+
 TEST_F(TestCount, PwritevFile)
 {
     // Test data of tracepoint syscalls:sys_enter_pwritev.
@@ -187,6 +221,17 @@ TEST_F(TestCount, PwritevFile)
     int len = PmuRead(pd, &data);
     ASSERT_EQ(len, 1);
     ASSERT_GT(data->count, 0);
+}
+
+TEST_F(TestCount, RawEventCycles)
+{
+    // Test whether raw event is the same as named event.
+    string cycles = "cycles";
+    string cyclesRaw = "r11";
+    vector<string> evts = {cycles, cyclesRaw};
+    auto evtMap = CollectProcessEvent("simple", evts);
+    ASSERT_EQ(evtMap.size(), evts.size());
+    ASSERT_NEAR(evtMap[cycles], evtMap[cyclesRaw], evtMap[cyclesRaw] * relativeErr);
 }
 
 TEST_F(TestCount, BranchMissRatio)
@@ -249,4 +294,30 @@ TEST_F(TestCount, LLCacheMissRatio)
     auto missRatio2 = (double)evtMap[cacheMiss]/evtMap[cache];
     ASSERT_LT(missRatio2, 0.01);
     ASSERT_GT(missRatio1, missRatio2);
+}
+
+TEST_F(TestCount, SimdRatio)
+{
+    // Test ASE_SPEC and INST_SPEC.
+    // Run a case with vectorized loop which has many simd instructions.
+    string aseSpec = "r74";
+    string instSpec = "r1b";
+    vector<string> evts = {aseSpec, instSpec};
+    auto evtMap = CollectProcessEvent("vectorized_loop", evts);
+    ASSERT_EQ(evtMap.size(), evts.size());
+    auto simdRatio = (double)evtMap[aseSpec]/evtMap[instSpec];
+    ASSERT_GT(simdRatio, 0.1);
+}
+
+TEST_F(TestCount, SimdRatio)
+{
+    // Test ASE_SPEC and INST_SPEC.
+    // Run a case with vectorized loop which has many simd instructions.
+    string remoteAccess = "remote_access";
+    string memAccess = "mem_access";
+    vector<string> evts = {remoteAccess, memAccess};
+    auto evtMap = CollectProcessEvent("cross_socket_access", evts);
+    ASSERT_EQ(evtMap.size(), evts.size());
+    auto remoteRatio = (double)evtMap[remoteAccess]/evtMap[memAccess];
+    ASSERT_GT(remoteRatio, 0.001);
 }
