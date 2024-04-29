@@ -143,18 +143,23 @@ void AppendChildEvents(char* evt, unordered_map<string, char*>& eventSplitMap)
         New(LIBPERF_ERR_INVALID_EVENT, "Invalid uncore event list");
         return;
     }
+    bool invalidFlag = true;
     for (int i = 0; i < numEvt; ++i) {
-        auto uncoreEventChar = uncoreEventList[i];
-        string uncoreEventString = uncoreEventChar;
-        auto findUncoreSlash = uncoreEventString.find('/');
-        string uncoreDevName = uncoreEventString.substr(0, findUncoreSlash);
-        string uncoreEvtName = uncoreEventString.substr(
-                uncoreDevName.size() + 1, uncoreEventString.size() - 1 - (uncoreDevName.size() + 1));
+        string uncoreEvent = uncoreEventList[i];
+        auto findUncoreSlash = uncoreEvent.find('/');
+        string uncoreDevName = uncoreEvent.substr(0, findUncoreSlash);
+        string uncoreEvtName = uncoreEvent.substr(
+                uncoreDevName.size() + 1, uncoreEvent.size() - 1 - (uncoreDevName.size() + 1));
         // Determine whether "hisi_sccl1_ddrc" is front part and "act_cmd" is the back part of
         // "hisi_sccl1_ddrc0/act_cmd/"
-        if (strncmp(uncoreEventChar, devName.c_str(), devName.length()) == 0 && evtName == uncoreEvtName) {
-            eventSplitMap.emplace(uncoreEventString, evt);
+        if (strncmp(uncoreEvent.c_str(), devName.c_str(), devName.length()) == 0 && evtName == uncoreEvtName) {
+            invalidFlag = false;
+            eventSplitMap.emplace(uncoreEvent, evt);
         }
+    }
+    if (invalidFlag) {
+        string err = "Invalid uncore event " + string(evt);
+        New(LIBPERF_ERR_INVALID_EVENT, err);
     }
 }
 
