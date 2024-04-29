@@ -105,9 +105,21 @@ static bool CheckEventInList(enum PmuEventType eventType, const char *pmuName)
     return false;
 }
 
+static bool CheckRawEvent(const char *pmuName)
+{
+    // check raw event name like 'r11' or 'r60ea' is valid or not
+    const char *numStr = pmuName + 1;
+    char *endPtr;
+    __u64 _ = strtol(numStr, &endPtr, 16);
+    if (*endPtr != '\0') {
+        return false;
+    }
+    return true;
+}
+
 static int GetEventType(const char *pmuName)
 {
-    if (pmuName[0] == 'r') {
+    if (pmuName[0] == 'r' && CheckRawEvent(pmuName)) {
         return RAW_TYPE;
     }
     if (CheckEventInList(CORE_EVENT, pmuName)) {

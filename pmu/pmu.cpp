@@ -131,7 +131,7 @@ static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
     return SUCCESS;
 }
 
-void AppendChildEvents(char* evt, unordered_map<string, char*>& eventSplitMap)
+static bool AppendChildEvents(char* evt, unordered_map<string, char*>& eventSplitMap)
 {
     string strName(evt);
     auto findSlash = strName.find('/');
@@ -141,18 +141,31 @@ void AppendChildEvents(char* evt, unordered_map<string, char*>& eventSplitMap)
     auto uncoreEventList = uncoreEventPair.second;
     if (uncoreEventList == nullptr) {
         New(LIBPERF_ERR_INVALID_EVENT, "Invalid uncore event list");
-        return;
+        return false;
     }
+    bool invalidFlag = true;
     for (int i = 0; i < numEvt; ++i) {
-        auto uncoreEvent = uncoreEventList[i];
-        if (strncmp(uncoreEvent, devName.c_str(), devName.length()) == 0 &&
-            strstr(uncoreEvent, evtName.c_str()) != nullptr) {
+        string uncoreEvent = uncoreEventList[i];
+        auto findUncoreSlash = uncoreEvent.find('/');
+        string uncoreDevName = uncoreEvent.substr(0, findUncoreSlash);
+        string uncoreEvtName = uncoreEvent.substr(
+                uncoreDevName.size() + 1, uncoreEvent.size() - 1 - (uncoreDevName.size() + 1));
+        // Determine whether "hisi_sccl1_ddrc" is front part and "act_cmd" is the back part of
+        // "hisi_sccl1_ddrc0/act_cmd/"
+        if (strncmp(uncoreEvent.c_str(), devName.c_str(), devName.length()) == 0 && evtName == uncoreEvtName) {
+            invalidFlag = false;
             eventSplitMap.emplace(uncoreEvent, evt);
         }
     }
+    if (invalidFlag) {
+        string err = "Invalid uncore event " + string(evt);
+        New(LIBPERF_ERR_INVALID_EVENT, err);
+        return false;
+    }
+    return true;
 }
 
-static void SplitUncoreEvent(struct PmuAttr *attr, unordered_map<string, char*> &eventSplitMap)
+static bool SplitUncoreEvent(struct PmuAttr *attr, unordered_map<string, char*> &eventSplitMap)
 {
     char** evtList = attr->evtList;
     unsigned size = attr->numEvt;
@@ -167,13 +180,16 @@ static void SplitUncoreEvent(struct PmuAttr *attr, unordered_map<string, char*> 
             char* prevChar = slashPos - 1;
             if (!std::isdigit(*prevChar)) {
                 // 添加子事件
-                AppendChildEvents(evt, eventSplitMap);
+                if (!AppendChildEvents(evt, eventSplitMap)){
+                    return false;
+                }
                 continue;
             }
         }
         eventSplitMap.emplace(evt, evt);
         newSize++;
     }
+    return true;
 }
 
 static unsigned GenerateSplitList(unordered_map<string, char*>& eventSplitMap, vector<char*> &newEvtlist)
@@ -211,7 +227,9 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
             return -1;
         }
         unordered_map<string, char*> eventSplitMap;
-        SplitUncoreEvent(attr, eventSplitMap);
+        if (!SplitUncoreEvent(attr, eventSplitMap)) {
+            return -1;
+        }
         auto previousEventList = make_pair(attr->numEvt, attr->evtList);
         vector<char*> newEvtlist;
         attr->numEvt = GenerateSplitList(eventSplitMap, newEvtlist);
