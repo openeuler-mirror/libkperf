@@ -144,10 +144,16 @@ void AppendChildEvents(char* evt, unordered_map<string, char*>& eventSplitMap)
         return;
     }
     for (int i = 0; i < numEvt; ++i) {
-        auto uncoreEvent = uncoreEventList[i];
-        if (strncmp(uncoreEvent, devName.c_str(), devName.length()) == 0 &&
-            strstr(uncoreEvent, evtName.c_str()) != nullptr) {
-            eventSplitMap.emplace(uncoreEvent, evt);
+        auto uncoreEventChar = uncoreEventList[i];
+        string uncoreEventString = uncoreEventChar;
+        auto findUncoreSlash = uncoreEventString.find('/');
+        string uncoreDevName = uncoreEventString.substr(0, findUncoreSlash);
+        string uncoreEvtName = uncoreEventString.substr(
+                uncoreDevName.size() + 1, uncoreEventString.size() - 1 - (uncoreDevName.size() + 1));
+        // Determine whether "hisi_sccl1_ddrc" is front part and "act_cmd" is the back part of
+        // "hisi_sccl1_ddrc0/act_cmd/"
+        if (strncmp(uncoreEventChar, devName.c_str(), devName.length()) == 0 && evtName == uncoreEvtName) {
+            eventSplitMap.emplace(uncoreEventString, evt);
         }
     }
 }
