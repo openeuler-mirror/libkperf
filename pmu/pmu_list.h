@@ -66,6 +66,7 @@ public:
     int NewPd();
 
     int GetHistoryData(const int pd, std::vector<PmuData>& pmuData);
+    void SetSymbolMode(const int pd, const SymbolMode &mode);
 
 private:
     using ProcPtr = std::shared_ptr<ProcTopology>;
@@ -109,6 +110,7 @@ private:
     int CheckRlimit(const unsigned fdNum);
     static void AggregateData(const std::vector<PmuData>& evData, std::vector<PmuData>& newEvData);
     std::vector<PmuData>& GetPreviousData(const unsigned pd);
+    SymbolMode GetSymbolMode(const unsigned pd);
 
     static std::mutex pmuListMtx;
     static std::mutex dataListMtx;
@@ -133,6 +135,8 @@ private:
     // Value: spe sampling cpu list.
     std::unordered_map<unsigned, std::set<int>> speCpuList;
     unsigned maxPd = 0;
+
+    std::unordered_map<unsigned, SymbolMode> symModeList;
 };
 }   // namespace KUNPENG_PMU
 #endif
