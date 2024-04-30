@@ -43,6 +43,7 @@ protected:
         attr.numCpu = 0;
         attr.freq = 1000;
         attr.useFreq = 1;
+        attr.symbolMode = RESOLVE_ELF_DWARF;
         return attr;
     }
 

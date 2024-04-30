@@ -247,6 +247,7 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
             return -1;
         }
 
+        KUNPENG_PMU::PmuList::GetInstance()->SetSymbolMode(pd, attr->symbolMode);
         err = KUNPENG_PMU::PmuList::GetInstance()->Register(pd, taskAttr.get());
         if (err != SUCCESS) {
             PmuList::GetInstance()->Close(pd);

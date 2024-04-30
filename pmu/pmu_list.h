@@ -62,6 +62,7 @@ public:
     bool IsPdAlive(const int pd) const;
     void FreeData(PmuData* pmuData);
     int GetTaskType(const int pd) const;
+    void SetSymbolMode(const int pd, const SymbolMode &mode);
 
     int NewPd();
 
@@ -113,6 +114,7 @@ private:
     static void AggregateData(const std::vector<PmuData>& evData, std::vector<PmuData>& newEvData);
     void AggregateUncoreData(const unsigned pd, const std::vector<PmuData> &evData, std::vector<PmuData> &newEvData);
     std::vector<PmuData>& GetPreviousData(const unsigned pd);
+    SymbolMode GetSymbolMode(const unsigned pd);
 
     static std::mutex pmuListMtx;
     static std::mutex dataListMtx;
@@ -146,6 +148,8 @@ private:
     // Value: spe sampling cpu list.
     std::unordered_map<unsigned, std::set<int>> speCpuList;
     unsigned maxPd = 0;
+
+    std::unordered_map<unsigned, SymbolMode> symModeList;
 };
 }   // namespace KUNPENG_PMU
 #endif

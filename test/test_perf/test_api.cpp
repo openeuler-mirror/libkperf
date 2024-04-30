@@ -120,6 +120,7 @@ protected:
         attr.numCpu = numCpu;
         attr.freq = 1000;
         attr.useFreq = 1;
+        attr.symbolMode = RESOLVE_ELF_DWARF;
         return attr;
     }
 
@@ -134,6 +135,7 @@ protected:
         attr.dataFilter = SPE_DATA_ALL;
         attr.evFilter = SPE_EVENT_RETIRED;
         attr.minLatency = 0x40;
+        attr.symbolMode = RESOLVE_ELF_DWARF;
         return attr;
     }
 
@@ -184,6 +186,55 @@ TEST_F(TestAPI, SampleReadSuccess)
     int len = PmuRead(pd, &data);
     EXPECT_TRUE(data != nullptr);
     ASSERT_TRUE(HasExpectSource(data, len));
+}
+
+TEST_F(TestAPI, SampleNoSymbol)
+{
+    auto attr = GetPmuAttribute();
+    attr.symbolMode = NO_SYMBOL_RESOLVE;
+    pd = PmuOpen(SAMPLING, &attr);
+    int ret = PmuCollect(pd, 1000, collectInterval);
+    int len = PmuRead(pd, &data);
+    EXPECT_TRUE(data != nullptr);
+
+    for (int i = 0; i< len ;++i) {
+        ASSERT_EQ(data[i].stack, nullptr);
+    }
+}
+
+TEST_F(TestAPI, SampleOnlyElf)
+{
+    auto attr = GetPmuAttribute();
+    attr.symbolMode = RESOLVE_ELF;
+    pd = PmuOpen(SAMPLING, &attr);
+    int ret = PmuCollect(pd, 1000, collectInterval);
+    int len = PmuRead(pd, &data);
+    EXPECT_TRUE(data != nullptr);
+
+    for (int i = 0; i< len ;++i) {
+        ASSERT_NE(data[i].stack, nullptr);
+        auto stack = data[i].stack;
+        while (stack) {
+            if (stack->symbol) {
+                ASSERT_EQ(stack->symbol->lineNum, 0);
+            }
+            stack = stack->next;
+        }
+    }
+}
+
+TEST_F(TestAPI, SpeNoSymbol)
+{
+    auto attr = GetSpeAttribute();
+    attr.symbolMode = NO_SYMBOL_RESOLVE;
+    pd = PmuOpen(SPE_SAMPLING, &attr);
+    int ret = PmuCollect(pd, 1000, collectInterval);
+    int len = PmuRead(pd, &data);
+    EXPECT_TRUE(data != nullptr);
+
+    for (int i = 0; i< len ;++i) {
+        ASSERT_EQ(data[i].stack, nullptr);
+    }
 }
 
 TEST_F(TestAPI, SpeInitSuccess)

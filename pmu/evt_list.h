@@ -32,8 +32,8 @@ class EvtList {
 public:
     using ProcPtr = std::shared_ptr<ProcTopology>;
     using CpuPtr = std::shared_ptr<CpuTopology>;
-    EvtList(std::vector<CpuPtr> &cpuList, std::vector<ProcPtr> &pidList, std::shared_ptr<PmuEvt> pmuEvt)
-        : cpuList(cpuList), pidList(pidList), pmuEvt(pmuEvt)
+    EvtList(const SymbolMode &symbolMode, std::vector<CpuPtr> &cpuList, std::vector<ProcPtr> &pidList, std::shared_ptr<PmuEvt> pmuEvt)
+        : symMode(symbolMode), cpuList(cpuList), pidList(pidList), pmuEvt(pmuEvt)
     {
         this->numCpu = this->cpuList.size();
         this->numPid = this->pidList.size();
@@ -80,6 +80,7 @@ private:
     std::set<int> fdList;
     int64_t ts = 0;
     std::unordered_map<pid_t, ProcPtr> procMap;
+    SymbolMode symMode = NO_SYMBOL_RESOLVE;
 };
 }   // namespace KUNPENG_PMU
 #endif
