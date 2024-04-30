@@ -95,6 +95,7 @@ int KUNPENG_PMU::EvtList::Init()
             if (perfEvt == nullptr) {
                 continue;
             }
+            perfEvt->SetSymbolMode(symMode);
             auto err = perfEvt->Init();
             if (err != SUCCESS) {
                 return err;

@@ -63,6 +63,15 @@ enum SpeEventFilter {
     SPE_EVENT_MISPREDICTED = 0x80,  // mispredict
 };
 
+enum SymbolMode {
+    // <stack> in PmuData will be set to NULL.
+    NO_SYMBOL_RESOLVE = 0,
+    // Resolve elf only. Fields except lineNum and fileName in Symbol will be valid. 
+    RESOLVE_ELF = 1,
+    // Resolve elf and dwarf. All fields in Symbol will be valid.
+    RESOLVE_ELF_DWARF = 2
+};
+
 struct PmuAttr {
     char** evtList;                 // event list
     unsigned numEvt;                // length of event list
@@ -78,6 +87,7 @@ struct PmuAttr {
     unsigned useFreq : 1;
     unsigned excludeUser : 1;     // don't count user
     unsigned excludeKernel : 1;   //  don't count kernel
+    enum SymbolMode symbolMode;     // refer to comments of SymbolMode
 
     // SPE related fields.
     enum SpeFilter dataFilter;      // spe data filter

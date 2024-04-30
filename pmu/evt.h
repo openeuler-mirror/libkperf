@@ -48,6 +48,11 @@ public:
 
     virtual int MapPerfAttr() = 0;
 
+    void SetSymbolMode(const SymbolMode &symMode)
+    {
+        this->symMode = symMode;
+    }
+
     int GetFd() const
     {
         return fd;
@@ -60,6 +65,7 @@ protected:
     pid_t pid;
     struct PmuEvt* evt;
     ProcMap &procMap;
+    SymbolMode symMode = NO_SYMBOL_RESOLVE;
 };
 int PerfEventOpen(struct perf_event_attr* attr, pid_t pid, int cpu, int groupFd, unsigned long flags);
 __u64 ReadOnce(__u64 *head);
