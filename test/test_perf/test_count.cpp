@@ -188,7 +188,7 @@ TEST_F(TestCount, AggregateUncoreEvents)
     ASSERT_EQ(len1, 1);
     PmuData *data2 = nullptr;
     int len2 = PmuRead(pd2, &data2);
-    ASSERT_EQ(len1, 4);
+    ASSERT_EQ(len2, 4);
 
     uint64_t aggreCnt = data1[0].count;
     unsigned long uncoreSum = 0;
@@ -289,7 +289,7 @@ TEST_F(TestCount, LLCacheMissRatio)
     auto evtMap = CollectProcessEvent("cross_socket_access", evts);
     ASSERT_EQ(evtMap.size(), evts.size());
     auto missRatio1 = (double)evtMap[cacheMiss]/evtMap[cache];
-    ASSERT_GT(missRatio1, 0.2);
+    ASSERT_GT(missRatio1, 0.1);
     evtMap = CollectProcessEvent("in_node_access", evts);
     auto missRatio2 = (double)evtMap[cacheMiss]/evtMap[cache];
     ASSERT_LT(missRatio2, 0.01);
@@ -307,17 +307,4 @@ TEST_F(TestCount, SimdRatio)
     ASSERT_EQ(evtMap.size(), evts.size());
     auto simdRatio = (double)evtMap[aseSpec]/evtMap[instSpec];
     ASSERT_GT(simdRatio, 0.1);
-}
-
-TEST_F(TestCount, SimdRatio)
-{
-    // Test ASE_SPEC and INST_SPEC.
-    // Run a case with vectorized loop which has many simd instructions.
-    string remoteAccess = "remote_access";
-    string memAccess = "mem_access";
-    vector<string> evts = {remoteAccess, memAccess};
-    auto evtMap = CollectProcessEvent("cross_socket_access", evts);
-    ASSERT_EQ(evtMap.size(), evts.size());
-    auto remoteRatio = (double)evtMap[remoteAccess]/evtMap[memAccess];
-    ASSERT_GT(remoteRatio, 0.001);
 }

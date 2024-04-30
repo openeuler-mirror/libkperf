@@ -44,6 +44,7 @@ protected:
         attr.dataFilter = SPE_DATA_ALL;
         attr.evFilter = SPE_EVENT_RETIRED;
         attr.minLatency = 0x40;
+        attr.symbolMode = RESOLVE_ELF_DWARF;
         return attr;
     }
 
