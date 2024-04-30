@@ -129,9 +129,11 @@ void KUNPENG_PMU::PerfSampler::RawSampleProcess(
         return;
     }
     KUNPENG_PMU::PerfRawSample *sample = (KUNPENG_PMU::PerfRawSample *)event->sample.array;
-    // Copy ips from ring buffer and get stack info later.
-    for (__u64 i = 0; i < sample->nr; ++i) {
-        ips->ips.push_back(sample->ips[i]);
+    if (symMode != NO_SYMBOL_RESOLVE) {
+        // Copy ips from ring buffer and get stack info later.
+        for (__u64 i = 0; i < sample->nr; ++i) {
+            ips->ips.push_back(sample->ips[i]);
+        }
     }
     current->cpu = static_cast<unsigned>(sample->cpu);
     current->pid = static_cast<pid_t>(sample->pid);

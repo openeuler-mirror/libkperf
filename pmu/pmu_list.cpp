@@ -40,7 +40,7 @@ namespace KUNPENG_PMU {
 
     int PmuList::Register(const int pd, PmuTaskAttr* taskParam)
     {
-        if (taskParam->pmuEvt->collectType != COUNTING) {
+        if (GetSymbolMode(pd) != NO_SYMBOL_RESOLVE && taskParam->pmuEvt->collectType != COUNTING) {
             SymResolverInit();
             SymResolverRecordKernel();
         }
@@ -75,7 +75,7 @@ namespace KUNPENG_PMU {
             }
             fdNum += cpuTopoList.size(); + procTopoList.size();
             std::shared_ptr<EvtList> evtList =
-                    std::make_shared<EvtList>(cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt);
+                    std::make_shared<EvtList>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt);
             InsertEvtList(pd, evtList);
             pmuTaskAttrHead = pmuTaskAttrHead->next;
         }
@@ -153,6 +153,8 @@ namespace KUNPENG_PMU {
         // Read data from prev sampling,
         // and store data in <dataList>.
         auto &evtData = GetDataList(pd);
+        evtData.pd = pd;
+        evtData.collectType = static_cast<PmuTaskType>(GetTaskType(pd));
         auto ts = GetCurrentTime();
         auto eventList = GetEvtList(pd);
         for (auto item : eventList) {
@@ -325,14 +327,20 @@ namespace KUNPENG_PMU {
 
     void PmuList::FillStackInfo(EventData &eventData)
     {
+        auto symMode = symModeList[eventData.pd];
+        if (symMode == NO_SYMBOL_RESOLVE) {
+            return;
+        }
         // Parse dwarf and elf info of each pid and get stack trace for each pmu data.
         for (size_t i = 0; i < eventData.data.size(); ++i) {
             auto &pmuData = eventData.data[i];
             auto &ipsData = eventData.sampleIps[i];
-            if (eventData.collectType == SPE_SAMPLING) {
+            if (symMode == RESOLVE_ELF) {
                 SymResolverRecordModuleNoDwarf(pmuData.pid);
-            } else {
+            } else if (symMode == RESOLVE_ELF_DWARF) {
                 SymResolverRecordModule(pmuData.pid);
+            } else {
+                continue;
             }
             if (pmuData.stack == nullptr) {
                 pmuData.stack = StackToHash(pmuData.pid, ipsData.ips.data(), ipsData.ips.size());
@@ -568,4 +576,15 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
+    void PmuList::SetSymbolMode(const int pd, const SymbolMode &mode)
+    {
+        lock_guard<mutex> lg(dataListMtx);
+        symModeList[pd] = mode;
+    }
+
+    SymbolMode PmuList::GetSymbolMode(const unsigned pd)
+    {
+        lock_guard<mutex> lg(dataListMtx);
+        return symModeList[pd];
+    }
 }
