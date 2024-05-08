@@ -405,6 +405,13 @@ static void SetTidByTimestamp(struct ContextSwitchData *dummyData, int *dummyIdx
         start->cpu = cpu;
         start->timestamp = recordTime;
 
+        if (start->tid != -1) {
+            // In some kernel versions, tid is contained in spe packet,
+            // which has been decoded in arm_spe_decoder.cpp.
+            // Then we do not need dummy events to derive tid for this packet.
+            continue;
+        }
+
         if (*dummyIdx >= dummyData[0].num - 1) {
             // Now, all spe records locate after the last switch-in data.
             // We have to use switch-out data to get pid of the last time slice.
