@@ -72,3 +72,36 @@ function build_sqlite3(){
   rm -rf $open_source_dir/sqlite_src/sqlite-src-3370200
   echo "install sqlite3 path: $cmake_target_dir"
 }
+
+function execute_binary() {
+    test_case_dir=("test_perf" "test_symbol")
+    test_case_name=("test_perf" "test_symbol")
+    # for instance.
+    # test_case_exclude =("TestCount.LLCacheMissRatio TestSPE.SpeProcCollectSubProc TestSPE.SpeProcCollectTwoThreads" "")
+    test_case_exclude=(
+        ""
+        ""
+    )
+    test_prefix="$1"/_build/test/
+    # 遍历数组
+    for i in "${!test_case_dir[@]}"; do
+        dir="${test_case_dir[$i]}"
+        exe="${test_case_name[$i]}"
+        cd "${test_prefix}${dir}"
+        exclude="${test_case_exclude[$i]}"
+
+        # 构建命令字符串
+        command="./$exe --gtest_filter=-"
+        if [ -n "$exclude" ]; then
+            for ex in $exclude; do
+                command="$command$ex:"
+            done
+            # 移除末尾的冒号
+            command=${command%:}
+        fi
+
+        # 执行命令
+        echo "执行命令: $command"
+        eval "$command"
+    done
+}

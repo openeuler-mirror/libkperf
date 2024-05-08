@@ -32,6 +32,16 @@ else
   creat_dir ${THIRD_PARTY}/local
 fi
 
+# 默认情况下不编译测试用例
+INCLUDE_TEST=OFF
+echo "$1"
+
+# 如果第一个参数是 "test"，则设置 INCLUDE_TEST 为 ON
+if [[ "$1" == "test" ]]; then
+    build_googletest $THIRD_PARTY
+    INCLUDE_TEST=ON
+fi
+
 # build libprof.so libraries including libprocfs.so libprocfs.a libpmu.so libpmu.a libtrace.so libtrace.so
 function build_elfin() {
   local cmake_target_dir=$THIRD_PARTY/local/elfin-parser
@@ -62,16 +72,25 @@ function build_elfin() {
 build_libprof()
 {
     cd $BUILD_DIR
-    cmake ..
+    cmake -DINCLUDE_TEST=$INCLUDE_TEST ..
     make -j ${cpu_core_num}
     make install
     echo "build_libprof success"
 }
 
+function build_test()
+{
+    if [ "$INCLUDE_TEST" = "ON" ]; then
+        execute_binary "$PROJECT_DIR"
+    fi
+}
+
 main() {
     build_elfin
     build_libprof
+    build_test
 }
 
+# bash build.sh test来获取UT
 main $@
 
