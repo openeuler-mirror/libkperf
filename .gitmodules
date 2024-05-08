@@ -1,3 +1,6 @@
 [submodule "elfin-parser"]
 	path = third_party/elfin-parser
 	url = https://gitee.com/openeuler/elfin-parser.git
+[submodule "googletest"]
+	path = third_party/googletest
+	url = https://gitee.com/mirrors/googletest.git
