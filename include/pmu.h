@@ -35,14 +35,6 @@ enum PmuEventType {
     ALL_EVENT
 };
 
-enum AggregateType {
-    PER_SYSTEM,
-    PER_CORE,
-    PER_NUMA,
-    PER_SOCKET,
-    PER_THREAD,
-};
-
 enum SpeFilter {
     SPE_FILTER_NONE = 0,
     TS_ENABLE = 1UL << 0,       // enable timestamping with value of generic timer
