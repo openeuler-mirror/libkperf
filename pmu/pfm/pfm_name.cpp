@@ -21,28 +21,28 @@
 /**
  * CORE events for HIP_A
  */
-const char* KUNPENG_PMU::HIP_A::CORE::BRANCH_MISSES = "branch-misses";
-const char* KUNPENG_PMU::HIP_A::CORE::BUS_CYCLES = "bus-cycles";
-const char* KUNPENG_PMU::HIP_A::CORE::CACHE_MISSES = "cache-misses";
-const char* KUNPENG_PMU::HIP_A::CORE::CACHE_REFERENCES = "cache-references";
-const char* KUNPENG_PMU::HIP_A::CORE::CPU_CYCLES = "cpu-cycles";
-const char* KUNPENG_PMU::HIP_A::CORE::CYCLES = "cycles";
-const char* KUNPENG_PMU::HIP_A::CORE::INSTRUCTIONS = "instructions";
-const char* KUNPENG_PMU::HIP_A::CORE::STALLED_CYCLES_BACKEND = "stalled-cycles-backend";
-const char* KUNPENG_PMU::HIP_A::CORE::STALLED_CYCLES_FRONTEND = "stalled-cycles-frontend";
-const char* KUNPENG_PMU::HIP_A::CORE::L1_DCACHE_LOAD_MISSES = "L1-dcache-load-misses";
-const char* KUNPENG_PMU::HIP_A::CORE::IDLE_CYCLES_BACKEND = "idle-cycles-backend";
-const char* KUNPENG_PMU::HIP_A::CORE::L1_ICACHE_LOAD_MISSES = "L1-icache-load-misses";
-const char* KUNPENG_PMU::HIP_A::CORE::IDLE_CYCLES_FRONTEND = "idle-cycles-frontend";
-const char* KUNPENG_PMU::HIP_A::CORE::L1_ICACHE_LOADS = "L1-icache-loads";
-const char* KUNPENG_PMU::HIP_A::CORE::LLC_LOAD_MISSES = "LLC-load-misses";
-const char* KUNPENG_PMU::HIP_A::CORE::LLC_LOADS = "LLC-loads";
-const char* KUNPENG_PMU::HIP_A::CORE::BRANCH_LOAD_MISSES = "branch-load-misses";
-const char* KUNPENG_PMU::HIP_A::CORE::BRANCH_LOADS = "branch-loads";
-const char* KUNPENG_PMU::HIP_A::CORE::DTLB_LOAD_MISSES = "dTLB-load-misses";
-const char* KUNPENG_PMU::HIP_A::CORE::DTLB_LOADS = "dTLB-loads";
-const char* KUNPENG_PMU::HIP_A::CORE::ITLB_LOAD_MISSES = "iTLB-load-misses";
-const char* KUNPENG_PMU::HIP_A::CORE::ITLB_LOADS = "iTLB-loads";
+const char* KUNPENG_PMU::COMMON::BRANCH_MISSES = "branch-misses";
+const char* KUNPENG_PMU::COMMON::BUS_CYCLES = "bus-cycles";
+const char* KUNPENG_PMU::COMMON::CACHE_MISSES = "cache-misses";
+const char* KUNPENG_PMU::COMMON::CACHE_REFERENCES = "cache-references";
+const char* KUNPENG_PMU::COMMON::CPU_CYCLES = "cpu-cycles";
+const char* KUNPENG_PMU::COMMON::CYCLES = "cycles";
+const char* KUNPENG_PMU::COMMON::INSTRUCTIONS = "instructions";
+const char* KUNPENG_PMU::COMMON::STALLED_CYCLES_BACKEND = "stalled-cycles-backend";
+const char* KUNPENG_PMU::COMMON::STALLED_CYCLES_FRONTEND = "stalled-cycles-frontend";
+const char* KUNPENG_PMU::COMMON::L1_DCACHE_LOAD_MISSES = "L1-dcache-load-misses";
+const char* KUNPENG_PMU::COMMON::IDLE_CYCLES_BACKEND = "idle-cycles-backend";
+const char* KUNPENG_PMU::COMMON::L1_ICACHE_LOAD_MISSES = "L1-icache-load-misses";
+const char* KUNPENG_PMU::COMMON::IDLE_CYCLES_FRONTEND = "idle-cycles-frontend";
+const char* KUNPENG_PMU::COMMON::L1_ICACHE_LOADS = "L1-icache-loads";
+const char* KUNPENG_PMU::COMMON::LLC_LOAD_MISSES = "LLC-load-misses";
+const char* KUNPENG_PMU::COMMON::LLC_LOADS = "LLC-loads";
+const char* KUNPENG_PMU::COMMON::BRANCH_LOAD_MISSES = "branch-load-misses";
+const char* KUNPENG_PMU::COMMON::BRANCH_LOADS = "branch-loads";
+const char* KUNPENG_PMU::COMMON::DTLB_LOAD_MISSES = "dTLB-load-misses";
+const char* KUNPENG_PMU::COMMON::DTLB_LOADS = "dTLB-loads";
+const char* KUNPENG_PMU::COMMON::ITLB_LOAD_MISSES = "iTLB-load-misses";
+const char* KUNPENG_PMU::COMMON::ITLB_LOADS = "iTLB-loads";
 const char* KUNPENG_PMU::HIP_A::CORE::L1D_CACHE_RD = "l1d_cache_rd";
 const char* KUNPENG_PMU::HIP_A::CORE::L1D_CACHE_WR = "l1d_cache_wr";
 const char* KUNPENG_PMU::HIP_A::CORE::L1D_CACHE_REFILL_RD = "l1d_cache_refill_rd";
@@ -72,28 +72,3 @@ const char* KUNPENG_PMU::HIP_A::CORE::EXE_STALL_CYCLE = "exe_stall_cycle";
 const char* KUNPENG_PMU::HIP_A::CORE::MEM_STALL_ANYLOAD = "mem_stall_anyload";
 const char* KUNPENG_PMU::HIP_A::CORE::MEM_STALL_L1MISS = "mem_stall_l1miss";
 const char* KUNPENG_PMU::HIP_A::CORE::MEM_STALL_L2MISS = "mem_stall_l2miss";
-
-/**
- * CORE events for HIP_B
- */
-const char* KUNPENG_PMU::HIP_B::CORE::BRANCH_MISSES = "branch-misses";
-const char* KUNPENG_PMU::HIP_B::CORE::CACHE_MISSES = "cache-misses";
-const char* KUNPENG_PMU::HIP_B::CORE::CACHE_REFERENCES = "cache-references";
-const char* KUNPENG_PMU::HIP_B::CORE::CPU_CYCLES = "cpu-cycles";
-const char* KUNPENG_PMU::HIP_B::CORE::CYCLES = "cycles";
-const char* KUNPENG_PMU::HIP_B::CORE::INSTRUCTIONS = "instructions";
-const char* KUNPENG_PMU::HIP_B::CORE::STALLED_CYCLES_BACKEND = "stalled-cycles-backend";
-const char* KUNPENG_PMU::HIP_B::CORE::STALLED_CYCLES_FRONTEND = "stalled-cycles-frontend";
-const char* KUNPENG_PMU::HIP_B::CORE::L1_DCACHE_LOAD_MISSES = "L1-dcache-load-misses";
-const char* KUNPENG_PMU::HIP_B::CORE::IDLE_CYCLES_BACKEND = "idle-cycles-backend";
-const char* KUNPENG_PMU::HIP_B::CORE::L1_ICACHE_LOAD_MISSES = "L1-icache-load-misses";
-const char* KUNPENG_PMU::HIP_B::CORE::IDLE_CYCLES_FRONTEND = "idle-cycles-frontend";
-const char* KUNPENG_PMU::HIP_B::CORE::L1_ICACHE_LOADS = "L1-icache-loads";
-const char* KUNPENG_PMU::HIP_B::CORE::LLC_LOAD_MISSES = "LLC-load-misses";
-const char* KUNPENG_PMU::HIP_B::CORE::LLC_LOADS = "LLC-loads";
-const char* KUNPENG_PMU::HIP_B::CORE::BRANCH_LOAD_MISSES = "branch-load-misses";
-const char* KUNPENG_PMU::HIP_B::CORE::BRANCH_LOADS = "branch-loads";
-const char* KUNPENG_PMU::HIP_B::CORE::DTLB_LOAD_MISSES = "dTLB-load-misses";
-const char* KUNPENG_PMU::HIP_B::CORE::DTLB_LOADS = "dTLB-loads";
-const char* KUNPENG_PMU::HIP_B::CORE::ITLB_LOAD_MISSES = "iTLB-load-misses";
-const char* KUNPENG_PMU::HIP_B::CORE::ITLB_LOADS = "iTLB-loads";

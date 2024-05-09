@@ -27,11 +27,12 @@ using namespace std;
 
 static const std::string CPU_TOPOLOGY_PACKAGE_ID = "/sys/bus/cpu/devices/cpu%d/topology/physical_package_id";
 static const std::string MIDR_EL1 = "/sys/devices/system/cpu/cpu0/regs/identification/midr_el1";
-static const std::string HIPA_ID = "0x00000000481fd010";
-static const std::string HIPB_ID = "0x00000000480fd020";
 static constexpr int PATH_LEN = 256;
 
 static CHIP_TYPE g_chipType = CHIP_TYPE::UNDEFINED_TYPE;
+static map<string, CHIP_TYPE> chipMap = {{"0x00000000481fd010", HIPA},
+                                         {"0x00000000480fd020", HIPB},
+                                         {"0x00000000480fd030", HIPC}};
 
 static inline bool ReadCpuPackageId(int coreId, CpuTopology* cpuTopo)
 {
@@ -84,14 +85,12 @@ bool InitCpuType()
     std::ifstream cpuFile(MIDR_EL1);
     std::string cpuId;
     cpuFile >> cpuId;
-    if (cpuId.compare(HIPA_ID) == 0) {
-        g_chipType = CHIP_TYPE::HIPA;
-    } else if (cpuId.compare(HIPB_ID) == 0) {
-        g_chipType = CHIP_TYPE::HIPB;
-    } else {
+    auto findCpu = chipMap.find(cpuId);
+    if (findCpu == chipMap.end()) {
         pcerr::New(LIBPERF_ERR_CHIP_TYPE_INVALID, "invalid chip type");
         return false;
     }
+    g_chipType = findCpu->second;
     return true;
 }
 
