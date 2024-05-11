@@ -80,7 +80,7 @@ struct PmuAttr {
     unsigned excludeUser : 1;     // don't count user
     unsigned excludeKernel : 1;   //  don't count kernel
     enum SymbolMode symbolMode;     // refer to comments of SymbolMode
-
+    unsigned callStack : 1;   //  collect complete call stack
     // SPE related fields.
     enum SpeFilter dataFilter;      // spe data filter
     enum SpeEventFilter evFilter;   // spe event filter

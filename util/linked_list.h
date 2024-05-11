@@ -55,6 +55,22 @@ void AddTail(ListNode** head, ListNode** newNode)
     }
 }
 
+// Function to add a node at the tail of the double linked list
+template <typename ListNode>
+void AddDoubleLinkedTail(ListNode** head, ListNode** newNode)
+{
+    if (*head == nullptr) {
+        *head = *newNode;
+    } else {
+        ListNode* current = *head;
+        while (current->next != nullptr) {
+            current = current->next;
+        }
+        current->next = *newNode;
+        (*newNode)->prev = current;
+    }
+}
+
 // Function to free the linked list
 template <typename ListNode>
 void FreeList(ListNode** head)

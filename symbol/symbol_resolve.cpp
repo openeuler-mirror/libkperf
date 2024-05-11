@@ -817,7 +817,7 @@ struct Stack* SymbolResolve::StackToHash(int pid, unsigned long* stack, int nr)
         } else {
             current->symbol = nullptr;
         }
-        AddTail<struct Stack>(&head, &current);
+        AddDoubleLinkedTail<struct Stack>(&head, &current);
     }
 
     if (this->stackMap.at(pid).find(stackId) == this->stackMap.at(pid).end()) {
