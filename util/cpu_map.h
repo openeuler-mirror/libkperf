@@ -24,6 +24,7 @@ enum CHIP_TYPE {
     UNDEFINED_TYPE = 0,
     HIPA = 1,
     HIPB = 2,
+    HIPC = 3,
 };
 
 struct CpuTopology* GetCpuTopology(int coreId);

@@ -20,8 +20,7 @@
 #include <linux/types.h>
 
 namespace KUNPENG_PMU {
-namespace HIP_A {
-namespace CORE {
+namespace COMMON {
 extern const char* BRANCH_MISSES;
 extern const char* BUS_CYCLES;
 extern const char* CACHE_MISSES;
@@ -44,6 +43,9 @@ extern const char* DTLB_LOAD_MISSES;
 extern const char* DTLB_LOADS;
 extern const char* ITLB_LOAD_MISSES;
 extern const char* ITLB_LOADS;
+}
+namespace HIP_A {
+namespace CORE {
 extern const char* L1D_CACHE_RD;
 extern const char* L1D_CACHE_WR;
 extern const char* L1D_CACHE_REFILL_RD;
@@ -76,33 +78,5 @@ extern const char* MEM_STALL_L2MISS;
 }  // namespace CORE
 
 }  // namespace HIP_A
-
-namespace HIP_B {
-namespace CORE {
-extern const char* BRANCH_MISSES;
-extern const char* CACHE_MISSES;
-extern const char* CACHE_REFERENCES;
-extern const char* CPU_CYCLES;
-extern const char* CYCLES;
-extern const char* INSTRUCTIONS;
-extern const char* STALLED_CYCLES_BACKEND;
-extern const char* STALLED_CYCLES_FRONTEND;
-extern const char* L1_DCACHE_LOAD_MISSES;
-extern const char* IDLE_CYCLES_BACKEND;
-extern const char* L1_ICACHE_LOAD_MISSES;
-extern const char* IDLE_CYCLES_FRONTEND;
-extern const char* L1_ICACHE_LOADS;
-extern const char* LLC_LOAD_MISSES;
-extern const char* LLC_LOADS;
-extern const char* BRANCH_LOAD_MISSES;
-extern const char* BRANCH_LOADS;
-extern const char* DTLB_LOAD_MISSES;
-extern const char* DTLB_LOADS;
-extern const char* ITLB_LOAD_MISSES;
-extern const char* ITLB_LOADS;
-}  // namespace CORE
-
-}  // namespace HIP_B
-
 }  // namespace KUNPENG_PMU
 #endif

@@ -24,179 +24,179 @@ static CHIP_TYPE g_chipType = UNDEFINED_TYPE;
 
 const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MAP{
     {
-        KUNPENG_PMU::HIP_A::CORE::BRANCH_MISSES,
+        KUNPENG_PMU::COMMON::BRANCH_MISSES,
         {
             PERF_TYPE_HARDWARE,
             PERF_COUNT_HW_BRANCH_MISSES,
-            KUNPENG_PMU::HIP_A::CORE::BRANCH_MISSES
+            KUNPENG_PMU::COMMON::BRANCH_MISSES
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::BUS_CYCLES,
+        KUNPENG_PMU::COMMON::BUS_CYCLES,
         {
             PERF_TYPE_HARDWARE,
             PERF_COUNT_HW_BUS_CYCLES,
-            KUNPENG_PMU::HIP_A::CORE::BUS_CYCLES
+            KUNPENG_PMU::COMMON::BUS_CYCLES
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::CACHE_MISSES,
+        KUNPENG_PMU::COMMON::CACHE_MISSES,
         {
             PERF_TYPE_HARDWARE,
             PERF_COUNT_HW_CACHE_MISSES,
-            KUNPENG_PMU::HIP_A::CORE::CACHE_MISSES
+            KUNPENG_PMU::COMMON::CACHE_MISSES
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::CACHE_REFERENCES,
+        KUNPENG_PMU::COMMON::CACHE_REFERENCES,
         {
             PERF_TYPE_HARDWARE,
             PERF_COUNT_HW_CACHE_REFERENCES,
-            KUNPENG_PMU::HIP_A::CORE::CACHE_REFERENCES
+            KUNPENG_PMU::COMMON::CACHE_REFERENCES
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::CPU_CYCLES,
+        KUNPENG_PMU::COMMON::CPU_CYCLES,
         {
             PERF_TYPE_HARDWARE,
             PERF_COUNT_HW_CPU_CYCLES,
-            KUNPENG_PMU::HIP_A::CORE::CPU_CYCLES
+            KUNPENG_PMU::COMMON::CPU_CYCLES
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::CYCLES,
+        KUNPENG_PMU::COMMON::CYCLES,
         {
             PERF_TYPE_HARDWARE,
             PERF_COUNT_HW_CPU_CYCLES,
-            KUNPENG_PMU::HIP_A::CORE::CYCLES
+            KUNPENG_PMU::COMMON::CYCLES
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::INSTRUCTIONS,
+        KUNPENG_PMU::COMMON::INSTRUCTIONS,
         {
             PERF_TYPE_HARDWARE,
             PERF_COUNT_HW_INSTRUCTIONS,
-            KUNPENG_PMU::HIP_A::CORE::INSTRUCTIONS
+            KUNPENG_PMU::COMMON::INSTRUCTIONS
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::STALLED_CYCLES_BACKEND,
+        KUNPENG_PMU::COMMON::STALLED_CYCLES_BACKEND,
         {
             PERF_TYPE_HARDWARE,
             0x8,
-            KUNPENG_PMU::HIP_A::CORE::STALLED_CYCLES_BACKEND
+            KUNPENG_PMU::COMMON::STALLED_CYCLES_BACKEND
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::STALLED_CYCLES_FRONTEND,
+        KUNPENG_PMU::COMMON::STALLED_CYCLES_FRONTEND,
         {
             PERF_TYPE_HARDWARE,
             0x7,
-            KUNPENG_PMU::HIP_A::CORE::STALLED_CYCLES_FRONTEND
+            KUNPENG_PMU::COMMON::STALLED_CYCLES_FRONTEND
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::L1_DCACHE_LOAD_MISSES,
+        KUNPENG_PMU::COMMON::L1_DCACHE_LOAD_MISSES,
         {
             PERF_TYPE_HW_CACHE,
             0x10000,
-            KUNPENG_PMU::HIP_A::CORE::L1_DCACHE_LOAD_MISSES
+            KUNPENG_PMU::COMMON::L1_DCACHE_LOAD_MISSES
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::IDLE_CYCLES_BACKEND,
+        KUNPENG_PMU::COMMON::IDLE_CYCLES_BACKEND,
         {
             PERF_TYPE_HARDWARE,
             0x8,
-            KUNPENG_PMU::HIP_A::CORE::IDLE_CYCLES_BACKEND
+            KUNPENG_PMU::COMMON::IDLE_CYCLES_BACKEND
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::L1_ICACHE_LOAD_MISSES,
+        KUNPENG_PMU::COMMON::L1_ICACHE_LOAD_MISSES,
         {
             PERF_TYPE_HW_CACHE,
             0x10001,
-            KUNPENG_PMU::HIP_A::CORE::L1_ICACHE_LOAD_MISSES
+            KUNPENG_PMU::COMMON::L1_ICACHE_LOAD_MISSES
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::IDLE_CYCLES_FRONTEND,
+        KUNPENG_PMU::COMMON::IDLE_CYCLES_FRONTEND,
         {
             PERF_TYPE_HARDWARE,
             0x7,
-            KUNPENG_PMU::HIP_A::CORE::IDLE_CYCLES_FRONTEND
+            KUNPENG_PMU::COMMON::IDLE_CYCLES_FRONTEND
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::L1_ICACHE_LOADS,
+        KUNPENG_PMU::COMMON::L1_ICACHE_LOADS,
         {
             PERF_TYPE_HW_CACHE,
             0x1,
-            KUNPENG_PMU::HIP_A::CORE::L1_ICACHE_LOADS
+            KUNPENG_PMU::COMMON::L1_ICACHE_LOADS
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::LLC_LOAD_MISSES,
+        KUNPENG_PMU::COMMON::LLC_LOAD_MISSES,
         {
             PERF_TYPE_HW_CACHE,
             0x10002,
-            KUNPENG_PMU::HIP_A::CORE::LLC_LOAD_MISSES
+            KUNPENG_PMU::COMMON::LLC_LOAD_MISSES
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::LLC_LOADS,
+        KUNPENG_PMU::COMMON::LLC_LOADS,
         {
             PERF_TYPE_HW_CACHE,
             0x2,
-            KUNPENG_PMU::HIP_A::CORE::LLC_LOADS
+            KUNPENG_PMU::COMMON::LLC_LOADS
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::BRANCH_LOAD_MISSES,
+        KUNPENG_PMU::COMMON::BRANCH_LOAD_MISSES,
         {
             PERF_TYPE_HW_CACHE,
             0x10005,
-            KUNPENG_PMU::HIP_A::CORE::BRANCH_LOAD_MISSES
+            KUNPENG_PMU::COMMON::BRANCH_LOAD_MISSES
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::BRANCH_LOADS,
+        KUNPENG_PMU::COMMON::BRANCH_LOADS,
         {
             PERF_TYPE_HW_CACHE,
             0x5,
-            KUNPENG_PMU::HIP_A::CORE::BRANCH_LOADS
+            KUNPENG_PMU::COMMON::BRANCH_LOADS
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::DTLB_LOAD_MISSES,
+        KUNPENG_PMU::COMMON::DTLB_LOAD_MISSES,
         {
             PERF_TYPE_HW_CACHE,
             0x10003,
-            KUNPENG_PMU::HIP_A::CORE::DTLB_LOAD_MISSES
+            KUNPENG_PMU::COMMON::DTLB_LOAD_MISSES
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::DTLB_LOADS,
+        KUNPENG_PMU::COMMON::DTLB_LOADS,
         {
             PERF_TYPE_HW_CACHE,
             0x3,
-            KUNPENG_PMU::HIP_A::CORE::DTLB_LOADS
+            KUNPENG_PMU::COMMON::DTLB_LOADS
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::ITLB_LOAD_MISSES,
+        KUNPENG_PMU::COMMON::ITLB_LOAD_MISSES,
         {
             PERF_TYPE_HW_CACHE,
             0x10004,
-            KUNPENG_PMU::HIP_A::CORE::ITLB_LOAD_MISSES
+            KUNPENG_PMU::COMMON::ITLB_LOAD_MISSES
         }
     },
     {
-        KUNPENG_PMU::HIP_A::CORE::ITLB_LOADS,
+        KUNPENG_PMU::COMMON::ITLB_LOADS,
         {
             PERF_TYPE_HW_CACHE,
             0x4,
-            KUNPENG_PMU::HIP_A::CORE::ITLB_LOADS
+            KUNPENG_PMU::COMMON::ITLB_LOADS
         }
     },
     {
@@ -435,171 +435,342 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
 
 const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MAP{
     {
-        KUNPENG_PMU::HIP_B::CORE::BRANCH_MISSES,
+        KUNPENG_PMU::COMMON::BRANCH_MISSES,
         {
             PERF_TYPE_HARDWARE,
             PERF_COUNT_HW_BRANCH_MISSES,
-            KUNPENG_PMU::HIP_B::CORE::BRANCH_MISSES
+            KUNPENG_PMU::COMMON::BRANCH_MISSES
         }
     },
     {
-        KUNPENG_PMU::HIP_B::CORE::CACHE_MISSES,
+        KUNPENG_PMU::COMMON::CACHE_MISSES,
         {
             PERF_TYPE_HARDWARE,
             PERF_COUNT_HW_CACHE_MISSES,
-            KUNPENG_PMU::HIP_B::CORE::CACHE_MISSES
+            KUNPENG_PMU::COMMON::CACHE_MISSES
         }
     },
     {
-        KUNPENG_PMU::HIP_B::CORE::CACHE_REFERENCES,
+        KUNPENG_PMU::COMMON::CACHE_REFERENCES,
         {
             PERF_TYPE_HARDWARE,
             PERF_COUNT_HW_CACHE_REFERENCES,
-            KUNPENG_PMU::HIP_B::CORE::CACHE_REFERENCES
+            KUNPENG_PMU::COMMON::CACHE_REFERENCES
         }
     },
     {
-        KUNPENG_PMU::HIP_B::CORE::CPU_CYCLES,
+        KUNPENG_PMU::COMMON::CPU_CYCLES,
         {
             PERF_TYPE_HARDWARE,
             PERF_COUNT_HW_CPU_CYCLES,
-            KUNPENG_PMU::HIP_B::CORE::CPU_CYCLES
+            KUNPENG_PMU::COMMON::CPU_CYCLES
         }
     },
     {
-        KUNPENG_PMU::HIP_B::CORE::CYCLES,
+        KUNPENG_PMU::COMMON::CYCLES,
         {
             PERF_TYPE_HARDWARE,
             PERF_COUNT_HW_CPU_CYCLES,
-            KUNPENG_PMU::HIP_B::CORE::CYCLES
+            KUNPENG_PMU::COMMON::CYCLES
         }
     },
     {
-        KUNPENG_PMU::HIP_B::CORE::INSTRUCTIONS,
+        KUNPENG_PMU::COMMON::INSTRUCTIONS,
         {
             PERF_TYPE_HARDWARE,
             PERF_COUNT_HW_INSTRUCTIONS,
-            KUNPENG_PMU::HIP_B::CORE::INSTRUCTIONS
+            KUNPENG_PMU::COMMON::INSTRUCTIONS
         }
     },
     {
-        KUNPENG_PMU::HIP_B::CORE::STALLED_CYCLES_BACKEND,
+        KUNPENG_PMU::COMMON::STALLED_CYCLES_BACKEND,
         {
             PERF_TYPE_HARDWARE,
             PERF_COUNT_HW_STALLED_CYCLES_BACKEND,
-            KUNPENG_PMU::HIP_B::CORE::STALLED_CYCLES_BACKEND
+            KUNPENG_PMU::COMMON::STALLED_CYCLES_BACKEND
         }
     },
     {
-        KUNPENG_PMU::HIP_B::CORE::STALLED_CYCLES_FRONTEND,
+        KUNPENG_PMU::COMMON::STALLED_CYCLES_FRONTEND,
         {
             PERF_TYPE_HARDWARE,
             PERF_COUNT_HW_STALLED_CYCLES_FRONTEND,
-            KUNPENG_PMU::HIP_B::CORE::STALLED_CYCLES_FRONTEND
+            KUNPENG_PMU::COMMON::STALLED_CYCLES_FRONTEND
         }
     },
     {
-        KUNPENG_PMU::HIP_B::CORE::L1_DCACHE_LOAD_MISSES,
+        KUNPENG_PMU::COMMON::L1_DCACHE_LOAD_MISSES,
         {
             PERF_TYPE_HW_CACHE,
             0x10000,
-            KUNPENG_PMU::HIP_B::CORE::L1_DCACHE_LOAD_MISSES
+            KUNPENG_PMU::COMMON::L1_DCACHE_LOAD_MISSES
         }
     },
     {
-        KUNPENG_PMU::HIP_B::CORE::IDLE_CYCLES_BACKEND,
+        KUNPENG_PMU::COMMON::IDLE_CYCLES_BACKEND,
         {
             PERF_TYPE_HARDWARE,
             PERF_COUNT_HW_STALLED_CYCLES_BACKEND,
-            KUNPENG_PMU::HIP_B::CORE::IDLE_CYCLES_BACKEND
+            KUNPENG_PMU::COMMON::IDLE_CYCLES_BACKEND
         }
     },
     {
-        KUNPENG_PMU::HIP_B::CORE::L1_ICACHE_LOAD_MISSES,
+        KUNPENG_PMU::COMMON::L1_ICACHE_LOAD_MISSES,
         {
             PERF_TYPE_HW_CACHE,
             0x10001,
-            KUNPENG_PMU::HIP_B::CORE::L1_ICACHE_LOAD_MISSES
+            KUNPENG_PMU::COMMON::L1_ICACHE_LOAD_MISSES
         }
     },
     {
-        KUNPENG_PMU::HIP_B::CORE::IDLE_CYCLES_FRONTEND,
+        KUNPENG_PMU::COMMON::IDLE_CYCLES_FRONTEND,
         {
             PERF_TYPE_HARDWARE,
             PERF_COUNT_HW_STALLED_CYCLES_FRONTEND,
-            KUNPENG_PMU::HIP_B::CORE::IDLE_CYCLES_FRONTEND
+            KUNPENG_PMU::COMMON::IDLE_CYCLES_FRONTEND
         }
     },
     {
-        KUNPENG_PMU::HIP_B::CORE::L1_ICACHE_LOADS,
+        KUNPENG_PMU::COMMON::L1_ICACHE_LOADS,
         {
             PERF_TYPE_HW_CACHE,
             0x1,
-            KUNPENG_PMU::HIP_B::CORE::L1_ICACHE_LOADS
+            KUNPENG_PMU::COMMON::L1_ICACHE_LOADS
         }
     },
     {
-        KUNPENG_PMU::HIP_B::CORE::LLC_LOAD_MISSES,
+        KUNPENG_PMU::COMMON::LLC_LOAD_MISSES,
         {
             PERF_TYPE_HW_CACHE,
             0x10002,
-            KUNPENG_PMU::HIP_B::CORE::LLC_LOAD_MISSES
+            KUNPENG_PMU::COMMON::LLC_LOAD_MISSES
         }
     },
     {
-        KUNPENG_PMU::HIP_B::CORE::LLC_LOADS,
+        KUNPENG_PMU::COMMON::LLC_LOADS,
         {
             PERF_TYPE_HW_CACHE,
             0x2,
-            KUNPENG_PMU::HIP_B::CORE::LLC_LOADS
+            KUNPENG_PMU::COMMON::LLC_LOADS
         }
     },
     {
-        KUNPENG_PMU::HIP_B::CORE::BRANCH_LOAD_MISSES,
+        KUNPENG_PMU::COMMON::BRANCH_LOAD_MISSES,
         {
             PERF_TYPE_HW_CACHE,
             0x10005,
-            KUNPENG_PMU::HIP_B::CORE::BRANCH_LOAD_MISSES
+            KUNPENG_PMU::COMMON::BRANCH_LOAD_MISSES
         }
     },
     {
-        KUNPENG_PMU::HIP_B::CORE::BRANCH_LOADS,
+        KUNPENG_PMU::COMMON::BRANCH_LOADS,
         {
             PERF_TYPE_HW_CACHE,
             0x5,
-            KUNPENG_PMU::HIP_B::CORE::BRANCH_LOADS
+            KUNPENG_PMU::COMMON::BRANCH_LOADS
         }
     },
     {
-        KUNPENG_PMU::HIP_B::CORE::DTLB_LOAD_MISSES,
+        KUNPENG_PMU::COMMON::DTLB_LOAD_MISSES,
         {
             PERF_TYPE_HW_CACHE,
             0x10003,
-            KUNPENG_PMU::HIP_B::CORE::DTLB_LOAD_MISSES
+            KUNPENG_PMU::COMMON::DTLB_LOAD_MISSES
         }
     },
     {
-        KUNPENG_PMU::HIP_B::CORE::DTLB_LOADS,
+        KUNPENG_PMU::COMMON::DTLB_LOADS,
         {
             PERF_TYPE_HW_CACHE,
             0x3,
-            KUNPENG_PMU::HIP_B::CORE::DTLB_LOADS
+            KUNPENG_PMU::COMMON::DTLB_LOADS
         }
     },
     {
-        KUNPENG_PMU::HIP_B::CORE::ITLB_LOAD_MISSES,
+        KUNPENG_PMU::COMMON::ITLB_LOAD_MISSES,
         {
             PERF_TYPE_HW_CACHE,
             0x10004,
-            KUNPENG_PMU::HIP_B::CORE::ITLB_LOAD_MISSES
+            KUNPENG_PMU::COMMON::ITLB_LOAD_MISSES
         }
     },
     {
-        KUNPENG_PMU::HIP_B::CORE::ITLB_LOADS,
+        KUNPENG_PMU::COMMON::ITLB_LOADS,
         {
             PERF_TYPE_HW_CACHE,
             0x4,
-            KUNPENG_PMU::HIP_B::CORE::ITLB_LOADS
+            KUNPENG_PMU::COMMON::ITLB_LOADS
+        }
+    },
+};
+
+const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_C_CORE_PMU_MAP{
+    {
+        KUNPENG_PMU::COMMON::BRANCH_MISSES,
+        {
+            PERF_TYPE_HARDWARE,
+            PERF_COUNT_HW_BRANCH_MISSES,
+            KUNPENG_PMU::COMMON::BRANCH_MISSES
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::CACHE_MISSES,
+        {
+            PERF_TYPE_HARDWARE,
+            PERF_COUNT_HW_CACHE_MISSES,
+            KUNPENG_PMU::COMMON::CACHE_MISSES
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::CACHE_REFERENCES,
+        {
+            PERF_TYPE_HARDWARE,
+            PERF_COUNT_HW_CACHE_REFERENCES,
+            KUNPENG_PMU::COMMON::CACHE_REFERENCES
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::CPU_CYCLES,
+        {
+            PERF_TYPE_HARDWARE,
+            PERF_COUNT_HW_CPU_CYCLES,
+            KUNPENG_PMU::COMMON::CPU_CYCLES
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::CYCLES,
+        {
+            PERF_TYPE_HARDWARE,
+            PERF_COUNT_HW_CPU_CYCLES,
+            KUNPENG_PMU::COMMON::CYCLES
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::INSTRUCTIONS,
+        {
+            PERF_TYPE_HARDWARE,
+            PERF_COUNT_HW_INSTRUCTIONS,
+            KUNPENG_PMU::COMMON::INSTRUCTIONS
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::STALLED_CYCLES_BACKEND,
+        {
+            PERF_TYPE_HARDWARE,
+            PERF_COUNT_HW_STALLED_CYCLES_BACKEND,
+            KUNPENG_PMU::COMMON::STALLED_CYCLES_BACKEND
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::STALLED_CYCLES_FRONTEND,
+        {
+            PERF_TYPE_HARDWARE,
+            PERF_COUNT_HW_STALLED_CYCLES_FRONTEND,
+            KUNPENG_PMU::COMMON::STALLED_CYCLES_FRONTEND
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::L1_DCACHE_LOAD_MISSES,
+        {
+            PERF_TYPE_HW_CACHE,
+            0x10000,
+            KUNPENG_PMU::COMMON::L1_DCACHE_LOAD_MISSES
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::IDLE_CYCLES_BACKEND,
+        {
+            PERF_TYPE_HARDWARE,
+            PERF_COUNT_HW_STALLED_CYCLES_BACKEND,
+            KUNPENG_PMU::COMMON::IDLE_CYCLES_BACKEND
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::L1_ICACHE_LOAD_MISSES,
+        {
+            PERF_TYPE_HW_CACHE,
+            0x10001,
+            KUNPENG_PMU::COMMON::L1_ICACHE_LOAD_MISSES
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::IDLE_CYCLES_FRONTEND,
+        {
+            PERF_TYPE_HARDWARE,
+            PERF_COUNT_HW_STALLED_CYCLES_FRONTEND,
+            KUNPENG_PMU::COMMON::IDLE_CYCLES_FRONTEND
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::L1_ICACHE_LOADS,
+        {
+            PERF_TYPE_HW_CACHE,
+            0x1,
+            KUNPENG_PMU::COMMON::L1_ICACHE_LOADS
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::LLC_LOAD_MISSES,
+        {
+            PERF_TYPE_HW_CACHE,
+            0x10002,
+            KUNPENG_PMU::COMMON::LLC_LOAD_MISSES
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::LLC_LOADS,
+        {
+            PERF_TYPE_HW_CACHE,
+            0x2,
+            KUNPENG_PMU::COMMON::LLC_LOADS
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::BRANCH_LOAD_MISSES,
+        {
+            PERF_TYPE_HW_CACHE,
+            0x10005,
+            KUNPENG_PMU::COMMON::BRANCH_LOAD_MISSES
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::BRANCH_LOADS,
+        {
+            PERF_TYPE_HW_CACHE,
+            0x5,
+            KUNPENG_PMU::COMMON::BRANCH_LOADS
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::DTLB_LOAD_MISSES,
+        {
+            PERF_TYPE_HW_CACHE,
+            0x10003,
+            KUNPENG_PMU::COMMON::DTLB_LOAD_MISSES
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::DTLB_LOADS,
+        {
+            PERF_TYPE_HW_CACHE,
+            0x3,
+            KUNPENG_PMU::COMMON::DTLB_LOADS
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::ITLB_LOAD_MISSES,
+        {
+            PERF_TYPE_HW_CACHE,
+            0x10004,
+            KUNPENG_PMU::COMMON::ITLB_LOAD_MISSES
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::ITLB_LOADS,
+        {
+            PERF_TYPE_HW_CACHE,
+            0x4,
+            KUNPENG_PMU::COMMON::ITLB_LOADS
         }
     },
 };
@@ -607,6 +778,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MA
 const KUNPENG_PMU::CORE_EVT_MAP KUNPENG_PMU::CORE_EVENT_MAP = {
     {CHIP_TYPE::HIPA, HIP_A_CORE_PMU_MAP},
     {CHIP_TYPE::HIPB, HIP_B_CORE_PMU_MAP},
+    {CHIP_TYPE::HIPC, HIP_C_CORE_PMU_MAP},
 };
 
 static struct PmuEvt* ConstructPmuEvtFromCore(KUNPENG_PMU::CoreConfig config, int collectType)
