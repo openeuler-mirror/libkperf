@@ -23,6 +23,7 @@
 #include "pcerr.h"
 #include "util_time.h"
 #include "log.h"
+#include "pmu_event_list.h"
 #include "pmu_list.h"
 #include "common.h"
 
