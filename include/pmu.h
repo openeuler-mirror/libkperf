@@ -141,14 +141,6 @@ const char** PmuEventList(enum PmuEventType eventType, unsigned *numEvt);
 
 /**
  * @brief
- * Free eventList pointer.
- * @param eventList event list
- * @param numEvt length of event list
- */
-void PmuEventListFree();
-
-/**
- * @brief
  * Enable counting or sampling of task <pd>.
  * On error, -1 is returned.
  */
