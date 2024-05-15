@@ -15,8 +15,10 @@
 
 #ifndef LIBKPROF_COMMON_H
 #define LIBKPROF_COMMON_H
+#include <linux/perf_event.h>
 #include <string>
 
+bool IsValidIp(unsigned long ip);
 std::string GetRealPath(const std::string filePath);
 bool IsValidPath(const std::string& filePath);
 int RaiseNumFd(uint64_t numFd);
