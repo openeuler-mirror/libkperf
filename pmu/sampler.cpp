@@ -31,6 +31,7 @@
 #include "process_map.h"
 #include "log.h"
 #include "sampler.h"
+#include "common.h"
 
 using namespace std;
 
@@ -131,14 +132,21 @@ void KUNPENG_PMU::PerfSampler::RawSampleProcess(
     KUNPENG_PMU::PerfRawSample *sample = (KUNPENG_PMU::PerfRawSample *)event->sample.array;
     if (symMode != NO_SYMBOL_RESOLVE) {
         // Copy ips from ring buffer and get stack info later.
-        if (evt->callStack == 0 && sample->nr - 1 >= 0) {
-            ips->ips.push_back(sample->ips[sample->nr - 1]);
-        } else {
-            for (int i = sample->nr - 1; i >= 0; --i) {
+        if (evt->callStack == 0) {
+            int i = 0;
+            while (i < sample->nr && !IsValidIp(sample->ips[i])) {
+                i++;
+            }
+            if (i < sample->nr) {
                 ips->ips.push_back(sample->ips[i]);
             }
+        } else {
+            for (int i = sample->nr - 1; i >= 0; --i) {
+                if (IsValidIp(sample->ips[i])) {
+                    ips->ips.push_back(sample->ips[i]);
+                }
+            }
         }
-
     }
     current->cpu = static_cast<unsigned>(sample->cpu);
     current->pid = static_cast<pid_t>(sample->pid);
@@ -191,6 +199,12 @@ void KUNPENG_PMU::PerfSampler::FillComm(const size_t &start, const size_t &end, 
         auto& pmuData = data[i];
         auto findProc = procMap.find(pmuData.tid);
         if (findProc == procMap.end()) {
+            UpdatePidInfo(pmuData.pid, pmuData.tid);
+            findProc = procMap.find(pmuData.tid);
+            if (findProc == procMap.end()) {
+                continue;
+            }
+            pmuData.comm = findProc->second->comm;
             continue;
         }
         pmuData.comm = findProc->second->comm;
