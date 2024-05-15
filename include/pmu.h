@@ -93,6 +93,23 @@ struct CpuTopology {
     int socketId;
 };
 
+enum SPE_EVENTS {
+    SPE_EV_EXCEPT       = 1 << 0,
+    SPE_EV_RETIRED      = 1 << 1,
+    SPE_EV_L1D_ACCESS   = 1 << 2,
+    SPE_EV_L1D_REFILL   = 1 << 3,
+    SPE_EV_TLB_ACCESS   = 1 << 4,
+    SPE_EV_TLB_WALK     = 1 << 5,
+    SPE_EV_NOT_TAKEN    = 1 << 6,
+    SPE_EV_MISPRED      = 1 << 7,
+    SPE_EV_LLC_ACCESS   = 1 << 8,
+    SPE_EV_LLC_MISS     = 1 << 9,
+    SPE_EV_REMOTE_ACCESS= 1 << 10,
+    SPE_EV_ALIGNMENT    = 1 << 11,
+    SPE_EV_PARTIAL_PRED = 1 << 17,
+    SPE_EV_EMPTY_PRED   = 1 << 18,
+};
+
 struct PmuDataExt {
     unsigned long pa;               // physical address
     unsigned long va;               // virtual address
