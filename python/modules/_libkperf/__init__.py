@@ -13,7 +13,7 @@ Create: 2024-05-10
 Description: ctype python _libkperf module
 """
 __copyright__ = 'Copyright (c) Huawei Technologies Co., Ltd. 2024. All rights reserved.'
-__license__ = 'MulanPSL2'
+__license__ = 'Mulan PSL v2'
 
 from .Config import *
 from .Symbol import *
