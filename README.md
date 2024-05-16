@@ -26,7 +26,7 @@ bash build.sh installPath=/home/libkperf
 
 如果要额外增加python库支持，可以通过如下方式安装
 ```shell
-bash build.sh PYTHON=true
+bash build.sh python=true
 ```
 
 安装后若需要卸载python库， 可以执行下述命令
