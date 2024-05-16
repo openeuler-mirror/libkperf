@@ -22,7 +22,7 @@ As mentioned above, the header and library will be installed in the/home/libkper
 
 If you want to add additional python library support, you can install it as follows:
 ```shell
-bash build.sh python
+bash build.sh python=true
 ```
 
 If you need to uninstall the python library after installation, you can run the following command:
