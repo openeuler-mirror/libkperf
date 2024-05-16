@@ -16,9 +16,19 @@ Symbol resolve module is developed on elfin-parser, a library for parsing elf an
 Run bash script:
 
 ```sh
-sh build.sh installPath=/home/libkperf
+bash build.sh installPath=/home/libkperf
 ```
 As mentioned above, the header and library will be installed in the/home/libkperf output directory, and installPath is an optional parameter. If not set, it will be installed in the output directory under libkperf by default.
+
+If you want to add additional python library support, you can install it as follows:
+```shell
+bash build.sh python
+```
+
+If you need to uninstall the python library after installation, you can run the following command:
+```shell
+python -m pip uninstall -y libkperf
+```
 
 #### Instructions
 All pmu functions are accomplished by the following interfaces:
@@ -66,6 +76,48 @@ for (int i = 0; i < len; ++i) {
 PmuDataFree(data);
 // Like fd, call PmuClose if pd will not be used.
 PmuClose(pd);
+```
+
+Python examples:
+```python
+import time
+from collections import defaultdict
+
+import kperf
+
+def Counting():
+    evtList = ["r11", "cycles"]
+    pmu_attr = kperf.PmuAttr(evtList=evtList)
+    pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
+    if pd == -1:
+        print(kperf.errorno())
+        print(kperf.error())
+
+    kperf.enable(pd)
+
+    for _ in range(3):
+        time.sleep(1)
+        data_iter = kperf.read(pd)
+        evtMap = defaultdict(int)
+        for data in data_iter:
+            evtMap[data.evt] += data.count
+
+        for evt, count in evtMap.items():
+            print(f"event: {evt} count: {count}")
+
+    kperf.disable(pd)
+    kperf.close(pd)
+
+
+def PerfList():
+    event_iter = kperf.event_list(kperf.PmuEventType.CORE_EVENT)
+    for event in event_iter:
+        print(f"event: {event}")
+
+
+if __name__ == '__main__':
+    Counting()
+    PerfList()
 ```
 
 
