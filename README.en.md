@@ -16,9 +16,9 @@ Symbol resolve module is developed on elfin-parser, a library for parsing elf an
 Run bash script:
 
 ```sh
-sh build.sh
+sh build.sh installPath=/home/libkperf
 ```
-Headers and libraries will be installed to ./output directory.
+As mentioned above, the header and library will be installed in the/home/libkperf output directory, and installPath is an optional parameter. If not set, it will be installed in the output directory under libkperf by default.
 
 #### Instructions
 All pmu functions are accomplished by the following interfaces:

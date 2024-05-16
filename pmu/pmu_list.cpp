@@ -76,7 +76,7 @@ namespace KUNPENG_PMU {
             if (err != SUCCESS) {
                 return err;
             }
-            fdNum += cpuTopoList.size() + procTopoList.size();
+            fdNum += cpuTopoList.size() * procTopoList.size();
             std::shared_ptr<EvtList> evtList =
                     std::make_shared<EvtList>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt);
             InsertEvtList(pd, evtList);

@@ -19,10 +19,15 @@ PROJECT_DIR=$(realpath "${CURRENT_DIR}")
 
 BUILD_DIR=${PROJECT_DIR}/_build
 THIRD_PARTY=${PROJECT_DIR}/third_party/
+INSTALL_PATH=${PROJECT_DIR}/output/
+BUILD_TYPE=Release
+# Test cases are not compiled by default.
+INCLUDE_TEST=false
+
 source ${PROJECT_DIR}/build/common.sh
 
 creat_dir "${BUILD_DIR}"
-# 指定所有依赖使用的gcc
+# Specifies the gcc used by all dependencies.
 export CC=gcc
 export CXX=g++
 if [ -d "${THIRD_PARTY}/local" ];then
@@ -32,15 +37,19 @@ else
   creat_dir ${THIRD_PARTY}/local
 fi
 
-# 默认情况下不编译测试用例
-INCLUDE_TEST=OFF
-echo "$1"
-
-# 如果第一个参数是 "test"，则设置 INCLUDE_TEST 为 ON
-if [[ "$1" == "test" ]]; then
-    build_googletest $THIRD_PARTY
-    INCLUDE_TEST=ON
-fi
+for arg in "$@"; do
+    case "$arg" in
+        test=*)
+            INCLUDE_TEST="${arg#*=}"
+            ;;
+        installPath=*)
+            INSTALL_PATH="${arg#*=}"
+            ;;
+        build_type=*)
+            BUILD_TYPE="${arg#*=}"
+            ;;
+    esac
+done
 
 # build libprof.so libraries including libprocfs.so libprocfs.a libpmu.so libpmu.a libtrace.so libtrace.so
 function build_elfin() {
@@ -72,15 +81,15 @@ function build_elfin() {
 build_libprof()
 {
     cd $BUILD_DIR
-    cmake -DINCLUDE_TEST=$INCLUDE_TEST ..
+    cmake -DINCLUDE_TEST=${INCLUDE_TEST} -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ..
     make -j ${cpu_core_num}
     make install
-    echo "build_libprof success"
+    echo "build_libkperf success"
 }
 
 function build_test()
 {
-    if [ "$INCLUDE_TEST" = "ON" ]; then
+    if [ "$INCLUDE_TEST" = "true" ]; then
         execute_binary "$PROJECT_DIR"
     fi
 }
@@ -91,6 +100,6 @@ main() {
     build_test
 }
 
-# bash build.sh test来获取UT
+# bash build.sh test=true installPath=/home/ build_type=Release .The last three settings are optional.
 main $@
 

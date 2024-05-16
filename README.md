@@ -19,10 +19,10 @@ Pmu收集模块是在syscall perf_event_open上开发的，用于启用内核pmu
 运行bash脚本:
 
 ```
-sh build.sh
+sh build.sh installPath=/home/libkperf
 ```
 
-标头和库将安装到。/输出目录。 
+如上，标头和库将安装到/home/libkperf输出目录，installPath是可选参数，若没有设置，则默认安装到libkperf下的output目录。
 
 #### 指令
 

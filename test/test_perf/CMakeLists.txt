@@ -9,6 +9,5 @@ set(CMAKE_CXX_STANDARD 14)
 aux_source_directory(. SOURCE_SRC)
 add_executable(test_perf ${SOURCE_SRC} ${CMAKE_CURRENT_LIST_DIR}/../../util/pcerr.cpp)
 target_link_libraries(test_perf sym kperf gtest m gtest_main elf_static dwarf_static pthread -g)
-install(TARGETS test_perf DESTINATION ${CMAKE_INSTALL_PREFIX}/ COMPONENT test)
 
 add_subdirectory(case)
