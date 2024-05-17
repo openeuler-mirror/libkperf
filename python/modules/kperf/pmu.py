@@ -12,9 +12,10 @@ Author: Victor Jin
 Create: 2024-05-16
 Description: kperf pmu module
 """
-from typing import Iterator
+from typing import Iterator, List
 
 import _libkperf
+import ksym
 
 
 class PmuTaskType:
@@ -75,10 +76,87 @@ class SymbolMode:
 
 
 class PmuAttr(_libkperf.PmuAttr):
-    pass
+
+    def __init__(self,
+                 evtList: List[str] = None,
+                 pidList: List[int] = None,
+                 cpuList: List[int] = None,
+                 sampleRate: int = 0,
+                 useFreq: bool = False,
+                 excludeUser: bool = False,
+                 excludeKernel: bool = False,
+                 symbolMode: int = 0,
+                 dataFilter: int = 0,
+                 evFilter: int = 0,
+                 minLatency: int = 0):
+        super().__init__(
+            evtList=evtList,
+            pidList=pidList,
+            cpuList=cpuList,
+            sampleRate=sampleRate,
+            useFreq=useFreq,
+            excludeUser=excludeUser,
+            excludeKernel=excludeKernel,
+            symbolMode=symbolMode,
+            dataFilter=dataFilter,
+            evFilter=evFilter,
+            minLatency=minLatency
+        )
+
+
+class CpuTopology(_libkperf.CpuTopology):
+
+    def __init__(self,
+                 coreId: int = 0,
+                 numaId: int = 0,
+                 socketId: int = 0):
+        super().__init__(
+            coreId=coreId,
+            numaId=numaId,
+            socketId=socketId
+        )
+
+
+class PmuDataExt(_libkperf.PmuDataExt):
+
+    def __init__(self,
+                 pa: int = 0,
+                 va: int = 0,
+                 event: int = 0):
+        super().__init__(
+            pa=pa,
+            va=va,
+            event=event
+        )
+
 
 class PmuData(_libkperf.PmuData):
-    pass
+
+    def __init__(self,
+                 stack: ksym.Stack = None,
+                 evt: str = '',
+                 ts: int = 0,
+                 pid: int = 0,
+                 tid: int = 0,
+                 cpu: int = 0,
+                 cpuTopo: CpuTopology = None,
+                 comm: str = '',
+                 period: int = 0,
+                 count: int = 0,
+                 ext: PmuDataExt = None):
+        super().__init__(
+            stack=stack.c_stack if stack else None,
+            evt=evt,
+            ts=ts,
+            pid=pid,
+            tid=tid,
+            cpu=cpu,
+            cpuTopo=cpuTopo.c_cpu_topo if cpuTopo else None,
+            comm=comm,
+            period=period,
+            count=count,
+            ext=ext.c_pmu_data_ext if ext else None,
+        )
 
 
 def open(collect_type: PmuTaskType, pmu_attr: PmuAttr) -> int:
@@ -116,6 +194,8 @@ __all__ = [
     'SpeEventFilter',
     'SymbolMode',
     'PmuAttr',
+    'CpuTopology',
+    'PmuDataExt',
     'PmuData',
     'open',
     'event_list',

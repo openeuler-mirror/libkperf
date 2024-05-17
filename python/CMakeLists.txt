@@ -11,7 +11,7 @@
 # Create: 2024-05-16
 # Description: libkperf python module
 project(python_libkperf)
-find_package(PythonInterp REQUIRED)
-find_package(PythonLibs REQUIRED)
+find_package(PythonInterp 3.7 REQUIRED)
+find_package(PythonLibs 3.7 REQUIRED)
 
 add_subdirectory(modules)

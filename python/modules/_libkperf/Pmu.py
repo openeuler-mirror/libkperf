@@ -49,34 +49,40 @@ class CtypesPmuAttr(ctypes.Structure):
                  pidList: List[int] = None,
                  cpuList: List[int] = None,
                  sampleRate: int = 0,
-                 useFreq: bool = False, excludeUser: bool = False, excludeKernel: bool = False,
-                 symbolMode: int = 0, dataFilter: int = 0, evFilter: int = 0, minLatency: int = 0,
+                 useFreq: bool = False,
+                 excludeUser: bool = False,
+                 excludeKernel: bool = False,
+                 symbolMode: int = 0,
+                 dataFilter: int = 0,
+                 evFilter: int = 0,
+                 minLatency: int = 0,
                  *args: Any, **kw: Any):
         super().__init__(*args, **kw)
 
-        if evtList is None:
-            self.evtList = None
-            self.numEvt = ctypes.c_uint(0)
-        else:
+        if evtList:
             numEvt = len(evtList)
             self.evtList = (ctypes.c_char_p * numEvt)(*[evt.encode(UTF_8) for evt in evtList])
             self.numEvt = ctypes.c_uint(numEvt)
-
-        if pidList is None:
-            self.pidList = None
-            self.numPid = ctypes.c_uint(0)
         else:
+            self.evtList = None
+            self.numEvt = ctypes.c_uint(0)
+
+        if pidList:
             numPid = len(pidList)
             self.pidList = (ctypes.c_int * numPid)(*pidList)
             self.numPid = ctypes.c_uint(numPid)
-
-        if cpuList is None:
-            self.cpuList = None
-            self.numCpu = ctypes.c_uint(0)
         else:
+            self.pidList = None
+            self.numPid = ctypes.c_uint(0)
+
+        if cpuList:
             numCpu = len(cpuList)
             self.cpuList = (ctypes.c_int * numCpu)(*cpuList)
             self.numCpu = ctypes.c_uint(numCpu)
+        else:
+            self.cpuList = None
+            self.numCpu = ctypes.c_uint(0)
+
         if not useFreq:
             self.sampleRate.period = ctypes.c_uint(sampleRate)
         else:
@@ -101,13 +107,25 @@ class PmuAttr:
                  pidList: List[int]=None,
                  cpuList: List[int]=None,
                  sampleRate: int=0,
-                 useFreq: bool = False, excludeUser: bool = False, excludeKernel: bool = False,
-                 symbolMode: int=0, dataFilter: int=0, evFilter: int=0, minLatency: int=0):
+                 useFreq: bool = False,
+                 excludeUser: bool = False,
+                 excludeKernel: bool = False,
+                 symbolMode: int=0,
+                 dataFilter: int=0,
+                 evFilter: int=0,
+                 minLatency: int=0):
         self.__c_pmu_attr = CtypesPmuAttr(
-            evtList=evtList, pidList=pidList, cpuList=cpuList,
+            evtList=evtList,
+            pidList=pidList,
+            cpuList=cpuList,
             sampleRate=sampleRate,
-            useFreq=useFreq, excludeUser=excludeUser, excludeKernel=excludeKernel,
-            symbolMode=symbolMode, dataFilter=dataFilter, evFilter=evFilter, minLatency=minLatency
+            useFreq=useFreq,
+            excludeUser=excludeUser,
+            excludeKernel=excludeKernel,
+            symbolMode=symbolMode,
+            dataFilter=dataFilter,
+            evFilter=evFilter,
+            minLatency=minLatency
         )
 
     @property
@@ -124,13 +142,13 @@ class PmuAttr:
 
     @evtList.setter
     def evtList(self, evtList: List[str]) -> None:
-        if evtList is None or not evtList:
-            self.c_pmu_attr.evtList = None
-            self.c_pmu_attr.numEvt = ctypes.c_uint(0)
-        else:
+        if evtList:
             numEvt = len(evtList)
             self.c_pmu_attr.evtList = (ctypes.c_char_p * numEvt)(*[evt.encode(UTF_8) for evt in evtList])
             self.c_pmu_attr.numEvt = ctypes.c_uint(numEvt)
+        else:
+            self.c_pmu_attr.evtList = None
+            self.c_pmu_attr.numEvt = ctypes.c_uint(0)
 
     @property
     def numPid(self) -> int:
@@ -142,13 +160,13 @@ class PmuAttr:
 
     @pidList.setter
     def pidList(self, pidList: List[str]) -> None:
-        if pidList is None or not pidList:
-            self.c_pmu_attr.pidList = None
-            self.c_pmu_attr.numPid = ctypes.c_uint(0)
-        else:
+        if pidList:
             numPid = len(pidList)
             self.c_pmu_attr.pidList = (ctypes.c_char_p * numPid)(*[pid.encode(UTF_8) for pid in pidList])
             self.c_pmu_attr.numPid = ctypes.c_uint(numPid)
+        else:
+            self.c_pmu_attr.pidList = None
+            self.c_pmu_attr.numPid = ctypes.c_uint(0)
 
     @property
     def numCpu(self) -> int:
@@ -160,13 +178,13 @@ class PmuAttr:
 
     @cpuList.setter
     def cpuList(self, cpuList: List[str]) -> None:
-        if cpuList is None or not cpuList:
-            self.c_pmu_attr.cpuList = None
-            self.c_pmu_attr.numCpu = ctypes.c_uint(0)
-        else:
+        if cpuList:
             numCpu = len(cpuList)
             self.c_pmu_attr.cpuList = (ctypes.c_char_p * numCpu)(*[cpu.encode(UTF_8) for cpu in cpuList])
             self.c_pmu_attr.numCpu = ctypes.c_uint(numCpu)
+        else:
+            self.c_pmu_attr.cpuList = None
+            self.c_pmu_attr.numCpu = ctypes.c_uint(0)
 
 
     @property
@@ -400,7 +418,10 @@ class CtypesPmuData(ctypes.Structure):
     def __init__(self,
                  stack: CtypesStack = None,
                  evt: str = '',
-                 ts: int = 0, pid: int = 0, tid: int = 0, cpu: int = 0,
+                 ts: int = 0,
+                 pid: int = 0,
+                 tid: int = 0,
+                 cpu: int = 0,
                  cpuTopo: CtypesCpuTopology = None,
                  comm: str = '',
                  period: int = 0,
@@ -640,7 +661,6 @@ def PmuRead(pd: int) -> Iterator[PmuData]:
 
     c_len_data = c_PmuRead(c_pd, ctypes.byref(c_data))
     data_iter = (PmuData.from_c_pmu_data(c_data[i]) for i in range(c_len_data))
-    PmuDataFree(c_data)
     return data_iter
 
 
@@ -664,6 +684,8 @@ def PmuClose(pd: int) -> None:
 
 __all__ = [
     'PmuAttr',
+    'CpuTopology',
+    'PmuDataExt',
     'PmuData',
     'PmuOpen',
     'PmuEventList',
