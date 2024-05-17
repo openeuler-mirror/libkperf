@@ -661,7 +661,6 @@ def PmuRead(pd: int) -> Iterator[PmuData]:
 
     c_len_data = c_PmuRead(c_pd, ctypes.byref(c_data))
     data_iter = (PmuData.from_c_pmu_data(c_data[i]) for i in range(c_len_data))
-    PmuDataFree(c_data)
     return data_iter
 
 
