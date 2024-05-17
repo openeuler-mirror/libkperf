@@ -40,6 +40,10 @@ include(${CMAKE_CURRENT_LIST_DIR}/Common.cmake)
 add_subdirectory(symbol)
 add_subdirectory(pmu)
 
+if (PYTHON)
+    add_subdirectory(python)
+endif()
+
 if (INCLUDE_TEST)
     add_subdirectory(test)
 endif()

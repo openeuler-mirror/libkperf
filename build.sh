@@ -21,6 +21,8 @@ BUILD_DIR=${PROJECT_DIR}/_build
 THIRD_PARTY=${PROJECT_DIR}/third_party/
 INSTALL_PATH=${PROJECT_DIR}/output/
 BUILD_TYPE=Release
+# Python module are not compiled by default.
+PYTHON=false
 # Test cases are not compiled by default.
 INCLUDE_TEST=false
 
@@ -41,6 +43,9 @@ for arg in "$@"; do
     case "$arg" in
         test=*)
             INCLUDE_TEST="${arg#*=}"
+            ;;
+        python=*)
+            PYTHON="${arg#*=}"
             ;;
         installPath=*)
             INSTALL_PATH="${arg#*=}"
@@ -81,10 +86,10 @@ function build_elfin() {
 build_libprof()
 {
     cd $BUILD_DIR
-    cmake -DINCLUDE_TEST=${INCLUDE_TEST} -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ..
+    cmake -DINCLUDE_TEST=${INCLUDE_TEST} -DPYTHON=${PYTHON} -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ..
     make -j ${cpu_core_num}
     make install
-    echo "build_libkperf success"
+    echo "build libkperf success"
 }
 
 function build_test()

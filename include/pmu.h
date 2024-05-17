@@ -117,7 +117,7 @@ struct PmuDataExt {
 };
 
 struct PmuData {
-    struct Stack* stack;           // call stack
+    struct Stack* stack;            // call stack
     const char *evt;                // event name
     int64_t ts;                     // time stamp
     pid_t pid;                      // process id
@@ -126,10 +126,9 @@ struct PmuData {
     struct CpuTopology *cpuTopo;    // cpu topology
     const char *comm;               // process command
     int period;                     // number of Samples
-    union {
-        uint64_t count;             // event count. Only available for Counting.
-        struct PmuDataExt *ext;     // extension. Only available for Spe.
-    };
+    uint64_t count;                 // event count. Only available for Counting.
+    struct PmuDataExt *ext;         // extension. Only available for Spe.
+
 };
 
 /**

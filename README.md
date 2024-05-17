@@ -18,11 +18,21 @@ Pmu收集模块是在syscall perf_event_open上开发的，用于启用内核pmu
 
 运行bash脚本:
 
-```
-sh build.sh installPath=/home/libkperf
+```shell
+bash build.sh installPath=/home/libkperf
 ```
 
-如上，标头和库将安装到/home/libkperf输出目录，installPath是可选参数，若没有设置，则默认安装到libkperf下的output目录。
+如上，头文件和库将安装到/home/libkperf输出目录，installPath是可选参数，若没有设置，则默认安装到libkperf下的output目录。
+
+如果要额外增加python库支持，可以通过如下方式安装
+```shell
+bash build.sh python=true
+```
+
+安装后若需要卸载python库， 可以执行下述命令
+```shell
+python3 -m pip unistall -y libkperf
+```
 
 #### 指令
 
@@ -74,6 +84,48 @@ for (int i = 0; i < len; ++i) {
 PmuDataFree(data);
 // Like fd, call PmuClose if pd will not be used.
 PmuClose(pd);
+```
+
+Python 例子:
+```python
+import time
+from collections import defaultdict
+
+import kperf
+
+def Counting():
+    evtList = ["r11", "cycles"]
+    pmu_attr = kperf.PmuAttr(evtList=evtList)
+    pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
+    if pd == -1:
+        print(kperf.errorno())
+        print(kperf.error())
+
+    kperf.enable(pd)
+
+    for _ in range(3):
+        time.sleep(1)
+        data_iter = kperf.read(pd)
+        evtMap = defaultdict(int)
+        for data in data_iter:
+            evtMap[data.evt] += data.count
+
+        for evt, count in evtMap.items():
+            print(f"event: {evt} count: {count}")
+
+    kperf.disable(pd)
+    kperf.close(pd)
+
+
+def PerfList():
+    event_iter = kperf.event_list(kperf.PmuEventType.CORE_EVENT)
+    for event in event_iter:
+        print(f"event: {event}")
+
+
+if __name__ == '__main__':
+    Counting()
+    PerfList()
 ```
 
 #### 参与贡献
