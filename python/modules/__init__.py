@@ -10,5 +10,5 @@ PURPOSE.
 See the Mulan PSL v2 for more details.
 Author: Victor Jin
 Create: 2024-05-10
-Description: python ksym module
+Description: python libkperf modules
 """

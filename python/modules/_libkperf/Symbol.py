@@ -71,9 +71,14 @@ class Symbol:
                  codeMapAddr: int = 0,
                  count: int = 0):
         self.__c_sym = CtypesSymbol(
-            addr=addr, module=module,
-            symbolName=symbolName, fileName=fileName, lineNum=lineNum, offset=offset,
-            codeMapEndAddr=codeMapEndAddr, codeMapAddr=codeMapAddr,
+            addr=addr,
+            module=module,
+            symbolName=symbolName,
+            fileName=fileName,
+            lineNum=lineNum,
+            offset=offset,
+            codeMapEndAddr=codeMapEndAddr,
+            codeMapAddr=codeMapAddr,
             count=count
         )
 
@@ -406,10 +411,10 @@ def SymResolverDestroy() -> None:
 
 
 __all__ = [
-    'CtypesStack',
-    'Stack',
     'CtypesSymbol',
     'Symbol',
+    'CtypesStack',
+    'Stack',
     'SymResolverRecordKernel',
     'SymResolverRecordModule',
     'SymResolverRecordModuleNoDwarf',

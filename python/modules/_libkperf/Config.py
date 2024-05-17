@@ -14,7 +14,6 @@ Description: ctype python Config module
 """
 import os
 import ctypes
-from ctypes.util import find_library
 
 VERSION_MAJOR = 1
 VERSION_MINOR = 0
@@ -38,8 +37,8 @@ def libkperf_path():
     return os.path.join(lib_path(), libkperf)
 
 
-sym_so = ctypes.CDLL(libsym_path())
-kperf_so = ctypes.CDLL(find_library(libkperf_path()))
+sym_so = ctypes.CDLL(libsym_path(), mode=ctypes.RTLD_GLOBAL)
+kperf_so = ctypes.CDLL(libkperf_path())
 
 
 __all__ = [
