@@ -29,3 +29,9 @@ def Perror() -> str:
     c_Perror.argtypes = []
     c_Perror.restype = ctypes.c_char_p
     return c_Perror().decode(UTF_8)
+
+
+__all__ = [
+    'Perrorno',
+    'Perror',
+]

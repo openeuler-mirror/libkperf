@@ -403,3 +403,18 @@ def SymResolverDestroy() -> None:
     c_SymResolverDestroy.restype = None
 
     c_SymResolverDestroy()
+
+
+__all__ = [
+    'CtypesStack',
+    'Stack',
+    'CtypesSymbol',
+    'Symbol',
+    'SymResolverRecordKernel',
+    'SymResolverRecordModule',
+    'SymResolverRecordModuleNoDwarf',
+    'StackToHash',
+    'SymResolverMapAddr',
+    'FreeModuleData',
+    'SymResolverDestroy',
+]

@@ -40,3 +40,11 @@ def libkperf_path():
 
 sym_so = ctypes.CDLL(libsym_path())
 kperf_so = ctypes.CDLL(find_library(libkperf_path()))
+
+
+__all__ = [
+    'UTF_8',
+    'VERSION',
+    'sym_so',
+    'kperf_so',
+]

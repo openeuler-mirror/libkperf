@@ -568,6 +568,7 @@ def PmuEventListFree() -> None:
 
     c_PmuEventListFree()
 
+
 def PmuEventList(eventType: int) -> Iterator[str]:
     c_PmuEventList = kperf_so.PmuEventList
     c_PmuEventList.argtypes = [ctypes.c_int]
@@ -577,7 +578,6 @@ def PmuEventList(eventType: int) -> Iterator[str]:
     c_numEvt = ctypes.c_uint()
 
     eventList = c_PmuEventList(c_eventType, ctypes.byref(c_numEvt))
-    # PmuEventListFree()
     return (eventList[i].decode(UTF_8) for i in range(c_numEvt.value))
 
 
@@ -612,12 +612,6 @@ def PmuCollect(pd: int, milliseconds: int, interval: int) -> int:
 
     return c_PmuCollect(c_pd, c_milliseconds, c_interval)
 
-# def PmuCollectV(pd: ctypes.POINTER(ctypes.c_int), pd_len: ctypes.c_uint, milliseconds: ctypes.c_int) -> int:
-#     c_PmuCollectV = kperf_so.PmuCollectV
-#     c_PmuCollectV.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.c_uint, ctypes.c_int]
-#     c_PmuCollectV.restype = ctypes.c_int
-#     return c_PmuCollectV(pd, pd_len, milliseconds)
-#
 
 def PmuStop(pd: int) -> None:
     c_PmuStop = kperf_so.PmuStop
@@ -666,3 +660,16 @@ def PmuClose(pd: int) -> None:
     c_pd = ctypes.c_int(pd)
 
     c_PmuClose(c_pd)
+
+
+__all__ = [
+    'PmuAttr',
+    'PmuData',
+    'PmuOpen',
+    'PmuEventList',
+    'PmuEnable',
+    'PmuDisable',
+    'PmuStop',
+    'PmuRead',
+    'PmuClose',
+]
