@@ -1,6 +1,6 @@
 /******************************************************************************
  * Copyright (c) Huawei Technologies Co., Ltd. 2024. All rights reserved.
- * gala-gopher licensed under the Mulan PSL v2.
+ * libkperf licensed under the Mulan PSL v2.
  * You can use this software according to the terms and conditions of the Mulan PSL v2.
  * You may obtain a copy of Mulan PSL v2 at:
  *     http://license.coscl.org.cn/MulanPSL2
@@ -949,9 +949,9 @@ int SymbolResolve::RecordKernel()
         strcpy(data->symbolName, name);
         data->addr = addr;
         data->fileName = InitChar(KERNEL_NAME_LEN);
-        strcpy(data->fileName, "KERNEL");
+        strcpy(data->fileName, "[kernel]");
         data->module = InitChar(KERNEL_NAME_LEN);
-        strcpy(data->module, "KERNEL");
+        strcpy(data->module, "[kernel]");
         data->lineNum = 0;
         this->ksymArray.emplace_back(data);
     }
