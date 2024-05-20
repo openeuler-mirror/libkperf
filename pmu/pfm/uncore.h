@@ -16,6 +16,8 @@
 #define UNCORE_H
 #include "pmu_event.h"
 
+bool CheckUncoreRawEvent(const char *pmuName);
 struct PmuEvt* GetUncoreEvent(const char* pmuName, int collectType);
+struct PmuEvt* GetUncoreRawEvent(const char* pmuName, int collectType);
 
 #endif

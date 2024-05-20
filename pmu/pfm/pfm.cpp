@@ -87,6 +87,7 @@ static const std::unordered_map<int, EvtRetriever> EvtMap{
         {KUNPENG_PMU::RAW_TYPE, GetRawEvent},
         {KUNPENG_PMU::CORE_TYPE, GetCoreEvent},
         {KUNPENG_PMU::UNCORE_TYPE, GetUncoreEvent},
+        {KUNPENG_PMU::UNCORE_RAW_TYPE, GetUncoreRawEvent},
         {KUNPENG_PMU::TRACE_TYPE, GetKernelTraceEvent},
 };
 
@@ -133,6 +134,10 @@ static int GetEventType(const char *pmuName)
     // Parse uncore event name like 'hisi_sccl3_ddrc0/flux_rd/'
     if (CheckEventInList(UNCORE_EVENT, pmuName)) {
         return UNCORE_TYPE;
+    }
+    // Parse uncore event raw name like 'hisi_sccl3_ddrc0/config=0x0/'
+    if (CheckUncoreRawEvent(pmuName)) {
+        return UNCORE_RAW_TYPE;
     }
     return -1;
 }

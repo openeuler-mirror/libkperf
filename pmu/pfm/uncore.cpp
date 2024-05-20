@@ -22,6 +22,28 @@
 using namespace std;
 using namespace KUNPENG_PMU;
 
+static const string CONFIG_EQUAL = "config=";
+
+static int ParseConfig(const char* pmuName) {
+    string strName = pmuName;
+    auto findSlash = strName.find('/');
+    string devName = strName.substr(0, findSlash);
+    string evtName = strName.substr(devName.size() + 1, strName.size() - 1 - (devName.size() + 1));
+    try {
+        size_t pos = evtName.find('=');
+        string config = evtName.substr(pos + 1);
+        if (config.find("0x") != string::npos) {
+            // hexadecimal config
+            return stoi(config, nullptr, 16);
+        } else {
+            // decimal config
+            return stoi(config);
+        }
+    } catch (const invalid_argument& e) {
+        return -1;
+    }
+}
+
 static int GetDeviceType(const string &devName)
 {
     string typePath = "/sys/devices/" + devName + "/type";
@@ -102,13 +124,38 @@ int FillUncoreFields(const char* pmuName, PmuEvt *evt)
     if (cpuMask == -1) {
         return UNKNOWN_ERROR;
     }
-    if (GetUncoreEventConfig(pmuName) == -1) {
-        return LIBPERF_ERR_INVALID_EVENT;
-    }
 
     evt->cpumask = cpuMask;
     evt->name = pmuName;
     return SUCCESS;
+}
+
+bool CheckUncoreRawEvent(const char *pmuName)
+{
+    string strName = pmuName;
+    unsigned numEvt;
+    auto eventList = PmuEventList(UNCORE_EVENT, &numEvt);
+    if (eventList == nullptr) {
+        return false;
+    }
+    auto findSlash = strName.find('/');
+    string devName = strName.substr(0, findSlash);
+    string evtName = strName.substr(devName.size() + 1, strName.size() - 1 - (devName.size() + 1));
+    // check if "config=" at back part of pmuName
+    if (strstr(evtName.c_str(), CONFIG_EQUAL.c_str()) == nullptr) {
+        return false;
+    }
+    // check if config invalid
+    if (ParseConfig(pmuName) == -1) {
+        return false;
+    }
+    // check if front part of pmuName in Uncore Pmu Event List
+    for (int j = 0; j < numEvt; ++j) {
+        if (strstr(eventList[j], devName.c_str()) == nullptr) {
+            return true;
+        }
+    }
+    return false;
 }
 
 struct PmuEvt* GetUncoreEvent(const char* pmuName, int collectType)
@@ -121,6 +168,26 @@ struct PmuEvt* GetUncoreEvent(const char* pmuName, int collectType)
     pmuEvtPtr->config = config;
     pmuEvtPtr->name = pmuName;
     pmuEvtPtr->pmuType = UNCORE_TYPE;
+    pmuEvtPtr->collectType = collectType;
+
+    // Fill fields for uncore devices.
+    auto err = FillUncoreFields(pmuName, pmuEvtPtr);
+    if (err != SUCCESS) {
+        return nullptr;
+    }
+    return pmuEvtPtr;
+}
+
+struct PmuEvt* GetUncoreRawEvent(const char* pmuName, int collectType)
+{
+    int64_t config = ParseConfig(pmuName);
+    if (config == -1) {
+        return nullptr;
+    }
+    auto* pmuEvtPtr = new PmuEvt {0};
+    pmuEvtPtr->config = config;
+    pmuEvtPtr->name = pmuName;
+    pmuEvtPtr->pmuType = UNCORE_RAW_TYPE;
     pmuEvtPtr->collectType = collectType;
 
     // Fill fields for uncore devices.

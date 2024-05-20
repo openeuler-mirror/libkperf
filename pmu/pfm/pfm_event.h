@@ -25,6 +25,7 @@ namespace KUNPENG_PMU {
         RAW_TYPE,
         CORE_TYPE,
         UNCORE_TYPE,
+        UNCORE_RAW_TYPE,
         TRACE_TYPE,
     };
 
