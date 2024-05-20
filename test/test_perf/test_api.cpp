@@ -388,7 +388,53 @@ TEST_F(TestAPI, CollectInvalidTime)
     ASSERT_EQ(Perrorno(), LIBPERF_ERR_INVALID_TIME);
 }
 
-TEST_F(TestAPI, RaiseNumFd)
+TEST_F(TestAPI, TestRaiseNumFd)
+{
+    // Given (setup)
+    auto attr = GetPmuAttribute();
+    auto pid = RunTestApp("test_12threads");
+    attr.pidList[0] = pid;
+    attr.numPid = 1;
+    std::cout << "pid:" << attr.pidList[0] << std::endl;
+    sleep(1); // Wait for all threads to start
+    int numChildTid = 0;
+    int* childTidList = GetChildTid(attr.pidList[0], &numChildTid);
+    int numCpu = attr.cpuList == nullptr ? sysconf(_SC_NPROCESSORS_ONLN) : attr.numCpu;
+    std::cout << "required fd:" << numCpu * numChildTid << std::endl;
+
+    unsigned long setNumFd = numCpu * numChildTid - 100;
+    struct rlimit currentlim;
+    getrlimit(RLIMIT_NOFILE, &currentlim);
+    struct rlimit rlim {
+            .rlim_cur = setNumFd, .rlim_max = currentlim.rlim_max,
+    };
+    if (setrlimit(RLIMIT_NOFILE, &rlim) == 0) {
+        std::cout << "setrlimit rlim_cur:" << setNumFd << std::endl;
+    } else {
+        std::cout << "currentlim rlim_cur:" << currentlim.rlim_cur << std::endl;
+        std::cout << "currentlim rlim_max:" << currentlim.rlim_max << std::endl;
+    }
+
+    int pd = PmuOpen(SAMPLING, &attr);
+    std::cout << "pd:" << pd << std::endl;
+    PmuEnable(pd);
+    // Due to collecting low load applications, collect for long time to ensure pmudata data is present
+    sleep(3);
+
+    // When (execution)
+    struct PmuData* pmuData = nullptr;
+    int len = PmuRead(pd, &pmuData);
+    std::cout << "len:" << len << std::endl;
+
+    // Then (verification)
+    ASSERT_GT(len, 0);
+
+    KillApp(pid);
+    PmuDisable(pd);
+    PmuDataFree(pmuData);
+}
+
+TEST_F(TestAPI, RaiseNumFdFunc)
 {
     struct rlimit currentlim;
     ASSERT_NE(getrlimit(RLIMIT_NOFILE, &currentlim), -1);
