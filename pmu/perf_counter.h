@@ -36,7 +36,7 @@ namespace KUNPENG_PMU {
         ~PerfCounter()
         {}
         int Init() override;
-        int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps) override;
+        int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool) override;
         int MapPerfAttr() override;
     };
 }  // namespace KUNPENG_PMU

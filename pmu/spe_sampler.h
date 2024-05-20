@@ -37,7 +37,7 @@ namespace KUNPENG_PMU {
         {}
 
         int Init() override;
-        int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps) override;
+        int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool) override;
         int MapPerfAttr() override;
         bool Mmap();
 
@@ -50,10 +50,8 @@ namespace KUNPENG_PMU {
     private:
         bool SpeExist(int cpu) const;
         void InsertSpeRecords(const int &tid, const std::vector<SpeRecord *> &speRecords, std::vector<PmuData> &data,
-                              std::vector<PerfSampleIps> &sampleIps);
+                              std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool);
         void UpdatePidList(const Spe &spe);
-
-        std::vector<PmuDataExt *> extPool;
     };
 }  // namespace KUNPENG_PMU
 #endif
