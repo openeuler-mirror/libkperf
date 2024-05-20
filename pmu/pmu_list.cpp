@@ -462,6 +462,7 @@ namespace KUNPENG_PMU {
         if (findData == userDataList.end()) {
             return;
         }
+        // Delete ext pointer malloced in SpeSampler.
         for (auto &extMem : findData->second.extPool) {
             delete[] extMem;
         }

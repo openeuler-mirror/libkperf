@@ -14,6 +14,7 @@
  * and handling performance counters in the KUNPENG_PMU namespace
  ******************************************************************************/
 #include <iostream>
+#include <fstream>
 #include <unistd.h>
 #include <linux/perf_event.h>
 #include <cstring>
@@ -105,6 +106,28 @@ static int CheckEvtList(unsigned numEvt, char** evtList)
     return SUCCESS;
 }
 
+static bool InvalidSampleRate(enum PmuTaskType collectType, struct PmuAttr *attr)
+{
+    // When sampling, sample frequency must be less than or equal to perf_event_max_sample_rate.
+    if (collectType != SAMPLING) {
+        return false;
+    }
+    if (!attr->useFreq) {
+        return false;
+    }
+    const string sysSampleRate = "/proc/sys/kernel/perf_event_max_sample_rate";
+    ifstream inSys(sysSampleRate);
+    if (!inSys.is_open()) {
+        // If perf_event_max_sample_rate cannot be read, do not check frequency 
+        // and perf_event_open will check later.
+        return false;
+    }
+    unsigned long maxRate = 0;
+    inSys >> maxRate;
+
+    return attr->freq > maxRate;
+}
+
 static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
 {
     auto err = CheckCpuList(attr->numCpu, attr->cpuList);
@@ -126,6 +149,10 @@ static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
     if ((collectType == SAMPLING || collectType == COUNTING) && attr->evtList == nullptr) {
         New(LIBPERF_ERR_INVALID_EVTLIST);
         return LIBPERF_ERR_INVALID_EVTLIST;
+    }
+    if (InvalidSampleRate(collectType, attr)) {
+        New(LIBPERF_ERR_INVALID_SAMPLE_RATE);
+        return LIBPERF_ERR_INVALID_SAMPLE_RATE;
     }
 
     return SUCCESS;
