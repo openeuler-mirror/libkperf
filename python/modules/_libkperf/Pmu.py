@@ -56,7 +56,7 @@ class CtypesPmuAttr(ctypes.Structure):
                  dataFilter: int = 0,
                  evFilter: int = 0,
                  minLatency: int = 0,
-                 *args: Any, **kw: Any):
+                 *args: Any, **kw: Any) -> None:
         super().__init__(*args, **kw)
 
         if evtList:
@@ -113,7 +113,7 @@ class PmuAttr:
                  symbolMode: int=0,
                  dataFilter: int=0,
                  evFilter: int=0,
-                 minLatency: int=0):
+                 minLatency: int=0) -> None:
         self.__c_pmu_attr = CtypesPmuAttr(
             evtList=evtList,
             pidList=pidList,
@@ -277,7 +277,7 @@ class CtypesCpuTopology(ctypes.Structure):
                  coreId: int = 0,
                  numaId: int = 0,
                  socketId: int = 0,
-                 *args: Any, **kw: Any):
+                 *args: Any, **kw: Any) -> None:
         super().__init__(*args, **kw)
         self.coreId =  ctypes.c_int(coreId)
         self.numaId =  ctypes.c_int(numaId)
@@ -290,7 +290,7 @@ class CpuTopology:
     def __init__(self,
                  coreId: int = 0,
                  numaId: int = 0,
-                 socketId: int = 0):
+                 socketId: int = 0) -> None:
         self.__c_cpu_topo = CtypesCpuTopology(
             coreId=coreId,
             numaId=numaId,
@@ -345,7 +345,7 @@ class CtypesPmuDataExt(ctypes.Structure):
                  pa: int = 0,
                  va: int = 0,
                  event: int = 0,
-                 *args: Any, **kw: Any):
+                 *args: Any, **kw: Any) -> None:
         super().__init__(*args, **kw)
         self.pa = ctypes.c_ulong(pa)
         self.va = ctypes.c_ulong(va)
@@ -358,7 +358,7 @@ class PmuDataExt:
     def __init__(self,
                  pa: int = 0,
                  va: int = 0,
-                 event: int = 0):
+                 event: int = 0) -> None:
         self.__c_pmu_data_ext = CtypesPmuDataExt(
             pa=pa,
             va=va,
@@ -427,7 +427,7 @@ class CtypesPmuData(ctypes.Structure):
                  period: int = 0,
                  count: int = 0,
                  ext: CtypesPmuDataExt = None,
-                 *args: Any, **kw: Any):
+                 *args: Any, **kw: Any) -> None:
         super().__init__(*args, **kw)
 
         self.stack = stack
@@ -443,7 +443,7 @@ class CtypesPmuData(ctypes.Structure):
         self.ext = ext
 
 
-class PmuData:
+class ImplPmuData:
     __slots__ = ['__c_pmu_data']
 
     def __init__(self,
@@ -457,7 +457,7 @@ class PmuData:
                  comm: str = '',
                  period: int = 0,
                  count: int = 0,
-                 ext: PmuDataExt = None):
+                 ext: PmuDataExt = None) -> None:
         self.__c_pmu_data = CtypesPmuData(
             stack=stack.c_stack if stack else None,
             evt=evt,
@@ -566,10 +566,37 @@ class PmuData:
         self.c_pmu_data.ext = ext.c_pmu_data_ext if ext else None
 
     @classmethod
-    def from_c_pmu_data(cls, c_pmu_data: CtypesPmuData) -> 'PmuData':
+    def from_c_pmu_data(cls, c_pmu_data: CtypesPmuData) -> 'ImplPmuData':
         pmu_data = cls()
         pmu_data.__c_pmu_data = c_pmu_data
         return pmu_data
+
+
+class PmuData:
+
+    __slots__ = ['__pointer', '__iter', '__len']
+
+    def __init__(self, pointer: ctypes.POINTER(CtypesPmuData) = None, len: int = 0) -> None:
+
+        self.__pointer = pointer
+        self.__len = len
+        self.__iter = (ImplPmuData.from_c_pmu_data(self.__pointer[i]) for i in range(self.__len))
+
+    def __del__(self) -> None:
+        self.free()
+
+    @property
+    def len(self) -> int:
+        return self.__len
+
+    @property
+    def iter(self) -> Iterator[ImplPmuData]:
+        return self.__iter
+
+    def free(self) -> None:
+        if self.__pointer is not None:
+            PmuDataFree(self.__pointer)
+            self.__pointer = None
 
 
 def PmuOpen(collectType: int, pmuAttr: PmuAttr) -> int:
@@ -629,7 +656,7 @@ def PmuCollect(pd: int, milliseconds: int, interval: int) -> int:
 
     c_pd = ctypes.c_int(pd)
     c_milliseconds = ctypes.c_int(milliseconds)
-    c_interval = ctypes.c_uint(milliseconds)
+    c_interval = ctypes.c_uint(interval)
 
     return c_PmuCollect(c_pd, c_milliseconds, c_interval)
 
@@ -651,17 +678,16 @@ def PmuDataFree(pmuData: ctypes.POINTER(CtypesPmuData)) -> None:
     c_PmuDataFree(pmuData)
 
 
-def PmuRead(pd: int) -> Iterator[PmuData]:
+def PmuRead(pd: int) -> PmuData:
     c_PmuRead = kperf_so.PmuRead
     c_PmuRead.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.POINTER(CtypesPmuData))]
     c_PmuRead.restype = ctypes.c_int
 
     c_pd = ctypes.c_int(pd)
-    c_data = ctypes.pointer(CtypesPmuData())
+    c_data_pointer = ctypes.pointer(CtypesPmuData())
 
-    c_len_data = c_PmuRead(c_pd, ctypes.byref(c_data))
-    data_iter = (PmuData.from_c_pmu_data(c_data[i]) for i in range(c_len_data))
-    return data_iter
+    c_data_len = c_PmuRead(c_pd, ctypes.byref(c_data_pointer))
+    return PmuData(c_data_pointer, c_data_len)
 
 
 def PmuAppendData(fromData: ctypes.POINTER(CtypesPmuData), toData: ctypes.POINTER(ctypes.POINTER(CtypesPmuData))) -> int:
@@ -686,6 +712,7 @@ __all__ = [
     'PmuAttr',
     'CpuTopology',
     'PmuDataExt',
+    'ImplPmuData',
     'PmuData',
     'PmuOpen',
     'PmuEventList',

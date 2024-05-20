@@ -12,7 +12,7 @@ Author: Victor Jin
 Create: 2024-05-16
 Description: kperf pmu module
 """
-from typing import Iterator, List
+from typing import List, Iterator
 
 import _libkperf
 import ksym
@@ -88,7 +88,7 @@ class PmuAttr(_libkperf.PmuAttr):
                  symbolMode: int = 0,
                  dataFilter: int = 0,
                  evFilter: int = 0,
-                 minLatency: int = 0):
+                 minLatency: int = 0) -> None:
         super().__init__(
             evtList=evtList,
             pidList=pidList,
@@ -105,58 +105,19 @@ class PmuAttr(_libkperf.PmuAttr):
 
 
 class CpuTopology(_libkperf.CpuTopology):
-
-    def __init__(self,
-                 coreId: int = 0,
-                 numaId: int = 0,
-                 socketId: int = 0):
-        super().__init__(
-            coreId=coreId,
-            numaId=numaId,
-            socketId=socketId
-        )
+    pass
 
 
 class PmuDataExt(_libkperf.PmuDataExt):
+    pass
 
-    def __init__(self,
-                 pa: int = 0,
-                 va: int = 0,
-                 event: int = 0):
-        super().__init__(
-            pa=pa,
-            va=va,
-            event=event
-        )
+
+class ImplPmuData(_libkperf.ImplPmuData):
+    pass
 
 
 class PmuData(_libkperf.PmuData):
-
-    def __init__(self,
-                 stack: ksym.Stack = None,
-                 evt: str = '',
-                 ts: int = 0,
-                 pid: int = 0,
-                 tid: int = 0,
-                 cpu: int = 0,
-                 cpuTopo: CpuTopology = None,
-                 comm: str = '',
-                 period: int = 0,
-                 count: int = 0,
-                 ext: PmuDataExt = None):
-        super().__init__(
-            stack=stack.c_stack if stack else None,
-            evt=evt,
-            ts=ts,
-            pid=pid,
-            tid=tid,
-            cpu=cpu,
-            cpuTopo=cpuTopo.c_cpu_topo if cpuTopo else None,
-            comm=comm,
-            period=period,
-            count=count,
-            ext=ext.c_pmu_data_ext if ext else None,
-        )
+    pass
 
 
 def open(collect_type: PmuTaskType, pmu_attr: PmuAttr) -> int:
@@ -175,7 +136,7 @@ def disable(pd: int)-> int:
     return _libkperf.PmuDisable(pd)
 
 
-def read(pd: int) -> Iterator[PmuData]:
+def read(pd: int) -> PmuData:
     return _libkperf.PmuRead(pd)
 
 
@@ -196,6 +157,7 @@ __all__ = [
     'PmuAttr',
     'CpuTopology',
     'PmuDataExt',
+    'ImplPmuData',
     'PmuData',
     'open',
     'event_list',

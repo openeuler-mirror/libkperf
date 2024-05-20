@@ -23,16 +23,16 @@ VERSION = '1.0'
 
 UTF_8 = 'utf-8'
 
-def lib_path():
+def lib_path() -> str:
     return os.path.dirname(os.path.abspath(__file__))
 
 
-def libsym_path():
+def libsym_path() -> str:
     libsym = 'libsym.so'
     return os.path.join(lib_path(), libsym)
 
 
-def libkperf_path():
+def libkperf_path() -> str:
     libkperf = 'libkperf.so'
     return os.path.join(lib_path(), libkperf)
 
