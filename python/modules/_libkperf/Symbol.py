@@ -41,7 +41,7 @@ class CtypesSymbol(ctypes.Structure):
                  codeMapEndAddr: int = 0,
                  codeMapAddr: int = 0,
                  count: int = 0,
-                 *args: Any, **kw: Any):
+                 *args: Any, **kw: Any) -> None:
         super().__init__(*args, **kw)
         self.addr = ctypes.c_ulong(addr)
         self.module = ctypes.c_char_p(module.encode(UTF_8))
@@ -69,7 +69,7 @@ class Symbol:
                  offset: int = 0,
                  codeMapEndAddr: int = 0,
                  codeMapAddr: int = 0,
-                 count: int = 0):
+                 count: int = 0) -> None:
         self.__c_sym = CtypesSymbol(
             addr=addr,
             module=module,
@@ -169,9 +169,9 @@ class CtypesStack(ctypes.Structure):
 
     _fields_ = [
         ('symbol', ctypes.POINTER(CtypesSymbol)),
-        ('next', ctypes.POINTER('CtypesStack')),
-        ('prev', ctypes.POINTER('CtypesStack')),
-        ('count', ctypes.c_uint64)
+        ('next',   ctypes.POINTER('CtypesStack')),
+        ('prev',   ctypes.POINTER('CtypesStack')),
+        ('count',  ctypes.c_uint64)
     ]
 
     def __init__(self,
@@ -179,7 +179,7 @@ class CtypesStack(ctypes.Structure):
                  next: 'CtypesStack' = None,
                  prev: 'CtypesStack' = None,
                  count: int = 0,
-                 *args: Any, **kw: Any):
+                 *args: Any, **kw: Any) -> None:
         super().__init__(*args, **kw)
         """
         ctypes中，一个ctypes对象赋值给一个ctypes.POINTER类型的字段时
@@ -199,7 +199,7 @@ class Stack:
                  symbol: Symbol = None,
                  next: 'Stack' = None,
                  prev: 'Stack' = None,
-                 count: int = 0):
+                 count: int = 0) -> None:
         self.__c_stack = CtypesStack(
             symbol=symbol.c_sym if symbol else None,
             next=next.c_stack if next else None,
@@ -266,7 +266,7 @@ class CtypesAsmCode(ctypes.Structure):
                  code: str = '',
                  fileName: str = '',
                  lineNum: int = 0,
-                 *args: Any, **kw: Any):
+                 *args: Any, **kw: Any) -> None:
         super().__init__(*args, **kw)
         self.addr =  ctypes.c_ulong(addr)
         self.code = ctypes.c_char_p(code.encode(UTF_8))
@@ -282,7 +282,7 @@ class AsmCode:
                  addr: int = 0,
                  code: str = '',
                  fileName: str = '',
-                 lineNum: int = 0):
+                 lineNum: int = 0) -> None:
         self.__c_asm_code = CtypesAsmCode(
             addr=addr,
             code=code,
@@ -373,7 +373,6 @@ def StackToHash(pid: int, stackList: List[int]) -> Iterator[Stack]:
 
     c_stack  = c_StackToHash(c_pid, c_stack_list, c_nr)
     while c_stack:
-        # 此处指针转换可能还有问题，TODO
         stack = Stack.from_c_stack(c_stack)
         yield stack
         c_stack = c_stack.contents.next

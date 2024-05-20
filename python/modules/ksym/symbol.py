@@ -28,7 +28,7 @@ class Symbol(_libkperf.Symbol):
                  offset: int = 0,
                  codeMapEndAddr: int = 0,
                  codeMapAddr: int = 0,
-                 count: int = 0):
+                 count: int = 0) -> None:
         super().__init__(
             addr=addr,
             module=module,
@@ -48,7 +48,7 @@ class Stack(_libkperf.Stack):
                  symbol: Symbol = None,
                  next: 'Stack' = None,
                  prev: 'Stack' = None,
-                 count: int = 0):
+                 count: int = 0) -> None:
         super().__init__(
             symbol=symbol.c_sym if symbol else None,
             next=next.c_stack if next else None,
@@ -85,8 +85,8 @@ def destroy() -> None:
 
 
 __all__ = [
-    'Stack',
     'Symbol',
+    'Stack',
     'record_kernel',
     'record_module',
     'get_stack',
