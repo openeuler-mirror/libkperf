@@ -152,7 +152,7 @@ void KUNPENG_PMU::EvtList::FillFields(
     }
 }
 
-int KUNPENG_PMU::EvtList::Read(vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps)
+int KUNPENG_PMU::EvtList::Read(vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool)
 {
     for (unsigned int row = 0; row < numCpu; row++) {
         for (unsigned int col = 0; col < numPid; col++) {
@@ -168,7 +168,7 @@ int KUNPENG_PMU::EvtList::Read(vector<PmuData> &data, std::vector<PerfSampleIps>
         auto cpuTopo = this->cpuList[row].get();
         for (unsigned int col = 0; col < numPid; col++) {
             auto cnt = data.size();
-            int err = this->xyCounterArray[row][col]->Read(data, sampleIps);
+            int err = this->xyCounterArray[row][col]->Read(data, sampleIps, extPool);
             if (err != SUCCESS) {
                 return err;
             }

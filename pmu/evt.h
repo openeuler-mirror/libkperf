@@ -44,7 +44,7 @@ public:
 
     virtual int Init() = 0;
 
-    virtual int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps) = 0;
+    virtual int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool) = 0;
 
     virtual int MapPerfAttr() = 0;
 

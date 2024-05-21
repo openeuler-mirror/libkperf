@@ -388,6 +388,15 @@ TEST_F(TestAPI, CollectInvalidTime)
     ASSERT_EQ(Perrorno(), LIBPERF_ERR_INVALID_TIME);
 }
 
+TEST_F(TestAPI, InvalidSampleRate)
+{
+    auto attr = GetPmuAttribute();
+    attr.useFreq = 1;
+    attr.freq = 999999;
+    pd = PmuOpen(SAMPLING, &attr);
+    ASSERT_EQ(Perrorno(), LIBPERF_ERR_INVALID_SAMPLE_RATE);
+}
+
 TEST_F(TestAPI, TestRaiseNumFd)
 {
     // Given (setup)
