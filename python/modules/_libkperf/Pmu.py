@@ -39,9 +39,10 @@ class CtypesPmuAttr(ctypes.Structure):
                 ('useFreq',       ctypes.c_bool),
                 ('excludeUser',   ctypes.c_bool),
                 ('excludeKernel', ctypes.c_bool),
-                ('symbolMode',    ctypes.c_int),
-                ('dataFilter',    ctypes.c_int),
-                ('evFilter',      ctypes.c_int),
+                ('symbolMode',    ctypes.c_uint),
+                ('callStack',     ctypes.c_bool),
+                ('dataFilter',    ctypes.c_uint64), # The enumeration for dataFilter will use 64 bits
+                ('evFilter',      ctypes.c_uint),
                 ('minLatency',    ctypes.c_ulong)]
 
     def __init__(self,
@@ -53,6 +54,7 @@ class CtypesPmuAttr(ctypes.Structure):
                  excludeUser: bool = False,
                  excludeKernel: bool = False,
                  symbolMode: int = 0,
+                 callStack: bool = False,
                  dataFilter: int = 0,
                  evFilter: int = 0,
                  minLatency: int = 0,
@@ -92,14 +94,15 @@ class CtypesPmuAttr(ctypes.Structure):
         self.excludeUser = ctypes.c_bool(excludeUser)
         self.excludeKernel = ctypes.c_bool(excludeKernel)
 
-        self.symbolMode = ctypes.c_int(symbolMode)
-        self.dataFilter = ctypes.c_int(dataFilter)
-        self.evFilter = ctypes.c_int(evFilter)
+        self.symbolMode = ctypes.c_uint(symbolMode)
+        self.callStack = ctypes.c_bool(callStack)
+        self.dataFilter = ctypes.c_uint64(dataFilter)
+        self.evFilter = ctypes.c_uint(evFilter)
         self.minLatency = ctypes.c_ulong(minLatency)
 
 
-
 class PmuAttr:
+
     __slots__ = ['__c_pmu_attr']
 
     def __init__(self,
@@ -111,6 +114,7 @@ class PmuAttr:
                  excludeUser: bool = False,
                  excludeKernel: bool = False,
                  symbolMode: int=0,
+                 callStack: bool = False,
                  dataFilter: int=0,
                  evFilter: int=0,
                  minLatency: int=0) -> None:
@@ -123,6 +127,7 @@ class PmuAttr:
             excludeUser=excludeUser,
             excludeKernel=excludeKernel,
             symbolMode=symbolMode,
+            callStack=callStack,
             dataFilter=dataFilter,
             evFilter=evFilter,
             minLatency=minLatency
@@ -196,7 +201,7 @@ class PmuAttr:
 
 
     @sampleRate.setter
-    def sampleRate(self, sampleRate) -> None:
+    def sampleRate(self, sampleRate: int) -> None:
         if not self.useFreq:
             self.c_pmu_attr.sampleRate.period = ctypes.c_uint(sampleRate)
         else:
@@ -207,7 +212,7 @@ class PmuAttr:
         return bool(self.c_pmu_attr.useFreq)
 
     @useFreq.setter
-    def useFreq(self, useFreq) -> None:
+    def useFreq(self, useFreq: bool) -> None:
         self.c_pmu_attr.useFreq = ctypes.c_bool(useFreq)
 
     @property
@@ -215,7 +220,7 @@ class PmuAttr:
         return bool(self.c_pmu_attr.excludeUser)
 
     @excludeUser.setter
-    def excludeUser(self, excludeUser) -> None:
+    def excludeUser(self, excludeUser: bool) -> None:
         self.c_pmu_attr.excludeUser = ctypes.c_bool(excludeUser)
 
     @property
@@ -223,7 +228,7 @@ class PmuAttr:
         return bool(self.c_pmu_attr.excludeKernel)
 
     @excludeKernel.setter
-    def excludeKernel(self, excludeKernel) -> None:
+    def excludeKernel(self, excludeKernel: bool) -> None:
         self.c_pmu_attr.excludeKernel = ctypes.c_bool(excludeKernel)
 
 
@@ -232,31 +237,40 @@ class PmuAttr:
         return self.c_pmu_attr.symbolMode
 
     @symbolMode.setter
-    def symbolMode(self, symbolMode) -> None:
-        self.c_pmu_attr.symbolMode = ctypes.c_int(symbolMode)
+    def symbolMode(self, symbolMode: int) -> None:
+        self.c_pmu_attr.symbolMode = ctypes.c_uint(symbolMode)
+
+
+    @property
+    def callStack(self) -> bool:
+        return bool(self.c_pmu_attr.callStack)
+
+    @callStack.setter
+    def callStack(self, callStack: bool) -> None:
+        self.c_pmu_attr.callStack = ctypes.c_bool(callStack)
 
     @property
     def dataFilter(self) -> int:
         return self.c_pmu_attr.dataFilter
 
     @dataFilter.setter
-    def dataFilter(self, dataFilter) -> None:
-        self.c_pmu_attr.dataFilter = ctypes.c_int(dataFilter)
+    def dataFilter(self, dataFilter: int) -> None:
+        self.c_pmu_attr.dataFilter = ctypes.c_uint64(dataFilter)
 
     @property
     def evFilter(self) -> int:
         return self.c_pmu_attr.evFilter
 
     @evFilter.setter
-    def evFilter(self, evFilter) -> None:
-        self.c_pmu_attr.evFilter = ctypes.c_int(evFilter)
+    def evFilter(self, evFilter: int) -> None:
+        self.c_pmu_attr.evFilter = ctypes.c_uint(evFilter)
 
     @property
     def minLatency(self) -> int:
         return self.c_pmu_attr.minLatency
 
     @minLatency.setter
-    def minLatency(self, minLatency) -> None:
+    def minLatency(self, minLatency: int) -> None:
         self.c_pmu_attr.minLatency = ctypes.c_ulong(minLatency)
 
     @classmethod
@@ -267,6 +281,7 @@ class PmuAttr:
 
 
 class CtypesCpuTopology(ctypes.Structure):
+
     _fields_ = [
         ('coreId',   ctypes.c_int),
         ('numaId',   ctypes.c_int),
@@ -306,7 +321,7 @@ class CpuTopology:
         return self.c_cpu_topo.coreId
 
     @coreId.setter
-    def coreId(self, coreId) -> None:
+    def coreId(self, coreId: int) -> None:
         self.c_cpu_topo.coreId = ctypes.c_int(coreId)
 
     @property
@@ -314,7 +329,7 @@ class CpuTopology:
         return self.c_cpu_topo.numaId
 
     @numaId.setter
-    def numaId(self, numaId) -> None:
+    def numaId(self, numaId: int) -> None:
         self.c_cpu_topo.numaId = ctypes.c_int(numaId)
 
     @property
@@ -322,7 +337,7 @@ class CpuTopology:
         return self.c_cpu_topo.socketId
 
     @socketId.setter
-    def socketId(self, socketId) -> None:
+    def socketId(self, socketId: int) -> None:
         self.c_cpu_topo.socketId = ctypes.c_int(socketId)
 
 
@@ -335,6 +350,7 @@ class CpuTopology:
 
 
 class CtypesPmuDataExt(ctypes.Structure):
+
     _fields_ = [
         ('pa',    ctypes.c_ulong),
         ('va',    ctypes.c_ulong),
@@ -374,16 +390,16 @@ class PmuDataExt:
         return self.c_pmu_data_ext.pa
 
     @pa.setter
-    def pa(self, pa) -> None:
-        self.c_pmu_data_ext.pa = ctypes.c_int(pa)
+    def pa(self, pa: int) -> None:
+        self.c_pmu_data_ext.pa = ctypes.c_ulong(pa)
 
     @property
     def va(self) -> int:
         return self.c_pmu_data_ext.va
 
     @va.setter
-    def va(self, va) -> None:
-        self.c_pmu_data_ext.va = ctypes.c_int(va)
+    def va(self, va: int) -> None:
+        self.c_pmu_data_ext.va = ctypes.c_ulong(va)
 
     @property
     def event(self) -> int:
@@ -391,7 +407,7 @@ class PmuDataExt:
 
     @event.setter
     def event(self, event) -> None:
-        self.c_pmu_data_ext.event = ctypes.c_int(event)
+        self.c_pmu_data_ext.event = ctypes.c_ulong(event)
 
     @classmethod
     def from_pmu_data_ext(cls, c_pmu_data_ext: CtypesPmuDataExt) -> 'PmuDataExt':
@@ -490,7 +506,7 @@ class ImplPmuData:
         return self.c_pmu_data.evt.decode(UTF_8)
 
     @evt.setter
-    def evt(self, evt) -> None:
+    def evt(self, evt: str) -> None:
         self.c_pmu_data.evt = ctypes.c_char_p(evt.encode(UTF_8))
 
     @property
@@ -538,7 +554,7 @@ class ImplPmuData:
         return self.c_pmu_data.comm.decode(UTF_8)
 
     @comm.setter
-    def comm(self, comm) -> None:
+    def comm(self, comm: str) -> None:
         self.c_pmu_data.comm = ctypes.c_char_p(comm.encode(UTF_8))
 
     @property
@@ -546,7 +562,7 @@ class ImplPmuData:
         return self.c_pmu_data.period
 
     @period.setter
-    def period(self, period) -> None:
+    def period(self, period: int) -> None:
         self.c_pmu_data.period = ctypes.c_int(period)
 
     @property
@@ -554,7 +570,7 @@ class ImplPmuData:
         return self.c_pmu_data.count
 
     @count.setter
-    def count(self, count) -> None:
+    def count(self, count: int) -> None:
         self.c_pmu_data.count = ctypes.c_uint64(count)
 
     @property

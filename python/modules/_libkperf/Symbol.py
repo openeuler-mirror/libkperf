@@ -242,7 +242,7 @@ class Stack:
         return self.c_stack.count
 
     @count.setter
-    def count(self, count) -> None:
+    def count(self, count: int) -> None:
         self.c_stack.count = ctypes.c_uint64(count)
 
     @classmethod
@@ -299,7 +299,7 @@ class AsmCode:
         return self.c_asm_code.addr
 
     @addr.setter
-    def addr(self, addr) -> None:
+    def addr(self, addr: int) -> None:
         self.c_asm_code.addr = ctypes.c_ulong(addr)
 
     @property
@@ -323,7 +323,7 @@ class AsmCode:
         return self.c_asm_code.lineNum
 
     @lineNum.setter
-    def lineNum(self, lineNum) -> None:
+    def lineNum(self, lineNum: int) -> None:
         self.c_asm_code.lineNum = ctypes.c_uint(lineNum)
 
     @classmethod
