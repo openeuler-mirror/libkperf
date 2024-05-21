@@ -133,12 +133,15 @@ int FillUncoreFields(const char* pmuName, PmuEvt *evt)
 bool CheckUncoreRawEvent(const char *pmuName)
 {
     string strName = pmuName;
+    auto findSlash = strName.find('/');
+    if (findSlash == string::npos) {
+        return false;
+    }
     unsigned numEvt;
     auto eventList = PmuEventList(UNCORE_EVENT, &numEvt);
     if (eventList == nullptr) {
         return false;
     }
-    auto findSlash = strName.find('/');
     string devName = strName.substr(0, findSlash);
     string evtName = strName.substr(devName.size() + 1, strName.size() - 1 - (devName.size() + 1));
     // check if "config=" at back part of pmuName
