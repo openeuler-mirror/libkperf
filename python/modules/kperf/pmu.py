@@ -86,6 +86,7 @@ class PmuAttr(_libkperf.PmuAttr):
                  excludeUser: bool = False,
                  excludeKernel: bool = False,
                  symbolMode: int = 0,
+                 callStack: bool = False,
                  dataFilter: int = 0,
                  evFilter: int = 0,
                  minLatency: int = 0) -> None:
@@ -98,6 +99,7 @@ class PmuAttr(_libkperf.PmuAttr):
             excludeUser=excludeUser,
             excludeKernel=excludeKernel,
             symbolMode=symbolMode,
+            callStack=callStack,
             dataFilter=dataFilter,
             evFilter=evFilter,
             minLatency=minLatency
