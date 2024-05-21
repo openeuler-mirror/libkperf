@@ -43,6 +43,7 @@ namespace pcerr {
             {LIBPERF_ERR_KERNEL_NOT_SUPPORT, "current pmu task is not supported by kernel"},
             {LIBPERF_ERR_TOO_MANY_FD, "too many open files"},
             {LIBPERF_ERR_RAISE_FD, "failed to setrlimit or getrlimit"},
+            {LIBPERF_ERR_PATH_INACCESSIBLE, "cannot access file path"},
             {LIBPERF_ERR_INVALID_SAMPLE_RATE, "invalid sample rate, please check /proc/sys/kernel/perf_event_max_sample_rate"},
     };
 

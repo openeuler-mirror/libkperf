@@ -128,7 +128,6 @@ struct PmuData {
     uint64_t period;                     // number of Samples
     uint64_t count;                 // event count. Only available for Counting.
     struct PmuDataExt *ext;         // extension. Only available for Spe.
-
 };
 
 /**
@@ -211,6 +210,19 @@ int PmuRead(int pd, struct PmuData** pmuData);
  * @param toData pointer to target data list. If data list <*toData> is NULL, a new list will be created.
  */
 int PmuAppendData(struct PmuData *fromData, struct PmuData **toData);
+
+/**
+ * @brief
+ * Dump pmu data to a specific file.
+ * If file exists, then data will be appended to file.
+ * If file does not exist, then file will be created.
+ * Dump format: comm pid tid cpu period evt count addr symbolName offset module fileName lineNum
+ * @param pmuData data list.
+ * @param len data length.
+ * @param filepath path of the output file.
+ * @param dumpDwf if 0, source file and line number of symbols will not be dumped, otherwise, they will be dumped to file.
+*/
+int PmuDumpData(struct PmuData *pmuData, unsigned len, char *filepath, int dumpDwf);
 
 /**
  * @brief Close all the file descriptor opened during collecting process
