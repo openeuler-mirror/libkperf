@@ -767,7 +767,7 @@ void SymbolResolve::SearchDwarfInfo(MyDwarf& myDwarf, unsigned long addr, struct
         strcpy(symbol->fileName, dwarfEntry.fileName.c_str());
         symbol->lineNum = dwarfEntry.lineNum;
     } else {
-        strcpy(symbol->fileName, "Uknown");
+        strcpy(symbol->fileName, "UKNOWN");
         symbol->lineNum = 0;
     }
 }
@@ -891,10 +891,15 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
             addrToSearch = addrToSearch - module->start;
         }
         this->SearchElfInfo(myElf, addrToSearch, symbol, &symbol->offset);  
+    } else {
+        strcpy(symbol->symbolName, "UNKNOWN");
     }
 
     if (this->dwarfMap.find(module->moduleName) != this->dwarfMap.end()) {
         this->SearchDwarfInfo(this->dwarfMap.at(module->moduleName), addrToSearch, symbol);
+    } else {
+        strcpy(symbol->fileName, "UKNOWN");
+        symbol->lineNum = 0;
     }
     symbol->codeMapAddr = addrToSearch;
     this->symbolMap.at(pid).insert({addr, symbol});
