@@ -670,3 +670,68 @@ void PmuDataFree(struct PmuData* pmuData)
     PmuList::GetInstance()->FreeData(pmuData);
     New(SUCCESS);
 }
+
+static void DumpStack(ofstream &out, Stack *stack, int dumpDwf)
+{
+    if (stack->next) {
+        out << endl;
+    }
+    while (stack) {
+        if (stack->symbol) {
+            auto symbol = stack->symbol;
+            out << std::hex << symbol->addr << std::dec << " "
+                << symbol->symbolName << " 0x" << std::hex
+                << symbol->offset << std::dec << " "
+                << symbol->module << " ";
+            
+            if (dumpDwf) {
+                out << symbol->fileName << ":" << symbol->lineNum;
+            }
+            out << endl;
+        }
+        stack = stack->next;
+    }
+}
+
+int PmuDumpData(struct PmuData *pmuData, unsigned len, char *filepath, int dumpDwf)
+{
+    ofstream out(filepath, ios_base::app);
+    if (!out.is_open()) {
+        New(LIBPERF_ERR_PATH_INACCESSIBLE, "cannot access: " + string(filepath));
+        return -1;
+    }
+
+    for (unsigned i = 0; i < len; ++i) {
+        auto &data = pmuData[i];
+        if (data.comm) {
+            out << data.comm << " ";
+        } else {
+            out << "NULL ";
+        }
+        
+        out << data.pid << " "
+            << data.tid << " "
+            << data.cpu << " "
+            << data.period << " ";
+        
+        if (data.evt) {
+            out << data.evt << " ";
+        } else {
+            out << "NULL ";
+        }
+        out << data.count << " ";
+        
+        if (data.ext) {
+            out << std::hex << data.ext->va << " "
+                << data.ext->pa << " "
+                << data.ext->event << " " << std::dec;
+        }
+        
+        if (data.stack) {
+            DumpStack(out, data.stack, dumpDwf);
+        }
+        out << endl;
+    }
+    New(SUCCESS);
+    return 0;
+}
