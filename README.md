@@ -14,6 +14,29 @@ Pmu收集模块是在syscall perf_event_open上开发的，用于启用内核pmu
 
 符号解析模块是在elfin-parser上开发的，elfin-parser是一个解析elf和dwarf的库。该模块以设计良好的数据结构管理所有符号数据，以实现快速查询。 
 
+#### 下载
+
+git方法:
+
+```shell
+git clone --recurse-submodules https://gitee.com/openeuler/libkperf.git
+```
+如果你只使用
+```shell
+git clone https://gitee.com/openeuler/libkperf.git
+```
+请再执行 
+```shell
+cd libkperf
+git submodule update --init --recursive
+```
+
+无法使用git时:
+
+1.下载libkperf压缩包并解压。
+
+2.进入gitee上的libkperf的third_party目录，点击链接(如elfin-parser@13e57e2，点击@后面的提交ID)，进行跳转并下载第三方库的压缩包，解压后放置于本地的libkperf项目的third_party目录。(elfin-parser对于安装是必须的)
+
 #### 安装
 
 运行bash脚本:

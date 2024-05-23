@@ -12,6 +12,29 @@ For sampling, symbols are resolved according to ips or pc from data packet. Each
 
 Symbol resolve module is developed on elfin-parser, a library for parsing elf and dwarf. The module manages all symbol data in well-designed data structures for fast query.
 
+#### Download
+
+Git method:
+
+```shell
+git clone --recurse-submodules https://gitee.com/openeuler/libkperf.git
+```
+If you only use
+```shell
+git clone https://gitee.com/openeuler/libkperf.git
+```
+Please continue with the execution
+```shell
+cd libkperf
+git submodule update --init --recursive
+```
+
+When unable to use git:
+
+1. Download the libkperf compressed file and decompress it.
+
+2. Go to the third_party directory of libkperf on Gitee, click on the link(as shown in the example elfin-parser@13e57e2 Click on the submit ID after @), to redirect and download the compressed package of the third-party library. After decompression, place it in the third_party directory of the local libkperf project. (elfin Parser is necessary for installation)
+
 #### Installation
 Run bash script:
 
