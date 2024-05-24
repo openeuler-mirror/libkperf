@@ -31,6 +31,7 @@ const char* KUNPENG_PMU::COMMON::INSTRUCTIONS = "instructions";
 const char* KUNPENG_PMU::COMMON::STALLED_CYCLES_BACKEND = "stalled-cycles-backend";
 const char* KUNPENG_PMU::COMMON::STALLED_CYCLES_FRONTEND = "stalled-cycles-frontend";
 const char* KUNPENG_PMU::COMMON::L1_DCACHE_LOAD_MISSES = "L1-dcache-load-misses";
+const char* KUNPENG_PMU::COMMON::L1_DCACHE_LOADS = "L1-dcache-loads";
 const char* KUNPENG_PMU::COMMON::IDLE_CYCLES_BACKEND = "idle-cycles-backend";
 const char* KUNPENG_PMU::COMMON::L1_ICACHE_LOAD_MISSES = "L1-icache-load-misses";
 const char* KUNPENG_PMU::COMMON::IDLE_CYCLES_FRONTEND = "idle-cycles-frontend";

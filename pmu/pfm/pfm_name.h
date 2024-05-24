@@ -31,6 +31,7 @@ extern const char* INSTRUCTIONS;
 extern const char* STALLED_CYCLES_BACKEND;
 extern const char* STALLED_CYCLES_FRONTEND;
 extern const char* L1_DCACHE_LOAD_MISSES;
+extern const char* L1_DCACHE_LOADS;
 extern const char* IDLE_CYCLES_BACKEND;
 extern const char* L1_ICACHE_LOAD_MISSES;
 extern const char* IDLE_CYCLES_FRONTEND;
