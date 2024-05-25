@@ -79,7 +79,7 @@ void SymResolverDestroy()
     SymbolResolve::GetInstance()->Clear();
 }
 
-struct Stack*  StackToHash(int pid, unsigned long* stack, int nr)
+struct Stack* StackToHash(int pid, unsigned long* stack, int nr)
 {
     try {
         return SymbolResolve::GetInstance()->StackToHash(pid, stack, nr);

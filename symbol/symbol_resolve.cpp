@@ -61,6 +61,7 @@ const std::string R_XP = "r-xp";
 const std::string SLASH = "/";
 const char DASH = '-';
 const char EXE_TYPE = 'x';
+char* UNKNOWN = "UNKNOWN";
 
 namespace {
     static inline void SetFalse(bool& flag)
@@ -88,6 +89,16 @@ namespace {
             return nullptr;
         }
         return str;
+    }
+
+    static inline Symbol* InitializeSymbol(unsigned long addr) {
+        struct Symbol* symbol = new struct Symbol();
+        symbol->module = UNKNOWN;
+        symbol->symbolName = UNKNOWN;
+        symbol->fileName = UNKNOWN;
+        symbol->addr = addr;
+        symbol->offset = 0;
+        return symbol;
     }
 
     static void ReadProcPidMap(std::ifstream& file, std::vector<std::shared_ptr<ModuleMap>>& modVec)
@@ -269,15 +280,15 @@ namespace {
 
 void SymbolUtils::FreeSymbol(struct Symbol* symbol)
 {
-    if (symbol->symbolName) {
+    if (symbol->symbolName && symbol->symbolName != UNKNOWN) {
         delete[] symbol->symbolName;
         symbol->symbolName = nullptr;
     }
-    if (symbol->fileName) {
+    if (symbol->fileName && symbol->fileName != UNKNOWN) {
         delete[] symbol->fileName;
         symbol->fileName = nullptr;
     }
-    if (symbol->module) {
+    if (symbol->module && symbol->fileName != UNKNOWN) {
         delete[] symbol->module;
         symbol->module = nullptr;
     }
@@ -815,7 +826,7 @@ struct Stack* SymbolResolve::StackToHash(int pid, unsigned long* stack, int nr)
         if (symbol != nullptr) {
             current->symbol = symbol;
         } else {
-            current->symbol = nullptr;
+            current->symbol = InitializeSymbol(stack[i]);
         }
         AddDoubleLinkedTail<struct Stack>(&head, &current);
     }
