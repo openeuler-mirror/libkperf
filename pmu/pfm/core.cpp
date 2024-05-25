@@ -112,6 +112,22 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
         }
     },
     {
+        KUNPENG_PMU::COMMON::L1_DCACHE_STORE_MISSES,
+        {
+            PERF_TYPE_HW_CACHE,
+            0x10100,
+            KUNPENG_PMU::COMMON::L1_DCACHE_STORE_MISSES
+        }
+    },
+    {
+        KUNPENG_PMU::COMMON::L1_DCACHE_STORES,
+        {
+            PERF_TYPE_HW_CACHE,
+            0x100,
+            KUNPENG_PMU::COMMON::L1_DCACHE_STORES
+        }
+    },
+    {
         KUNPENG_PMU::COMMON::IDLE_CYCLES_BACKEND,
         {
             PERF_TYPE_HARDWARE,
