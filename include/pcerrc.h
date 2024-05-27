@@ -77,6 +77,10 @@ extern "C" {
 
 #define UNKNOWN_ERROR 9999
 
+// warnning code
+#define LIBPERF_WARN_CTXID_LOST 1000
+
+
 /**
 * @brief Obtaining error codes
 */
@@ -86,6 +90,17 @@ int Perrorno();
 * @brief Obtaining Error Information
 */
 const char* Perror();
+
+/**.
+ * @brief Get warnning codes
+*/
+int GetWarn();
+
+/**
+ * @brief Get warning message.
+*/
+const char* GetWarnMsg();
+
 #ifdef __cplusplus
 }
 #endif

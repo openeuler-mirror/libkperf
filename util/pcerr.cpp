@@ -46,6 +46,11 @@ namespace pcerr {
             {LIBPERF_ERR_PATH_INACCESSIBLE, "cannot access file path"},
             {LIBPERF_ERR_INVALID_SAMPLE_RATE, "invalid sample rate, please check /proc/sys/kernel/perf_event_max_sample_rate"},
     };
+    static std::unordered_map<int, std::string> warnMsgs = {
+            {LIBPERF_WARN_CTXID_LOST, "Some SPE context packets are not found in the traces."}
+    };
+    static int warnCode = SUCCESS;
+    static std::string warnMsg = "";
 
     ProfErrorObj ProfErrorObj::profErrorObj;
 
@@ -75,6 +80,17 @@ namespace pcerr {
         ProfErrorObj::GetInstance().SetProfError(profError);
     }
 
+    void SetWarn(int warn)
+    {
+        warnCode = warn;
+        auto findMsg = warnMsgs.find(warn);
+        if (findMsg != warnMsgs.end()) {
+            warnMsg = findMsg->second;
+        } else {
+            warnMsg = "";
+        }
+    }
+
 }  // namespace pcerr
 
 int Perrorno()
@@ -85,4 +101,14 @@ int Perrorno()
 const char* Perror()
 {
     return pcerr::ProfErrorObj::GetInstance().GetProfError()->Msg();
+}
+
+int GetWarn()
+{
+    return pcerr::warnCode;
+}
+
+const char* GetWarnMsg()
+{
+    return pcerr::warnMsg.c_str();
 }

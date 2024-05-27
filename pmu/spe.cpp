@@ -29,6 +29,7 @@
 #include "spe.h"
 
 using namespace std;
+using namespace pcerr;
 using namespace KUNPENG_PMU;
 
 constexpr unsigned SPE_RECORD_MAX = 100000;
@@ -411,6 +412,9 @@ static void SetTidByTimestamp(struct ContextSwitchData *dummyData, int *dummyIdx
             // Then we do not need dummy events to derive tid for this packet.
             continue;
         }
+        // Some OS does not implement context id for spe packets,
+        // and match of tid to spe events may be inaccurate.
+        SetWarn(LIBPERF_WARN_CTXID_LOST);
 
         if (*dummyIdx >= dummyData[0].num - 1) {
             // Now, all spe records locate after the last switch-in data.

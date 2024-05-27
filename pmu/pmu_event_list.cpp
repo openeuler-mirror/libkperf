@@ -245,6 +245,7 @@ static const unordered_map<int, EvtQueryer> QueryMap{
 const char** PmuEventList(enum PmuEventType eventType, unsigned *numEvt)
 {
     lock_guard<mutex> lg(pmuEventListMtx);
+    SetWarn(SUCCESS);
     const char** eventList;
     if (QueryMap.find(eventType) == QueryMap.end()) {
         New(LIBPERF_ERR_QUERY_EVENT_TYPE_INVALID, "Event type is invalid.");
