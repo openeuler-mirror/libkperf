@@ -248,6 +248,7 @@ static void PmuTaskAttrFree(PmuTaskAttr *taskAttr)
 
 int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
 {
+    SetWarn(SUCCESS);
     try {
         auto err = CheckAttr(collectType, attr);
         if (err != SUCCESS) {
@@ -296,16 +297,19 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
 
 int PmuEnable(int pd)
 {
+    SetWarn(SUCCESS);
     return PmuCollectStart(pd);
 }
 
 int PmuDisable(int pd)
 {
+    SetWarn(SUCCESS);
     return PmuCollectPause(pd);
 }
 
 int PmuAppendData(struct PmuData *fromData, struct PmuData **toData)
 {
+    SetWarn(SUCCESS);
     int toLen = 0;
     PmuList::GetInstance()->AppendData(fromData, toData, toLen);
     return toLen;
@@ -395,6 +399,7 @@ static int DoCollect(int pd, int milliseconds, unsigned interval)
 
 int PmuCollect(int pd, int milliseconds, unsigned interval)
 {
+    SetWarn(SUCCESS);
     int err = SUCCESS;
     string errMsg = "";
     try {
@@ -491,6 +496,7 @@ static int InnerCollect(int *pds, unsigned len, size_t collectTime, bool &stop)
 
 int PmuCollectV(int *pds, unsigned len, int milliseconds)
 {
+    SetWarn(SUCCESS);
     constexpr int collectInterval = 100;
     constexpr int usecPerMilli = 1000;
     // Collect every <collectInterval> milliseconds,
@@ -523,6 +529,7 @@ int PmuCollectV(int *pds, unsigned len, int milliseconds)
 
 void PmuStop(int pd)
 {
+    SetWarn(SUCCESS);
     if (!PdValid(pd)) {
         New(LIBPERF_ERR_INVALID_PD);
         return;
@@ -536,6 +543,7 @@ void PmuStop(int pd)
 
 int PmuRead(int pd, struct PmuData** pmuData)
 {
+    SetWarn(SUCCESS);
     try {
         if (!PdValid(pd)) {
             New(LIBPERF_ERR_INVALID_PD);
@@ -562,6 +570,7 @@ int PmuRead(int pd, struct PmuData** pmuData)
 
 void PmuClose(int pd)
 {
+    SetWarn(SUCCESS);
     if (!PdValid(pd)) {
         New(LIBPERF_ERR_INVALID_PD);
         return;
@@ -667,6 +676,7 @@ struct PmuTaskAttr* AssignPmuTaskParam(enum PmuTaskType collectType, struct PmuA
 
 void PmuDataFree(struct PmuData* pmuData)
 {
+    SetWarn(SUCCESS);
     PmuList::GetInstance()->FreeData(pmuData);
     New(SUCCESS);
 }
@@ -695,6 +705,7 @@ static void DumpStack(ofstream &out, Stack *stack, int dumpDwf)
 
 int PmuDumpData(struct PmuData *pmuData, unsigned len, char *filepath, int dumpDwf)
 {
+    SetWarn(SUCCESS);
     ofstream out(filepath, ios_base::app);
     if (!out.is_open()) {
         New(LIBPERF_ERR_PATH_INACCESSIBLE, "cannot access: " + string(filepath));

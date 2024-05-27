@@ -85,6 +85,7 @@ namespace pcerr {
 
     void [[nodiscard]] New(int code);
     void [[nodiscard]] New(int code, const std::string& msg);
+    void [[nodiscard]] SetWarn(int warn);
 }  // namespace pcerr
 
 #endif
