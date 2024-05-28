@@ -62,6 +62,7 @@ const std::string SLASH = "/";
 const char DASH = '-';
 const char EXE_TYPE = 'x';
 char* UNKNOWN = "UNKNOWN";
+char* KERNEL = "[kernel]";
 
 namespace {
     static inline void SetFalse(bool& flag)
@@ -284,11 +285,11 @@ void SymbolUtils::FreeSymbol(struct Symbol* symbol)
         delete[] symbol->symbolName;
         symbol->symbolName = nullptr;
     }
-    if (symbol->fileName && symbol->fileName != UNKNOWN) {
+    if (symbol->fileName && symbol->fileName != UNKNOWN && symbol->fileName != KERNEL) {
         delete[] symbol->fileName;
         symbol->fileName = nullptr;
     }
-    if (symbol->module && symbol->fileName != UNKNOWN) {
+    if (symbol->module && symbol->module != UNKNOWN && symbol->module != KERNEL) {
         delete[] symbol->module;
         symbol->module = nullptr;
     }
@@ -924,7 +925,10 @@ struct Symbol* SymbolResolve::MapAddr(int pid, unsigned long addr)
     if (addr > KERNEL_START_ADDR) {
         data = this->MapKernelAddr(addr);
         if (data == nullptr) {
-            return nullptr;
+            auto symbol = InitializeSymbol(addr);
+            symbol->module = KERNEL;
+            symbol->fileName = KERNEL;
+            return symbol;
         }
         data->offset = addr - data->addr;
     } else {

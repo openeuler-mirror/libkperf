@@ -55,6 +55,7 @@ namespace KUNPENG_PMU {
         void ReadRingBuffer(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps);
         void FillComm(const size_t &start, const size_t &end, std::vector<PmuData> &data);
         void UpdatePidInfo(const pid_t &pid, const int &tid);
+        void UpdateCommInfo(KUNPENG_PMU::PerfEvent *event);
 
         static int pages;
         std::shared_ptr<PerfMmap> sampleMmap = std::make_shared<PerfMmap>();
