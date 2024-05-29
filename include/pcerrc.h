@@ -79,6 +79,7 @@ extern "C" {
 
 // warnning code
 #define LIBPERF_WARN_CTXID_LOST 1000
+#define LIBPERF_WARN_FAIL_GET_PROC 1001
 
 
 /**

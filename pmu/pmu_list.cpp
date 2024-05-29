@@ -625,16 +625,22 @@ namespace KUNPENG_PMU {
             if (childTidList == nullptr) {
                 return LIBPERF_ERR_INVALID_PID;
             }
+            bool foundProc = false;
             for (int j = 0; j < numChild; j++) {
                 struct ProcTopology* procTopo = GetProcTopology(childTidList[j]);
                 if (procTopo == nullptr) {
-                    New(LIBPERF_ERR_FAIL_GET_PROC);
-                    return LIBPERF_ERR_FAIL_GET_PROC;
+                    SetWarn(LIBPERF_WARN_FAIL_GET_PROC, "process not found: " + std::to_string(childTidList[j]));
+                    continue;
                 }
+                foundProc = true;
                 DBG_PRINT("Add to proc map: %d\n", childTidList[j]);
                 procTopoList.emplace_back(shared_ptr<ProcTopology>(procTopo, FreeProcTopo));
             }
             delete[] childTidList;
+            if (!foundProc) {
+                New(LIBPERF_ERR_FAIL_GET_PROC, "process not found: " + std::to_string(pmuTaskAttrHead->pidList[i]));
+                return LIBPERF_ERR_FAIL_GET_PROC;
+            }
         }
         return SUCCESS;
     }

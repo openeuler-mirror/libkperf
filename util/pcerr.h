@@ -21,71 +21,10 @@
 #include "pcerrc.h"
 
 namespace pcerr {
-    namespace details {
-        struct BaseError;
-    }
-
-    using ProfError = std::shared_ptr<details::BaseError>;
-
-    namespace details {
-        struct BaseError : std::enable_shared_from_this<BaseError> {
-            virtual ~BaseError() = 0;
-            virtual const char* Msg() const
-            {
-                return nullptr;
-            }
-            virtual int Code() const
-            {
-                return 0;
-            }
-            ProfError GetThisError()
-            {
-                return shared_from_this();
-            }
-        };
-        inline BaseError::~BaseError()
-        {}
-    }  // namespace details
-
-    namespace details {
-        class CodeStrMsgError : public BaseError {
-        public:
-            CodeStrMsgError(int code, const std::string& msg) : m_code{code}, m_msg{msg}
-            {}
-            int Code() const override
-            {
-                return this->m_code;
-            };
-            const char* Msg() const override
-            {
-                return this->m_msg.c_str();
-            };
-
-        private:
-            int m_code;
-            std::string m_msg;
-        };
-    }  // namespace details
-    class ProfErrorObj {
-    public:
-        static ProfErrorObj& GetInstance();
-        void SetProfError(const ProfError& profError);
-        ProfError& GetProfError()
-        {
-            if (profError == nullptr) {
-                profError = std::make_shared<details::CodeStrMsgError>(0, "success");
-            }
-            return profError;
-        }
-
-    private:
-        ProfError profError;
-        static ProfErrorObj profErrorObj;
-    };
-
     void [[nodiscard]] New(int code);
     void [[nodiscard]] New(int code, const std::string& msg);
     void [[nodiscard]] SetWarn(int warn);
+    void [[nodiscard]] SetWarn(int warn, const std::string& msg);
 }  // namespace pcerr
 
 #endif

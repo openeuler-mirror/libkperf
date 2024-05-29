@@ -51,18 +51,8 @@ namespace pcerr {
     };
     static int warnCode = SUCCESS;
     static std::string warnMsg = "";
-
-    ProfErrorObj ProfErrorObj::profErrorObj;
-
-    ProfErrorObj& ProfErrorObj::GetInstance()
-    {
-        return profErrorObj;
-    }
-
-    void ProfErrorObj::SetProfError(const ProfError& profError)
-    {
-        this->profError = profError;
-    }
+    static int errCode = SUCCESS;
+    static std::string errMsg = "";
 
     void New(int code)
     {
@@ -76,31 +66,35 @@ namespace pcerr {
 
     void New(int code, const std::string& msg)
     {
-        ProfError profError = std::make_shared<details::CodeStrMsgError>(code, msg);
-        ProfErrorObj::GetInstance().SetProfError(profError);
+        errCode = code;
+        errMsg = msg;
     }
 
     void SetWarn(int warn)
     {
-        warnCode = warn;
         auto findMsg = warnMsgs.find(warn);
         if (findMsg != warnMsgs.end()) {
-            warnMsg = findMsg->second;
+            SetWarn(warn, findMsg->second);
         } else {
-            warnMsg = "";
+            SetWarn(warn, "");
         }
     }
 
+    void SetWarn(int code, const std::string& msg)
+    {
+        warnCode = code;
+        warnMsg = msg;
+    }
 }  // namespace pcerr
 
 int Perrorno()
 {
-    return pcerr::ProfErrorObj::GetInstance().GetProfError()->Code();
+    return pcerr::errCode;
 }
 
 const char* Perror()
 {
-    return pcerr::ProfErrorObj::GetInstance().GetProfError()->Msg();
+    return pcerr::errMsg.c_str();
 }
 
 int GetWarn()
