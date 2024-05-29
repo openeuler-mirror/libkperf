@@ -61,7 +61,8 @@ namespace pcerr {
 
     void ProfErrorObj::SetProfError(const ProfError& profError)
     {
-        this->profError = profError;
+        this->errCode = profError->Code();
+        this->errMsg = profError->Msg();
     }
 
     void New(int code)
@@ -95,12 +96,12 @@ namespace pcerr {
 
 int Perrorno()
 {
-    return pcerr::ProfErrorObj::GetInstance().GetProfError()->Code();
+    return pcerr::ProfErrorObj::GetInstance().GetCode();
 }
 
 const char* Perror()
 {
-    return pcerr::ProfErrorObj::GetInstance().GetProfError()->Msg();
+    return pcerr::ProfErrorObj::GetInstance().GetMsg().c_str();
 }
 
 int GetWarn()

@@ -135,7 +135,7 @@ public:
     ~Spe()
     {
         if (records != nullptr) {
-            delete records;
+            delete[] records;
             records = nullptr;
         }
     }

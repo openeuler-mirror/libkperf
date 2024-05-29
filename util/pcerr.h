@@ -70,16 +70,19 @@ namespace pcerr {
     public:
         static ProfErrorObj& GetInstance();
         void SetProfError(const ProfError& profError);
-        ProfError& GetProfError()
+        int GetCode()
         {
-            if (profError == nullptr) {
-                profError = std::make_shared<details::CodeStrMsgError>(0, "success");
-            }
-            return profError;
+            return errCode;
+        }
+
+        std::string GetMsg()
+        {
+            return errMsg;
         }
 
     private:
-        ProfError profError;
+        int errCode = 0;
+        std::string errMsg = "";
         static ProfErrorObj profErrorObj;
     };
 
