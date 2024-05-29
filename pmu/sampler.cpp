@@ -123,6 +123,20 @@ void KUNPENG_PMU::PerfSampler::UpdatePidInfo(const pid_t &pid, const int &tid)
     }
 }
 
+void KUNPENG_PMU::PerfSampler::UpdateCommInfo(KUNPENG_PMU::PerfEvent *event)
+{
+    auto findProc = procMap.find(event->comm.tid);
+    if (findProc == procMap.end()) {
+        std::shared_ptr<ProcTopology> procTopo(new ProcTopology{0}, FreeProcTopo);
+        procTopo->tid = event->comm.tid;
+        procTopo->pid = event->comm.pid;
+        procTopo->comm = static_cast<char *>(malloc(strlen(event->comm.comm) + 1));
+        strcpy(procTopo->comm, event->comm.comm);
+        DBG_PRINT("Add to proc map: %d\n", event->comm.tid);
+        procMap[event->comm.tid] = procTopo;
+    }
+}
+
 void KUNPENG_PMU::PerfSampler::RawSampleProcess(
         struct PmuData *current, PerfSampleIps *ips, union KUNPENG_PMU::PerfEvent *event)
 {
@@ -183,6 +197,10 @@ void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<Perf
             case PERF_RECORD_FORK: {
                 DBG_PRINT("Fork ptid: %d tid: %d\n", event->fork.pid, event->fork.tid);
                 UpdatePidInfo(event->fork.pid, event->fork.tid);
+                break;
+            }
+            case PERF_RECORD_COMM: {
+                UpdateCommInfo(event);
                 break;
             }
             default:
