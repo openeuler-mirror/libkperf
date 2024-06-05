@@ -120,6 +120,11 @@ static int GetTgid(pid_t pid)
             return -1;
         }
         statusFile >> token;
+        if (statusFile.bad()) {
+            // The file may be successfully opened before while loop,
+            // but disappear before reading stream.
+            return -1;
+        }
         if (token == "Tgid:") {
             foundTgid = true;
             continue;
