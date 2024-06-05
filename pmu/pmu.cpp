@@ -550,8 +550,8 @@ int PmuRead(int pd, struct PmuData** pmuData)
             return -1;
         }
 
-        auto& retData = KUNPENG_PMU::PmuList::GetInstance()->Read(pd);
         New(SUCCESS);
+        auto& retData = KUNPENG_PMU::PmuList::GetInstance()->Read(pd);
         if (!retData.empty()) {
             *pmuData = retData.data();
             return retData.size();
