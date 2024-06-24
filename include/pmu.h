@@ -65,26 +65,60 @@ enum SymbolMode {
 };
 
 struct PmuAttr {
-    char** evtList;                 // event list
-    unsigned numEvt;                // length of event list
-    int* pidList;                   // pid list
-    unsigned numPid;                // length of pid list
-    int* cpuList;                   // cpu id list
-    unsigned numCpu;                // length of cpu id list
+    // Event list.
+    // Refer 'perf list' for details about event names.
+    // Calling PmuEventList will also return the available event names.
+    // Both event names like 'cycles' or event ids like 'r11' are allowed.
+    // For uncore events, event names should be of the form '<device>/<event>/'.
+    // For tracepoints, event names should be of the form '<system>:<event>'.
+    // For spe sampling, this field should be NULL.
+    char** evtList;
+    // Length of event list.
+    unsigned numEvt;
+    // Pid list.
+    // For multi-threaded programs, all threads will be monitored regardless whether threads are created before or after PmuOpen.
+    // For multi-process programs, only processes created after PmuOpen are monitored.
+    // For short-lived programs, PmuOpen may fail and return error code.
+    // To collect system, set pidList to NULL and cpu cores will be monitored according to the field <cpuList>.
+    int* pidList;
+    // Length of pid list.
+    unsigned numPid;
+    // Core id list.
+    // If both <cpuList> and <pidList> are NULL, all processes on all cores will be monitored.
+    // If <cpuList> is NULL and <pidList> is not NULL, specified processes on all cores will be monitored.
+    // if both <cpuList> and <pidList> are not NULL, specified processes on specified cores will be monitored.
+    int* cpuList;
+    // Length of core id list
+    unsigned numCpu;
 
     union {
-        unsigned period;            // sample period
-        unsigned freq;              // sample frequency
+        // Sample period, only available for SAMPLING and SPE_SAMPLING.
+        unsigned period;
+        // Sample frequency, only available for SAMPLING.
+        unsigned freq;
     };
+    // Use sample frequency or not.
+    // If set to 1, the previous union will be used as sample frequency,
+    // otherwise, it will be used as sample period.
     unsigned useFreq : 1;
-    unsigned excludeUser : 1;     // don't count user
-    unsigned excludeKernel : 1;   //  don't count kernel
-    enum SymbolMode symbolMode;     // refer to comments of SymbolMode
-    unsigned callStack : 1;   //  collect complete call stack
+    // Don't count user.
+    unsigned excludeUser : 1;
+    // Don't count kernel.
+    unsigned excludeKernel : 1;
+    // This indicates how to analyze symbols of samples.
+    // Refer to comments of SymbolMode.
+    enum SymbolMode symbolMode;
+    // This indicates whether to collect whole callchains or only top frame.
+    unsigned callStack : 1;
+
     // SPE related fields.
-    enum SpeFilter dataFilter;      // spe data filter
-    enum SpeEventFilter evFilter;   // spe event filter
-    unsigned long minLatency;       // collect only samples with latency or higher
+
+    // Spe data filter. Refer to comments of SpeFilter.
+    enum SpeFilter dataFilter;
+    // Spe event filter. Refer to comments of SpeEventFilter.
+    enum SpeEventFilter evFilter;
+    // Collect only samples with latency or higher.
+    unsigned long minLatency;
 };
 
 struct CpuTopology {
@@ -113,7 +147,7 @@ enum SPE_EVENTS {
 struct PmuDataExt {
     unsigned long pa;               // physical address
     unsigned long va;               // virtual address
-    unsigned long event;            // event id
+    unsigned long event;            // event id, which is a bit map of mixed events, event bit is defined in SPE_EVENTS.
 };
 
 struct PmuData {
@@ -125,7 +159,7 @@ struct PmuData {
     unsigned cpu;                   // cpu id
     struct CpuTopology *cpuTopo;    // cpu topology
     const char *comm;               // process command
-    uint64_t period;                     // number of Samples
+    uint64_t period;                // sample period
     uint64_t count;                 // event count. Only available for Counting.
     struct PmuDataExt *ext;         // extension. Only available for Spe.
 };
@@ -133,15 +167,12 @@ struct PmuData {
 /**
  * @brief
  * Initialize the collection target.
- * @param collectType collection typr.
- * @param evtList array of event IDs
- * @param numEvt length of evtList.
- * @param pidList list of PIDs to be collected. Information about subprocess and subthreads of PIDs is collected. If
- * the value is NULL, all process/threads are collected
- * @param numPid length of pidList.
- * @param cpuList CPU ID list. If the value is NULL, all CPUs are collected.
- * @param numCpu cpuList length.
- * @return int
+ * On success, a task id is returned which is the unique identity for the task.
+ * On error, -1 is returned.
+ * Refer to comments of PmuAttr for details about settings.
+ * @param collectType task type
+ * @param attr settings of the current task
+ * @return task id
  */
 int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr);
 
@@ -157,14 +188,20 @@ const char** PmuEventList(enum PmuEventType eventType, unsigned *numEvt);
 /**
  * @brief
  * Enable counting or sampling of task <pd>.
+ * On success, 0 is returned.
  * On error, -1 is returned.
+ * @param pd task id
+ * @return error code
  */
 int PmuEnable(int pd);
 
 /**
  * @brief
  * Disable counting or sampling of task <pd>.
+ * On success, 0 is returned.
  * On error, -1 is returned.
+ * @param pd task id
+ * @return error code
  */
 int PmuDisable(int pd);
 
@@ -194,9 +231,16 @@ void PmuStop(int pd);
 
 /**
  * @brief
- * Collect data. If the value is NULL and the error code is 0, no data is available in the current collection time. If
- * the value is NULL and the error code is not 0, an error occurs in the collection process and data cannot be read.
- * @param struct PmuData*
+ * Collect data.
+ * Pmu data are collected starting from the last PmuEnable or PmuRead.
+ * That is to say, for COUNTING, counts of all pmu event are reset to zero in PmuRead.
+ * For SAMPLING and SPE_SAMPLING, samples collected are started from the last PmuEnable or PmuRead.
+ * On success, length of data array is returned.
+ * If <pmuData> is NULL and the error code is 0, no data is available in the current collection time.
+ * If <pmuData> is NULL and the error code is not 0, an error occurs in the collection process and data cannot be read.
+ * @param pd task id
+ * @param pmuData pmu data which is a pointer to an array
+ * @return lenght of pmu data
  */
 int PmuRead(int pd, struct PmuData** pmuData);
 
@@ -208,6 +252,7 @@ int PmuRead(int pd, struct PmuData** pmuData);
  * On error, -1 is returned.
  * @param fromData data list which will be copied to <*toData>
  * @param toData pointer to target data list. If data list <*toData> is NULL, a new list will be created.
+ * @return length of <toData>
  */
 int PmuAppendData(struct PmuData *fromData, struct PmuData **toData);
 
@@ -225,7 +270,10 @@ int PmuAppendData(struct PmuData *fromData, struct PmuData **toData);
 int PmuDumpData(struct PmuData *pmuData, unsigned len, char *filepath, int dumpDwf);
 
 /**
- * @brief Close all the file descriptor opened during collecting process
+ * @brief
+ * Close task with id <pd>.
+ * After PmuClose is called, all pmu data related to the task become invalid.
+ * @param pd task id
  */
 void PmuClose(int pd);
 

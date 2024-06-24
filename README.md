@@ -72,6 +72,8 @@ python3 -m pip unistall -y libkperf
 - PmuClose
   关闭PMU装置。
 
+API的详细说明请参考pmu.h。
+
 以下是一些示例： 
 
 - 获取进程的pmu计数。 
@@ -81,33 +83,74 @@ int pidList[1];
 pidList[0] = pid;
 char *evtList[1];
 evtList[0] = "cycles";
-// Initialize event list and pid list in PmuAttr.
-// There is one event in list, named 'cycles'.
+// 初始化事件列表，指定需要计数的事件cycles。
 PmuAttr attr = {0};
 attr.evtList = evtList;
 attr.numEvt = 1;
 attr.pidList = pidList;
 attr.numPid = 1;
-// Call PmuOpen and pmu descriptor <pd> is return.
-// <pd> is an identity for current task.
+// 调用PmuOpen，返回pd。pd表示该任务的id。
 int pd = PmuOpen(COUNTING, &attr);
-// Start collection.
+// 开始采集。
 PmuEnable(pd);
-// Collect for one second.
+// 采集1秒。
 sleep(1);
-// Stop collection.
+// 停止采集。
 PmuDisable(pd);
 PmuData *data = NULL;
-// Read pmu data. You can also read data before PmuDisable.
+// 读取PmuData，它是一个数组，长度是len。
 int len = PmuRead(pd, &data);
 for (int i = 0; i < len; ++i) {
 	...
 }
-// To free PmuData, call PmuDataFree.
+// 释放PmuData。
 PmuDataFree(data);
-// Like fd, call PmuClose if pd will not be used.
+// 类似fd，当任务结束时调用PmuClose释放资源。
 PmuClose(pd);
 ```
+
+- 对进程进行采样
+```
+int pidList[1];
+pidList[0] = pid;
+char *evtList[1];
+evtList[0] = "cycles";
+// 初始化事件列表，指定需要计数的事件cycles。
+PmuAttr attr = {0};
+attr.evtList = evtList;
+attr.numEvt = 1;
+attr.pidList = pidList;
+attr.numPid = 1;
+// 调用PmuOpen，返回pd。pd表示该任务的id。
+int pd = PmuOpen(SAMPLING, &attr);
+// 开始采集。
+PmuEnable(pd);
+// 采集1秒。
+sleep(1);
+// 停止采集。
+PmuDisable(pd);
+PmuData *data = NULL;
+// 读取PmuData，它是一个数组，长度是len。
+int len = PmuRead(pd, &data);
+for (int i = 0; i < len; ++i) {
+    // 获取数组的一个元素。
+	  PmuData *d = &data[i];
+    // 获取调用栈对象，它是一个链表。
+    Stack *stack = d->stack;
+    while (stack) {
+        // 获取符号对象。
+        if (stack->symbol) {
+            ...
+        }
+        stack = stack->next;
+    }
+}
+// 释放PmuData。
+PmuDataFree(data);
+// 类似fd，当任务结束时调用PmuClose释放资源。
+PmuClose(pd);
+```
+  
 
 Python 例子:
 ```python

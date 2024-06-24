@@ -66,6 +66,8 @@ All pmu functions are accomplished by the following interfaces:
 * PmuClose  
 	Close pmu device.
 
+Refer to pmu.h for details of interfaces.
+
 Here are some examples:
 * Get pmu count for a process.
 ```
@@ -94,6 +96,51 @@ PmuData *data = NULL;
 int len = PmuRead(pd, &data);
 for (int i = 0; i < len; ++i) {
 	...
+}
+// To free PmuData, call PmuDataFree.
+PmuDataFree(data);
+// Like fd, call PmuClose if pd will not be used.
+PmuClose(pd);
+```
+
+* Sample a process
+```
+int pidList[1];
+pidList[0] = pid;
+char *evtList[1];
+evtList[0] = "cycles";
+// Initialize event list and pid list in PmuAttr.
+// There is one event in list, named 'cycles'.
+PmuAttr attr = {0};
+attr.evtList = evtList;
+attr.numEvt = 1;
+attr.pidList = pidList;
+attr.numPid = 1;
+// Call PmuOpen and pmu descriptor <pd> is return.
+// <pd> is an identity for current task.
+// Use SAMPLING for sample task.
+int pd = PmuOpen(SAMPLING, &attr);
+// Start collection.
+PmuEnable(pd);
+// Collect for one second.
+sleep(1);
+// Stop collection.
+PmuDisable(pd);
+PmuData *data = NULL;
+// Read pmu data. You can also read data before PmuDisable.
+int len = PmuRead(pd, &data);
+for (int i = 0; i < len; ++i) {
+    // Get an element from array.
+	PmuData *d = &data[i];
+    // Get stack object which is a linked list.
+    Stack *stack = d->stack;
+    while (stack) {
+        // Get symbol object.
+        if (stack->symbol) {
+            ...
+        }
+        stack = stack->next;
+    }
 }
 // To free PmuData, call PmuDataFree.
 PmuDataFree(data);
