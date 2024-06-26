@@ -55,7 +55,7 @@ namespace KUNPENG_PMU {
             return SUCCESS;
         }
 
-        findSpe = speSet.emplace(this->cpu, Spe(this->cpu, procMap)).first;
+        findSpe = speSet.emplace(this->cpu, Spe(this->cpu, procMap, symMode)).first;
         auto err = findSpe->second.Open(evt);
         if (err != SUCCESS) {
             speSet.erase(this->cpu);
