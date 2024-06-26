@@ -192,7 +192,7 @@ void KUNPENG_PMU::PerfSampler::FillComm(const size_t &start, const size_t &end, 
     }
 }
 
-int KUNPENG_PMU::PerfSampler::Read(vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps)
+int KUNPENG_PMU::PerfSampler::Read(vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool)
 {
     auto err = this->ReadInit();
     if (__glibc_unlikely(err != SUCCESS)) {

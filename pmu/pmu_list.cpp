@@ -159,7 +159,7 @@ namespace KUNPENG_PMU {
         auto eventList = GetEvtList(pd);
         for (auto item : eventList) {
             item->SetTimeStamp(ts);
-            auto err = item->Read(evtData.data, evtData.sampleIps);
+            auto err = item->Read(evtData.data, evtData.sampleIps, evtData.extPool);
             if (err != SUCCESS) {
                 return err;
             }
@@ -403,6 +403,9 @@ namespace KUNPENG_PMU {
         if (findData == userDataList.end()) {
             return;
         }
+	for (auto &extMem : findData->second.extPool) {
+	    delete[] extMem;
+	}
         userDataList.erase(pmuData);
     }
 
