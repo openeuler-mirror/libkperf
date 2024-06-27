@@ -82,6 +82,7 @@ private:
         PmuTaskType collectType;
         std::vector<PmuData> data;
         std::vector<PerfSampleIps> sampleIps;
+	std::vector<PmuDataExt*> extPool;
     };
 
     void InsertEvtList(const unsigned pd, std::shared_ptr<EvtList> evtList);

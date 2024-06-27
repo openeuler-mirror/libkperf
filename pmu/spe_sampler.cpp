@@ -55,7 +55,7 @@ namespace KUNPENG_PMU {
             return SUCCESS;
         }
 
-        findSpe = speSet.emplace(this->cpu, Spe(this->cpu, procMap)).first;
+        findSpe = speSet.emplace(this->cpu, Spe(this->cpu, procMap, symMode)).first;
         auto err = findSpe->second.Open(evt);
         if (err != SUCCESS) {
             speSet.erase(this->cpu);
@@ -65,7 +65,7 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    int PerfSpe::Read(vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps)
+    int PerfSpe::Read(vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool)
     {
         auto findSpe = speSet.find(this->cpu);
         if (findSpe == speSet.end()) {
@@ -90,14 +90,14 @@ namespace KUNPENG_PMU {
                     continue;
                 }
                 // Insert each spe record for each tid.
-                InsertSpeRecords(records.first, records.second, data, sampleIps);
+                InsertSpeRecords(records.first, records.second, data, sampleIps, extPool);
             }
         } else {
             // Loop over all tids.
             for (auto &proc : procMap) {
                 // Get all spe records for tid.
                 const auto &records = findSpe->second.GetPidRecords(proc.first);
-                InsertSpeRecords(proc.second->tid, records, data, sampleIps);
+                InsertSpeRecords(proc.second->tid, records, data, sampleIps, extPool);
             }
         }
 
@@ -105,7 +105,7 @@ namespace KUNPENG_PMU {
     }
 
     void PerfSpe::InsertSpeRecords(
-            const int &tid, const std::vector<SpeRecord *> &speRecords, vector<PmuData> &data, vector<PerfSampleIps> &sampleIps)
+            const int &tid, const std::vector<SpeRecord *> &speRecords, vector<PmuData> &data, vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool)
     {
         ProcTopology *procTopo = nullptr;
         auto findProc = procMap.find(tid);
@@ -187,10 +187,6 @@ namespace KUNPENG_PMU {
 
         findSpe->second.Close();
         speSet.erase(this->cpu);
-        for (auto extPtr : extPool) {
-            delete[] extPtr;
-        }
-        extPool.clear();
         return SUCCESS;
     }
 
