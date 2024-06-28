@@ -132,10 +132,13 @@ public:
             : cpu(cpu), procMap(procMap), symbolMode(symMode)
     {}
 
+    /**
+     * @brief delete records
+     */
     ~Spe()
     {
         if (records != nullptr) {
-            delete records;
+            delete[] records;
             records = nullptr;
         }
     }
