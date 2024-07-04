@@ -150,6 +150,10 @@ struct PmuDataExt {
     unsigned long event;            // event id, which is a bit map of mixed events, event bit is defined in SPE_EVENTS.
 };
 
+struct SampleRawData {
+    char *data;
+};
+
 struct PmuData {
     struct Stack* stack;            // call stack
     const char *evt;                // event name
@@ -162,6 +166,7 @@ struct PmuData {
     uint64_t period;                // sample period
     uint64_t count;                 // event count. Only available for Counting.
     struct PmuDataExt *ext;         // extension. Only available for Spe.
+    struct SampleRawData *rawData;  // trace pointer collect data.
 };
 
 /**
@@ -282,6 +287,16 @@ void PmuClose(int pd);
  * @param pmuData
  */
 void PmuDataFree(struct PmuData* pmuData);
+
+/**
+ * @brief Get the pointer trace event raw field.
+ * @param rawData the raw data.
+ * @param fieldName the filed name of one field.
+ * @param value  the pointer of value.
+ * @param vSize  the memory size of value.
+ * @return 0 success other failed.
+ */
+int PmuObtainPointerField(struct SampleRawData *rawData, const char *fieldName, void *value, uint32_t vSize);
 
 #pragma GCC visibility pop
 #ifdef __cplusplus

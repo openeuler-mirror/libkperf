@@ -23,6 +23,7 @@
 #include "pcerr.h"
 #include "util_time.h"
 #include "log.h"
+#include "trace_pointer_parser.h"
 #include "pmu_event_list.h"
 #include "pmu_list.h"
 #include "common.h"
@@ -465,6 +466,13 @@ namespace KUNPENG_PMU {
         // Delete ext pointer malloced in SpeSampler.
         for (auto &extMem : findData->second.extPool) {
             delete[] extMem;
+        }
+        for (auto pd: findData->second.data) {
+            if (pd.rawData != nullptr) {
+                TracePointerParser::PointerPasser::FreePointerData(pd.rawData->data);
+                free(pd.rawData);
+                pd.rawData = nullptr;
+            }
         }
         userDataList.erase(pmuData);
     }
