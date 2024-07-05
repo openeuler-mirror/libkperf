@@ -91,7 +91,7 @@ function execute_binary() {
         exclude="${test_case_exclude[$i]}"
 
         # 构建命令字符串
-        command="./$exe --gtest_filter=-"
+        command="LC_ALL=C ./$exe --gtest_filter=-"
         if [ -n "$exclude" ]; then
             for ex in $exclude; do
                 command="$command$ex:"
