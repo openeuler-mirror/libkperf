@@ -31,6 +31,7 @@
 #include "process_map.h"
 #include "log.h"
 #include "sampler.h"
+#include "trace_pointer_parser.h"
 #include "common.h"
 
 using namespace std;
@@ -53,7 +54,7 @@ int KUNPENG_PMU::PerfSampler::MapPerfAttr()
     attr.config = this->evt->config;
     attr.size = sizeof(struct perf_event_attr);
     attr.sample_type = PERF_SAMPLE_IP | PERF_SAMPLE_TID | PERF_SAMPLE_TIME | PERF_SAMPLE_CALLCHAIN | PERF_SAMPLE_ID |
-                       PERF_SAMPLE_CPU | PERF_SAMPLE_PERIOD | PERF_SAMPLE_IDENTIFIER;
+                       PERF_SAMPLE_CPU | PERF_SAMPLE_PERIOD | PERF_SAMPLE_IDENTIFIER | PERF_SAMPLE_RAW;
     attr.freq = this->evt->useFreq;
     attr.sample_period = this->evt->period;
     attr.read_format = PERF_FORMAT_ID;
@@ -166,6 +167,7 @@ void KUNPENG_PMU::PerfSampler::RawSampleProcess(
     current->pid = static_cast<pid_t>(sample->pid);
     current->tid = static_cast<int>(sample->tid);
     current->period = static_cast<uint64_t>(sample->period);
+    TracePointerParser::PointerPasser::ParserRawFormatData(current, sample, event, this->evt->name);
 }
 
 void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<PerfSampleIps> &sampleIps)

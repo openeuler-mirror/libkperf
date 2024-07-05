@@ -63,6 +63,11 @@ struct PerfRawSample {
     unsigned long ips[];
 };
 
+struct TraceRawData {
+    __u32 size;
+    char data[];
+};
+
 struct PerfTraceSample {
     __u64 sampleId;
     __u32 tid, pid;
