@@ -18,6 +18,19 @@ from  .Config import UTF_8, sym_so
 
 
 class CtypesSymbol(ctypes.Structure):
+    """
+    struct Symbol {
+        unsigned long addr;    // address (dynamic allocated) of this symbol
+        char* module;          // binary name of which the symbol belongs to
+        char* symbolName;      // name of the symbol
+        char* fileName;        // corresponding file of current symbol
+        unsigned int lineNum;  // line number of a symbol in the file
+        unsigned long offset;
+        unsigned long codeMapEndAddr;  // function end address
+        unsigned long codeMapAddr;     // real srcAddr of Asm Code or
+        __u64 count;
+    };
+    """
 
     _fields_ = [
         ('addr',           ctypes.c_ulong),
@@ -166,6 +179,14 @@ class Symbol:
 
 
 class CtypesStack(ctypes.Structure):
+    """
+    struct Stack {
+        struct Symbol* symbol;  // symbol info for current stack
+        struct Stack* next;     // points to next position in stack
+        struct Stack* prev;     // points to previous position in stack
+        __u64 count;
+    } __attribute__((aligned(64)));
+    """
 
     _fields_ = [
         ('symbol', ctypes.POINTER(CtypesSymbol)),
@@ -253,6 +274,14 @@ class Stack:
 
 
 class CtypesAsmCode(ctypes.Structure):
+    """
+    struct AsmCode {
+        unsigned long addr;    // address of asm file
+        char* code;            // code of asm
+        char* fileName;        // this source file name of this asm code
+        unsigned int lineNum;  // the real line of this addr
+    };
+    """
 
     _fields_ = [
         ('addr',     ctypes.c_ulong),
@@ -333,7 +362,255 @@ class AsmCode:
         return asm_code
 
 
+class CtypesStackAsm(ctypes.Structure):
+    """
+    struct StackAsm {
+        char* funcName;                 // function name of void
+        unsigned long funcStartAddr;    // start address of function
+        unsigned long functFileOffset;  // offset of function in this file
+        struct StackAsm* next;          // points to next position in stack
+        struct AsmCode* asmCode;        // asm code
+    };
+    """
+
+    _fields_ = [
+        ('fileName',        ctypes.c_char_p),
+        ('funcStartAddr',   ctypes.c_ulong),
+        ('functFileOffset', ctypes.c_ulong),
+        ('next',            ctypes.POINTER('CtypesStackAsm')),
+        ('asmCode',         ctypes.POINTER(CtypesAsmCode)),
+    ]
+
+    def __init__(self,
+                 fileName: str = '',
+                 funcStartAddr: int = 0,
+                 functFileOffset: int = 0,
+                 next: 'CtypesStackAsm' = None,
+                 asmCode: CtypesAsmCode = None,
+                 *args: Any, **kw: Any) -> None:
+        super().__init__(*args, **kw)
+        self.fileName = ctypes.c_char_p(fileName.encode(UTF_8))
+        self.funcStartAddr =  ctypes.c_ulong(funcStartAddr)
+        self.functFileOffset =  ctypes.c_ulong(functFileOffset)
+        self.next = next
+        self.asmCode = asmCode
+
+
+class StackAsm:
+
+    __slots__ = ['__c_stack_asm']
+
+    def __init__(self,
+                 fileName: str = '',
+                 funcStartAddr: int = 0,
+                 functFileOffset: int = 0,
+                 next: 'StackAsm' = None,
+                 asmCode: AsmCode = None) -> None:
+        self.__c_stack_asm = CtypesStackAsm(
+            fileName=fileName,
+            funcStartAddr=funcStartAddr,
+            functFileOffset=functFileOffset,
+            next=next.c_stack_asm if next else None,
+            asmCode=asmCode.c_asm_code if asmCode else None,
+        )
+
+    @property
+    def c_stack_asm(self) -> CtypesStackAsm:
+        return self.__c_stack_asm
+
+    @property
+    def fileName(self) -> str:
+        return self.c_stack_asm.fileName.decode(UTF_8)
+
+    @fileName.setter
+    def fileName(self, fileName: str) -> None:
+        self.c_stack_asm.fileName = ctypes.c_char_p(fileName.encode(UTF_8))
+
+    @property
+    def funcStartAddr(self) -> int:
+        return self.c_stack_asm.funcStartAddr
+
+    @funcStartAddr.setter
+    def funcStartAddr(self, funcStartAddr: int) -> None:
+        self.c_stack_asm.funcStartAddr = ctypes.c_ulong(funcStartAddr)
+        
+    @property
+    def functFileOffset(self) -> int:
+        return self.c_stack_asm.functFileOffset
+
+    @functFileOffset.setter
+    def functFileOffset(self, functFileOffset: int) -> None:
+        self.c_stack_asm.functFileOffset = ctypes.c_ulong(functFileOffset)
+
+    @property
+    def next(self) -> 'StackAsm':
+        return self.from_c_stack_asm(self.c_stack_asm.next.contents) if self.c_stack_asm.next else None
+
+    @next.setter
+    def next(self, next: 'StackAsm') -> None:
+        self.c_stack_asm.next = next.c_stack_asm if next else None
+
+    @property
+    def asmCode(self) -> AsmCode:
+        return AsmCode.from_c_asm_code(self.c_stack_asm.asmCode.contents) if self.c_stack_asm.asmCode else None
+
+    @asmCode.setter
+    def asmCode(self, asmCode: AsmCode) -> None:
+        self.c_stack_asm.asmCode = asmCode.c_asm_code if asmCode else None
+
+    @classmethod
+    def from_c_stack_asm(cls, c_stack_asm: CtypesStackAsm) -> 'StackAsm':
+        stack_asm = cls()
+        stack_asm.__c_stack_asm = c_stack_asm
+        return stack_asm
+
+
+class CtypesProcTopology(ctypes.Structure):
+    """
+    struct ProcTopology {
+        int pid;
+        int tid;
+        int ppid;
+        int numChild;
+        int* childPid;
+        char* comm;
+        char* exe;
+        bool kernel;
+    };
+    """
+
+    _fields_ = [
+        ('pid',      ctypes.c_int),
+        ('tid',      ctypes.c_int),
+        ('ppid',     ctypes.c_int),
+        ('numChild', ctypes.c_int),
+        ('childPid', ctypes.POINTER(ctypes.c_int)),
+        ('comm',     ctypes.c_char_p),
+        ('exe',      ctypes.c_char_p),
+        ('kernel',   ctypes.c_bool),
+    ]
+
+    def __init__(self,
+                 pid: int = 0,
+                 tid: int = 0,
+                 ppid: int = 0,
+                 childPid: List[int] = None,
+                 comm: str = '',
+                 exe: str = '',
+                 kernel: bool = False,
+                 *args: Any, **kw: Any) -> None:
+        super().__init__(*args, **kw)
+        self.pid = ctypes.c_int(pid)
+        self.tid = ctypes.c_int(tid)
+        self.ppid = ctypes.c_int(ppid)
+        if childPid:
+            numChildPid = len(childPid)
+            self.childPid = (ctypes.c_int * numChildPid)(*childPid)
+            self.numChild = ctypes.c_int(numChildPid)
+        else:
+            self.childPid = None
+            self.numChild = ctypes.c_int(0)
+        self.comm = ctypes.c_char_p(comm.encode(UTF_8))
+        self.exe = ctypes.c_char_p(exe.encode(UTF_8))
+        self.kernel = ctypes.c_bool(kernel)
+
+
+class ProcTopology:
+
+    __slots__ = ['__c_proc_topology']
+
+    def __init__(self,
+                 pid: int = 0,
+                 tid: int = 0,
+                 ppid: int = 0,
+                 childPid: List[int] = None,
+                 comm: str = '',
+                 exe: str = '',
+                 kernel: bool = False) -> None:
+        self.__c_proc_topology = CtypesProcTopology(
+            pid = pid,
+            tid=tid,
+            ppid=ppid,
+            childPid=childPid,
+            comm=comm,
+            exe=exe,
+            kernel=kernel
+        )
+
+    @property
+    def c_proc_topology(self) -> CtypesProcTopology:
+        return self.__c_proc_topology
+
+    @property
+    def pid(self) -> int:
+        return self.c_proc_topology.pid
+
+    @pid.setter
+    def pid(self, pid: int) -> None:
+        self.c_proc_topology.pid = ctypes.c_int(pid)
+
+    @property
+    def tid(self) -> int:
+        return self.c_proc_topology.tid
+
+    @tid.setter
+    def tid(self, tid: int) -> None:
+        self.c_proc_topology.tid = ctypes.c_int(tid)
+        
+        
+    @property
+    def ppid(self) -> int:
+        return self.c_proc_topology.ppid
+
+    @ppid.setter
+    def ppid(self, ppid: int) -> None:
+        self.c_proc_topology.ppid = ctypes.c_int(ppid)
+    
+    @property
+    def numChild(self) -> int:
+        return self.c_proc_topology.numChild
+
+    @property
+    def childPid(self) -> List[int]:
+        return [self.c_proc_topology.childPid[i] for i in range(self.numChild)]
+
+    @childPid.setter
+    def childPid(self, childPid: List[int]) -> None:
+        if childPid:
+            numChildPid = len(childPid)
+            self.c_proc_topology.childPid = (ctypes.c_int * numChildPid)(*childPid)
+            self.c_proc_topology.numChild = ctypes.c_int(numChildPid)
+        else:
+            self.c_proc_topology.childPid = None
+            self.c_proc_topology.numChild = ctypes.c_int(0)
+    
+    @property
+    def comm(self) -> str:
+        return self.c_proc_topology.comm.decode(UTF_8)
+
+    @comm.setter
+    def comm(self, comm: str) -> None:
+        self.c_proc_topology.comm = ctypes.c_char_p(comm.encode(UTF_8))
+    
+    @property
+    def exe(self) -> str:
+        return self.c_proc_topology.exe.decode(UTF_8)
+
+    @exe.setter
+    def exe(self, exe: str) -> None:
+        self.c_proc_topology.exe = ctypes.c_char_p(exe.encode(UTF_8))
+
+    @classmethod
+    def from_c_proc_topology(cls, c_proc_topology: CtypesProcTopology) -> 'ProcTopology':
+        proc_topology = cls()
+        proc_topology.__c_proc_topology = c_proc_topology
+        return proc_topology
+
+
 def SymResolverRecordKernel() -> None:
+    """
+    int SymResolverRecordKernel();
+    """
     c_SymResolverRecordKernel = sym_so.SymResolverRecordKernel
     c_SymResolverRecordKernel.argtypes = []
     c_SymResolverRecordKernel.restype = ctypes.c_int
@@ -342,6 +619,9 @@ def SymResolverRecordKernel() -> None:
 
 
 def SymResolverRecordModule(pid: int) -> None:
+    """
+    int SymResolverRecordModule(int pid);
+    """
     c_SymResolverRecordModule = sym_so.SymResolverRecordModule
     c_SymResolverRecordModule.argtypes = [ctypes.c_int]
     c_SymResolverRecordModule.restype = ctypes.c_int
@@ -352,6 +632,9 @@ def SymResolverRecordModule(pid: int) -> None:
 
 
 def SymResolverRecordModuleNoDwarf(pid: int) -> None:
+    """
+    int SymResolverRecordModuleNoDwarf(int pid);
+    """
     c_SymResolverRecordModuleNoDwarf = sym_so.SymResolverRecordModuleNoDwarf
     c_SymResolverRecordModuleNoDwarf.argtypes = [ctypes.c_int]
     c_SymResolverRecordModuleNoDwarf.restype = ctypes.c_int
@@ -362,6 +645,9 @@ def SymResolverRecordModuleNoDwarf(pid: int) -> None:
 
 
 def StackToHash(pid: int, stackList: List[int]) -> Iterator[Stack]:
+    """
+    struct Stack* StackToHash(int pid, unsigned long* stack, int nr);
+    """
     c_StackToHash = sym_so.StackToHash
     c_StackToHash.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_ulong), ctypes.c_int]
     c_StackToHash.restype = ctypes.POINTER(CtypesStack)
@@ -379,6 +665,9 @@ def StackToHash(pid: int, stackList: List[int]) -> Iterator[Stack]:
 
 
 def SymResolverMapAddr(pid: int,  addr: int) -> Symbol:
+    """
+    struct Symbol* SymResolverMapAddr(int pid, unsigned long addr);
+    """
     c_SymResolverMapAddr = sym_so.SymResolverMapAddr
     c_SymResolverMapAddr.argtypes = [ctypes.c_int, ctypes.c_ulong]
     c_SymResolverMapAddr.restype = ctypes.POINTER(CtypesSymbol)
@@ -392,6 +681,9 @@ def SymResolverMapAddr(pid: int,  addr: int) -> Symbol:
 
 
 def FreeModuleData(pid: int) -> None:
+    """
+    void FreeModuleData(int pid);
+    """
     c_FreeModuleData = sym_so.FreeModuleData
     c_FreeModuleData.argtypes = [ctypes.c_int]
     c_FreeModuleData.restype = None
@@ -402,6 +694,9 @@ def FreeModuleData(pid: int) -> None:
 
 
 def SymResolverDestroy() -> None:
+    """
+    void SymResolverDestroy();
+    """
     c_SymResolverDestroy = sym_so.SymResolverDestroy
     c_SymResolverDestroy.argtypes = []
     c_SymResolverDestroy.restype = None
@@ -414,6 +709,12 @@ __all__ = [
     'Symbol',
     'CtypesStack',
     'Stack',
+    'CtypesAsmCode',
+    'AsmCode',
+    'CtypesStackAsm',
+    'StackAsm',
+    'CtypesProcTopology',
+    'ProcTopology',
     'SymResolverRecordKernel',
     'SymResolverRecordModule',
     'SymResolverRecordModuleNoDwarf',

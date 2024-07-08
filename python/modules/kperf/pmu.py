@@ -150,6 +150,21 @@ def close(pd: int) -> None:
     return _libkperf.PmuClose(pd)
 
 
+def dump(pmuData: PmuData, filepath: str, dump_dwf: int) -> None:
+    """
+    /**
+    Dump pmu data to a specific file.
+    If file exists, then data will be appended to file.
+    If file does not exist, then file will be created.
+    Dump format: comm pid tid cpu period evt count addr symbolName offset module fileName lineNum
+    :param pmuData: data list.
+    :param filepath: path of the output file.
+    :param dump_dwf: if 0, source file and line number of symbols will not be dumped, otherwise, they will be dumped to file.
+    :return: None
+    """
+    return _libkperf.PmuDumpData(pmuData, filepath, dump_dwf)
+
+
 __all__ = [
     'PmuTaskType',
     'PmuEventType',
@@ -168,4 +183,5 @@ __all__ = [
     'read',
     'stop',
     'close',
+    'dump',
 ]
