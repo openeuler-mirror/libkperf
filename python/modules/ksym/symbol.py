@@ -69,14 +69,23 @@ def record_module(pid: int, dwarf: bool = True) -> None:
 
 
 def get_stack(pid: int, stacks: List[int]) -> Iterator[Stack]:
+    """
+    Convert a callstack to a unsigned long long hashid
+    """
     return _libkperf.StackToHash(pid, stacks)
 
 
 def get_symbol(pid: int,  addr: int) -> Symbol:
+    """
+    Map a specific address to a symbol
+    """
     return _libkperf.SymResolverMapAddr(pid, addr)
 
 
 def free_module(pid: int) -> None:
+    """
+    free pid module data
+    """
     _libkperf.FreeModuleData(pid)
 
 

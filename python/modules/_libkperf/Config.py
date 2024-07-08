@@ -38,7 +38,7 @@ def libkperf_path() -> str:
 
 
 sym_so = ctypes.CDLL(libsym_path(), mode=ctypes.RTLD_GLOBAL)
-kperf_so = ctypes.CDLL(libkperf_path())
+kperf_so = ctypes.CDLL(libkperf_path(), mode=ctypes.RTLD_GLOBAL)
 
 
 __all__ = [

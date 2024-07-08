@@ -28,22 +28,48 @@ class SampleRateUnion(ctypes.Union):
 
 
 class CtypesPmuAttr(ctypes.Structure):
+    """
+    struct PmuAttr {
+        char** evtList;                 // event list
+        unsigned numEvt;                // length of event list
+        int* pidList;                   // pid list
+        unsigned numPid;                // length of pid list
+        int* cpuList;                   // cpu id list
+        unsigned numCpu;                // length of cpu id list
 
-    _fields_ = [('evtList',     ctypes.POINTER(ctypes.c_char_p)),
-                ('numEvt',        ctypes.c_uint),
-                ('pidList',       ctypes.POINTER(ctypes.c_int)),
-                ('numPid',        ctypes.c_uint),
-                ('cpuList',       ctypes.POINTER(ctypes.c_int)),
-                ('numCpu',        ctypes.c_uint),
-                ('sampleRate',    SampleRateUnion),
-                ('useFreq',       ctypes.c_bool),
-                ('excludeUser',   ctypes.c_bool),
-                ('excludeKernel', ctypes.c_bool),
-                ('symbolMode',    ctypes.c_uint),
-                ('callStack',     ctypes.c_bool),
-                ('dataFilter',    ctypes.c_uint64), # The enumeration for dataFilter will use 64 bits
-                ('evFilter',      ctypes.c_uint),
-                ('minLatency',    ctypes.c_ulong)]
+        union {
+            unsigned period;            // sample period
+            unsigned freq;              // sample frequency
+        };
+        unsigned useFreq : 1;
+        unsigned excludeUser : 1;     // don't count user
+        unsigned excludeKernel : 1;   //  don't count kernel
+        enum SymbolMode symbolMode;     // refer to comments of SymbolMode
+        unsigned callStack : 1;   //  collect complete call stack
+        // SPE related fields.
+        enum SpeFilter dataFilter;      // spe data filter
+        enum SpeEventFilter evFilter;   // spe event filter
+        unsigned long minLatency;       // collect only samples with latency or higher
+    };
+    """
+
+    _fields_ = [
+        ('evtList',       ctypes.POINTER(ctypes.c_char_p)),
+        ('numEvt',        ctypes.c_uint),
+        ('pidList',       ctypes.POINTER(ctypes.c_int)),
+        ('numPid',        ctypes.c_uint),
+        ('cpuList',       ctypes.POINTER(ctypes.c_int)),
+        ('numCpu',        ctypes.c_uint),
+        ('sampleRate',    SampleRateUnion),
+        ('useFreq',       ctypes.c_bool),
+        ('excludeUser',   ctypes.c_bool),
+        ('excludeKernel', ctypes.c_bool),
+        ('symbolMode',    ctypes.c_uint),
+        ('callStack',     ctypes.c_bool),
+        ('dataFilter',    ctypes.c_uint64), # The enumeration for dataFilter will use 64 bits
+        ('evFilter',      ctypes.c_uint),
+        ('minLatency',    ctypes.c_ulong)
+    ]
 
     def __init__(self,
                  evtList: List[str] = None,
@@ -164,10 +190,10 @@ class PmuAttr:
         return [self.c_pmu_attr.pidList[i] for i in range(self.numPid)]
 
     @pidList.setter
-    def pidList(self, pidList: List[str]) -> None:
+    def pidList(self, pidList: List[int]) -> None:
         if pidList:
             numPid = len(pidList)
-            self.c_pmu_attr.pidList = (ctypes.c_char_p * numPid)(*[pid.encode(UTF_8) for pid in pidList])
+            self.c_pmu_attr.pidList = (ctypes.c_int * numPid)(*[pid for pid in pidList])
             self.c_pmu_attr.numPid = ctypes.c_uint(numPid)
         else:
             self.c_pmu_attr.pidList = None
@@ -182,10 +208,10 @@ class PmuAttr:
         return [self.c_pmu_attr.cpuList[i] for i in range(self.numCpu)]
 
     @cpuList.setter
-    def cpuList(self, cpuList: List[str]) -> None:
+    def cpuList(self, cpuList: List[int]) -> None:
         if cpuList:
             numCpu = len(cpuList)
-            self.c_pmu_attr.cpuList = (ctypes.c_char_p * numCpu)(*[cpu.encode(UTF_8) for cpu in cpuList])
+            self.c_pmu_attr.cpuList = (ctypes.c_int * numCpu)(*[cpu for cpu in cpuList])
             self.c_pmu_attr.numCpu = ctypes.c_uint(numCpu)
         else:
             self.c_pmu_attr.cpuList = None
@@ -281,6 +307,13 @@ class PmuAttr:
 
 
 class CtypesCpuTopology(ctypes.Structure):
+    """
+    struct CpuTopology {
+        int coreId;
+        int numaId;
+        int socketId;
+    };
+    """
 
     _fields_ = [
         ('coreId',   ctypes.c_int),
@@ -350,6 +383,13 @@ class CpuTopology:
 
 
 class CtypesPmuDataExt(ctypes.Structure):
+    """
+    struct PmuDataExt {
+        unsigned long pa;               // physical address
+        unsigned long va;               // virtual address
+        unsigned long event;            // event id
+    };
+    """
 
     _fields_ = [
         ('pa',    ctypes.c_ulong),
@@ -417,6 +457,22 @@ class PmuDataExt:
 
 
 class CtypesPmuData(ctypes.Structure):
+    """
+    struct PmuData {
+        struct Stack* stack;            // call stack
+        const char *evt;                // event name
+        int64_t ts;                     // time stamp
+        pid_t pid;                      // process id
+        int tid;                        // thread id
+        unsigned cpu;                   // cpu id
+        struct CpuTopology *cpuTopo;    // cpu topology
+        const char *comm;               // process command
+        uint64_t period;                     // number of Samples
+        uint64_t count;                 // event count. Only available for Counting.
+        struct PmuDataExt *ext;         // extension. Only available for Spe.
+    };
+    """
+
     _fields_ = [
         ('stack',   ctypes.POINTER(CtypesStack)),
         ('evt',     ctypes.c_char_p),
@@ -616,6 +672,9 @@ class PmuData:
 
 
 def PmuOpen(collectType: int, pmuAttr: PmuAttr) -> int:
+    """
+    int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr);
+    """
     c_PmuOpen = kperf_so.PmuOpen
     c_PmuOpen.argtypes = [ctypes.c_int, ctypes.POINTER(CtypesPmuAttr)]
     c_PmuOpen.restype = ctypes.c_int
@@ -626,6 +685,9 @@ def PmuOpen(collectType: int, pmuAttr: PmuAttr) -> int:
 
 
 def PmuEventListFree() -> None:
+    """
+    int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr);
+    """
     c_PmuEventListFree = kperf_so.PmuEventListFree
     c_PmuEventListFree.argtypes = []
     c_PmuEventListFree.restype = None
@@ -634,6 +696,9 @@ def PmuEventListFree() -> None:
 
 
 def PmuEventList(eventType: int) -> Iterator[str]:
+    """
+    const char** PmuEventList(enum PmuEventType eventType, unsigned *numEvt);
+    """
     c_PmuEventList = kperf_so.PmuEventList
     c_PmuEventList.argtypes = [ctypes.c_int]
     c_PmuEventList.restype = ctypes.POINTER(ctypes.c_char_p)
@@ -646,6 +711,9 @@ def PmuEventList(eventType: int) -> Iterator[str]:
 
 
 def PmuEnable(pd: int) -> int:
+    """
+    int PmuEnable(int pd);
+    """
     c_PmuEnable = kperf_so.PmuEnable
     c_PmuEnable.argtypes = [ctypes.c_int]
     c_PmuEnable.restype = ctypes.c_int
@@ -656,6 +724,9 @@ def PmuEnable(pd: int) -> int:
 
 
 def PmuDisable(pd: int) -> int:
+    """
+    int PmuDisable(int pd);
+    """
     c_PmuDisable = kperf_so.PmuDisable
     c_PmuDisable.argtypes = [ctypes.c_int]
     c_PmuDisable.restype = ctypes.c_int
@@ -666,6 +737,9 @@ def PmuDisable(pd: int) -> int:
 
 
 def PmuCollect(pd: int, milliseconds: int, interval: int) -> int:
+    """
+    int PmuCollect(int pd, int milliseconds, unsigned interval);
+    """
     c_PmuCollect = kperf_so.PmuCollect
     c_PmuCollect.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint]
     c_PmuCollect.restype = ctypes.c_int
@@ -678,6 +752,9 @@ def PmuCollect(pd: int, milliseconds: int, interval: int) -> int:
 
 
 def PmuStop(pd: int) -> None:
+    """
+    void PmuStop(int pd);
+    """
     c_PmuStop = kperf_so.PmuStop
     c_PmuStop.argtypes = [ctypes.c_int]
     c_PmuStop.restype = None
@@ -688,6 +765,9 @@ def PmuStop(pd: int) -> None:
 
 
 def PmuDataFree(pmuData: ctypes.POINTER(CtypesPmuData)) -> None:
+    """
+    void PmuDataFree(struct PmuData* pmuData);
+    """
     c_PmuDataFree = kperf_so.PmuDataFree
     c_PmuDataFree.argtypes = [ctypes.POINTER(CtypesPmuData)]
     c_PmuDataFree.restype = None
@@ -695,6 +775,9 @@ def PmuDataFree(pmuData: ctypes.POINTER(CtypesPmuData)) -> None:
 
 
 def PmuRead(pd: int) -> PmuData:
+    """
+    int PmuRead(int pd, struct PmuData** pmuData);
+    """
     c_PmuRead = kperf_so.PmuRead
     c_PmuRead.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.POINTER(CtypesPmuData))]
     c_PmuRead.restype = ctypes.c_int
@@ -707,6 +790,9 @@ def PmuRead(pd: int) -> PmuData:
 
 
 def PmuAppendData(fromData: ctypes.POINTER(CtypesPmuData), toData: ctypes.POINTER(ctypes.POINTER(CtypesPmuData))) -> int:
+    """
+    int PmuAppendData(struct PmuData *fromData, struct PmuData **toData);
+    """
     c_PmuAppendData = kperf_so.PmuAppendData
     c_PmuAppendData.argtypes = [ctypes.POINTER(CtypesPmuData), ctypes.POINTER(ctypes.POINTER(CtypesPmuData))]
     c_PmuAppendData.restype = ctypes.c_int
@@ -715,6 +801,9 @@ def PmuAppendData(fromData: ctypes.POINTER(CtypesPmuData), toData: ctypes.POINTE
 
 
 def PmuClose(pd: int) -> None:
+    """
+    void PmuClose(int pd);
+    """
     c_PmuClose = kperf_so.PmuClose
     c_PmuClose.argtypes = [ctypes.c_int]
     c_PmuClose.restype = None
@@ -724,10 +813,27 @@ def PmuClose(pd: int) -> None:
     c_PmuClose(c_pd)
 
 
+def PmuDumpData(pmuData: PmuData, filepath: str, dumpDwf: int) -> None:
+    """
+    int PmuDumpData(struct PmuData *pmuData, unsigned len, char *filepath, int dumpDwf);
+    """
+    c_PmuDumpData = kperf_so.PmuDumpData
+    c_PmuDumpData.argtypes = [ctypes.POINTER(CtypesPmuData), ctypes.c_uint, ctypes.c_char_p, ctypes]
+    c_PmuDumpData.restype = ctypes.c_int
+
+    c_len = ctypes.c_uint(pmuData.len)
+    c_filepath = ctypes.c_char_p(filepath.encode(UTF_8))
+    c_dumpDwf = ctypes.c_int(dumpDwf)
+
+    c_PmuDumpData(pmuData.pointer, c_len, c_filepath, c_dumpDwf)
+
+
 __all__ = [
+    'CtypesPmuAttr',
     'PmuAttr',
     'CpuTopology',
     'PmuDataExt',
+    'CtypesPmuData',
     'ImplPmuData',
     'PmuData',
     'PmuOpen',
@@ -737,4 +843,5 @@ __all__ = [
     'PmuStop',
     'PmuRead',
     'PmuClose',
+    'PmuDumpData',
 ]
