@@ -32,6 +32,7 @@ creat_dir "${BUILD_DIR}"
 # Specifies the gcc used by all dependencies.
 export CC=gcc
 export CXX=g++
+PYTHON_EXE=""
 if [ -d "${THIRD_PARTY}/local" ];then
   echo ${THIRD_PARTY}/local "is exist"
 else
@@ -47,11 +48,14 @@ for arg in "$@"; do
         python=*)
             PYTHON="${arg#*=}"
             ;;
-        installPath=*)
+        install_path=*)
             INSTALL_PATH="${arg#*=}"
             ;;
         build_type=*)
             BUILD_TYPE="${arg#*=}"
+            ;;
+        python_exe=*)
+            PYTHON_EXE="${arg#*=}"
             ;;
     esac
 done
@@ -86,10 +90,10 @@ function build_elfin() {
   echo "install log path: $cmake_target_dir"
 }
 
-build_libprof()
+build_libkperf()
 {
     cd $BUILD_DIR
-    cmake -DINCLUDE_TEST=${INCLUDE_TEST} -DPYTHON=${PYTHON} -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ..
+    cmake -DINCLUDE_TEST=${INCLUDE_TEST} -DPYTHON=${PYTHON} -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DPYTHON_KPERF=${PYTHON_EXE} ..
     make -j ${cpu_core_num}
     make install
     echo "build libkperf success"
@@ -104,7 +108,7 @@ function build_test()
 
 main() {
     build_elfin
-    build_libprof
+    build_libkperf
     build_test
 }
 

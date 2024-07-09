@@ -844,4 +844,5 @@ __all__ = [
     'PmuRead',
     'PmuClose',
     'PmuDumpData',
+    'CtypesPmuAttr',
 ]

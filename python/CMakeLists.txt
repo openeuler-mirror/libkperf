@@ -11,7 +11,12 @@
 # Create: 2024-05-16
 # Description: libkperf python module
 project(python_libkperf)
-find_package(PythonInterp 3.7 REQUIRED)
-find_package(PythonLibs 3.7 REQUIRED)
 
+if(DEFINED PYTHON_KPERF AND NOT PYTHON_KPERF STREQUAL "")
+    set(PYTHON_EXECUTABLE ${PYTHON_KPERF})
+else()
+    find_package(PythonInterp 3.7 REQUIRED)
+    find_package(PythonLibs 3.7 REQUIRED)
+endif()
+message("PYTHON_EXECUTABLE is ${PYTHON_EXECUTABLE}")
 add_subdirectory(modules)
