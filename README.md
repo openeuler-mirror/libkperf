@@ -54,7 +54,7 @@ bash build.sh python=true
 
 安装后若需要卸载python库， 可以执行下述命令
 ```shell
-python3 -m pip unistall -y libkperf
+python3 -m pip uninstall -y libkperf
 ```
 
 #### 指令
