@@ -52,7 +52,7 @@ class Stack(_libkperf.Stack):
         super().__init__(
             symbol=symbol.c_sym if symbol else None,
             next=next.c_stack if next else None,
-            prev=prev.c_stack if next else None,
+            prev=prev.c_stack if prev else None,
             count=count
         )
 
