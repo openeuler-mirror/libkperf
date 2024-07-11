@@ -19,6 +19,5 @@ from .Config import *
 from .Symbol import *
 from .Pmu import *
 from .Perror import *
-
 # From Config
 __version__ = VERSION

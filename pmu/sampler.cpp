@@ -167,7 +167,7 @@ void KUNPENG_PMU::PerfSampler::RawSampleProcess(
     current->pid = static_cast<pid_t>(sample->pid);
     current->tid = static_cast<int>(sample->tid);
     current->period = static_cast<uint64_t>(sample->period);
-    TracePointerParser::PointerPasser::ParserRawFormatData(current, sample, event, this->evt->name);
+    PointerPasser::ParserRawFormatData(current, sample, event, this->evt->name);
 }
 
 void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<PerfSampleIps> &sampleIps)

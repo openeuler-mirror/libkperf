@@ -17,16 +17,17 @@
 
 #define offset(type, v) (&(((type *)0)->v))
 
-using namespace TracePointerParser;
+using namespace KUNPENG_PMU;
 using namespace pcerr;
 
 const char *POINTER_FIELD_STR = "field:";
-const char *POINTER_OFFSET_REGEX = "%*[^0-9]%i%*[;] %*[^0-9]%i%*[;]";
+const char *POINTER_OFFSET_REGEX = "%*[^0-9]%i%*[;] %*[^0-9]%i%*[;] %*[^0-9]%i%*[;]";
 
 static std::unordered_map<std::string, std::unordered_map<string, Field>> efMap; //the key is event name, value is field and ths field name map.
 static std::unordered_map<char *, std::string> dEvtMap; //The key is the data pointer, value is event name.
+static std::map<Field, SampleRawField *> fsrMap;
 
-bool TracePointerParser::PointerPasser::IsNeedFormat(std::ifstream &file, const std::string &evtName) {
+bool PointerPasser::IsNeedFormat(std::ifstream &file, const std::string &evtName) {
     auto colonId = evtName.find(':');
     if (colonId == string::npos) {
         return false;
@@ -62,7 +63,8 @@ void ParseFormatFile(ifstream &file, const std::string &evtName) {
             continue;
         }
         Field field;
-        if (!sscanf(line.substr(sealId + 1).c_str(), POINTER_OFFSET_REGEX, &field.offset, &field.size)) {
+        if (!sscanf(line.substr(sealId + 1).c_str(), POINTER_OFFSET_REGEX, &field.offset, &field.size,
+                    &field.isSigned)) {
             continue;
         }
         field.fieldStr = line.substr(strlen(POINTER_FIELD_STR) + 1, sealId - strlen(POINTER_FIELD_STR) - 1);
@@ -78,7 +80,7 @@ void ParseFormatFile(ifstream &file, const std::string &evtName) {
     efMap.insert({evtName, fnMap});
 }
 
-void TracePointerParser::PointerPasser::ParserRawFormatData(struct PmuData *pd, KUNPENG_PMU::PerfRawSample *sample,
+void PointerPasser::ParserRawFormatData(struct PmuData *pd, KUNPENG_PMU::PerfRawSample *sample,
                                                             union KUNPENG_PMU::PerfEvent *event,
                                                             const std::string &evtName) {
     ifstream file;
@@ -116,8 +118,7 @@ void TracePointerParser::PointerPasser::ParserRawFormatData(struct PmuData *pd, 
     ParseFormatFile(file, evtName);
 }
 
-template<typename T>
-int CheckFieldArgs(char *data, const string &fieldName, T *value, uint32_t vSize) {
+int CheckFieldArgs(char *data, const string &fieldName) {
     if (data == nullptr) {
         New(LIBPERF_ERR_INVALID_FIELD_ARGS, "data cannot be nullptr.");
         return LIBPERF_ERR_INVALID_FIELD_ARGS;
@@ -127,15 +128,6 @@ int CheckFieldArgs(char *data, const string &fieldName, T *value, uint32_t vSize
         return LIBPERF_ERR_INVALID_FIELD_ARGS;
     }
 
-    if (value == nullptr) {
-        New(LIBPERF_ERR_INVALID_FIELD_ARGS, "value cannot be nullptr.");
-        return LIBPERF_ERR_INVALID_FIELD_ARGS;
-    }
-
-    if (vSize == 0) {
-        New(LIBPERF_ERR_INVALID_FIELD_ARGS, "vSize cannot be zero.");
-        return LIBPERF_ERR_INVALID_FIELD_ARGS;
-    }
     auto evtIt = dEvtMap.find(data);
     if (evtIt == dEvtMap.end()) {
         New(LIBPERF_ERR_INVALID_FIELD_ARGS,
@@ -155,7 +147,21 @@ int CheckFieldArgs(char *data, const string &fieldName, T *value, uint32_t vSize
 }
 
 template<typename T>
-int TracePointerParser::PointerPasser::ParseField(char *data, const std::string &fieldName, T *value, uint32_t vSize) {
+int CheckFieldArgs(char *data, const string &fieldName, T *value, uint32_t vSize) {
+    if (value == nullptr) {
+        New(LIBPERF_ERR_INVALID_FIELD_ARGS, "value cannot be nullptr.");
+        return LIBPERF_ERR_INVALID_FIELD_ARGS;
+    }
+
+    if (vSize == 0) {
+        New(LIBPERF_ERR_INVALID_FIELD_ARGS, "vSize cannot be zero.");
+        return LIBPERF_ERR_INVALID_FIELD_ARGS;
+    }
+    return CheckFieldArgs(data, fieldName);
+}
+
+template<typename T>
+int PointerPasser::ParseField(char *data, const std::string &fieldName, T *value, uint32_t vSize) {
     int rt = CheckFieldArgs(data, fieldName, value, vSize);
     if (rt != SUCCESS) {
         return rt;
@@ -185,12 +191,12 @@ int TracePointerParser::PointerPasser::ParseField(char *data, const std::string 
     return SUCCESS;
 }
 
-int TracePointerParser::PointerPasser::ParsePointer(char *data, const std::string &fieldName, void *value,
+int PointerPasser::ParsePointer(char *data, const std::string &fieldName, void *value,
                                                     uint32_t vSize) {
     return ParseField(data, fieldName, value, vSize);
 }
 
-void TracePointerParser::PointerPasser::FreePointerData(char *data) {
+void PointerPasser::FreePointerData(char *data) {
     if (data == nullptr) {
         return;
     }
@@ -199,4 +205,44 @@ void TracePointerParser::PointerPasser::FreePointerData(char *data) {
     }
     free(data);
     data = nullptr;
+}
+
+SampleRawField *PointerPasser::GetSampleRawField(char *data, const std::string &fieldName) {
+    int ret = CheckFieldArgs(data, fieldName);
+    if (ret != SUCCESS) {
+        return nullptr;
+    }
+    Field field = efMap.at(dEvtMap.at(data)).at(fieldName);
+    if (fsrMap.find(field) == fsrMap.end()) {
+        auto *rawField = new SampleRawField();
+        rawField->fieldStr = new char[field.fieldStr.length() + 1];
+        rawField->fieldName = new char[field.fieldName.length() + 1];
+        memcpy(rawField->fieldStr, field.fieldStr.data(), field.fieldStr.length() + 1);
+        memcpy(rawField->fieldName, field.fieldName.data(), field.fieldName.length() + 1);
+        rawField->offset = field.size;
+        rawField->size = field.size;
+        rawField->isSigned = field.isSigned;
+        fsrMap.insert({field, rawField});
+        return rawField;
+    }
+    return fsrMap.at(field);
+}
+
+void PointerPasser::FreeRawFieldMap() {
+    for (auto it = fsrMap.begin(); it != fsrMap.end(); ++it) {
+        if (!it->second) {
+            continue;
+        }
+        if (it->second->fieldName) {
+            delete [] it->second->fieldName;
+            it->second->fieldName = nullptr;
+        }
+        if (it->second->fieldStr) {
+            delete [] it->second->fieldStr;
+            it->second->fieldStr = nullptr;
+        }
+        delete it->second;
+        it->second = nullptr;
+    }
+    fsrMap.clear();
 }
