@@ -154,6 +154,14 @@ struct SampleRawData {
     char *data;
 };
 
+struct SampleRawField {
+    char* fieldName; //the field name of this field.
+    char* fieldStr; //the field line.
+    unsigned offset; //the data offset.
+    unsigned size; //the field size.
+    unsigned isSigned; //is signed or is unsigned
+};
+
 struct PmuData {
     struct Stack* stack;            // call stack
     const char *evt;                // event name
@@ -296,7 +304,16 @@ void PmuDataFree(struct PmuData* pmuData);
  * @param vSize  the memory size of value.
  * @return 0 success other failed.
  */
-int PmuObtainPointerField(struct SampleRawData *rawData, const char *fieldName, void *value, uint32_t vSize);
+int PmuGetField(struct SampleRawData *rawData, const char *fieldName, void *value, uint32_t vSize);
+
+
+/**
+ * @brief Get the SampleRawField explation.
+ * @param rawData
+ * @param fieldName
+ * @return
+ */
+SampleRawField *PmuGetFieldExp(struct SampleRawData *rawData, const char *fieldName);
 
 #pragma GCC visibility pop
 #ifdef __cplusplus

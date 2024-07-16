@@ -748,10 +748,23 @@ int PmuDumpData(struct PmuData *pmuData, unsigned len, char *filepath, int dumpD
     return 0;
 }
 
-int PmuObtainPointerField(struct SampleRawData *rawData, const char *fieldName, void *value, uint32_t vSize) {
+int PmuGetField(struct SampleRawData *rawData, const char *fieldName, void *value, uint32_t vSize) {
     if (rawData == nullptr) {
         New(LIBPERF_ERR_INVALID_FIELD_ARGS, "rawData cannot be nullptr.");
         return LIBPERF_ERR_INVALID_FIELD_ARGS;
     }
-    return TracePointerParser::PointerPasser::ParsePointer(rawData->data, fieldName, value, vSize);
+    return PointerPasser::ParsePointer(rawData->data, fieldName, value, vSize);
 }
+
+SampleRawField *PmuGetFieldExp(struct SampleRawData *rawData, const char *fieldName) {
+    if (rawData == nullptr) {
+        New(LIBPERF_ERR_INVALID_FIELD_ARGS, "rawData cannot be nullptr.");
+        return nullptr;
+    }
+    SampleRawField *rt = PointerPasser::GetSampleRawField(rawData->data, fieldName);
+    if (rt) {
+        New(SUCCESS);
+    }
+    return rt;
+}
+

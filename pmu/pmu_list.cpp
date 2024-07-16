@@ -237,6 +237,7 @@ namespace KUNPENG_PMU {
         EraseParentEventMap();
         SymResolverDestroy();
         PmuEventListFree();
+        PointerPasser::FreeRawFieldMap();
     }
 
     int PmuList::NewPd()
@@ -469,7 +470,7 @@ namespace KUNPENG_PMU {
         }
         for (auto pd: findData->second.data) {
             if (pd.rawData != nullptr) {
-                TracePointerParser::PointerPasser::FreePointerData(pd.rawData->data);
+                PointerPasser::FreePointerData(pd.rawData->data);
                 free(pd.rawData);
                 pd.rawData = nullptr;
             }

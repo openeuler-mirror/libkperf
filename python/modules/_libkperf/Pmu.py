@@ -20,7 +20,6 @@ from .Symbol import CtypesStack, Stack
 
 
 class SampleRateUnion(ctypes.Union):
-
     _fields_ = [
         ('period', ctypes.c_uint),
         ('freq',   ctypes.c_uint)
@@ -66,24 +65,24 @@ class CtypesPmuAttr(ctypes.Structure):
         ('excludeKernel', ctypes.c_bool),
         ('symbolMode',    ctypes.c_uint),
         ('callStack',     ctypes.c_bool),
-        ('dataFilter',    ctypes.c_uint64), # The enumeration for dataFilter will use 64 bits
+        ('dataFilter',    ctypes.c_uint64),  # The enumeration for dataFilter will use 64 bits
         ('evFilter',      ctypes.c_uint),
         ('minLatency',    ctypes.c_ulong)
     ]
 
     def __init__(self,
-                 evtList: List[str] = None,
-                 pidList: List[int] = None,
-                 cpuList: List[int] = None,
-                 sampleRate: int = 0,
-                 useFreq: bool = False,
-                 excludeUser: bool = False,
-                 excludeKernel: bool = False,
-                 symbolMode: int = 0,
-                 callStack: bool = False,
-                 dataFilter: int = 0,
-                 evFilter: int = 0,
-                 minLatency: int = 0,
+                 evtList: List[str]=None,
+                 pidList: List[int]=None,
+                 cpuList: List[int]=None,
+                 sampleRate: int=0,
+                 useFreq: bool=False,
+                 excludeUser: bool=False,
+                 excludeKernel: bool=False,
+                 symbolMode: int=0,
+                 callStack: bool=False,
+                 dataFilter: int=0,
+                 evFilter: int=0,
+                 minLatency: int=0,
                  *args: Any, **kw: Any) -> None:
         super().__init__(*args, **kw)
 
@@ -128,7 +127,6 @@ class CtypesPmuAttr(ctypes.Structure):
 
 
 class PmuAttr:
-
     __slots__ = ['__c_pmu_attr']
 
     def __init__(self,
@@ -136,11 +134,11 @@ class PmuAttr:
                  pidList: List[int]=None,
                  cpuList: List[int]=None,
                  sampleRate: int=0,
-                 useFreq: bool = False,
-                 excludeUser: bool = False,
-                 excludeKernel: bool = False,
+                 useFreq: bool=False,
+                 excludeUser: bool=False,
+                 excludeKernel: bool=False,
                  symbolMode: int=0,
-                 callStack: bool = False,
+                 callStack: bool=False,
                  dataFilter: int=0,
                  evFilter: int=0,
                  minLatency: int=0) -> None:
@@ -217,14 +215,12 @@ class PmuAttr:
             self.c_pmu_attr.cpuList = None
             self.c_pmu_attr.numCpu = ctypes.c_uint(0)
 
-
     @property
     def sampleRate(self) -> int:
         if not self.useFreq:
             return self.c_pmu_attr.sampleRate.period
         else:
             return self.c_pmu_attr.sampleRate.freq
-
 
     @sampleRate.setter
     def sampleRate(self, sampleRate: int) -> None:
@@ -257,7 +253,6 @@ class PmuAttr:
     def excludeKernel(self, excludeKernel: bool) -> None:
         self.c_pmu_attr.excludeKernel = ctypes.c_bool(excludeKernel)
 
-
     @property
     def symbolMode(self) -> int:
         return self.c_pmu_attr.symbolMode
@@ -265,7 +260,6 @@ class PmuAttr:
     @symbolMode.setter
     def symbolMode(self, symbolMode: int) -> None:
         self.c_pmu_attr.symbolMode = ctypes.c_uint(symbolMode)
-
 
     @property
     def callStack(self) -> bool:
@@ -322,13 +316,13 @@ class CtypesCpuTopology(ctypes.Structure):
     ]
 
     def __init__(self,
-                 coreId: int = 0,
-                 numaId: int = 0,
-                 socketId: int = 0,
+                 coreId: int=0,
+                 numaId: int=0,
+                 socketId: int=0,
                  *args: Any, **kw: Any) -> None:
         super().__init__(*args, **kw)
-        self.coreId =  ctypes.c_int(coreId)
-        self.numaId =  ctypes.c_int(numaId)
+        self.coreId =   ctypes.c_int(coreId)
+        self.numaId =   ctypes.c_int(numaId)
         self.socketId = ctypes.c_int(socketId)
 
 
@@ -336,9 +330,9 @@ class CpuTopology:
     __slots__ = ['__c_cpu_topo']
 
     def __init__(self,
-                 coreId: int = 0,
-                 numaId: int = 0,
-                 socketId: int = 0) -> None:
+                 coreId: int=0,
+                 numaId: int=0,
+                 socketId: int=0) -> None:
         self.__c_cpu_topo = CtypesCpuTopology(
             coreId=coreId,
             numaId=numaId,
@@ -373,13 +367,42 @@ class CpuTopology:
     def socketId(self, socketId: int) -> None:
         self.c_cpu_topo.socketId = ctypes.c_int(socketId)
 
-
     @classmethod
     def from_c_cpu_topo(cls, c_cpu_topo: CtypesCpuTopology) -> 'CpuTopology':
         cpu_topo = cls()
         cpu_topo.__c_cpu_topo = c_cpu_topo
         return cpu_topo
 
+
+class CtypesSampleRawData(ctypes.Structure):
+    _fields_ = [
+        ('data', ctypes.c_char_p)
+    ]
+
+    def __init__(self, data: str='', *args: Any, **kw: Any) -> None:
+        super().__init__(*args, **kw)
+        self.data = ctypes.c_char_p(data.encode(UTF_8))
+
+
+class SampleRawData:
+    __slots__ = ['__c_sample_rawdata']
+
+    def __init__(self, data: str='') -> None:
+        self.__c_sample_rawdata = CtypesSampleRawData(data)
+
+    @property
+    def c_pmu_data_rawData(self) -> CtypesSampleRawData:
+        return self.__c_sample_rawdata
+
+    @property
+    def data(self) -> str:
+        return self.__c_sample_rawdata.data.decode(UTF_8)
+
+    @classmethod
+    def from_sample_raw_data(cls, c_sample_raw_data: CtypesSampleRawData) -> 'SampleRawData':
+        sample_raw_data = cls()
+        sample_raw_data.__c_sample_rawdata = c_sample_raw_data
+        return sample_raw_data
 
 
 class CtypesPmuDataExt(ctypes.Structure):
@@ -398,9 +421,9 @@ class CtypesPmuDataExt(ctypes.Structure):
     ]
 
     def __init__(self,
-                 pa: int = 0,
-                 va: int = 0,
-                 event: int = 0,
+                 pa: int=0,
+                 va: int=0,
+                 event: int=0,
                  *args: Any, **kw: Any) -> None:
         super().__init__(*args, **kw)
         self.pa = ctypes.c_ulong(pa)
@@ -412,9 +435,9 @@ class PmuDataExt:
     __slots__ = ['__c_pmu_data_ext']
 
     def __init__(self,
-                 pa: int = 0,
-                 va: int = 0,
-                 event: int = 0) -> None:
+                 pa: int=0,
+                 va: int=0,
+                 event: int=0) -> None:
         self.__c_pmu_data_ext = CtypesPmuDataExt(
             pa=pa,
             va=va,
@@ -456,6 +479,72 @@ class PmuDataExt:
         return pmu_data_ext
 
 
+class CtypesSampleRawField(ctypes.Structure):
+    _fields_ = [
+        ('fieldName', ctypes.c_char_p),
+        ('fieldStr',  ctypes.c_char_p),
+        ('offset',    ctypes.c_uint),
+        ('size',      ctypes.c_uint),
+        ("isSigned",  ctypes.c_uint),
+    ]
+
+    def __init__(self,
+                 field_name: str='',
+                 field_str: str='',
+                 offset: int=0,
+                 size: int=0,
+                 is_signed: int=0,
+                 *args: Any, **kw: Any) -> None:
+        super().__init__(*args, **kw)
+        self.fieldName = ctypes.c_char_p(field_name.encode(UTF_8))
+        self.fieldStr = ctypes.c_char_p(field_str.encode(UTF_8))
+        self.offset = ctypes.c_uint(offset)
+        self.size = ctypes.c_uint(size)
+        self.isSigned = ctypes.c_uint(is_signed)
+
+class SampleRawField:
+
+    __slots__ = ['__c_sample_raw_field']
+
+    def __init__(self,
+                 field_name: str='',
+                 field_str: str='',
+                 offset: int=0,
+                 size: int=0,
+                 is_signed: int=0) -> None:
+        self.__c_sample_raw_field = CtypesSampleRawField(field_name, field_str, offset, size, is_signed)
+
+    @property
+    def c_sample_raw_field(self) -> CtypesSampleRawField:
+        return self.__c_sample_raw_field
+
+    @property
+    def field_name(self) -> str:
+        return self.__c_sample_raw_field.fieldName.decode(UTF_8)
+
+    @property
+    def field_str(self) -> str:
+        return self.__c_sample_raw_field.fieldStr.decode(UTF_8)
+
+    @property
+    def size(self) -> int:
+        return self.__c_sample_raw_field.size
+
+    @property
+    def offset(self) -> int:
+        return self.__c_sample_raw_field.offset
+
+    @property
+    def is_signed(self) -> bool:
+        return bool(self.__c_sample_raw_field.isSigned)
+
+    @classmethod
+    def from_sample_raw_field(cls, __c_sample_raw_field: CtypesSampleRawField):
+        sample_raw_data = cls()
+        sample_raw_data.__c_sample_raw_field = __c_sample_raw_field
+        return sample_raw_data
+
+
 class CtypesPmuData(ctypes.Structure):
     """
     struct PmuData {
@@ -484,21 +573,23 @@ class CtypesPmuData(ctypes.Structure):
         ('comm',    ctypes.c_char_p),
         ('period',  ctypes.c_int),
         ('count',   ctypes.c_uint64),
-        ('ext',     ctypes.POINTER(CtypesPmuDataExt))
+        ('ext',     ctypes.POINTER(CtypesPmuDataExt)),
+        ('rawData', ctypes.POINTER(CtypesSampleRawData))
     ]
 
     def __init__(self,
-                 stack: CtypesStack = None,
-                 evt: str = '',
-                 ts: int = 0,
-                 pid: int = 0,
-                 tid: int = 0,
-                 cpu: int = 0,
-                 cpuTopo: CtypesCpuTopology = None,
-                 comm: str = '',
-                 period: int = 0,
-                 count: int = 0,
-                 ext: CtypesPmuDataExt = None,
+                 stack: CtypesStack=None,
+                 evt: str='',
+                 ts: int=0,
+                 pid: int=0,
+                 tid: int=0,
+                 cpu: int=0,
+                 cpuTopo: CtypesCpuTopology=None,
+                 comm: str='',
+                 period: int=0,
+                 count: int=0,
+                 ext: CtypesPmuDataExt=None,
+                 rawData: CtypesSampleRawData=None,
                  *args: Any, **kw: Any) -> None:
         super().__init__(*args, **kw)
 
@@ -513,23 +604,25 @@ class CtypesPmuData(ctypes.Structure):
         self.period = ctypes.c_int(period)
         self.count = ctypes.c_uint64(count)
         self.ext = ext
+        self.rawData = rawData
 
 
 class ImplPmuData:
     __slots__ = ['__c_pmu_data']
 
     def __init__(self,
-                 stack: Stack = None,
-                 evt: str = '',
-                 ts: int = 0,
-                 pid: int = 0,
-                 tid: int = 0,
-                 cpu: int = 0,
-                 cpuTopo: CpuTopology = None,
-                 comm: str = '',
-                 period: int = 0,
-                 count: int = 0,
-                 ext: PmuDataExt = None) -> None:
+                 stack: Stack=None,
+                 evt: str='',
+                 ts: int=0,
+                 pid: int=0,
+                 tid: int=0,
+                 cpu: int=0,
+                 cpuTopo: CpuTopology=None,
+                 comm: str='',
+                 period: int=0,
+                 count: int=0,
+                 ext: PmuDataExt=None,
+                 rawData: SampleRawData=None) -> None:
         self.__c_pmu_data = CtypesPmuData(
             stack=stack.c_stack if stack else None,
             evt=evt,
@@ -542,8 +635,8 @@ class ImplPmuData:
             period=period,
             count=count,
             ext=ext.c_pmu_data_ext if ext else None,
+            rawData=rawData.c_pmu_data_rawData if rawData else None
         )
-
 
     @property
     def c_pmu_data(self) -> CtypesPmuData:
@@ -633,6 +726,10 @@ class ImplPmuData:
     def ext(self) -> PmuDataExt:
         return PmuDataExt.from_pmu_data_ext(self.c_pmu_data.ext.contents) if self.c_pmu_data.ext else None
 
+    @property
+    def rawData(self) -> SampleRawData:
+        return SampleRawData.from_sample_raw_data(self.c_pmu_data.rawData) if self.c_pmu_data.rawData else None
+
     @ext.setter
     def ext(self, ext: PmuDataExt) -> None:
         self.c_pmu_data.ext = ext.c_pmu_data_ext if ext else None
@@ -645,11 +742,9 @@ class ImplPmuData:
 
 
 class PmuData:
-
     __slots__ = ['__pointer', '__iter', '__len']
 
     def __init__(self, pointer: ctypes.POINTER(CtypesPmuData) = None, len: int = 0) -> None:
-
         self.__pointer = pointer
         self.__len = len
         self.__iter = (ImplPmuData.from_c_pmu_data(self.__pointer[i]) for i in range(self.__len))
@@ -789,7 +884,8 @@ def PmuRead(pd: int) -> PmuData:
     return PmuData(c_data_pointer, c_data_len)
 
 
-def PmuAppendData(fromData: ctypes.POINTER(CtypesPmuData), toData: ctypes.POINTER(ctypes.POINTER(CtypesPmuData))) -> int:
+def PmuAppendData(fromData: ctypes.POINTER(CtypesPmuData),
+                  toData: ctypes.POINTER(ctypes.POINTER(CtypesPmuData))) -> int:
     """
     int PmuAppendData(struct PmuData *fromData, struct PmuData **toData);
     """
@@ -828,11 +924,38 @@ def PmuDumpData(pmuData: PmuData, filepath: str, dumpDwf: int) -> None:
     c_PmuDumpData(pmuData.pointer, c_len, c_filepath, c_dumpDwf)
 
 
+def PmuGetField(rawData: ctypes.POINTER(CtypesSampleRawData), field_name: str, value: ctypes.c_void_p,
+                          vSize: int) -> int:
+    """
+    int PmuGetField(struct SampleRawData *rawData, const char *fieldName, void *value, uint32_t vSize);
+    """
+    c_PmuGetField = kperf_so.PmuGetField
+    c_PmuGetField.argtypes = [ctypes.POINTER(CtypesSampleRawData), ctypes.c_char_p, ctypes.c_void_p,
+                                        ctypes.c_uint]
+    c_PmuGetField.restype = ctypes.c_int
+    return c_PmuGetField(rawData, field_name.encode(UTF_8), value, vSize)
+
+
+def PmuGetFieldExp(rawData: ctypes.POINTER(CtypesSampleRawData), field_name: str) -> SampleRawField:
+    """
+    SampleRawField *PmuGetFieldExp(struct SampleRawData *rawData, const char *fieldName);
+    """
+    c_PmuGetFieldExp = kperf_so.PmuGetFieldExp
+    c_PmuGetFieldExp.argtypes = [ctypes.POINTER(CtypesSampleRawData), ctypes.c_char_p]
+    c_PmuGetFieldExp.restype = ctypes.POINTER(CtypesSampleRawField)
+    pointer_field = c_PmuGetFieldExp(rawData, field_name.encode(UTF_8))
+    if not pointer_field:
+        return None
+    return SampleRawField.from_sample_raw_field(pointer_field.contents)
+
+
 __all__ = [
     'CtypesPmuAttr',
     'PmuAttr',
     'CpuTopology',
     'PmuDataExt',
+    'SampleRawField',
+    'SampleRawData',
     'CtypesPmuData',
     'ImplPmuData',
     'PmuData',
@@ -845,4 +968,6 @@ __all__ = [
     'PmuClose',
     'PmuDumpData',
     'CtypesPmuAttr',
+    'PmuGetField',
+    'PmuGetFieldExp',
 ]

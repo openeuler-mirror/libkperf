@@ -27,18 +27,22 @@
 #include "pmu_event.h"
 
 using namespace std;
-using namespace KUNPENG_PMU;
 
-namespace TracePointerParser {
+namespace KUNPENG_PMU {
 
     struct Field {
-        int offset; //the data offset.
-        int size; //the field size.
+        unsigned offset; //the data offset.
+        unsigned size; //the field size.
+        unsigned isSigned; //signed and unsigned
         std::string fieldName; //the field name of this field.
         std::string fieldStr; //the field line.
 
         bool IsDataLoc() const {
             return fieldStr.find("__data_loc") != string::npos;
+        }
+
+        bool operator<(const Field &t) const {
+            return this->fieldStr < t.fieldStr;
         }
     };
 
@@ -70,6 +74,17 @@ namespace TracePointerParser {
          * @brief free the data.
          */
         static void FreePointerData(char *data);
+
+        /**
+         * @brief get the field named fieldName of this event.
+         * @return
+         */
+        static SampleRawField *GetSampleRawField(char *data, const string &fieldName);
+
+        /**
+         * @brief clear the field
+         */
+        static void FreeRawFieldMap();
     };
 }
 

@@ -14,3 +14,4 @@ Description: kperf module
 """
 from .pmu import *
 from .perror import *
+from .trace_pointer import *

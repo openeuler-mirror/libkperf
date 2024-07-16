@@ -4,7 +4,8 @@ libkperf licensed under the Mulan PSL v2.
 You can use this software according to the terms and conditions of the Mulan PSL v2.
 You may obtain a copy of Mulan PSL v2 at:
     http://license.coscl.org.cn/MulanPSL2
-THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR
+THIS SOFTWARE IS PROVIDED ON AN "AS IS" BA
+SIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR
 PURPOSE.
 See the Mulan PSL v2 for more details.
@@ -13,10 +14,10 @@ Create: 2024-05-16
 Description: kperf pmu module
 """
 from typing import List, Iterator
+from ctypes import *
 
 import _libkperf
 import ksym
-
 
 class PmuTaskType:
     COUNTING = 0
@@ -110,6 +111,14 @@ class CpuTopology(_libkperf.CpuTopology):
     pass
 
 
+class SampleRawField(_libkperf.SampleRawField):
+    pass
+
+
+class SampleRawData(_libkperf.SampleRawData):
+    pass
+
+
 class PmuDataExt(_libkperf.PmuDataExt):
     pass
 
@@ -165,6 +174,27 @@ def dump(pmuData: PmuData, filepath: str, dump_dwf: int) -> None:
     return _libkperf.PmuDumpData(pmuData, filepath, dump_dwf)
 
 
+def get_field(pmu_data: _libkperf.ImplPmuData, field_name: str, value: c_void_p) -> int:
+    """
+    get field value of trace pointer named field_name
+    :param pmu_data: _libkperf.ImplPmuData
+    :param field_name: field name
+    :param value: pointer
+    :return: 0 success other failed
+    """
+    return _libkperf.PmuGetField(pmu_data.rawData.c_pmu_data_rawData, field_name, value, sizeof(value))
+
+
+def get_field_exp(pmu_data: _libkperf.ImplPmuData, field_name: str) -> SampleRawField:
+    """
+    get the field detail of trace pointer event
+    :param pmu_data: the _libkperf.ImplPmuData
+    :param field_name: field name
+    :return:SampleRawField
+    """
+    return _libkperf.PmuGetFieldExp(pmu_data.rawData.c_pmu_data_rawData, field_name)
+
+
 __all__ = [
     'PmuTaskType',
     'PmuEventType',
@@ -174,6 +204,7 @@ __all__ = [
     'PmuAttr',
     'CpuTopology',
     'PmuDataExt',
+    'SampleRawField',
     'ImplPmuData',
     'PmuData',
     'open',
@@ -184,4 +215,6 @@ __all__ = [
     'stop',
     'close',
     'dump',
+    'get_field',
+    'get_field_exp',
 ]
