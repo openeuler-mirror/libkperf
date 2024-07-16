@@ -359,7 +359,7 @@ void Spe::CoreDummyData(struct SpeCoreContext *context, struct ContextSwitchData
         uint64_t off = dataTail % mpage->data_size;
         struct perf_event_header *header = (struct perf_event_header *)(ringBuf + off);
 
-        if (header->type == PERF_RECORD_MMAP) {
+        if (header->type == PERF_RECORD_MMAP && symbolMode != NO_SYMBOL_RESOLVE) {
             struct PerfRecordMmap *sample = (struct PerfRecordMmap *)header;
             SymResolverUpdateModule(sample->tid, sample->filename, sample->addr);
             dataTail += header->size;
