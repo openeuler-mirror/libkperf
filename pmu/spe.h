@@ -128,8 +128,8 @@ struct SampleId {
  */
 class Spe {
 public:
-    explicit Spe(int cpu, std::unordered_map<pid_t, std::shared_ptr<ProcTopology>> &procMap)
-            : cpu(cpu), procMap(procMap)
+    explicit Spe(int cpu, std::unordered_map<pid_t, std::shared_ptr<ProcTopology>> &procMap, SymbolMode symMode)
+            : cpu(cpu), procMap(procMap), symbolMode(symMode)
     {}
 
     ~Spe()
@@ -209,6 +209,7 @@ private:
     const unsigned short READ = 1 << 3;
 
     int cpu = 0;
+    SymbolMode symbolMode = NO_SYMBOL_RESOLVE;
     SpeContext *ctx = nullptr;
     unsigned short status = NONE;
     int dummyFd = 0;

@@ -187,11 +187,15 @@ void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<Perf
                 break;
             }
             case PERF_RECORD_MMAP: {
-                SymResolverUpdateModule(event->mmap.tid, event->mmap.filename, event->mmap.addr);
+		if (symMode != NO_SYMBOL_RESOLVE) {
+                	SymResolverUpdateModule(event->mmap.tid, event->mmap.filename, event->mmap.addr);
+		}
                 break;
             }
             case PERF_RECORD_MMAP2: {
-                SymResolverUpdateModule(event->mmap2.tid, event->mmap2.filename, event->mmap2.addr);
+		if (symMode != NO_SYMBOL_RESOLVE) {
+                	SymResolverUpdateModule(event->mmap2.tid, event->mmap2.filename, event->mmap2.addr);
+		}
                 break;
             }
             case PERF_RECORD_FORK: {
