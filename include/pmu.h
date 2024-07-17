@@ -313,7 +313,7 @@ int PmuGetField(struct SampleRawData *rawData, const char *fieldName, void *valu
  * @param fieldName
  * @return
  */
-SampleRawField *PmuGetFieldExp(struct SampleRawData *rawData, const char *fieldName);
+struct SampleRawField *PmuGetFieldExp(struct SampleRawData *rawData, const char *fieldName);
 
 #pragma GCC visibility pop
 #ifdef __cplusplus

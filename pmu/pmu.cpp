@@ -756,7 +756,7 @@ int PmuGetField(struct SampleRawData *rawData, const char *fieldName, void *valu
     return PointerPasser::ParsePointer(rawData->data, fieldName, value, vSize);
 }
 
-SampleRawField *PmuGetFieldExp(struct SampleRawData *rawData, const char *fieldName) {
+struct SampleRawField *PmuGetFieldExp(struct SampleRawData *rawData, const char *fieldName) {
     if (rawData == nullptr) {
         New(LIBPERF_ERR_INVALID_FIELD_ARGS, "rawData cannot be nullptr.");
         return nullptr;
