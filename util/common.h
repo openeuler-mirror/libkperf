@@ -18,9 +18,15 @@
 #include <linux/perf_event.h>
 #include <string>
 
+const std::string TRACE_EVENT_PATH = "/sys/kernel/tracing/events/";
+const std::string TRACE_DEBUG_EVENT_PATH = "/sys/kernel/debug/tracing/events/";
+
 bool IsValidIp(unsigned long ip);
 std::string GetRealPath(const std::string filePath);
 bool IsValidPath(const std::string& filePath);
 int RaiseNumFd(uint64_t numFd);
+bool ExistPath(const std::string& filePath);
+std::string GetTraceEventDir();
+
 
 #endif  // LIBKPROF_COMMON_H

@@ -35,7 +35,6 @@ static const string COLON = ":";
 static const string UNCORE_PREFIX = "hisi";
 static const string SYS_DEVICES = "/sys/devices/";
 static const string EVENT_DIR = "/events/";
-static const string TRACE_FOLDER = "/sys/kernel/tracing/events/";
 
 static std::mutex pmuEventListMtx;
 
@@ -54,7 +53,6 @@ static void GetEventName(const string& devName, vector<const char*>& eventList)
     }
     while ((entry = readdir(dir)) != nullptr) {
         if (entry->d_type != DT_REG) { // Check if it is a regular file
-
             continue;
         }
         string fileName(entry->d_name);
@@ -68,12 +66,11 @@ static void GetEventName(const string& devName, vector<const char*>& eventList)
     closedir(dir);
 }
 
-static void GetTraceSubFolder(const string& devName, vector<const char*>& eventList)
+static void GetTraceSubFolder(const std::string& traceFolder, const string& devName, vector<const char*>& eventList)
 {
-    DIR* dir;
     struct dirent* entry;
-    auto path = TRACE_FOLDER + devName;
-    dir = opendir(path.c_str());
+    auto path = traceFolder + devName;
+    DIR *dir = opendir(path.c_str());
     if (dir == nullptr) {
         return;
     }
@@ -179,9 +176,12 @@ const char** QueryTraceEvent(unsigned *numEvt)
         *numEvt = traceEventList.size();
         return traceEventList.data();
     }
-    DIR* dir;
-    struct dirent* entry;
-    dir = opendir(TRACE_FOLDER.c_str());
+    struct dirent *entry;
+    const string &traceFolder = GetTraceEventDir();
+    if (traceFolder.empty()) {
+        return traceEventList.data();
+    }
+    DIR *dir = opendir(traceFolder.c_str());
     if (dir == nullptr) {
         return nullptr;
     }
@@ -190,7 +190,7 @@ const char** QueryTraceEvent(unsigned *numEvt)
             string folderName = entry->d_name;
             if (folderName.find('.') == string::npos) {
                 string devName(entry->d_name);
-                GetTraceSubFolder(devName, traceEventList);
+                GetTraceSubFolder(traceFolder, devName, traceEventList);
             }
         }
     }
