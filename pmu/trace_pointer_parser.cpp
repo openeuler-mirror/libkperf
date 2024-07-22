@@ -34,7 +34,11 @@ bool PointerPasser::IsNeedFormat(std::ifstream &file, const std::string &evtName
     }
     string eventName = evtName.substr(colonId + 1);
     string systemName = evtName.substr(0, colonId);
-    string formatPath = "/sys/kernel/tracing/events/" + systemName + "/" + eventName + "/format";
+    const string &eventDir = GetTraceEventDir();
+    if (eventDir.empty()) {
+        return false;
+    }
+    string formatPath = eventDir + systemName + "/" + eventName + "/format";
     string realPath = GetRealPath(formatPath);
     if (realPath.empty()) {
         return false;

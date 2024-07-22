@@ -23,11 +23,15 @@ using namespace KUNPENG_PMU;
 
 static int64_t GetTraceEventConfig(const std::string &name)
 {
+    const string &traceFolder = GetTraceEventDir();
+    if (traceFolder.empty()) {
+        return -1;
+    }
     size_t colon = name.find(':');
     string systemName = name.substr(0, colon);
     string eventName = name.substr(colon + 1);
 
-    string eventPath = "/sys/kernel/tracing/events/" + systemName + "/" + eventName + "/id";
+    string eventPath = traceFolder + systemName + "/" + eventName + "/id";
     string realPath = GetRealPath(eventPath);
     if (!IsValidPath(realPath)) {
         return -1;

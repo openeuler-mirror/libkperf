@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <unistd.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
 #include <climits>
 #include "pcerrc.h"
 #include "common.h"
@@ -72,4 +73,22 @@ int RaiseNumFd(unsigned long numFd)
     } else {
         return SUCCESS;
     }
+}
+
+bool ExistPath(const std::string &filePath) {
+    struct stat st{};
+    if(stat(filePath.c_str(), &st) != 0) {
+        return false;
+    }
+    return true;
+}
+
+std::string GetTraceEventDir() {
+    if (ExistPath(TRACE_EVENT_PATH)) {
+        return TRACE_EVENT_PATH;
+    }
+    if (ExistPath(TRACE_DEBUG_EVENT_PATH)) {
+        return TRACE_DEBUG_EVENT_PATH;
+    }
+    return "";
 }
