@@ -53,7 +53,7 @@ int KUNPENG_PMU::PerfEvt::Reset()
 
 int KUNPENG_PMU::PerfEvt::Disable()
 {
-    if (ioctl(this->fd, PERF_EVENT_IOC_DISABLE, 0)) {
+    if (ioctl(this->fd, PERF_EVENT_IOC_DISABLE, 0) == 0) {
         return SUCCESS;
     }
     return LIBPERF_ERR_FAILED_PMU_DISABLE;
