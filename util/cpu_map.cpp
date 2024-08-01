@@ -32,7 +32,8 @@ static constexpr int PATH_LEN = 256;
 static CHIP_TYPE g_chipType = CHIP_TYPE::UNDEFINED_TYPE;
 static map<string, CHIP_TYPE> chipMap = {{"0x00000000481fd010", HIPA},
                                          {"0x00000000480fd020", HIPB},
-                                         {"0x00000000480fd030", HIPC}};
+                                         {"0x00000000480fd030", HIPC},
+                                         {"0x00000000480fd220", HIPF}};
 
 static inline bool ReadCpuPackageId(int coreId, CpuTopology* cpuTopo)
 {

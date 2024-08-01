@@ -112,6 +112,7 @@ private:
         const unsigned& pd, PmuTaskAttr* pmuTaskAttrHead, std::vector<CpuPtr>& cpuTopoList);
     int PrepareProcTopoList(PmuTaskAttr* pmuTaskAttrHead, std::vector<ProcPtr>& procTopoList) const;
     int CheckRlimit(const unsigned fdNum);
+    static unsigned CalRequireFd(unsigned cpuSize, unsigned proSize, const unsigned collectType);
     static void AggregateData(const std::vector<PmuData>& evData, std::vector<PmuData>& newEvData);
     void AggregateUncoreData(const unsigned pd, const std::vector<PmuData> &evData, std::vector<PmuData> &newEvData);
     std::vector<PmuData>& GetPreviousData(const unsigned pd);

@@ -13,13 +13,13 @@
  * Description: Common functions for spe sampling.
  ******************************************************************************/
 #include "test_common.h"
+#include "common.h"
 
 using namespace std;
 
 class TestSPE : public testing::Test {
 public:
-    void TearDown()
-    {
+    void TearDown() {
         if (appPid != 0) {
             KillApp(appPid);
             appPid = 0;
