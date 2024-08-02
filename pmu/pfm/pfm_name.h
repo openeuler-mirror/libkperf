@@ -46,6 +46,21 @@ extern const char* DTLB_LOAD_MISSES;
 extern const char* DTLB_LOADS;
 extern const char* ITLB_LOAD_MISSES;
 extern const char* ITLB_LOADS;
+// Software event
+extern const char* ALIGNMENT_FAULTS;
+extern const char* BPF_OUTPUT;
+extern const char* CONTEXT_SWITCHES;
+extern const char* CS;
+extern const char* CPU_CLOCK;
+extern const char* CPU_MIGRATIONS;
+extern const char* MIGRATIONS;
+extern const char* DUMMY;
+extern const char* EMULATION_FAULTS;
+extern const char* MAJOR_FAULTS;
+extern const char* MINOR_FAULTS;
+extern const char* PAGE_FAULTS;
+extern const char* FAULTS;
+extern const char* TASK_CLOCK;
 }
 namespace HIP_A {
 namespace CORE {

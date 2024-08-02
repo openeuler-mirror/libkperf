@@ -42,6 +42,15 @@ namespace KUNPENG_PMU {
         return RaiseNumFd(fdNum);
     }
 
+    unsigned PmuList::CalRequireFd(unsigned cpuSize, unsigned proSize, const unsigned collectType)
+    {
+        unsigned fd = cpuSize * proSize;
+        if (collectType == SPE_SAMPLING) {
+            fd += fd;// spe would open dummy event.
+        }
+        return fd;
+    }
+
     int PmuList::Register(const int pd, PmuTaskAttr* taskParam)
     {
         if (GetSymbolMode(pd) != NO_SYMBOL_RESOLVE && taskParam->pmuEvt->collectType != COUNTING) {
@@ -77,7 +86,7 @@ namespace KUNPENG_PMU {
             if (err != SUCCESS) {
                 return err;
             }
-            fdNum += cpuTopoList.size() * procTopoList.size();
+            fdNum += CalRequireFd(cpuTopoList.size(), procTopoList.size(), taskParam->pmuEvt->collectType);
             std::shared_ptr<EvtList> evtList =
                     std::make_shared<EvtList>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt);
             InsertEvtList(pd, evtList);
