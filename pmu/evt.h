@@ -59,7 +59,6 @@ public:
     }
 
 protected:
-    __u64 count;
     int fd;
     int cpu;
     pid_t pid;

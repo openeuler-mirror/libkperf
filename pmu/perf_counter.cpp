@@ -51,20 +51,22 @@ int KUNPENG_PMU::PerfCounter::Read(vector<PmuData> &data, std::vector<PerfSample
     }
     read(this->fd, &perfCountValue, sizeof(perfCountValue));
 
-    /**
-     * In case of multiplexing, we follow the linux documentation for calculating the estimated
-     * counting value (https://perf.wiki.kernel.org/index.php/Tutorial)
-    */
+    if (perfCountValue.value < count || perfCountValue.timeEnabled < enabled || perfCountValue.timeRunning < running) {
+	return LIBPERF_ERR_COUNT_OVERFLOW;
+    }
 
-    /**
-     * For now we assume PMU register was reset before each collection, so we assign the counting value to the
-     * count section in data. We will implement the aggregating logic soon
-     */
-    this->count = perfCountValue.value * static_cast<double>(perfCountValue.timeEnabled) /
-	    		static_cast<double>(perfCountValue.timeRunning);
+    // Calculate the diff of count from last read.
+    // In case of multiplexing, we follow the linux documentation for calculating the estimated
+    // counting value (https://perf.wiki.kernel.org/index.php/Tutorial)
+    uint64_t increCount = (perfCountValue.value - count)* static_cast<double>(perfCountValue.timeEnabled - enabled) /
+	    		static_cast<double>(perfCountValue.timeRunning - running);
+    this->count = perfCountValue.value;
+    this->enabled = perfCountValue.timeEnabled;
+    this->running = perfCountValue.timeRunning;
+
     data.emplace_back(PmuData{0});
     auto& current = data.back();
-    current.count = this->count;
+    current.count = increCount;
     current.cpu = static_cast<unsigned>(this->cpu);
     current.tid = this->pid;
     auto findProc = procMap.find(current.tid);

@@ -23,10 +23,10 @@
 #include "pmu_event.h"
 
 struct ReadFormat {
-    __u64 value;       /* The value of the event */
-    __u64 timeEnabled; /* if PERF_FORMAT_TOTAL_timeEnabled */
-    __u64 timeRunning; /* if PERF_FORMAT_TOTAL_timeRunning */
-    __u64 id;          /* if PERF_FORMAT_ID */
+    __u64 value;
+    __u64 timeEnabled;
+    __u64 timeRunning;
+    __u64 id;
 };
 
 namespace KUNPENG_PMU {
@@ -38,6 +38,12 @@ namespace KUNPENG_PMU {
         int Init() override;
         int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool) override;
         int MapPerfAttr() override;
+
+    private:
+	// Accumulated pmu count, time enabled and time running.
+	__u64 count = 0;
+	__u64 enabled = 0;
+	__u64 running = 0;
     };
 }  // namespace KUNPENG_PMU
 #endif
