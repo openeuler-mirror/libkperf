@@ -26,7 +26,6 @@
 #include "trace_pointer_parser.h"
 #include "pmu_event_list.h"
 #include "pmu_list.h"
-#include "common.h"
 
 using namespace std;
 using namespace pcerr;
@@ -61,12 +60,12 @@ namespace KUNPENG_PMU {
         struct PmuTaskAttr* pmuTaskAttrHead = taskParam;
         // Init collect type for pmu data,
         // because different type has different free strategy.
-        auto &evtData = GetDataList(pd);
+        auto& evtData = GetDataList(pd);
         if (pmuTaskAttrHead != nullptr) {
             evtData.collectType = static_cast<PmuTaskType>(pmuTaskAttrHead->pmuEvt->collectType);
             evtData.pd = pd;
         }
-        
+
         unsigned fdNum = 0;
         while (pmuTaskAttrHead) {
             /**
@@ -97,8 +96,8 @@ namespace KUNPENG_PMU {
         if (err != SUCCESS) {
             return err;
         }
-        
-        for (auto evtList : GetEvtList(pd)) {
+
+        for (auto evtList: GetEvtList(pd)) {
             auto err = evtList->Init();
             if (err != SUCCESS) {
                 return err;
@@ -108,14 +107,15 @@ namespace KUNPENG_PMU {
                 return err;
             }
         }
-
+        this->FillPidList(taskParam, pd);
+        this->OpenDummyEvent(taskParam, pd);
         return SUCCESS;
     }
 
     int PmuList::Start(const int pd)
     {
         auto pmuList = GetEvtList(pd);
-        for (auto item : pmuList) {
+        for (auto item: pmuList) {
             auto err = item->Start();
             if (err != SUCCESS) {
                 return err;
@@ -127,7 +127,7 @@ namespace KUNPENG_PMU {
     int PmuList::Pause(const int pd)
     {
         auto pmuList = GetEvtList(pd);
-        for (auto item : pmuList) {
+        for (auto item: pmuList) {
             auto err = item->Pause();
             if (err != SUCCESS) {
                 return err;
@@ -141,7 +141,7 @@ namespace KUNPENG_PMU {
         // Exchange data in <dataList> to <userDataList>.
         // Return a pointer to data.
 
-        auto &evtData = GetDataList(pd);
+        auto& evtData = GetDataList(pd);
         if (evtData.data.empty()) {
             // Have not read ring buffer yet.
             // Mostly caller is using PmuEnable and PmuDisable mode.
@@ -158,12 +158,12 @@ namespace KUNPENG_PMU {
     {
         // Read data from prev sampling,
         // and store data in <dataList>.
-        auto &evtData = GetDataList(pd);
+        auto& evtData = GetDataList(pd);
         evtData.pd = pd;
         evtData.collectType = static_cast<PmuTaskType>(GetTaskType(pd));
         auto ts = GetCurrentTime();
         auto eventList = GetEvtList(pd);
-        for (auto item : eventList) {
+        for (auto item: eventList) {
             item->SetTimeStamp(ts);
             auto err = item->Read(evtData.data, evtData.sampleIps, evtData.extPool);
             if (err != SUCCESS) {
@@ -174,7 +174,7 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    int PmuList::AppendData(PmuData *fromData, PmuData **toData, int &len)
+    int PmuList::AppendData(PmuData* fromData, PmuData** toData, int& len)
     {
         if (toData == nullptr || fromData == nullptr) {
             return LIBPERF_ERR_INVALID_PMU_DATA;
@@ -202,7 +202,7 @@ namespace KUNPENG_PMU {
             return LIBPERF_ERR_INVALID_PMU_DATA;
         }
         // For non-null target data list, append source list to end of target vector.
-        auto &dataVec = findToData->second.data;
+        auto& dataVec = findToData->second.data;
         dataVec.insert(dataVec.end(), findFromData->second.data.begin(), findFromData->second.data.end());
         len = dataVec.size();
 
@@ -228,13 +228,14 @@ namespace KUNPENG_PMU {
     void PmuList::Close(const int pd)
     {
         auto evtList = GetEvtList(pd);
-        for (auto item : evtList) {
+        for (auto item: evtList) {
             item->Close();
         }
         EraseEvtList(pd);
         EraseDataList(pd);
         RemoveEpollFd(pd);
         EraseSpeCpu(pd);
+        EraseDummyEvent(pd);
         EraseParentEventMap();
         SymResolverDestroy();
         PmuEventListFree();
@@ -272,7 +273,7 @@ namespace KUNPENG_PMU {
         // Check if all fds are EPOLLHUP, which represents all processes exit.
         auto epollEvents = GetEpollEvents(epollFd);
         epoll_wait(epollFd, epollEvents.data(), epollEvents.size(), 0);
-        for (auto& evt : epollEvents) {
+        for (auto& evt: epollEvents) {
             if (!(evt.events & EPOLLHUP)) {
                 return false;
             }
@@ -326,7 +327,7 @@ namespace KUNPENG_PMU {
     void PmuList::EraseParentEventMap()
     {
         lock_guard<mutex> lg(dataParentMtx);
-        for (auto& pair : parentEventMap) {
+        for (auto& pair: parentEventMap) {
             auto& innerMap = pair.second;
             innerMap.clear();
         }
@@ -344,7 +345,7 @@ namespace KUNPENG_PMU {
     {
         lock_guard<mutex> lg(dataListMtx);
         dataList.erase(pd);
-        for (auto iter = userDataList.begin();iter != userDataList.end();) {
+        for (auto iter = userDataList.begin(); iter != userDataList.end();) {
             if (iter->second.pd == pd) {
                 iter = userDataList.erase(iter);
             } else {
@@ -353,7 +354,7 @@ namespace KUNPENG_PMU {
         }
     }
 
-    void PmuList::FillStackInfo(EventData &eventData)
+    void PmuList::FillStackInfo(EventData& eventData)
     {
         auto symMode = symModeList[eventData.pd];
         if (symMode == NO_SYMBOL_RESOLVE) {
@@ -361,8 +362,8 @@ namespace KUNPENG_PMU {
         }
         // Parse dwarf and elf info of each pid and get stack trace for each pmu data.
         for (size_t i = 0; i < eventData.data.size(); ++i) {
-            auto &pmuData = eventData.data[i];
-            auto &ipsData = eventData.sampleIps[i];
+            auto& pmuData = eventData.data[i];
+            auto& ipsData = eventData.sampleIps[i];
             if (symMode == RESOLVE_ELF) {
                 SymResolverRecordModuleNoDwarf(pmuData.pid);
             } else if (symMode == RESOLVE_ELF_DWARF) {
@@ -381,7 +382,7 @@ namespace KUNPENG_PMU {
         // Acccumulate stat data in previous PmuCollect for convenient use.
         // One count for same event + tid + cpu.
         map<std::tuple<string, int, unsigned>, PmuData> mergedMap;
-        for (auto& data : evData) {
+        for (auto& data: evData) {
             auto key = std::make_tuple(
                     data.evt, data.tid, data.cpu);
             if (mergedMap.find(key) == mergedMap.end()) {
@@ -390,7 +391,7 @@ namespace KUNPENG_PMU {
                 mergedMap[key].count += data.count;
             }
         }
-        for (auto &evtData: mergedMap) {
+        for (auto& evtData: mergedMap) {
             newEvData.push_back(evtData.second);
         }
     }
@@ -406,7 +407,7 @@ namespace KUNPENG_PMU {
         // One count for same parent according to parentEventMap.
         auto parentMap = parentEventMap.at(pd);
         unordered_map<string, PmuData> dataMap;
-        for (auto& pmuData : evData) {
+        for (auto& pmuData: evData) {
             auto parentName = parentMap.at(pmuData.evt);
             if (strcmp(parentName, pmuData.evt) == 0) {
                 // event was not split
@@ -423,7 +424,7 @@ namespace KUNPENG_PMU {
                 dataMap.at(parentMap.at(pmuData.evt)).count += pmuData.count;
             }
         }
-        for (const auto& pair : dataMap) {
+        for (const auto& pair: dataMap) {
             newEvData.emplace_back(pair.second);
         }
         std::sort(newEvData.begin(), newEvData.end(), comparePmuData);
@@ -466,7 +467,7 @@ namespace KUNPENG_PMU {
             return;
         }
         // Delete ext pointer malloced in SpeSampler.
-        for (auto &extMem : findData->second.extPool) {
+        for (auto& extMem: findData->second.extPool) {
             delete[] extMem;
         }
         for (auto pd: findData->second.data) {
@@ -483,7 +484,7 @@ namespace KUNPENG_PMU {
     {
         lock_guard<mutex> lg(dataListMtx);
         std::vector<PmuData> mergedData;
-        for (const auto& pair : userDataList) {
+        for (const auto& pair: userDataList) {
             if (pair.second.pd == pd && pair.second.collectType == COUNTING) {
                 mergedData.insert(mergedData.end(), pair.second.data.begin(), pair.second.data.end());
             }
@@ -497,7 +498,7 @@ namespace KUNPENG_PMU {
         std::vector<PmuData>* lastData = nullptr;
         int64_t maxTs = 0;
 
-        for (auto& pair : userDataList) {
+        for (auto& pair: userDataList) {
             if (pair.second.pd == pd && !pair.second.data.empty() && pair.second.data[0].ts > maxTs) {
                 maxTs = pair.second.data[0].ts;
                 lastData = &pair.second.data;
@@ -509,7 +510,7 @@ namespace KUNPENG_PMU {
         throw runtime_error("");
     }
 
-    int PmuList::AddToEpollFd(const int pd, const std::shared_ptr<EvtList> &evtList)
+    int PmuList::AddToEpollFd(const int pd, const std::shared_ptr<EvtList>& evtList)
     {
         lock_guard<mutex> lg(pmuListMtx);
         // Try to create a epoll fd for current pd.
@@ -527,7 +528,7 @@ namespace KUNPENG_PMU {
 
         // Add ring buffer fd list to epoll fd.
         auto& epollEvtList = epollEvents[epollFd];
-        for (auto fd : evtList->GetFdList()) {
+        for (auto fd: evtList->GetFdList()) {
             epollEvtList.emplace_back(epoll_event{0});
             auto& epollEvt = epollEvtList.back();
             epollEvt.events = EPOLLIN | EPOLLRDHUP;
@@ -574,7 +575,7 @@ namespace KUNPENG_PMU {
         throw runtime_error("cannot find epoll events.");
     }
 
-    bool PmuList::IsCpuInList(const int &cpu) const
+    bool PmuList::IsCpuInList(const int& cpu) const
     {
         lock_guard<mutex> lg(pmuListMtx);
         for (auto cpuList: speCpuList) {
@@ -585,20 +586,20 @@ namespace KUNPENG_PMU {
         return false;
     }
 
-    void PmuList::AddSpeCpu(const unsigned &pd, const int &cpu)
+    void PmuList::AddSpeCpu(const unsigned& pd, const int& cpu)
     {
         lock_guard<mutex> lg(pmuListMtx);
         speCpuList[pd].insert(cpu);
     }
 
-    void PmuList::EraseSpeCpu(const unsigned &pd)
+    void PmuList::EraseSpeCpu(const unsigned& pd)
     {
         lock_guard<mutex> lg(pmuListMtx);
         speCpuList.erase(pd);
     }
 
     int PmuList::PrepareCpuTopoList(
-            const unsigned &pd, PmuTaskAttr* pmuTaskAttrHead, std::vector<CpuPtr>& cpuTopoList)
+            const unsigned& pd, PmuTaskAttr* pmuTaskAttrHead, std::vector<CpuPtr>& cpuTopoList)
     {
         for (int i = 0; i < pmuTaskAttrHead->numCpu; i++) {
             if (pmuTaskAttrHead->pmuEvt->collectType == SPE_SAMPLING && IsCpuInList(pmuTaskAttrHead->cpuList[i])) {
@@ -655,7 +656,7 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    void PmuList::SetSymbolMode(const int pd, const SymbolMode &mode)
+    void PmuList::SetSymbolMode(const int pd, const SymbolMode& mode)
     {
         lock_guard<mutex> lg(dataListMtx);
         symModeList[pd] = mode;
@@ -665,5 +666,59 @@ namespace KUNPENG_PMU {
     {
         lock_guard<mutex> lg(dataListMtx);
         return symModeList[pd];
+    }
+
+    void PmuList::OpenDummyEvent(KUNPENG_PMU::PmuTaskAttr* taskParam, const unsigned pd)
+    {
+        if (!taskParam->pmuEvt->includeNewFork) {
+            return;
+        }
+        if (taskParam->pmuEvt->collectType != COUNTING) {
+            return;
+        }
+        if (taskParam->numPid <= 0) {
+            return;
+        }
+        auto* dummyEvent = new DummyEvent(GetEvtList(pd), ppidList.at(pd));
+        dummyEvent->ObserverForkThread();
+        dummyList[pd] = dummyEvent;
+    }
+
+    void PmuList::FillPidList(KUNPENG_PMU::PmuTaskAttr* taskParam, const unsigned int pd)
+    {
+        std::vector<pid_t> ppids;
+        for (int i = 0; i < taskParam->numPid; i++) {
+            ppids.push_back(taskParam->pidList[i]);
+        }
+        ppidList[pd] = ppids;
+    }
+
+    bool PmuList::IsAllPidExit(const unsigned pd)
+    {
+        auto& pidList = this->ppidList[pd];
+        if (pidList.empty()) {
+            return false;
+        }
+        int exitPidNum = 0;
+        for (const auto& pid: pidList) {
+            std::string path = "/proc/" + std::to_string(pid);
+            if (!ExistPath(path)) {
+                exitPidNum++;
+            }
+        }
+        if (exitPidNum == pidList.size()) {
+            return true;
+        }
+        return false;
+    }
+
+    void PmuList::EraseDummyEvent(const unsigned pd)
+    {
+        lock_guard<mutex> lg(pmuListMtx);
+        if (dummyList.find(pd) != dummyList.end()) {
+            DummyEvent* pEvent = dummyList.at(pd);
+            dummyList.erase(pd);
+            delete pEvent;
+        }
     }
 }

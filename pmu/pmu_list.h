@@ -19,6 +19,7 @@
 #include <vector>
 #include <unordered_map>
 #include <sys/epoll.h>
+#include "dummy_event.h"
 #include "evt_list.h"
 #include "pmu_event.h"
 
@@ -54,7 +55,7 @@ public:
      * @return std::vector<PmuData>&
      */
     std::vector<PmuData>& Read(const int pd);
-    int AppendData(PmuData *fromData, PmuData **toData, int &len);
+    int AppendData(PmuData* fromData, PmuData** toData, int& len);
     int Start(const int pd);
     int Pause(const int pd);
     void Close(const int pd);
@@ -69,6 +70,7 @@ public:
     int GetHistoryData(const int pd, std::vector<PmuData>& pmuData);
     void StoreSplitData(unsigned pd, std::pair<unsigned, char**> previousEventList,
                         std::unordered_map<std::string, char*> eventSplitMap);
+    bool IsAllPidExit(const unsigned pd);
 
 private:
     using ProcPtr = std::shared_ptr<ProcTopology>;
@@ -117,6 +119,9 @@ private:
     void AggregateUncoreData(const unsigned pd, const std::vector<PmuData> &evData, std::vector<PmuData> &newEvData);
     std::vector<PmuData>& GetPreviousData(const unsigned pd);
     SymbolMode GetSymbolMode(const unsigned pd);
+    void FillPidList(PmuTaskAttr* taskParam, const unsigned pd);
+    void OpenDummyEvent(PmuTaskAttr* taskParam, const unsigned pd);
+    void EraseDummyEvent(const unsigned pd);
 
     static std::mutex pmuListMtx;
     static std::mutex dataListMtx;
@@ -152,6 +157,10 @@ private:
     unsigned maxPd = 0;
 
     std::unordered_map<unsigned, SymbolMode> symModeList;
+
+    std::unordered_map<unsigned, std::vector<pid_t>> ppidList;
+
+    std::unordered_map<unsigned, DummyEvent*> dummyList;
 };
 }   // namespace KUNPENG_PMU
 #endif

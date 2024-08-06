@@ -49,6 +49,7 @@ class CtypesPmuAttr(ctypes.Structure):
         enum SpeFilter dataFilter;      // spe data filter
         enum SpeEventFilter evFilter;   // spe event filter
         unsigned long minLatency;       // collect only samples with latency or higher
+        unsigned includeNewFork;  // include new fork thread
     };
     """
 
@@ -67,7 +68,8 @@ class CtypesPmuAttr(ctypes.Structure):
         ('callStack',     ctypes.c_bool),
         ('dataFilter',    ctypes.c_uint64),  # The enumeration for dataFilter will use 64 bits
         ('evFilter',      ctypes.c_uint),
-        ('minLatency',    ctypes.c_ulong)
+        ('minLatency',    ctypes.c_ulong),
+        ('includeNewFork', ctypes.c_bool),
     ]
 
     def __init__(self,
@@ -83,6 +85,7 @@ class CtypesPmuAttr(ctypes.Structure):
                  dataFilter: int=0,
                  evFilter: int=0,
                  minLatency: int=0,
+                 includeNewFork: bool=False,
                  *args: Any, **kw: Any) -> None:
         super().__init__(*args, **kw)
 
@@ -124,6 +127,7 @@ class CtypesPmuAttr(ctypes.Structure):
         self.dataFilter = ctypes.c_uint64(dataFilter)
         self.evFilter = ctypes.c_uint(evFilter)
         self.minLatency = ctypes.c_ulong(minLatency)
+        self.includeNewFork = ctypes.c_bool(includeNewFork)
 
 
 class PmuAttr:
@@ -141,7 +145,8 @@ class PmuAttr:
                  callStack: bool=False,
                  dataFilter: int=0,
                  evFilter: int=0,
-                 minLatency: int=0) -> None:
+                 minLatency: int=0,
+                 inlcludeNewFork: bool=False) -> None:
         self.__c_pmu_attr = CtypesPmuAttr(
             evtList=evtList,
             pidList=pidList,
@@ -154,7 +159,8 @@ class PmuAttr:
             callStack=callStack,
             dataFilter=dataFilter,
             evFilter=evFilter,
-            minLatency=minLatency
+            minLatency=minLatency,
+            includeNewFork=inlcludeNewFork
         )
 
     @property
@@ -292,6 +298,14 @@ class PmuAttr:
     @minLatency.setter
     def minLatency(self, minLatency: int) -> None:
         self.c_pmu_attr.minLatency = ctypes.c_ulong(minLatency)
+
+    @property
+    def includeNewFork(self) -> bool:
+        return bool(self.c_pmu_attr.includeNewFork)
+
+    @includeNewFork.setter
+    def includeNewFork(self, includeNewFork: bool) -> None:
+        self.c_pmu_attr.includeNewFork = ctypes.c_bool(includeNewFork)
 
     @classmethod
     def from_c_pmu_data(cls, c_pmu_attr: CtypesPmuAttr) -> 'PmuAttr':

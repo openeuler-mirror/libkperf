@@ -529,12 +529,12 @@ TEST_F(TestAPI, AppendPmuDataToExistArray)
 
     usleep(1000 * 100);
     // Get one pmu data array.
-    PmuData *data1 = nullptr;
+    PmuData* data1 = nullptr;
     int len1 = PmuRead(pd, &data1);
 
     usleep(1000 * 100);
     // Get another pmu data array.
-    PmuData *data2 = nullptr;
+    PmuData* data2 = nullptr;
     int len2 = PmuRead(pd, &data2);
     // Append <data2> to <data1>;
     int totalLen = PmuAppendData(data2, &data1);
@@ -544,9 +544,31 @@ TEST_F(TestAPI, AppendPmuDataToExistArray)
     // Check data of the second part of <data1>,
     // which equals to <data2>.
     for (int i = 0; i < len2; ++i) {
-	ASSERT_EQ(data1[i + len1].count, data2[i].count);
+        ASSERT_EQ(data1[i + len1].count, data2[i].count);
     }
 
     PmuDataFree(data1);
     PmuDataFree(data2);
+}
+
+TEST_F(TestAPI, TestForkNewThread) {
+    auto attr = GetPmuAttribute();
+    auto pid = RunTestApp("test_new_fork");
+    attr.pidList[0] = pid;
+    attr.numPid = 1;
+    attr.includeNewFork = 1;
+    int pd = PmuOpen(COUNTING, &attr);
+    ASSERT_NE(pd, -1);
+    int ret = PmuCollect(pd, 10000, collectInterval);
+    ASSERT_EQ(ret, SUCCESS);
+    int len = PmuRead(pd, &data);
+    ASSERT_EQ(len, 3);
+
+    PmuEnable(pd);
+    sleep(3);
+    PmuDisable(pd);
+    len = PmuRead(pd, &data);
+    ASSERT_EQ(len, 1);
+    PmuClose(pd);
+    kill(pid, SIGTERM);
 }

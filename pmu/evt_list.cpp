@@ -12,32 +12,17 @@
  * Create: 2024-04-03
  * Description: implementations for managing and interacting with performance events in the KUNPENG_PMU namespace
  ******************************************************************************/
-#include <iostream>
 #include <cstdio>
 #include <unordered_set>
 #include <fstream>
-#include <linux/perf_event.h>
 #include "cpu_map.h"
-#include "linked_list.h"
 #include "pmu_event.h"
 #include "pcerrc.h"
 #include "log.h"
+#include "common.h"
 #include "evt_list.h"
 
 using namespace std;
-
-enum PmuTask {
-    START = 0,
-    PAUSE = 1,
-    DISABLE = 2,
-    ENABLE = 3,
-    RESET = 4,
-    OPEN = 5,
-    CLOSE = 6,
-    INIT = 7,
-    READ = 8,
-    STOP = 9,
-};
 
 int KUNPENG_PMU::EvtList::CollectorDoTask(PerfEvtPtr collector, int task)
 {
@@ -65,23 +50,27 @@ int KUNPENG_PMU::EvtList::CollectorDoTask(PerfEvtPtr collector, int task)
             return UNKNOWN_ERROR;
     }
 }
+
 int KUNPENG_PMU::EvtList::CollectorXYArrayDoTask(std::vector<std::vector<PerfEvtPtr>>& xyArray, int task)
 {
-    for (auto row : xyArray) {
-        for (auto evt : row) {
+    std::unique_lock<std::mutex> lock(mutex);
+    for (auto row: xyArray) {
+        for (auto evt: row) {
             auto err = CollectorDoTask(evt, task);
             if (err != SUCCESS) {
                 return err;
             }
         }
     }
+    this->prevStat = this->evtStat;
+    this->evtStat = task;
     return SUCCESS;
 }
 
 int KUNPENG_PMU::EvtList::Init()
 {
     // Init process map.
-    for (auto &proc : pidList) {
+    for (auto& proc: pidList) {
         if (proc->tid > 0) {
             procMap[proc->tid] = proc;
         }
@@ -140,7 +129,7 @@ int KUNPENG_PMU::EvtList::Reset()
 }
 
 void KUNPENG_PMU::EvtList::FillFields(
-        const size_t &start, const size_t &end, CpuTopology *cpuTopo, ProcTopology *procTopo, vector<PmuData> &data)
+        const size_t& start, const size_t& end, CpuTopology* cpuTopo, ProcTopology* procTopo, vector<PmuData>& data)
 {
     for (auto i = start; i < end; ++i) {
         data[i].cpuTopo = cpuTopo;
@@ -152,7 +141,8 @@ void KUNPENG_PMU::EvtList::FillFields(
     }
 }
 
-int KUNPENG_PMU::EvtList::Read(vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool)
+int KUNPENG_PMU::EvtList::Read(vector<PmuData>& data, std::vector<PerfSampleIps>& sampleIps,
+                               std::vector<PmuDataExt*>& extPool)
 {
     for (unsigned int row = 0; row < numCpu; row++) {
         for (unsigned int col = 0; col < numPid; col++) {
@@ -189,6 +179,8 @@ int KUNPENG_PMU::EvtList::Read(vector<PmuData> &data, std::vector<PerfSampleIps>
             }
         }
     }
+
+    this->ClearExitFd();
     return SUCCESS;
 }
 
@@ -209,4 +201,88 @@ std::shared_ptr<KUNPENG_PMU::PerfEvt> KUNPENG_PMU::EvtList::MapPmuAttr(int cpu, 
         default:
             return nullptr;
     };
+}
+
+void KUNPENG_PMU::EvtList::AddNewProcess(pid_t pid)
+{
+    if (pid <= 0 || evtStat == CLOSE || evtStat == STOP) {
+        return;
+    }
+    ProcTopology* topology = GetProcTopology(pid);
+    if (topology == nullptr) {
+        return;
+    }
+    std::unique_lock<std::mutex> lock(mutex);
+    for (unsigned int row = 0; row < numCpu; row++) {
+        this->pidList.emplace_back(shared_ptr<ProcTopology>(topology, FreeProcTopo));
+        procMap[pid] = this->pidList.back();
+        PerfEvtPtr perfEvt = this->MapPmuAttr(this->cpuList[row]->coreId, this->pidList.back()->tid,
+                                              this->pmuEvt.get());
+        if (perfEvt == nullptr) {
+            return;
+        }
+        perfEvt->SetSymbolMode(symMode);
+        auto err = perfEvt->Init();
+        if (err != SUCCESS) {
+            return;
+        }
+        fdList.insert(perfEvt->GetFd());
+        numPid++;
+        this->xyCounterArray[row].emplace_back(perfEvt);
+        /**
+         * If the current status is enable, start, read, other existing perfEvt may have been enabled and is counting,
+         * so the new perfEvt must also be added to enable. If the current status is read, the status of all perfEvt
+         * may be disable. At this time No need to collect counts.
+         */
+        if (evtStat == ENABLE || evtStat == START) {
+            perfEvt->Enable();
+        }
+        if (evtStat == READ && prevStat != DISABLE) {
+            perfEvt->Enable();
+        }
+    }
+}
+
+void KUNPENG_PMU::EvtList::ClearExitFd()
+{
+    if (this->pidList.size() == 1 && this->pidList[0]->tid == -1) {
+        return;
+    }
+
+    if (this->pmuEvt->collectType != COUNTING) {
+        return;
+    }
+
+    std::set<pid_t> exitPidVet;
+    for (const auto& it: this->pidList) {
+        std::string path = "/proc/" + std::to_string(it->tid);
+        if (!ExistPath(path)) {
+            exitPidVet.insert(it->tid);
+        }
+    }
+    // erase the exit perfVet
+    for (int row = 0; row < numCpu; row++) {
+        auto& perfVet = xyCounterArray[row];
+        for (auto it = perfVet.begin(); it != perfVet.end();) {
+            int pid = it->get()->GetPid();
+            if (exitPidVet.find(pid) != exitPidVet.end()) {
+                it = perfVet.erase(it);
+                this->fdList.erase(it->get()->GetFd());
+                continue;
+            }
+            ++it;
+        }
+    }
+
+    for (const auto& exitPid: exitPidVet) {
+        for (auto it = this->pidList.begin(); it != this->pidList.end();) {
+            if (it->get()->tid == exitPid) {
+                it = this->pidList.erase(it);
+                continue;
+            }
+            ++it;
+        }
+        procMap.erase(exitPid);
+        numPid--;
+    }
 }

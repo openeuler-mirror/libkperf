@@ -119,6 +119,8 @@ struct PmuAttr {
     enum SpeEventFilter evFilter;
     // Collect only samples with latency or higher.
     unsigned long minLatency;
+    // In count mode, enable it you can get the new child thread count, default is disabled.
+    unsigned includeNewFork : 1;
 };
 
 struct CpuTopology {
