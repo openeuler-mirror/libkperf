@@ -45,6 +45,7 @@ namespace pcerr {
             {LIBPERF_ERR_RAISE_FD, "failed to setrlimit or getrlimit"},
             {LIBPERF_ERR_PATH_INACCESSIBLE, "cannot access file path"},
             {LIBPERF_ERR_INVALID_SAMPLE_RATE, "invalid sample rate, please check /proc/sys/kernel/perf_event_max_sample_rate"},
+            {LIBPERF_ERR_COUNT_OVERFLOW, "pmu count is overflowed"},
     };
     static std::unordered_map<int, std::string> warnMsgs = {
             {LIBPERF_WARN_CTXID_LOST, "Some SPE context packets are not found in the traces."}

@@ -41,11 +41,7 @@ static inline bool ReadCpuPackageId(int coreId, CpuTopology* cpuTopo)
     if (snprintf(filename, PATH_LEN, CPU_TOPOLOGY_PACKAGE_ID.c_str(), coreId) < 0) {
         return false;
     }
-    std::string realPath = GetRealPath(filename);
-    if (!IsValidPath(realPath)) {
-        return false;
-    }
-    std::ifstream packageFile(realPath);
+    std::ifstream packageFile(filename);
     if (!packageFile.is_open()) {
         return false;
     }

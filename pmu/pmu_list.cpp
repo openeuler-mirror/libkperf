@@ -151,14 +151,6 @@ namespace KUNPENG_PMU {
             }
         }
         auto& userData = ExchangeToUserData(pd);
-        if (GetTaskType(pd) == COUNTING) {
-            // Reset counter after Read is called,
-            // thus count in PmuData is pmu count in last epoch.
-            auto evtList = GetEvtList(pd);
-            for (auto item : evtList) {
-                item->Reset();
-            }
-        }
         return userData;
     }
 
