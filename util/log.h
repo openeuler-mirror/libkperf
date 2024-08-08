@@ -15,6 +15,9 @@
 #ifndef PERF_LOG_H
 #define PERF_LOG_H
 
+#include <cstring>
+#include <cstdlib>
+
 #ifdef NDEBUG
 #define DBG_PRINT(...)
 #define ERR_PRINT(...)

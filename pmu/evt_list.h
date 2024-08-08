@@ -20,6 +20,7 @@
 #include <vector>
 #include <set>
 #include <linux/types.h>
+#include <mutex>
 #include "cpu_map.h"
 #include "perf_counter.h"
 #include "pmu.h"
@@ -28,15 +29,31 @@
 #include "spe_sampler.h"
 
 namespace KUNPENG_PMU {
+enum PmuTask {
+    START = 0,
+    PAUSE = 1,
+    DISABLE = 2,
+    ENABLE = 3,
+    RESET = 4,
+    OPEN = 5,
+    CLOSE = 6,
+    INIT = 7,
+    READ = 8,
+    STOP = 9,
+};
+
 class EvtList {
 public:
     using ProcPtr = std::shared_ptr<ProcTopology>;
     using CpuPtr = std::shared_ptr<CpuTopology>;
-    EvtList(const SymbolMode &symbolMode, std::vector<CpuPtr> &cpuList, std::vector<ProcPtr> &pidList, std::shared_ptr<PmuEvt> pmuEvt)
+    EvtList(const SymbolMode& symbolMode, std::vector<CpuPtr>& cpuList, std::vector<ProcPtr>& pidList,
+            std::shared_ptr<PmuEvt> pmuEvt)
         : symMode(symbolMode), cpuList(cpuList), pidList(pidList), pmuEvt(pmuEvt)
     {
         this->numCpu = this->cpuList.size();
         this->numPid = this->pidList.size();
+        this->prevStat = OPEN;
+        this->evtStat = OPEN;
     }
     int Init();
     int Pause();
@@ -45,9 +62,9 @@ public:
     int Enable();
     int Stop();
     int Reset();
-    int Read(std::vector<PmuData> &pmuData, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool);
+    int Read(std::vector<PmuData>& pmuData, std::vector<PerfSampleIps>& sampleIps, std::vector<PmuDataExt*>& extPool);
 
-    void SetTimeStamp(const int64_t &timestamp)
+    void SetTimeStamp(const int64_t& timestamp)
     {
         this->ts = timestamp;
     }
@@ -62,13 +79,15 @@ public:
         return pmuEvt->collectType;
     }
 
+    void AddNewProcess(pid_t pid);
+    void ClearExitFd();
 private:
     using PerfEvtPtr = std::shared_ptr<KUNPENG_PMU::PerfEvt>;
 
     int CollectorDoTask(PerfEvtPtr collector, int task);
     int CollectorXYArrayDoTask(std::vector<std::vector<PerfEvtPtr>>& xyArray, int task);
-    void FillFields(const size_t &start, const size_t &end, CpuTopology *cpuTopo, ProcTopology *procTopo,
-        std::vector<PmuData> &pmuData);
+    void FillFields(const size_t& start, const size_t& end, CpuTopology* cpuTopo, ProcTopology* procTopo,
+                    std::vector<PmuData>& pmuData);
 
     std::vector<CpuPtr> cpuList;
     std::vector<ProcPtr> pidList;
@@ -81,6 +100,9 @@ private:
     int64_t ts = 0;
     std::unordered_map<pid_t, ProcPtr> procMap;
     SymbolMode symMode = NO_SYMBOL_RESOLVE;
+    int prevStat;
+    int evtStat;
+    std::mutex mutex;
 };
 }   // namespace KUNPENG_PMU
 #endif

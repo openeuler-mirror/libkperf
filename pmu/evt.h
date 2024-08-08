@@ -20,6 +20,7 @@
 #include <unordered_map>
 #include <linux/types.h>
 #include <linux/perf_event.h>
+#include "common.h"
 #include "symbol.h"
 #include "pmu_event.h"
 
@@ -29,10 +30,8 @@ public:
     using ProcPtr = std::shared_ptr<ProcTopology>;
     using ProcMap = std::unordered_map<pid_t, ProcPtr>;
 
-    PerfEvt(int cpu, int pid, struct PmuEvt* evt, ProcMap& procMap) : cpu(cpu), pid(pid), evt(evt), procMap(procMap)
-    {}
-    ~PerfEvt()
-    {}
+    PerfEvt(int cpu, int pid, struct PmuEvt* evt, ProcMap& procMap) : cpu(cpu), pid(pid), evt(evt), procMap(procMap) {}
+    ~PerfEvt() {}
     virtual int Start();
     virtual int Pause();
     virtual int Disable();
@@ -56,6 +55,10 @@ public:
     int GetFd() const
     {
         return fd;
+    }
+
+    int GetPid() const {
+        return pid;
     }
 
 protected:

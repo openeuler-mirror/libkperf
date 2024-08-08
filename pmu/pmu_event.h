@@ -45,6 +45,7 @@ struct PmuEvt {
         unsigned freq;              // sample frequency
     };
     unsigned useFreq : 1;
+    unsigned includeNewFork : 1; // count new fork tid
 };
 
 namespace KUNPENG_PMU {

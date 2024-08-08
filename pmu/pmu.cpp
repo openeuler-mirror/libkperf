@@ -331,6 +331,10 @@ static int DoCollectCounting(int pd, int milliseconds, unsigned collectInterval)
         }
         usleep(usecPerMilli * interval);
 
+        if (PmuList::GetInstance()->IsAllPidExit(pd)) {
+            break;
+        }
+
         pdMutex.tryLock(pd);
         if (!runningStatus[pd]) {
             pdMutex.releaseLock(pd);
@@ -654,6 +658,7 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
     taskParam->pmuEvt->excludeKernel = attr->excludeKernel;
     taskParam->pmuEvt->excludeUser = attr->excludeUser;
     taskParam->pmuEvt->callStack = attr->callStack;
+    taskParam->pmuEvt->includeNewFork = attr->includeNewFork;
     return taskParam.release();
 }
 
