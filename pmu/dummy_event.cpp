@@ -37,6 +37,9 @@ namespace KUNPENG_PMU {
             close(it->second.first);
             munmap(it->second.second, MAP_LEN);
         }
+        if (consumeThread.joinable()) {
+            consumeThread.join();
+        }
     }
 
     void DummyEvent::ObserverForkThread()
@@ -47,6 +50,21 @@ namespace KUNPENG_PMU {
             }
             while (dummyFlag) {
                 this->HandleDummyData();
+            }
+        });
+
+        consumeThread = std::thread([this]() {
+            while (dummyFlag) {
+                if (forkPidQueue.empty()) {
+                    continue;
+                }
+                auto& pid = forkPidQueue.front();
+                for (const auto& evtList: evtLists) {
+                    DummyContext ctx = {evtList, static_cast<pid_t>(pid)};
+                    forkStrategy.DoHandler(ctx);
+                }
+                std::lock_guard<std::mutex> lg(dummyMutex);
+                forkPidQueue.pop();
             }
         });
     }
@@ -102,18 +120,14 @@ namespace KUNPENG_PMU {
         uint8_t* ringBuf = (uint8_t*) (mapPage) + PAGE_SIZE;
         uint64_t dataHead = mapPage->data_head;
         uint64_t dataTail = mapPage->data_tail;
+        std::vector<pid_t> childPidList;
         while (dataTail < dataHead) {
             uint64_t off = dataTail % mapPage->data_size;
             auto* header = (struct perf_event_header*) (ringBuf + off);
             if (header->type == PERF_RECORD_FORK) {
                 auto sample = (KUNPENG_PMU::PerfRecordFork*) header;
-                if (sample->tid <= 0) {
-                    continue;
-                }
-                for (const auto& evtList: evtLists) {
-                    DummyContext ctx = {evtList, static_cast<pid_t>(sample->tid)};
-                    forkStrategy.DoHandler(ctx);
-                }
+                std::lock_guard<std::mutex> lg(dummyMutex);
+                forkPidQueue.push(sample->tid);
             }
             if (header->type == PERF_RECORD_EXIT) {
                 auto sample = (KUNPENG_PMU::PerfRecordFork*) header;

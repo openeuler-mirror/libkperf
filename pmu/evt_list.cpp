@@ -75,7 +75,7 @@ int KUNPENG_PMU::EvtList::Init()
             procMap[proc->tid] = proc;
         }
     }
-
+    bool hasHappenedErr = false;
     for (unsigned int row = 0; row < numCpu; row++) {
         std::vector<PerfEvtPtr> evtVec{};
         for (unsigned int col = 0; col < numPid; col++) {
@@ -87,12 +87,20 @@ int KUNPENG_PMU::EvtList::Init()
             perfEvt->SetSymbolMode(symMode);
             auto err = perfEvt->Init();
             if (err != SUCCESS) {
+                if (!perfEvt->IsMainPid()) {
+                    hasHappenedErr = true;
+                    continue;
+                }
                 return err;
             }
             fdList.insert(perfEvt->GetFd());
             evtVec.emplace_back(perfEvt);
         }
         this->xyCounterArray.emplace_back(evtVec);
+        // if an exception occurs due to exited threads, clear the exited fds.
+        if (hasHappenedErr) {
+            this->ClearExitFd();
+        }
     }
     return SUCCESS;
 }

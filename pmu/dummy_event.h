@@ -17,6 +17,7 @@
 
 #include <thread>
 #include <atomic>
+#include <queue>
 #include "pcerr.h"
 #include "evt_list.h"
 
@@ -45,8 +46,7 @@ namespace KUNPENG_PMU {
         DummyEvent(std::vector<std::shared_ptr<EvtList>>& evtLists, std::vector<pid_t>& ppids) :
                 evtLists(evtLists),
                 ppids(ppids),
-                dummyFlag(true),
-                errNo(SUCCESS) {};
+                dummyFlag(true) {};
 
         ~DummyEvent();
 
@@ -57,12 +57,18 @@ namespace KUNPENG_PMU {
 
     private:
         std::thread dummyThread;
+        std::thread consumeThread;
+
         std::atomic<bool> dummyFlag;
+
         std::vector<std::shared_ptr<EvtList>>& evtLists;
         std::vector<pid_t> ppids;
         std::vector<pid_t> exitPids;
         std::unordered_map<pid_t, std::pair<int, void*>> dummyMap;
-        int errNo;
+
+        std::mutex dummyMutex;
+        std::queue<int> forkPidQueue;
+        std::vector<std::thread> childThreads;
 
         void InitDummy(pid_t pid);
         void ParseDummyData(void* page, pid_t pid);

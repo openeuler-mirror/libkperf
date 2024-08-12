@@ -50,9 +50,8 @@ int KUNPENG_PMU::PerfCounter::Read(vector<PmuData> &data, std::vector<PerfSample
         return UNKNOWN_ERROR;
     }
     read(this->fd, &perfCountValue, sizeof(perfCountValue));
-
     if (perfCountValue.value < count || perfCountValue.timeEnabled < enabled || perfCountValue.timeRunning < running) {
-	return LIBPERF_ERR_COUNT_OVERFLOW;
+        return LIBPERF_ERR_COUNT_OVERFLOW;
     }
 
     // Calculate the diff of count from last read.
@@ -115,5 +114,20 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr()
     if (__glibc_unlikely(this->fd < 0)) {
         return MapErrno(errno);
     }
+    return SUCCESS;
+}
+
+/**
+ * Enable
+ */
+int KUNPENG_PMU::PerfCounter::Enable()
+{
+    int err = PerfEvt::Enable();
+    if (err != SUCCESS) {
+        return err;
+    }
+    this->count = 0;
+    this->enabled = 0;
+    this->running = 0;
     return SUCCESS;
 }

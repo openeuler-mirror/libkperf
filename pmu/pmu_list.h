@@ -122,6 +122,7 @@ private:
     void FillPidList(PmuTaskAttr* taskParam, const unsigned pd);
     void OpenDummyEvent(PmuTaskAttr* taskParam, const unsigned pd);
     void EraseDummyEvent(const unsigned pd);
+    int InitSymbolRecordModule(const unsigned pd, PmuTaskAttr* taskParam);
 
     static std::mutex pmuListMtx;
     static std::mutex dataListMtx;
