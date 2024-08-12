@@ -128,6 +128,7 @@ struct ProcTopology {
     char* comm;
     char* exe;
     bool kernel;
+    bool isMain;
 };
 #ifdef __cplusplus
 }

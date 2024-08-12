@@ -38,6 +38,7 @@ namespace KUNPENG_PMU {
         int Init() override;
         int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool) override;
         int MapPerfAttr() override;
+        int Enable() override;
 
     private:
 	// Accumulated pmu count, time enabled and time running.

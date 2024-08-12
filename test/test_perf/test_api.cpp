@@ -524,6 +524,7 @@ TEST_F(TestAPI, AppendPmuDataToExistArray)
 {
     auto attr = GetPmuAttribute();
     int pd = PmuOpen(COUNTING, &attr);
+    ASSERT_NE(pd, -1);
     int err = PmuEnable(pd);
     ASSERT_EQ(err, SUCCESS);
 
@@ -551,7 +552,8 @@ TEST_F(TestAPI, AppendPmuDataToExistArray)
     PmuDataFree(data2);
 }
 
-TEST_F(TestAPI, TestForkNewThread) {
+TEST_F(TestAPI, TestForkNewThread)
+{
     auto attr = GetPmuAttribute();
     auto pid = RunTestApp("test_new_fork");
     attr.pidList[0] = pid;
@@ -562,13 +564,31 @@ TEST_F(TestAPI, TestForkNewThread) {
     int ret = PmuCollect(pd, 10000, collectInterval);
     ASSERT_EQ(ret, SUCCESS);
     int len = PmuRead(pd, &data);
-    ASSERT_EQ(len, 3);
+    ASSERT_EQ(len, 5);
 
     PmuEnable(pd);
     sleep(3);
     PmuDisable(pd);
+
     len = PmuRead(pd, &data);
     ASSERT_EQ(len, 1);
+
     PmuClose(pd);
+    kill(pid, SIGTERM);
+}
+
+TEST_F(TestAPI, TestShortChild)
+{
+    auto attr = GetPmuAttribute();
+    auto pid = RunTestApp("test_short_child");
+    attr.pidList[0] = pid;
+    attr.numPid = 1;
+    attr.includeNewFork = 0;
+    int pd = PmuOpen(COUNTING, &attr);
+    ASSERT_NE(pd, -1);
+    int ret = PmuCollect(pd, 1000, collectInterval);
+    ASSERT_EQ(ret, SUCCESS);
+    int len = PmuRead(pd, &data);
+    ASSERT_LE(len, 3);
     kill(pid, SIGTERM);
 }

@@ -39,7 +39,7 @@ When unable to use git:
 Run bash script:
 
 ```sh
-bash build.sh installPath=/home/libkperf
+bash build.sh install_path=/home/libkperf
 ```
 As mentioned above, the header and library will be installed in the/home/libkperf output directory, and installPath is an optional parameter. If not set, it will be installed in the output directory under libkperf by default.
 

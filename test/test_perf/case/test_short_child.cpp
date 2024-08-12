@@ -10,34 +10,29 @@
  * See the Mulan PSL v2 for more details.
  * Author: Mr.Li
  * Create: 2024-08-17
- * Description: test for short new fork thread.
+ * Description: test for short child thread.
  ******************************************************************************/
 #include <iostream>
 #include <unistd.h>
 #include <thread>
 
-void sum()
+// This time cause the child thread to end before the perf event opens, which may be inconsistent due to computer
+// performance or code changes.
+const int SLEEP_TIME = 2200;
+
+void SleepSomeTime()
 {
-    sleep(2);
+    usleep(SLEEP_TIME);
 }
 
 int main()
 {
     std::thread th1;
+    th1 = std::thread(SleepSomeTime);
     std::thread th2;
-    std::thread th3;
-    th1 = std::thread(sum);
-
-    sleep(2);
-    th2 = std::thread(sum);
-    th3 = std::thread(sum);
-    th3.join();
+    th2 = std::thread(SleepSomeTime);
     th2.join();
     th1.join();
-
-    std::thread th4 = std::thread(sum);
-    th4.join();
-
     while (true) {
         sleep(1);
     }

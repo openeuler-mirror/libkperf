@@ -61,6 +61,11 @@ public:
         return pid;
     }
 
+    bool IsMainPid() const
+    {
+        return this->procMap[pid]->isMain;
+    }
+
 protected:
     int fd;
     int cpu;

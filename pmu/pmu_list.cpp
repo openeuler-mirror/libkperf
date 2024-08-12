@@ -52,9 +52,10 @@ namespace KUNPENG_PMU {
 
     int PmuList::Register(const int pd, PmuTaskAttr* taskParam)
     {
-        if (GetSymbolMode(pd) != NO_SYMBOL_RESOLVE && taskParam->pmuEvt->collectType != COUNTING) {
-            SymResolverInit();
-            SymResolverRecordKernel();
+        this->FillPidList(taskParam, pd);
+        int symbolErrNo = InitSymbolRecordModule(pd, taskParam);
+        if (symbolErrNo != SUCCESS) {
+            return symbolErrNo;
         }
         /* Use libpfm to get the basic config for this pmu event */
         struct PmuTaskAttr* pmuTaskAttrHead = taskParam;
@@ -107,7 +108,6 @@ namespace KUNPENG_PMU {
                 return err;
             }
         }
-        this->FillPidList(taskParam, pd);
         this->OpenDummyEvent(taskParam, pd);
         return SUCCESS;
     }
@@ -631,8 +631,9 @@ namespace KUNPENG_PMU {
             procTopoList.emplace_back(unique_ptr<ProcTopology, void (*)(ProcTopology*)>(procTopo, FreeProcTopo));
         }
         for (int i = 0; i < pmuTaskAttrHead->numPid; i++) {
+            int masterPid = pmuTaskAttrHead->pidList[i];
             int numChild = 0;
-            int* childTidList = GetChildTid(pmuTaskAttrHead->pidList[i], &numChild);
+            int* childTidList = GetChildTid(masterPid, &numChild);
             if (childTidList == nullptr) {
                 return LIBPERF_ERR_INVALID_PID;
             }
@@ -643,6 +644,7 @@ namespace KUNPENG_PMU {
                     SetWarn(LIBPERF_WARN_FAIL_GET_PROC, "process not found: " + std::to_string(childTidList[j]));
                     continue;
                 }
+                procTopo->isMain = masterPid == procTopo->tid;
                 foundProc = true;
                 DBG_PRINT("Add to proc map: %d\n", childTidList[j]);
                 procTopoList.emplace_back(shared_ptr<ProcTopology>(procTopo, FreeProcTopo));
@@ -720,5 +722,47 @@ namespace KUNPENG_PMU {
             dummyList.erase(pd);
             delete pEvent;
         }
+    }
+
+    int PmuList::InitSymbolRecordModule(const unsigned pd, PmuTaskAttr* taskParam)
+    {
+        SymbolMode symMode = GetSymbolMode(pd);
+        if (symMode == NO_SYMBOL_RESOLVE) {
+            return SUCCESS;
+        }
+
+        if (taskParam->pmuEvt->collectType == COUNTING) {
+            return SUCCESS;
+        }
+
+        SymResolverInit();
+        int ret = SymResolverRecordKernel();
+        if (ret != SUCCESS) {
+            return ret;
+        }
+
+        std::vector<int> pidList = this->ppidList[pd];
+        if (pidList.empty()) {
+            return SUCCESS;
+        }
+
+        if (this->symModeList[pd] == RESOLVE_ELF) {
+            for (const auto& pid: pidList) {
+                int rt = SymResolverRecordModuleNoDwarf(pid);
+                if (rt != SUCCESS) {
+                    return ret;
+                }
+            }
+        }
+
+        if (this->symModeList[pd] == RESOLVE_ELF_DWARF) {
+            for (const auto& pid: pidList) {
+                int rt = SymResolverRecordModule(pid);
+                if (rt != SUCCESS) {
+                    return ret;
+                }
+            }
+        }
+        return SUCCESS;
     }
 }

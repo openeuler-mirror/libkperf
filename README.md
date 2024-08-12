@@ -42,7 +42,7 @@ git submodule update --init --recursive
 运行bash脚本:
 
 ```shell
-bash build.sh installPath=/home/libkperf
+bash build.sh install_path=/home/libkperf
 ```
 
 如上，头文件和库将安装到/home/libkperf输出目录，installPath是可选参数，若没有设置，则默认安装到libkperf下的output目录。
