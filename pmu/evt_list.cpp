@@ -87,6 +87,7 @@ int KUNPENG_PMU::EvtList::Init()
             perfEvt->SetSymbolMode(symMode);
             auto err = perfEvt->Init();
             if (err != SUCCESS) {
+                // The SPE and SAMPLING modes are not changed.
                 if (!perfEvt->IsMainPid()) {
                     hasHappenedErr = true;
                     continue;

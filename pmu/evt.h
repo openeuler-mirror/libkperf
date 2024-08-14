@@ -61,9 +61,12 @@ public:
         return pid;
     }
 
-    bool IsMainPid() const
+    virtual bool IsMainPid() const
     {
-        return this->procMap[pid]->isMain;
+        if (procMap.find(pid) != procMap.end()) {
+            return this->procMap[pid]->isMain;
+        }
+        return true;
     }
 
 protected:

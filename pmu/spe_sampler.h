@@ -47,6 +47,11 @@ namespace KUNPENG_PMU {
 
         int BeginRead() override;
         int EndRead() override;
+
+        bool IsMainPid() const override
+        {
+            return true;
+        };
     private:
         bool SpeExist(int cpu) const;
         void InsertSpeRecords(const int &tid, const std::vector<SpeRecord *> &speRecords, std::vector<PmuData> &data,
