@@ -135,7 +135,7 @@ int CheckFieldArgs(char *data, const string &fieldName) {
     auto evtIt = dEvtMap.find(data);
     if (evtIt == dEvtMap.end()) {
         New(LIBPERF_ERR_INVALID_FIELD_ARGS,
-            "The args data maybe have changed, can't find the event name which it si associated with.");
+            "The args data maybe have changed, can't find the event name which it is associated with.");
         return LIBPERF_ERR_INVALID_FIELD_ARGS;
     }
     auto fieldIt = efMap.find(evtIt->second);

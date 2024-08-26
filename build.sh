@@ -85,7 +85,7 @@ function build_elfin() {
   mkdir build
   cd build
   cmake -DCMAKE_INSTALL_PREFIX=${cmake_target_dir} -DCMAKE_CXX_FLAGS="-fPIC" ..
-  make --silent -j 64
+  make --silent -j ${cpu_core_num}
   cp ./lib64/libdwarf++.a ./lib64/libelf++.a ${cmake_target_dir}
   echo "install log path: $cmake_target_dir"
 }
@@ -93,7 +93,12 @@ function build_elfin() {
 build_libkperf()
 {
     cd $BUILD_DIR
-    cmake -DINCLUDE_TEST=${INCLUDE_TEST} -DPYTHON=${PYTHON} -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DPYTHON_KPERF=${PYTHON_EXE} ..
+    # Remove the PYTHON_KPERF warning
+    if [ -z ${PYTHON_EXE} ];then
+        cmake -DINCLUDE_TEST=${INCLUDE_TEST} -DPYTHON=${PYTHON} -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ..
+    else
+        cmake -DINCLUDE_TEST=${INCLUDE_TEST} -DPYTHON=${PYTHON} -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DPYTHON_KPERF=${PYTHON_EXE} ..
+    fi
     make -j ${cpu_core_num}
     make install
     echo "build libkperf success"
