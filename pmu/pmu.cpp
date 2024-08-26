@@ -151,9 +151,23 @@ static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
         New(LIBPERF_ERR_INVALID_EVTLIST);
         return LIBPERF_ERR_INVALID_EVTLIST;
     }
+    if (collectType == SPE_SAMPLING && attr->evtAttr != nullptr) {
+        New(LIBPERF_ERR_INVALID_GROUP_SPE);
+        return LIBPERF_ERR_INVALID_GROUP_SPE;
+    }
     if (InvalidSampleRate(collectType, attr)) {
         New(LIBPERF_ERR_INVALID_SAMPLE_RATE);
         return LIBPERF_ERR_INVALID_SAMPLE_RATE;
+    }
+
+    if ((collectType == SAMPLING || collectType == COUNTING) && attr->evtAttr == nullptr) {
+        struct EvtAttr *evtAttr = new struct EvtAttr[attr->numEvt];
+        // handle event group id. -1 means that it can`t running event group
+        for (int i = 0; i < attr->numEvt; ++i) {
+            evtAttr[i].group_id = -1;
+        }
+        attr->evtAttr = evtAttr;
+        
     }
 
     return SUCCESS;

@@ -82,6 +82,7 @@ class PmuAttr(_libkperf.PmuAttr):
                  evtList: List[str] = None,
                  pidList: List[int] = None,
                  cpuList: List[int] = None,
+                 evtAttr: CtypesEvtAttr = None,
                  sampleRate: int = 0,
                  useFreq: bool = False,
                  excludeUser: bool = False,
@@ -90,11 +91,13 @@ class PmuAttr(_libkperf.PmuAttr):
                  callStack: bool = False,
                  dataFilter: int = 0,
                  evFilter: int = 0,
-                 minLatency: int = 0) -> None:
+                 minLatency: int = 0,
+                 includeNewFork: bool = False) -> None:
         super().__init__(
             evtList=evtList,
             pidList=pidList,
             cpuList=cpuList,
+            evtAttr=evtAttr.c_evt_attr if evtAttr else None,
             sampleRate=sampleRate,
             useFreq=useFreq,
             excludeUser=excludeUser,
@@ -103,7 +106,8 @@ class PmuAttr(_libkperf.PmuAttr):
             callStack=callStack,
             dataFilter=dataFilter,
             evFilter=evFilter,
-            minLatency=minLatency
+            minLatency=minLatency,
+            includeNewFork=includeNewFork
         )
 
 

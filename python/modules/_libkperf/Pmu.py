@@ -25,7 +25,41 @@ class SampleRateUnion(ctypes.Union):
         ('freq',   ctypes.c_uint)
     ]
 
+class CtypesEvtAttr(ctypes.Structure):
+    """
+    struct EvtAttr {
+        int group_id;
+    };
+    """
+    _fields_ = [('group_id', ctypes.c_int)]
 
+    def __init__(self, group_id: int=0, *args: Any, **kw: Any) -> None:
+        super().__init__(*args, **kw)
+        self.group_id = ctypes.c_int(group_id)
+
+class EvtAttr:
+    __slots__ = ['__c_evt_attr']
+
+    def __init__(self, group_id: int=0) -> None:
+        self.__c_evt_attr = CtypesEvtAttr(group_id)
+
+    @property
+    def c_evt_attr(self) -> CtypesEvtAttr:
+        return self.__c_evt_attr
+    
+    @property
+    def group_id(self) -> int:
+        return self.c_evt_attr.group_id
+    
+    @group_id.setter
+    def group_id(self, group_id: int) -> None:
+        self.c_evt_attr.group_id = ctypes.c_int(group_id)
+
+    @classmethod
+    def from_c_evt_attr(cls, c_evt_attr: CtypesEvtAttr) -> 'EvtAttr':
+        evt_attr = cls()
+        evt_attr.__c_evt_attr = c_evt_attr
+        return evt_attr
 class CtypesPmuAttr(ctypes.Structure):
     """
     struct PmuAttr {
@@ -35,6 +69,8 @@ class CtypesPmuAttr(ctypes.Structure):
         unsigned numPid;                // length of pid list
         int* cpuList;                   // cpu id list
         unsigned numCpu;                // length of cpu id list
+
+        struct EvtAttr *evtAttr;        // events group id info
 
         union {
             unsigned period;            // sample period
@@ -60,6 +96,7 @@ class CtypesPmuAttr(ctypes.Structure):
         ('numPid',        ctypes.c_uint),
         ('cpuList',       ctypes.POINTER(ctypes.c_int)),
         ('numCpu',        ctypes.c_uint),
+        ('evtAttr',       ctypes.POINTER(CtypesEvtAttr)),
         ('sampleRate',    SampleRateUnion),
         ('useFreq',       ctypes.c_bool),
         ('excludeUser',   ctypes.c_bool),
@@ -76,6 +113,7 @@ class CtypesPmuAttr(ctypes.Structure):
                  evtList: List[str]=None,
                  pidList: List[int]=None,
                  cpuList: List[int]=None,
+                 evtAttr: CtypesEvtAttr=None,
                  sampleRate: int=0,
                  useFreq: bool=False,
                  excludeUser: bool=False,
@@ -118,6 +156,8 @@ class CtypesPmuAttr(ctypes.Structure):
         else:
             self.sampleRate.freq = ctypes.c_uint(sampleRate)
 
+        self.evtAttr = evtAttr
+
         self.useFreq = ctypes.c_bool(useFreq)
         self.excludeUser = ctypes.c_bool(excludeUser)
         self.excludeKernel = ctypes.c_bool(excludeKernel)
@@ -137,6 +177,7 @@ class PmuAttr:
                  evtList: List[str]=None,
                  pidList: List[int]=None,
                  cpuList: List[int]=None,
+                 evtAttr: CtypesEvtAttr=None,
                  sampleRate: int=0,
                  useFreq: bool=False,
                  excludeUser: bool=False,
@@ -151,6 +192,7 @@ class PmuAttr:
             evtList=evtList,
             pidList=pidList,
             cpuList=cpuList,
+            evtAttr=evtAttr.c_evt_attr if evtAttr else None,
             sampleRate=sampleRate,
             useFreq=useFreq,
             excludeUser=excludeUser,
@@ -203,6 +245,14 @@ class PmuAttr:
             self.c_pmu_attr.pidList = None
             self.c_pmu_attr.numPid = ctypes.c_uint(0)
 
+    @property
+    def evtAttr(self) -> EvtAttr:
+        return EvtAttr.from_c_evt_attr(self.c_pmu_attr.evtAttr.contents) if self.c_pmu_attr.evtAttr else None
+
+    @evtAttr.setter
+    def evtAttr(self, evtAttr: EvtAttr) -> None:
+        self.c_pmu_attr.evtAttr = evtAttr.c_evt_attr if evtAttr else None
+    
     @property
     def numCpu(self) -> int:
         return self.c_pmu_attr.numCpu
@@ -572,6 +622,7 @@ class CtypesPmuData(ctypes.Structure):
         const char *comm;               // process command
         uint64_t period;                     // number of Samples
         uint64_t count;                 // event count. Only available for Counting.
+        double countPercent;              // event count percent. Only avaliable for Counting.
         struct PmuDataExt *ext;         // extension. Only available for Spe.
     };
     """
@@ -587,6 +638,7 @@ class CtypesPmuData(ctypes.Structure):
         ('comm',    ctypes.c_char_p),
         ('period',  ctypes.c_int),
         ('count',   ctypes.c_uint64),
+        ('countPercent', ctypes.c_double),
         ('ext',     ctypes.POINTER(CtypesPmuDataExt)),
         ('rawData', ctypes.POINTER(CtypesSampleRawData))
     ]
@@ -602,6 +654,7 @@ class CtypesPmuData(ctypes.Structure):
                  comm: str='',
                  period: int=0,
                  count: int=0,
+                 countPercent: double=0,
                  ext: CtypesPmuDataExt=None,
                  rawData: CtypesSampleRawData=None,
                  *args: Any, **kw: Any) -> None:
@@ -617,6 +670,7 @@ class CtypesPmuData(ctypes.Structure):
         self.comm = ctypes.c_char_p(comm.encode(UTF_8))
         self.period = ctypes.c_int(period)
         self.count = ctypes.c_uint64(count)
+        self.countPercent = ctypes.c_double(countPercent)
         self.ext = ext
         self.rawData = rawData
 
@@ -635,6 +689,7 @@ class ImplPmuData:
                  comm: str='',
                  period: int=0,
                  count: int=0,
+                 countPercent: double=0,
                  ext: PmuDataExt=None,
                  rawData: SampleRawData=None) -> None:
         self.__c_pmu_data = CtypesPmuData(
@@ -648,6 +703,7 @@ class ImplPmuData:
             comm=comm,
             period=period,
             count=count,
+            countPercent=countPercent,
             ext=ext.c_pmu_data_ext if ext else None,
             rawData=rawData.c_pmu_data_rawData if rawData else None
         )
@@ -736,6 +792,14 @@ class ImplPmuData:
     def count(self, count: int) -> None:
         self.c_pmu_data.count = ctypes.c_uint64(count)
 
+    @property
+    def countPercent(self) -> double:
+        return self.c_pmu_data.countPercent
+    
+    @countPercent.setter
+    def countPercent(self, countPercent: double) -> None:
+        self.c_pmu_data.countPercent = ctypes.c_double(countPercent)
+        
     @property
     def ext(self) -> PmuDataExt:
         return PmuDataExt.from_pmu_data_ext(self.c_pmu_data.ext.contents) if self.c_pmu_data.ext else None
