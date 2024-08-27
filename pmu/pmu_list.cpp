@@ -26,6 +26,7 @@
 #include "trace_pointer_parser.h"
 #include "pmu_event_list.h"
 #include "pmu_list.h"
+#include "pfm_event.h"
 
 using namespace std;
 using namespace pcerr;
@@ -35,6 +36,21 @@ namespace KUNPENG_PMU {
     std::mutex PmuList::pmuListMtx;
     std::mutex PmuList::dataListMtx;
     std::mutex PmuList::dataParentMtx;
+
+    struct EventGroupInfo {
+        // store group_id and event group leader info
+        std::unordered_map<int, std::shared_ptr<EvtList>> evtLeaderList;
+        // store group_id and event group child events info
+        std::unordered_map<int, std::vector<std::shared_ptr<EvtList>>> evtGroupChildList;
+        // store group_id and event group child events state flag info
+        /* event group child state explain:
+         * the first bool is hasuncore child event flag; the second bool is onlyuncore child event flag;
+         * if evtGroupChildFlag is <false, true>, the event group is onlyuncore event group;
+         * if evtGroupChildFlag is <true, false>, the event group is hasuncore event group;
+         * if evtGroupChildFlag is <false, false>, the event group is notuncore event group;
+        */
+       std::unordered_map<int, std::pair<bool, bool>> evtGroupChildFlag;  
+    };
 
     int PmuList::CheckRlimit(const unsigned fdNum)
     {
@@ -88,7 +104,7 @@ namespace KUNPENG_PMU {
             }
             fdNum += CalRequireFd(cpuTopoList.size(), procTopoList.size(), taskParam->pmuEvt->collectType);
             std::shared_ptr<EvtList> evtList =
-                    std::make_shared<EvtList>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt);
+                    std::make_shared<EvtList>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt, pmuTaskAttrHead->group_id);
             InsertEvtList(pd, evtList);
             pmuTaskAttrHead = pmuTaskAttrHead->next;
         }
@@ -98,17 +114,76 @@ namespace KUNPENG_PMU {
             return err;
         }
 
-        for (auto evtList: GetEvtList(pd)) {
-            auto err = evtList->Init();
-            if (err != SUCCESS) {
-                return err;
+        err = Init(pd);
+        if (err != SUCCESS)
+        {
+            return err;
+        }
+        
+        this->OpenDummyEvent(taskParam, pd);
+        return SUCCESS;
+    }
+    
+    int PmuList::EvtInit(const bool groupFlag, const std::shared_ptr<EvtList> evtLeader, const int pd, const std::shared_ptr<EvtList> &evtList)
+    {
+        auto err = evtList->Init(groupFlag, evtLeader);
+        if (err != SUCCESS) {
+            return err;
+        }
+
+        err = AddToEpollFd(pd, evtList);
+        if (err != SUCCESS) {
+            return err;
+        }
+
+        return SUCCESS;
+    }
+
+    int PmuList::Init(const int pd)
+    {
+        struct EventGroupInfo eventGroupInfo;
+        for (auto& evtList : GetEvtList(pd)) {
+            if (evtList->GetGroupId() == -1) {
+                auto err = EvtInit(false, nullptr, pd, evtList);
+                if (err != SUCCESS) {
+                    return err;
+                }
+                continue;
+            } 
+            if (eventGroupInfo.evtLeaderList.find(evtList->GetGroupId()) == eventGroupInfo.evtLeaderList.end()) {
+                auto err = EvtInit(false, nullptr, pd, evtList);
+                if (err != SUCCESS) {
+                    return err;
+                }
+                eventGroupInfo.evtLeaderList[evtList->GetGroupId()] = evtList;
+                eventGroupInfo.evtGroupChildFlag[evtList->GetGroupId()] = {false, true};
+            } else {
+                eventGroupInfo.evtGroupChildList[evtList->GetGroupId()].push_back(evtList);
             }
-            err = AddToEpollFd(pd, evtList);
-            if (err != SUCCESS) {
-                return err;
+            if (evtList->GetPmuType() == UNCORE_TYPE || evtList->GetPmuType() == UNCORE_RAW_TYPE) {
+                eventGroupInfo.evtGroupChildFlag[evtList->GetGroupId()].first = true;
+            } else {
+                eventGroupInfo.evtGroupChildFlag[evtList->GetGroupId()].second = false;
             }
         }
-        this->OpenDummyEvent(taskParam, pd);
+        // handle the event group child event Init
+        for (auto evtGroup : eventGroupInfo.evtGroupChildList) {
+            for (auto evtChild : evtGroup.second) {
+                if (eventGroupInfo.evtGroupChildFlag[evtChild->GetGroupId()].second) {
+                    return LIBPERF_ERR_INVALID_GROUP_ALL_UNCORE;
+                }
+                int err = 0;
+                if (eventGroupInfo.evtGroupChildFlag[evtChild->GetGroupId()].first) {
+                    SetWarn(LIBKPERF_WRANG_INVALID_GROUP_HAS_UNCORE);
+                    err = EvtInit(false, nullptr, pd, evtChild);
+                } else {
+                    err = EvtInit(true, eventGroupInfo.evtLeaderList[evtChild->GetGroupId()], pd, evtChild);
+                }
+                if (err != SUCCESS) {
+                    return err;
+                }
+            }
+        }
         return SUCCESS;
     }
 
@@ -395,13 +470,7 @@ namespace KUNPENG_PMU {
             newEvData.push_back(evtData.second);
         }
     }
-
-
-    bool comparePmuData(const PmuData& data1, const PmuData& data2)
-    {
-        return strcmp(data1.evt, data2.evt) < 0;
-    }
-
+    
     void PmuList::AggregateUncoreData(const unsigned pd, const vector<PmuData>& evData, vector<PmuData>& newEvData)
     {
         // One count for same parent according to parentEventMap.
@@ -410,6 +479,12 @@ namespace KUNPENG_PMU {
         for (auto& pmuData: evData) {
             auto parentName = parentMap.at(pmuData.evt);
             if (strcmp(parentName, pmuData.evt) == 0) {
+                // collect aggregate event by order, when aggregate event is the middle of eventList
+                if (dataMap.size() == 1) {
+                    auto it = dataMap.begin();
+                    newEvData.emplace_back(it->second);
+                    dataMap.erase(it);
+                }
                 // event was not split
                 newEvData.emplace_back(pmuData);
                 continue;
@@ -424,10 +499,12 @@ namespace KUNPENG_PMU {
                 dataMap.at(parentMap.at(pmuData.evt)).count += pmuData.count;
             }
         }
-        for (const auto& pair: dataMap) {
-            newEvData.emplace_back(pair.second);
+        // if aggregate event is the last event in eventList
+        if (dataMap.size() == 1) {
+            auto it = dataMap.begin();
+            newEvData.emplace_back(it->second);
+            dataMap.erase(it);
         }
-        std::sort(newEvData.begin(), newEvData.end(), comparePmuData);
     }
 
     vector<PmuData>& PmuList::ExchangeToUserData(const unsigned pd)

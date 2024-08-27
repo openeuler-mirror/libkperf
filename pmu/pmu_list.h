@@ -33,6 +33,9 @@ struct PmuTaskAttr {
     int* pidList;                   // list of pids(tids) to be collected
                                     // list length has to be as the same as numPid
     std::shared_ptr<PmuEvt> pmuEvt;     // which pmu to be collected
+
+    int group_id;                   // event group id
+    
     struct PmuTaskAttr* next;       // next task attribute
 };
 
@@ -93,6 +96,9 @@ private:
     std::vector<std::shared_ptr<EvtList>>& GetEvtList(const unsigned pd);
     void EraseEvtList(const unsigned pd);
     void EraseParentEventMap();
+
+    int EvtInit(const bool groupFlag, const std::shared_ptr<EvtList> evtLeader, const int pd, const std::shared_ptr<EvtList> &evtList);
+    int Init(const int pd);
 
     EventData& GetDataList(const unsigned pd);
     void EraseDataList(const unsigned pd);

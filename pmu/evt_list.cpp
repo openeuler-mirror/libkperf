@@ -45,7 +45,7 @@ int KUNPENG_PMU::EvtList::CollectorDoTask(PerfEvtPtr collector, int task)
             return ret;
         }
         case INIT:
-            return collector->Init();
+            return collector->Init(false, -1); // perf_event_open Init don't group events
         default:
             return UNKNOWN_ERROR;
     }
@@ -67,7 +67,7 @@ int KUNPENG_PMU::EvtList::CollectorXYArrayDoTask(std::vector<std::vector<PerfEvt
     return SUCCESS;
 }
 
-int KUNPENG_PMU::EvtList::Init()
+int KUNPENG_PMU::EvtList::Init(const bool groupFlag, const std::shared_ptr<EvtList> evtLeader)
 {
     // Init process map.
     for (auto& proc: pidList) {
@@ -85,7 +85,12 @@ int KUNPENG_PMU::EvtList::Init()
                 continue;
             }
             perfEvt->SetSymbolMode(symMode);
-            auto err = perfEvt->Init();
+            int err = 0;
+            if (groupFlag) {
+                err = perfEvt->Init(groupFlag, evtLeader->xyCounterArray[row][col]->GetFd());
+            } else {
+                err = perfEvt->Init(groupFlag, -1);
+            }
             if (err != SUCCESS) {
                 // The SPE and SAMPLING modes are not changed.
                 if (!perfEvt->IsMainPid()) {

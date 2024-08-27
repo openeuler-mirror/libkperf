@@ -173,6 +173,30 @@ static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
     return SUCCESS;
 }
 
+static bool FreeEvtAttr(struct PmuAttr *attr)
+{
+    if (attr->evtAttr == nullptr) {
+        return SUCCESS;
+    }
+    bool flag = false;
+    int notGroupId = -1;
+    for (int i = 0; i < attr->numEvt; ++i) {
+        if (attr->evtAttr[i].group_id != notGroupId ) {
+            flag = true;
+            break;
+        }
+    }
+
+    // handle the new group id array space
+    if (flag) {
+        return SUCCESS;
+    } else {
+        delete[] attr->evtAttr;
+        attr->evtAttr = nullptr;
+        return SUCCESS;
+    }
+}
+
 static bool AppendChildEvents(char* evt, unordered_map<string, char*>& eventSplitMap)
 {
     string strName(evt);
@@ -234,11 +258,28 @@ static bool SplitUncoreEvent(struct PmuAttr *attr, unordered_map<string, char*> 
     return true;
 }
 
-static unsigned GenerateSplitList(unordered_map<string, char*>& eventSplitMap, vector<char*> &newEvtlist)
+static unsigned GenerateSplitList(unordered_map<string, char*>& eventSplitMap, vector<char*> &newEvtlist, const struct PmuAttr *attr, vector<struct EvtAttr> &newEvtAttrList)
 {
-    // append child event
-    for (auto& event : eventSplitMap) {
-        newEvtlist.push_back(const_cast<char*>(event.first.c_str()));
+    // according to the origin eventList, generate the new eventList and new eventAttrList
+    for (int i = 0; i < attr->numEvt; ++i) {
+        auto evt = attr->evtList[i];
+        auto evtAttr = attr->evtAttr[i];
+
+        // If the event is not in the split list, it means that it is not a child event of the aggregate event
+        // and direct add events to the new eventList and new eventAttrList
+        if (eventSplitMap.find(evt) != eventSplitMap.end()) {
+            newEvtlist.push_back(evt);
+            newEvtAttrList.push_back(evtAttr);
+        } else {
+            // If the event is in the split list, it means that it is a child event of the aggregate event
+            // and add the all child events of the aggregate event to the new eventList and new eventAttrList
+            for (auto &aggregtaChildEvt : eventSplitMap) {
+                if (strcmp(evt, aggregtaChildEvt.second) == 0) {
+                    newEvtlist.push_back(const_cast<char*>(aggregtaChildEvt.first.c_str()));
+                    newEvtAttrList.push_back(evtAttr);
+                }
+            }
+        }
     }
     return newEvtlist.size();
 }
@@ -275,8 +316,12 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
         }
         auto previousEventList = make_pair(attr->numEvt, attr->evtList);
         vector<char*> newEvtlist;
-        attr->numEvt = GenerateSplitList(eventSplitMap, newEvtlist);
+        vector<struct EvtAttr> newEvtAttrList;
+        auto numEvt = GenerateSplitList(eventSplitMap, newEvtlist, attr, newEvtAttrList);
+        FreeEvtAttr(attr);
+        attr->numEvt = numEvt;
         attr->evtList = newEvtlist.data();
+        attr->evtAttr = newEvtAttrList.data();
 
         auto pTaskAttr = AssignPmuTaskParam(collectType, attr);
         if (pTaskAttr == nullptr) {
@@ -636,7 +681,7 @@ static void PrepareCpuList(PmuAttr *attr, PmuTaskAttr *taskParam, PmuEvt* pmuEvt
     }
 }
 
-static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *attr, const char* name)
+static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *attr, const char* name, const int group_id)
 {
     unique_ptr<PmuTaskAttr, void (*)(PmuTaskAttr*)> taskParam(CreateNode<struct PmuTaskAttr>(), PmuTaskAttrFree);
     /**
@@ -666,6 +711,8 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
      */
     PrepareCpuList(attr, taskParam.get(), pmuEvt);
 
+    taskParam->group_id = group_id;
+
     taskParam->pmuEvt = shared_ptr<PmuEvt>(pmuEvt, PmuEvtFree);
     taskParam->pmuEvt->useFreq = attr->useFreq;
     taskParam->pmuEvt->period = attr->period;
@@ -681,11 +728,11 @@ struct PmuTaskAttr* AssignPmuTaskParam(enum PmuTaskType collectType, struct PmuA
     struct PmuTaskAttr* taskParam = nullptr;
     if (collectType == SPE_SAMPLING) {
         // evtList is nullptr, cannot loop over evtList.
-        taskParam = AssignTaskParam(collectType, attr, nullptr);
+        taskParam = AssignTaskParam(collectType, attr, nullptr, 0);
         return taskParam;
     }
     for (int i = 0; i < attr->numEvt; i++) {
-        struct PmuTaskAttr* current = AssignTaskParam(collectType, attr, attr->evtList[i]);
+        struct PmuTaskAttr* current = AssignTaskParam(collectType, attr, attr->evtList[i], attr->evtAttr[i].group_id);
         if (current == nullptr) {
             return nullptr;
         }

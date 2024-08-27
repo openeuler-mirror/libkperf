@@ -47,8 +47,8 @@ public:
     using ProcPtr = std::shared_ptr<ProcTopology>;
     using CpuPtr = std::shared_ptr<CpuTopology>;
     EvtList(const SymbolMode& symbolMode, std::vector<CpuPtr>& cpuList, std::vector<ProcPtr>& pidList,
-            std::shared_ptr<PmuEvt> pmuEvt)
-        : symMode(symbolMode), cpuList(cpuList), pidList(pidList), pmuEvt(pmuEvt)
+            std::shared_ptr<PmuEvt> pmuEvt, const int group_id)
+        : symMode(symbolMode), cpuList(cpuList), pidList(pidList), pmuEvt(pmuEvt), group_id(group_id)
     {
         this->numCpu = this->cpuList.size();
         this->numPid = this->pidList.size();
@@ -79,6 +79,16 @@ public:
         return pmuEvt->collectType;
     }
 
+    int GetPmuType() const
+    {
+        return pmuEvt->pmuType;
+    }
+
+    int GetGroupId() const
+    {
+        return group_id;
+    }
+
     void AddNewProcess(pid_t pid);
     void ClearExitFd();
 private:
@@ -92,6 +102,7 @@ private:
     std::vector<CpuPtr> cpuList;
     std::vector<ProcPtr> pidList;
     std::shared_ptr<PmuEvt> pmuEvt;
+    int group_id; // event group id
     std::vector<std::vector<std::shared_ptr<PerfEvt>>> xyCounterArray;
     std::shared_ptr<PerfEvt> MapPmuAttr(int cpu, int pid, PmuEvt* pmuEvent);
     unsigned int numCpu = 0;
