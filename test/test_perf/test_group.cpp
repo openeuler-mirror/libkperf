@@ -8,9 +8,9 @@
  * IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR
  * PURPOSE.
  * See the Mulan PSL v2 for more details.
- * Author: Mr.Gan
- * Create: 2024-04-24
- * Description: Unit tests for api functions.
+ * Author: Mr.Lei
+ * Create: 2024-08-27
+ * Description: Unit tests for event group functions.
  ******************************************************************************/
 #include "test_common.h"
 
