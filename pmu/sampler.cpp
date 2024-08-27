@@ -257,7 +257,6 @@ int KUNPENG_PMU::PerfSampler::Read(vector<PmuData> &data, std::vector<PerfSample
 }
 
 int KUNPENG_PMU::PerfSampler::Init(const bool groupFlag, const int groupFd)
-int KUNPENG_PMU::PerfSampler::Init(const bool groupFlag, const int groupFd)
 {
     auto err = this->MapPerfAttr(groupFlag, groupFd);
     if (err != SUCCESS) {
