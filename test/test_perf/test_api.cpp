@@ -600,5 +600,5 @@ TEST_F(TestAPI, TestSPEEventGroup)
     struct EvtAttr groupId[numEvt] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13, 13, 13};
     attr.evtAttr = groupId;
     pd = PmuOpen(SPE_SAMPLING, &attr);
-    ASSERT_TURE(pd == -1);
+    ASSERT_TRUE(pd == -1);
 }  

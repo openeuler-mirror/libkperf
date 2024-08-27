@@ -55,7 +55,7 @@ public:
         this->prevStat = OPEN;
         this->evtStat = OPEN;
     }
-    int Init();
+    int Init(const bool groupFlag, const std::shared_ptr<EvtList> evtLeader);
     int Pause();
     int Close();
     int Start();

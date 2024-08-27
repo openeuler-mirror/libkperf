@@ -236,7 +236,7 @@ void KUNPENG_PMU::EvtList::AddNewProcess(pid_t pid)
             return;
         }
         perfEvt->SetSymbolMode(symMode);
-        auto err = perfEvt->Init();
+        auto err = perfEvt->Init(false, -1); // default Init NewProcess
         if (err != SUCCESS) {
             return;
         }

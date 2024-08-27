@@ -27,6 +27,7 @@
 #include "pmu_event_list.h"
 #include "pmu_list.h"
 #include "pfm_event.h"
+#include "pfm_event.h"
 
 using namespace std;
 using namespace pcerr;
@@ -36,6 +37,21 @@ namespace KUNPENG_PMU {
     std::mutex PmuList::pmuListMtx;
     std::mutex PmuList::dataListMtx;
     std::mutex PmuList::dataParentMtx;
+
+    struct EventGroupInfo {
+        // store group_id and event group leader info
+        std::unordered_map<int, std::shared_ptr<EvtList>> evtLeaderList;
+        // store group_id and event group child events info
+        std::unordered_map<int, std::vector<std::shared_ptr<EvtList>>> evtGroupChildList;
+        // store group_id and event group child events state flag info
+        /* event group child state explain:
+         * the first bool is hasuncore child event flag; the second bool is onlyuncore child event flag;
+         * if evtGroupChildFlag is <false, true>, the event group is onlyuncore event group;
+         * if evtGroupChildFlag is <true, false>, the event group is hasuncore event group;
+         * if evtGroupChildFlag is <false, false>, the event group is notuncore event group;
+        */
+       std::unordered_map<int, std::pair<bool, bool>> evtGroupChildFlag;  
+    };
 
     struct EventGroupInfo {
         // store group_id and event group leader info
@@ -104,6 +120,7 @@ namespace KUNPENG_PMU {
             }
             fdNum += CalRequireFd(cpuTopoList.size(), procTopoList.size(), taskParam->pmuEvt->collectType);
             std::shared_ptr<EvtList> evtList =
+                    std::make_shared<EvtList>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt, pmuTaskAttrHead->group_id);
                     std::make_shared<EvtList>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt, pmuTaskAttrHead->group_id);
             InsertEvtList(pd, evtList);
             pmuTaskAttrHead = pmuTaskAttrHead->next;
@@ -174,7 +191,7 @@ namespace KUNPENG_PMU {
                 }
                 int err = 0;
                 if (eventGroupInfo.evtGroupChildFlag[evtChild->GetGroupId()].first) {
-                    SetWarn(LIBKPERF_WRANG_INVALID_GROUP_HAS_UNCORE);
+                    SetWarn(LIBPERF_WARN_INVALID_GROUP_HAS_UNCORE);
                     err = EvtInit(false, nullptr, pd, evtChild);
                 } else {
                     err = EvtInit(true, eventGroupInfo.evtLeaderList[evtChild->GetGroupId()], pd, evtChild);
@@ -471,6 +488,7 @@ namespace KUNPENG_PMU {
         }
     }
     
+    
     void PmuList::AggregateUncoreData(const unsigned pd, const vector<PmuData>& evData, vector<PmuData>& newEvData)
     {
         // One count for same parent according to parentEventMap.
@@ -479,6 +497,12 @@ namespace KUNPENG_PMU {
         for (auto& pmuData: evData) {
             auto parentName = parentMap.at(pmuData.evt);
             if (strcmp(parentName, pmuData.evt) == 0) {
+                // collect aggregate event by order, when aggregate event is the middle of eventList
+                if (dataMap.size() == 1) {
+                    auto it = dataMap.begin();
+                    newEvData.emplace_back(it->second);
+                    dataMap.erase(it);
+                }
                 // collect aggregate event by order, when aggregate event is the middle of eventList
                 if (dataMap.size() == 1) {
                     auto it = dataMap.begin();
@@ -498,6 +522,12 @@ namespace KUNPENG_PMU {
             } else {
                 dataMap.at(parentMap.at(pmuData.evt)).count += pmuData.count;
             }
+        }
+        // if aggregate event is the last event in eventList
+        if (dataMap.size() == 1) {
+            auto it = dataMap.begin();
+            newEvData.emplace_back(it->second);
+            dataMap.erase(it);
         }
         // if aggregate event is the last event in eventList
         if (dataMap.size() == 1) {
