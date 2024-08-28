@@ -53,21 +53,6 @@ namespace KUNPENG_PMU {
        std::unordered_map<int, std::pair<bool, bool>> evtGroupChildFlag;  
     };
 
-    struct EventGroupInfo {
-        // store group_id and event group leader info
-        std::unordered_map<int, std::shared_ptr<EvtList>> evtLeaderList;
-        // store group_id and event group child events info
-        std::unordered_map<int, std::vector<std::shared_ptr<EvtList>>> evtGroupChildList;
-        // store group_id and event group child events state flag info
-        /* event group child state explain:
-         * the first bool is hasuncore child event flag; the second bool is onlyuncore child event flag;
-         * if evtGroupChildFlag is <false, true>, the event group is onlyuncore event group;
-         * if evtGroupChildFlag is <true, false>, the event group is hasuncore event group;
-         * if evtGroupChildFlag is <false, false>, the event group is notuncore event group;
-        */
-       std::unordered_map<int, std::pair<bool, bool>> evtGroupChildFlag;  
-    };
-
     int PmuList::CheckRlimit(const unsigned fdNum)
     {
         return RaiseNumFd(fdNum);
