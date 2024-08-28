@@ -27,7 +27,6 @@
 #include "pmu_event_list.h"
 #include "pmu_list.h"
 #include "pfm_event.h"
-#include "pfm_event.h"
 
 using namespace std;
 using namespace pcerr;
@@ -105,7 +104,6 @@ namespace KUNPENG_PMU {
             }
             fdNum += CalRequireFd(cpuTopoList.size(), procTopoList.size(), taskParam->pmuEvt->collectType);
             std::shared_ptr<EvtList> evtList =
-                    std::make_shared<EvtList>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt, pmuTaskAttrHead->group_id);
                     std::make_shared<EvtList>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt, pmuTaskAttrHead->group_id);
             InsertEvtList(pd, evtList);
             pmuTaskAttrHead = pmuTaskAttrHead->next;
@@ -479,6 +477,7 @@ namespace KUNPENG_PMU {
         // One count for same parent according to parentEventMap.
         auto parentMap = parentEventMap.at(pd);
         unordered_map<string, PmuData> dataMap;
+        vector<string> dataMapKeys;
         for (auto& pmuData: evData) {
             auto parentName = parentMap.at(pmuData.evt);
             if (strcmp(parentName, pmuData.evt) == 0) {
@@ -487,12 +486,7 @@ namespace KUNPENG_PMU {
                     auto it = dataMap.begin();
                     newEvData.emplace_back(it->second);
                     dataMap.erase(it);
-                }
-                // collect aggregate event by order, when aggregate event is the middle of eventList
-                if (dataMap.size() == 1) {
-                    auto it = dataMap.begin();
-                    newEvData.emplace_back(it->second);
-                    dataMap.erase(it);
+                    dataMapKeys.clear();
                 }
                 // event was not split
                 newEvData.emplace_back(pmuData);
@@ -504,21 +498,14 @@ namespace KUNPENG_PMU {
                 dataMap[parentName].evt = parentMap.at(pmuData.evt);
                 dataMap[parentName].cpu = 0;
                 dataMap[parentName].cpuTopo = nullptr;
+                dataMapKeys.push_back(parentName);
             } else {
                 dataMap.at(parentMap.at(pmuData.evt)).count += pmuData.count;
             }
         }
         // if aggregate event is the last event in eventList
-        if (dataMap.size() == 1) {
-            auto it = dataMap.begin();
-            newEvData.emplace_back(it->second);
-            dataMap.erase(it);
-        }
-        // if aggregate event is the last event in eventList
-        if (dataMap.size() == 1) {
-            auto it = dataMap.begin();
-            newEvData.emplace_back(it->second);
-            dataMap.erase(it);
+        for (auto& key: dataMapKeys) {
+            newEvData.emplace_back(dataMap.at(key));
         }
     }
 
