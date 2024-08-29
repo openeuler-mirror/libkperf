@@ -12,6 +12,7 @@
  * Create: 2024-08-27
  * Description: Unit tests for event group functions.
  ******************************************************************************/
+
 #include "test_common.h"
 
 using namespace std;
@@ -218,7 +219,7 @@ TEST_F(TestGroup, TestCountingEventGroupHasAggregateUncoreEnd2)
                             "hisi_sccl1_ddrc/flux_rd/", "hisi_sccl1_hha/rx_wbi/"};
     attr.evtList = evtList;
 
-    struct EvtAttr groupId[numEvt] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13};
+    struct EvtAttr groupId[numEvt] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13, 13};
     attr.evtAttr = groupId;
     int pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd != -1);
