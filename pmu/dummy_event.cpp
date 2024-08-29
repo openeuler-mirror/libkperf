@@ -42,6 +42,24 @@ namespace KUNPENG_PMU {
         }
     }
 
+    std::pair<bool, std::shared_ptr<EvtList>> DummyEvent::GetEvtGroupState(const int groupId, std::shared_ptr<EvtList> evtList, groupMapPtr eventGroupInfoMap)
+    {
+        if (groupId == -1 || eventGroupInfoMap == nullptr) {
+            return std::make_pair(false, nullptr);
+        }
+        // if the event is the event group leader, initialize it in the default way.
+        if (evtList == (*eventGroupInfoMap)[groupId].evtLeader) {
+            return std::make_pair(false, nullptr);
+        } else {
+            // In this case, the event group contains only some uncore events or all other events.
+            if ((*eventGroupInfoMap)[groupId].evtGroupState.first) {
+                return std::make_pair(false, nullptr);
+            } else {
+                return std::make_pair(true, (*eventGroupInfoMap)[groupId].evtLeader);
+            }
+        }
+    }
+
     void DummyEvent::ObserverForkThread()
     {
         dummyThread = std::thread([this]() {
@@ -60,8 +78,10 @@ namespace KUNPENG_PMU {
                 }
                 auto& pid = forkPidQueue.front();
                 for (const auto& evtList: evtLists) {
-                    DummyContext ctx = {evtList, static_cast<pid_t>(pid)};
-                    forkStrategy.DoHandler(ctx);
+                    auto groupId = evtList->GetGroupId();
+                    auto evtGroupInfo = GetEvtGroupState(groupId, evtList, eventGroupInfoMap);
+                    DummyContext ctx = {evtList, static_cast<pid_t>(pid), evtGroupInfo.first, evtGroupInfo.second};
+                    forkStrategy.DoHandler(ctx, evtGroupInfo.first, evtGroupInfo.second);
                 }
                 std::lock_guard<std::mutex> lg(dummyMutex);
                 forkPidQueue.pop();

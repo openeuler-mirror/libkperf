@@ -162,7 +162,7 @@ static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
 
     if ((collectType == SAMPLING || collectType == COUNTING) && attr->evtAttr == nullptr) {
         struct EvtAttr *evtAttr = new struct EvtAttr[attr->numEvt];
-        // handle event group id. -1 means that it can`t running event group
+        // handle event group id. -1 means that it doesn't run event group feature.
         for (int i = 0; i < attr->numEvt; ++i) {
             evtAttr[i].group_id = -1;
         }
@@ -187,14 +187,13 @@ static bool FreeEvtAttr(struct PmuAttr *attr)
         }
     }
 
-    // handle the new group id array space
-    if (flag) {
-        return SUCCESS;
-    } else {
+    // when the values of group_id are all -1, the applied memory is released.
+    if (!flag) {
         delete[] attr->evtAttr;
         attr->evtAttr = nullptr;
-        return SUCCESS;
     }
+
+    return SUCCESS;
 }
 
 static bool AppendChildEvents(char* evt, unordered_map<string, char*>& eventSplitMap)
@@ -265,7 +264,7 @@ static unsigned GenerateSplitList(unordered_map<string, char*>& eventSplitMap, v
         auto evt = attr->evtList[i];
         auto evtAttr = attr->evtAttr[i];
 
-        // If the event is not in the split list, it means that it is not a child event of the aggregate event
+        // If the event is in the split list, it means that it is not a child event of the aggregate event
         // and direct add events to the new eventList and new eventAttrList
         if (eventSplitMap.find(evt) != eventSplitMap.end()) {
             newEvtlist.push_back(evt);

@@ -46,7 +46,7 @@ static inline bool IsPowerOfTwo(T x)
     return (x) != 0 && (((x) & ((x) - 1)) == 0);
 }
 
-int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupFlag, const int groupFd)
+int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupEnable, const int groupFd)
 {
     struct perf_event_attr attr;
     memset(&attr, 0, sizeof(attr));
@@ -71,7 +71,7 @@ int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupFlag, const int groupF
     attr.exclude_guest = 1;
 
     // if exist event group, adapte the child events config parameters
-    if (groupFlag) {
+    if (groupEnable) {
         attr.pinned = 0;
         attr.disabled = 0;
     }        
@@ -256,9 +256,9 @@ int KUNPENG_PMU::PerfSampler::Read(vector<PmuData> &data, std::vector<PerfSample
     return SUCCESS;
 }
 
-int KUNPENG_PMU::PerfSampler::Init(const bool groupFlag, const int groupFd)
+int KUNPENG_PMU::PerfSampler::Init(const bool groupEnable, const int groupFd)
 {
-    auto err = this->MapPerfAttr(groupFlag, groupFd);
+    auto err = this->MapPerfAttr(groupEnable, groupFd);
     if (err != SUCCESS) {
         return err;
     }

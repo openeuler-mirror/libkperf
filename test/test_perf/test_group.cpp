@@ -208,6 +208,29 @@ TEST_F(TestGroup, TestCountingEventGroupHasAggregateUncoreEnd)
     ASSERT_TRUE(CheckDataEventList(data, len, evtList));
 }
 
+TEST_F(TestGroup, TestCountingEventGroupHasAggregateUncoreEnd2)
+{
+    auto attr = GetPmuAttribute();
+    unsigned numEvt = 15;
+    attr.numEvt = numEvt;
+    char *evtList[numEvt] = {"r3", "r1", "r14", "r4", "r12", "r5", "r25", "r2",
+                            "r26", "r2d", "r17", "r11", "r22",
+                            "hisi_sccl1_ddrc/flux_rd/", "hisi_sccl1_hha/rx_wbi/"};
+    attr.evtList = evtList;
+
+    struct EvtAttr groupId[numEvt] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13};
+    attr.evtAttr = groupId;
+    int pd = PmuOpen(COUNTING, &attr);
+    ASSERT_TRUE(pd != -1);
+    int ret = PmuCollect(pd, 100, collectInterval);
+    ASSERT_EQ(ret, SUCCESS);
+
+    int len = PmuRead(pd, &data);
+    EXPECT_TRUE(data != nullptr);
+    ASSERT_EQ(len, numEvt);
+    ASSERT_TRUE(CheckDataEventList(data, len, evtList));
+}
+
 TEST_F(TestGroup, TestCountingEventGroupAllAggregateUncore)
 {
     auto attr = GetPmuAttribute();
@@ -310,4 +333,40 @@ TEST_F(TestGroup, TestSamplingEventGroupHasUncore)
 
     int pd = PmuOpen(SAMPLING, &attr);
     ASSERT_TRUE(pd == -1);
+}
+
+TEST_F(TestGroup, TestEvtGroupForkNewThread)
+{
+    auto attr = GetPmuAttribute();
+    unsigned numEvt = 2;
+    attr.numEvt = numEvt;
+    char *evtList[numEvt] = {"r11", "r3"};
+    attr.evtList = evtList;
+    
+    auto pid = RunTestApp("test_new_fork");
+    attr.pidList[0] = pid;
+    attr.numPid = 1;
+    attr.includeNewFork = 1;
+    struct EvtAttr groupId[numEvt] = {2, 2};
+    attr.evtAttr = groupId;
+
+    int pd = PmuOpen(COUNTING, &attr);
+    ASSERT_TRUE(pd != -1);
+    int ret = PmuCollect(pd, 10000, collectInterval);
+    ASSERT_EQ(ret, SUCCESS);
+    int len = PmuRead(pd, &data);
+    EXPECT_TRUE(data != nullptr);
+    ASSERT_EQ(len, 5 * 2);
+
+    PmuEnable(pd);
+    sleep(3);
+    PmuDisable(pd);
+
+    len = PmuRead(pd, &data);
+    EXPECT_TRUE(data != nullptr);
+    ASSERT_EQ(len, 2);
+    ASSERT_TRUE(CheckDataEventList(data, len, evtList));
+
+    PmuClose(pd);
+    kill(pid, SIGTERM);
 }

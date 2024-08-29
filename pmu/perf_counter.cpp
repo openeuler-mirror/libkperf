@@ -74,7 +74,7 @@ int KUNPENG_PMU::PerfCounter::Read(vector<PmuData> &data, std::vector<PerfSample
     data.emplace_back(PmuData{0});
     auto& current = data.back();
     current.count = increCount;
-    current.countPercent = 1.0/percent; 
+    current.countPercent = 1.0 / percent; 
     current.cpu = static_cast<unsigned>(this->cpu);
     current.tid = this->pid;
     auto findProc = procMap.find(current.tid);
@@ -87,12 +87,12 @@ int KUNPENG_PMU::PerfCounter::Read(vector<PmuData> &data, std::vector<PerfSample
 /**
  * Initialize counting
  */
-int KUNPENG_PMU::PerfCounter::Init(const bool groupFlag, const int groupFd)
+int KUNPENG_PMU::PerfCounter::Init(const bool groupEnable, const int groupFd)
 {
-    return this->MapPerfAttr(groupFlag, groupFd);
+    return this->MapPerfAttr(groupEnable, groupFd);
 }
 
-int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupFlag, const int groupFd)
+int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int groupFd)
 {
     /**
      * For now, we only implemented the logic for CORE type events. Support for UNCORE PMU events will be
@@ -114,9 +114,12 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupFlag, const int groupF
      * For now we set the format id bit to implement grouping logic in the future
      */
     attr.read_format = PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING | PERF_FORMAT_ID;
-    if (groupFlag) {
-        // child events are enable. but the child events are not enable.
-        // it is controlled by the event group leader.
+    if (groupEnable) {
+        /*
+        * when creating an event group, typically the group leader is initialized with disabled bit set to 1,
+        * and any child events are initialized with disabled bit set to 0. Despite disabled bit being set to 0,
+        * the child events will not start counting until the group leader is enabled.
+        */
         attr.disabled = 0; 
         this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, 0);
     } else {

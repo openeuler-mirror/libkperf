@@ -34,23 +34,9 @@ using namespace pcerr;
 namespace KUNPENG_PMU {
 // Initializing pmu list singleton instance and global lock
     std::mutex PmuList::pmuListMtx;
+    std::mutex PmuList::dataEvtGroupListMtx;
     std::mutex PmuList::dataListMtx;
     std::mutex PmuList::dataParentMtx;
-
-    struct EventGroupInfo {
-        // store group_id and event group leader info
-        std::unordered_map<int, std::shared_ptr<EvtList>> evtLeaderList;
-        // store group_id and event group child events info
-        std::unordered_map<int, std::vector<std::shared_ptr<EvtList>>> evtGroupChildList;
-        // store group_id and event group child events state flag info
-        /* event group child state explain:
-         * the first bool is hasuncore child event flag; the second bool is onlyuncore child event flag;
-         * if evtGroupChildFlag is <false, true>, the event group is onlyuncore event group;
-         * if evtGroupChildFlag is <true, false>, the event group is hasuncore event group;
-         * if evtGroupChildFlag is <false, false>, the event group is notuncore event group;
-        */
-       std::unordered_map<int, std::pair<bool, bool>> evtGroupChildFlag;  
-    };
 
     int PmuList::CheckRlimit(const unsigned fdNum)
     {
@@ -124,9 +110,9 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
     
-    int PmuList::EvtInit(const bool groupFlag, const std::shared_ptr<EvtList> evtLeader, const int pd, const std::shared_ptr<EvtList> &evtList)
+    int PmuList::EvtInit(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader, const int pd, const std::shared_ptr<EvtList> &evtList)
     {
-        auto err = evtList->Init(groupFlag, evtLeader);
+        auto err = evtList->Init(groupEnable, evtLeader);
         if (err != SUCCESS) {
             return err;
         }
@@ -141,7 +127,7 @@ namespace KUNPENG_PMU {
 
     int PmuList::Init(const int pd)
     {
-        struct EventGroupInfo eventGroupInfo;
+        std::unordered_map<int, struct EventGroupInfo> eventGroupInfoMap;
         for (auto& evtList : GetEvtList(pd)) {
             if (evtList->GetGroupId() == -1) {
                 auto err = EvtInit(false, nullptr, pd, evtList);
@@ -150,40 +136,43 @@ namespace KUNPENG_PMU {
                 }
                 continue;
             } 
-            if (eventGroupInfo.evtLeaderList.find(evtList->GetGroupId()) == eventGroupInfo.evtLeaderList.end()) {
+            if (eventGroupInfoMap.find(evtList->GetGroupId()) == eventGroupInfoMap.end()) {
                 auto err = EvtInit(false, nullptr, pd, evtList);
                 if (err != SUCCESS) {
                     return err;
                 }
-                eventGroupInfo.evtLeaderList[evtList->GetGroupId()] = evtList;
-                eventGroupInfo.evtGroupChildFlag[evtList->GetGroupId()] = {false, true};
+                eventGroupInfoMap[evtList->GetGroupId()].evtLeader = evtList;
+                eventGroupInfoMap[evtList->GetGroupId()].evtGroupState = {false, true};
             } else {
-                eventGroupInfo.evtGroupChildList[evtList->GetGroupId()].push_back(evtList);
+                eventGroupInfoMap[evtList->GetGroupId()].evtGroupChildList.push_back(evtList);
             }
             if (evtList->GetPmuType() == UNCORE_TYPE || evtList->GetPmuType() == UNCORE_RAW_TYPE) {
-                eventGroupInfo.evtGroupChildFlag[evtList->GetGroupId()].first = true;
+                eventGroupInfoMap[evtList->GetGroupId()].evtGroupState.first = true;
             } else {
-                eventGroupInfo.evtGroupChildFlag[evtList->GetGroupId()].second = false;
+                eventGroupInfoMap[evtList->GetGroupId()].evtGroupState.second = false;
             }
         }
         // handle the event group child event Init
-        for (auto evtGroup : eventGroupInfo.evtGroupChildList) {
-            for (auto evtChild : evtGroup.second) {
-                if (eventGroupInfo.evtGroupChildFlag[evtChild->GetGroupId()].second) {
+        for (auto evtGroup : eventGroupInfoMap) {
+            for (auto evtChild : evtGroup.second.evtGroupChildList) {
+                if (eventGroupInfoMap[evtChild->GetGroupId()].evtGroupState.second) {
                     return LIBPERF_ERR_INVALID_GROUP_ALL_UNCORE;
                 }
                 int err = 0;
-                if (eventGroupInfo.evtGroupChildFlag[evtChild->GetGroupId()].first) {
+                if (eventGroupInfoMap[evtChild->GetGroupId()].evtGroupState.first) {
                     SetWarn(LIBPERF_WARN_INVALID_GROUP_HAS_UNCORE);
                     err = EvtInit(false, nullptr, pd, evtChild);
                 } else {
-                    err = EvtInit(true, eventGroupInfo.evtLeaderList[evtChild->GetGroupId()], pd, evtChild);
+                    err = EvtInit(true, eventGroupInfoMap[evtChild->GetGroupId()].evtLeader, pd, evtChild);
                 }
                 if (err != SUCCESS) {
                     return err;
                 }
             }
         }
+        groupMapPtr eventDataEvtGroup = std::make_shared<std::unordered_map<int, EventGroupInfo>>(eventGroupInfoMap);
+        InsertDataEvtGroupList(pd, eventDataEvtGroup);
+
         return SUCCESS;
     }
 
@@ -308,6 +297,7 @@ namespace KUNPENG_PMU {
         }
         EraseEvtList(pd);
         EraseDataList(pd);
+        EraseDataEvtGroupList(pd);
         RemoveEpollFd(pd);
         EraseSpeCpu(pd);
         EraseDummyEvent(pd);
@@ -397,6 +387,24 @@ namespace KUNPENG_PMU {
     {
         lock_guard<mutex> lg(pmuListMtx);
         pmuList.erase(pd);
+    }
+
+    void PmuList::InsertDataEvtGroupList(const unsigned pd, groupMapPtr evtGroupList)
+    {
+        lock_guard<mutex> lg(dataEvtGroupMtx);
+        dataEvtGroupList[pd] = evtGroupList;
+    }
+
+    void PmuList::EraseDataEvtGroupList(const unsigned pd)
+    {
+        lock_guard<mutex> lg(dataEvtGroupMtx);
+        dataEvtGroupList.erase(pd);
+    }
+
+    groupMapPtr& PmuList::GetDataEvtGroupList(const unsigned pd)
+    {
+        lock_guard<mutex> lg(dataEvtGroupMtx);
+        return dataEvtGroupList[pd];
     }
 
     void PmuList::EraseParentEventMap()
@@ -760,7 +768,7 @@ namespace KUNPENG_PMU {
         if (taskParam->numPid <= 0) {
             return;
         }
-        auto* dummyEvent = new DummyEvent(GetEvtList(pd), ppidList.at(pd));
+        auto* dummyEvent = new DummyEvent(GetEvtList(pd), ppidList.at(pd), GetDataEvtGroupList(pd));
         dummyEvent->ObserverForkThread();
         dummyList[pd] = dummyEvent;
     }

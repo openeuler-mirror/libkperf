@@ -97,6 +97,7 @@ struct PmuAttr {
     // event group id 
     // if not use event group function, this field will be nullptr.
     // if use event group function. please confrim the event group id with eveList is one by one.
+    // the same group id is the a event group
     struct EvtAttr *evtAttr;
 
     union {
@@ -183,7 +184,7 @@ struct PmuData {
     const char *comm;               // process command
     uint64_t period;                // sample period
     uint64_t count;                 // event count. Only available for Counting.
-    double countPercent;            // event count Percent. Only available for Counting.
+    double countPercent;            // event count Percent. when count = 0, countPercent = -1; Only available for Counting.
     struct PmuDataExt *ext;         // extension. Only available for Spe.
     struct SampleRawData *rawData;  // trace pointer collect data.
 };

@@ -55,7 +55,7 @@ public:
         this->prevStat = OPEN;
         this->evtStat = OPEN;
     }
-    int Init(const bool groupFlag, const std::shared_ptr<EvtList> evtLeader);
+    int Init(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader);
     int Pause();
     int Close();
     int Start();
@@ -89,7 +89,7 @@ public:
         return group_id;
     }
 
-    void AddNewProcess(pid_t pid);
+    void AddNewProcess(pid_t pid, const bool groupEnable, const std::shared_ptr<EvtList> evtLeader);
     void ClearExitFd();
 private:
     using PerfEvtPtr = std::shared_ptr<KUNPENG_PMU::PerfEvt>;
@@ -115,5 +115,24 @@ private:
     int evtStat;
     std::mutex mutex;
 };
+
+struct EventGroupInfo {
+    // store event group leader info
+    std::shared_ptr<EvtList> evtLeader;
+    // store event group child events info
+    std::vector<std::shared_ptr<EvtList>> evtGroupChildList;
+    // store event group child events state flag info
+    /* event group child state explain:
+        * the first bool is hasuncore child event flag; the second bool is onlyuncore child event flag;
+        * if evtGroupState is <false, true>, the event group is onlyuncore event group;
+        * if evtGroupState is <true, false>, the event group is hasuncore event group;
+        * if evtGroupState is <false, false>, the event group is notuncore event group;
+    */
+    std::pair<bool, bool> evtGroupState;  
+};
+
+// store event group id and event group info
+using groupMapPtr = std::shared_ptr<std::unordered_map<int, EventGroupInfo>>;
+
 }   // namespace KUNPENG_PMU
 #endif
