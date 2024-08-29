@@ -391,19 +391,19 @@ namespace KUNPENG_PMU {
 
     void PmuList::InsertDataEvtGroupList(const unsigned pd, groupMapPtr evtGroupList)
     {
-        lock_guard<mutex> lg(dataEvtGroupMtx);
+        lock_guard<mutex> lg(dataEvtGroupListMtx);
         dataEvtGroupList[pd] = evtGroupList;
     }
 
     void PmuList::EraseDataEvtGroupList(const unsigned pd)
     {
-        lock_guard<mutex> lg(dataEvtGroupMtx);
+        lock_guard<mutex> lg(dataEvtGroupListMtx);
         dataEvtGroupList.erase(pd);
     }
 
     groupMapPtr& PmuList::GetDataEvtGroupList(const unsigned pd)
     {
-        lock_guard<mutex> lg(dataEvtGroupMtx);
+        lock_guard<mutex> lg(dataEvtGroupListMtx);
         return dataEvtGroupList[pd];
     }
 
