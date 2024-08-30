@@ -113,7 +113,7 @@ class CtypesPmuAttr(ctypes.Structure):
                  evtList: List[str]=None,
                  pidList: List[int]=None,
                  cpuList: List[int]=None,
-                 evtAttr: CtypesEvtAttr=None,
+                 evtAttr: List[int]=None,
                  sampleRate: int=0,
                  useFreq: bool=False,
                  excludeUser: bool=False,
@@ -156,7 +156,11 @@ class CtypesPmuAttr(ctypes.Structure):
         else:
             self.sampleRate.freq = ctypes.c_uint(sampleRate)
 
-        self.evtAttr = evtAttr
+        if evtAttr:
+            numEvtAttr = len(evtAttr)
+            self.evtAttr = (CtypesEvtAttr * numEvtAttr)(*[CtypesEvtAttr(evt) for evt in evtAttr])
+        else:
+            self.evtAttr = None
 
         self.useFreq = ctypes.c_bool(useFreq)
         self.excludeUser = ctypes.c_bool(excludeUser)
@@ -177,7 +181,7 @@ class PmuAttr:
                  evtList: List[str]=None,
                  pidList: List[int]=None,
                  cpuList: List[int]=None,
-                 evtAttr: CtypesEvtAttr=None,
+                 evtAttr: List[CtypesEvtAttr]=None,
                  sampleRate: int=0,
                  useFreq: bool=False,
                  excludeUser: bool=False,
@@ -192,7 +196,7 @@ class PmuAttr:
             evtList=evtList,
             pidList=pidList,
             cpuList=cpuList,
-            evtAttr=evtAttr.c_evt_attr if evtAttr else None,
+            evtAttr=evtAttr,
             sampleRate=sampleRate,
             useFreq=useFreq,
             excludeUser=excludeUser,
@@ -246,12 +250,16 @@ class PmuAttr:
             self.c_pmu_attr.numPid = ctypes.c_uint(0)
 
     @property
-    def evtAttr(self) -> EvtAttr:
-        return EvtAttr.from_c_evt_attr(self.c_pmu_attr.evtAttr.contents) if self.c_pmu_attr.evtAttr else None
+    def evtAttr(self) -> List[CtypesEvtAttr]:
+        return [self.c_pmu_attr.evtAttr[i] for i in range(len(self.c_pmu_attr.evtAttr))]
 
     @evtAttr.setter
-    def evtAttr(self, evtAttr: EvtAttr) -> None:
-        self.c_pmu_attr.evtAttr = evtAttr.c_evt_attr if evtAttr else None
+    def evtAttr(self, evtAttr: List[CtypesEvtAttr]) -> None:
+        if evtAttr:
+            numEvtAttr = len(evtAttr)
+            self.c_pmu_attr.evtAttr = (CtypesEvtAttr * numEvtAttr)(*[CtypesEvtAttr(evt) for evt in evtAttr])
+        else:
+            self.c_pmu_attr.evtAttr = None
     
     @property
     def numCpu(self) -> int:
