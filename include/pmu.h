@@ -97,7 +97,8 @@ struct PmuAttr {
     // event group id 
     // if not use event group function, this field will be nullptr.
     // if use event group function. please confrim the event group id with eveList is one by one.
-    // the same group id is the a event group
+    // the same group id is the a event group. 
+    // Note: if the group id value is -1, it indicates that the event is not grouped.
     struct EvtAttr *evtAttr;
 
     union {

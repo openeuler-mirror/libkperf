@@ -42,6 +42,13 @@ enum PmuTask {
     STOP = 9,
 };
 
+enum class UncoreState {
+    InitState = 0b01,
+    OnlyUncore = 0b11,
+    HasUncore = 0b10,
+    OnlyOther = 0b01,
+};
+
 class EvtList {
 public:
     using ProcPtr = std::shared_ptr<ProcTopology>;
@@ -123,12 +130,11 @@ struct EventGroupInfo {
     std::vector<std::shared_ptr<EvtList>> evtGroupChildList;
     // store event group child events state flag info
     /* event group child state explain:
-        * the first bool is hasuncore child event flag; the second bool is onlyuncore child event flag;
-        * if evtGroupState is <false, true>, the event group is onlyuncore event group;
-        * if evtGroupState is <true, false>, the event group is hasuncore event group;
-        * if evtGroupState is <false, false>, the event group is notuncore event group;
+        * Enumeration variable uncoreState has four state, Initialization is the InitState;
+        * sacn the event List, if find the uncore event, the uncoreState is config the high bit set to 1;
+        * if find the other event, the uncoreState is config the low bit set to 0.
     */
-    std::pair<bool, bool> evtGroupState;  
+    enum class UncoreState uncoreState;  
 };
 
 // store event group id and event group info

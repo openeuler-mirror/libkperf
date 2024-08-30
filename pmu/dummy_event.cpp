@@ -52,7 +52,7 @@ namespace KUNPENG_PMU {
             return std::make_pair(false, nullptr);
         } else {
             // In this case, the event group contains only some uncore events or all other events.
-            if ((*eventGroupInfoMap)[groupId].evtGroupState.first) {
+            if ((*eventGroupInfoMap)[groupId].uncoreState == static_cast<UncoreState>(UncoreState::HasUncore)) {
                 return std::make_pair(false, nullptr);
             } else {
                 return std::make_pair(true, (*eventGroupInfoMap)[groupId].evtLeader);

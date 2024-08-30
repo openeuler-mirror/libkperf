@@ -142,24 +142,26 @@ namespace KUNPENG_PMU {
                     return err;
                 }
                 eventGroupInfoMap[evtList->GetGroupId()].evtLeader = evtList;
-                eventGroupInfoMap[evtList->GetGroupId()].evtGroupState = {false, true};
+                eventGroupInfoMap[evtList->GetGroupId()].uncoreState = static_cast<UncoreState>(UncoreState::InitState);
             } else {
                 eventGroupInfoMap[evtList->GetGroupId()].evtGroupChildList.push_back(evtList);
             }
-            if (evtList->GetPmuType() == UNCORE_TYPE || evtList->GetPmuType() == UNCORE_RAW_TYPE) {
-                eventGroupInfoMap[evtList->GetGroupId()].evtGroupState.first = true;
+            if (evtList->GetPmuType() == static_cast<PMU_TYPE>(UNCORE_TYPE) || evtList->GetPmuType() == static_cast<PMU_TYPE>(UNCORE_RAW_TYPE)) {
+                eventGroupInfoMap[evtList->GetGroupId()].uncoreState = static_cast<UncoreState>(static_cast<int>(UncoreState::HasUncore) | 
+                                                                    static_cast<int>(eventGroupInfoMap[evtList->GetGroupId()].uncoreState));
             } else {
-                eventGroupInfoMap[evtList->GetGroupId()].evtGroupState.second = false;
+                eventGroupInfoMap[evtList->GetGroupId()].uncoreState = static_cast<UncoreState>(static_cast<int>(UncoreState::HasUncore) & 
+                                                    static_cast<int>(eventGroupInfoMap[evtList->GetGroupId()].uncoreState));
             }
         }
         // handle the event group child event Init
         for (auto evtGroup : eventGroupInfoMap) {
             for (auto evtChild : evtGroup.second.evtGroupChildList) {
-                if (eventGroupInfoMap[evtChild->GetGroupId()].evtGroupState.second) {
+                if (eventGroupInfoMap[evtChild->GetGroupId()].uncoreState == static_cast<UncoreState>(UncoreState::OnlyUncore)) {
                     return LIBPERF_ERR_INVALID_GROUP_ALL_UNCORE;
                 }
                 int err = 0;
-                if (eventGroupInfoMap[evtChild->GetGroupId()].evtGroupState.first) {
+                if (eventGroupInfoMap[evtChild->GetGroupId()].uncoreState == static_cast<UncoreState>(UncoreState::HasUncore)) {
                     SetWarn(LIBPERF_WARN_INVALID_GROUP_HAS_UNCORE);
                     err = EvtInit(false, nullptr, pd, evtChild);
                 } else {
