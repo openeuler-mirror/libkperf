@@ -46,9 +46,12 @@ namespace pcerr {
             {LIBPERF_ERR_PATH_INACCESSIBLE, "cannot access file path"},
             {LIBPERF_ERR_INVALID_SAMPLE_RATE, "invalid sample rate, please check /proc/sys/kernel/perf_event_max_sample_rate"},
             {LIBPERF_ERR_COUNT_OVERFLOW, "pmu count is overflowed"},
+            {LIBPERF_ERR_INVALID_GROUP_SPE, "event group not support SPE_SAMPLING collect mode"},
+            {LIBPERF_ERR_INVALID_GROUP_ALL_UNCORE, "event group not support all events is uncore event"},
     };
     static std::unordered_map<int, std::string> warnMsgs = {
-            {LIBPERF_WARN_CTXID_LOST, "Some SPE context packets are not found in the traces."}
+            {LIBPERF_WARN_CTXID_LOST, "Some SPE context packets are not found in the traces."},
+            {LIBPERF_WARN_INVALID_GROUP_HAS_UNCORE, "event group has uncore event, cann`t event group, disabling event group"}
     };
     static int warnCode = SUCCESS;
     static std::string warnMsg = "";

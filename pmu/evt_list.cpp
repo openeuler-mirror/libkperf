@@ -45,7 +45,7 @@ int KUNPENG_PMU::EvtList::CollectorDoTask(PerfEvtPtr collector, int task)
             return ret;
         }
         case INIT:
-            return collector->Init();
+            return collector->Init(false, -1); // by default, the grouping initialization feature is not implemented.
         default:
             return UNKNOWN_ERROR;
     }
@@ -67,7 +67,7 @@ int KUNPENG_PMU::EvtList::CollectorXYArrayDoTask(std::vector<std::vector<PerfEvt
     return SUCCESS;
 }
 
-int KUNPENG_PMU::EvtList::Init()
+int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader)
 {
     // Init process map.
     for (auto& proc: pidList) {
@@ -85,7 +85,12 @@ int KUNPENG_PMU::EvtList::Init()
                 continue;
             }
             perfEvt->SetSymbolMode(symMode);
-            auto err = perfEvt->Init();
+            int err = 0;
+            if (groupEnable) {
+                err = perfEvt->Init(groupEnable, evtLeader->xyCounterArray[row][col]->GetFd());
+            } else {
+                err = perfEvt->Init(groupEnable, -1);
+            }
             if (err != SUCCESS) {
                 // The SPE and SAMPLING modes are not changed.
                 if (!perfEvt->IsMainPid()) {
@@ -212,7 +217,7 @@ std::shared_ptr<KUNPENG_PMU::PerfEvt> KUNPENG_PMU::EvtList::MapPmuAttr(int cpu, 
     };
 }
 
-void KUNPENG_PMU::EvtList::AddNewProcess(pid_t pid)
+void KUNPENG_PMU::EvtList::AddNewProcess(pid_t pid, const bool groupEnable, const std::shared_ptr<EvtList> evtLeader)
 {
     if (pid <= 0 || evtStat == CLOSE || evtStat == STOP) {
         return;
@@ -231,7 +236,13 @@ void KUNPENG_PMU::EvtList::AddNewProcess(pid_t pid)
             return;
         }
         perfEvt->SetSymbolMode(symMode);
-        auto err = perfEvt->Init();
+        int err = 0;
+        if (groupEnable) {
+            int sz = this->pidList.size();
+            err = perfEvt->Init(groupEnable, evtLeader->xyCounterArray[row][sz - 1]->GetFd());
+        } else {
+            err = perfEvt->Init(groupEnable, -1);
+        }
         if (err != SUCCESS) {
             return;
         }

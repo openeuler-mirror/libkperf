@@ -57,8 +57,16 @@ int KUNPENG_PMU::PerfCounter::Read(vector<PmuData> &data, std::vector<PerfSample
     // Calculate the diff of count from last read.
     // In case of multiplexing, we follow the linux documentation for calculating the estimated
     // counting value (https://perf.wiki.kernel.org/index.php/Tutorial)
-    uint64_t increCount = (perfCountValue.value - count)* static_cast<double>(perfCountValue.timeEnabled - enabled) /
-	    		static_cast<double>(perfCountValue.timeRunning - running);
+    double percent = 0.0;
+    uint64_t increCount;
+    if ((perfCountValue.value == count) || (perfCountValue.timeRunning == running)) {
+        percent = -1;
+        increCount = 0;   
+    } else {
+        percent = static_cast<double>(perfCountValue.timeEnabled - enabled) / static_cast<double>(perfCountValue.timeRunning - running);
+        increCount = static_cast<uint64_t>((perfCountValue.value - count)* percent);
+    }
+    
     this->count = perfCountValue.value;
     this->enabled = perfCountValue.timeEnabled;
     this->running = perfCountValue.timeRunning;
@@ -66,6 +74,7 @@ int KUNPENG_PMU::PerfCounter::Read(vector<PmuData> &data, std::vector<PerfSample
     data.emplace_back(PmuData{0});
     auto& current = data.back();
     current.count = increCount;
+    current.countPercent = 1.0 / percent; 
     current.cpu = static_cast<unsigned>(this->cpu);
     current.tid = this->pid;
     auto findProc = procMap.find(current.tid);
@@ -78,12 +87,12 @@ int KUNPENG_PMU::PerfCounter::Read(vector<PmuData> &data, std::vector<PerfSample
 /**
  * Initialize counting
  */
-int KUNPENG_PMU::PerfCounter::Init()
+int KUNPENG_PMU::PerfCounter::Init(const bool groupEnable, const int groupFd)
 {
-    return this->MapPerfAttr();
+    return this->MapPerfAttr(groupEnable, groupFd);
 }
 
-int KUNPENG_PMU::PerfCounter::MapPerfAttr()
+int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int groupFd)
 {
     /**
      * For now, we only implemented the logic for CORE type events. Support for UNCORE PMU events will be
@@ -105,12 +114,22 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr()
      * For now we set the format id bit to implement grouping logic in the future
      */
     attr.read_format = PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING | PERF_FORMAT_ID;
-    if (this->evt->pmuType == KUNPENG_PMU::UNCORE_TYPE) {
-        this->fd = PerfEventOpen(&attr, -1, this->cpu, -1, 0);
+    if (groupEnable) {
+        /*
+        * when creating an event group, typically the group leader is initialized with disabled bit set to 1,
+        * and any child events are initialized with disabled bit set to 0. Despite disabled bit being set to 0,
+        * the child events will not start counting until the group leader is enabled.
+        */
+        attr.disabled = 0; 
+        this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, 0);
     } else {
-        this->fd = PerfEventOpen(&attr, this->pid, this->cpu, -1, 0);
+        if (this->evt->pmuType == KUNPENG_PMU::UNCORE_TYPE) {
+            this->fd = PerfEventOpen(&attr, -1, this->cpu, groupFd, 0);
+        } else {
+            this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, 0);
+        }
     }
-    DBG_PRINT("type: %d cpu: %d config: %X\n", attr.type, cpu, attr.config);
+    DBG_PRINT("type: %d cpu: %d config: %X myfd: %d groupfd: %d\n", attr.type, cpu, attr.config, this->fd, groupFd);
     if (__glibc_unlikely(this->fd < 0)) {
         return MapErrno(errno);
     }

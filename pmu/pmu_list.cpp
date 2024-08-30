@@ -26,6 +26,7 @@
 #include "trace_pointer_parser.h"
 #include "pmu_event_list.h"
 #include "pmu_list.h"
+#include "pfm_event.h"
 
 using namespace std;
 using namespace pcerr;
@@ -33,6 +34,7 @@ using namespace pcerr;
 namespace KUNPENG_PMU {
 // Initializing pmu list singleton instance and global lock
     std::mutex PmuList::pmuListMtx;
+    std::mutex PmuList::dataEvtGroupListMtx;
     std::mutex PmuList::dataListMtx;
     std::mutex PmuList::dataParentMtx;
 
@@ -88,7 +90,7 @@ namespace KUNPENG_PMU {
             }
             fdNum += CalRequireFd(cpuTopoList.size(), procTopoList.size(), taskParam->pmuEvt->collectType);
             std::shared_ptr<EvtList> evtList =
-                    std::make_shared<EvtList>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt);
+                    std::make_shared<EvtList>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt, pmuTaskAttrHead->group_id);
             InsertEvtList(pd, evtList);
             pmuTaskAttrHead = pmuTaskAttrHead->next;
         }
@@ -98,17 +100,81 @@ namespace KUNPENG_PMU {
             return err;
         }
 
-        for (auto evtList: GetEvtList(pd)) {
-            auto err = evtList->Init();
-            if (err != SUCCESS) {
-                return err;
+        err = Init(pd);
+        if (err != SUCCESS)
+        {
+            return err;
+        }
+        
+        this->OpenDummyEvent(taskParam, pd);
+        return SUCCESS;
+    }
+    
+    int PmuList::EvtInit(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader, const int pd, const std::shared_ptr<EvtList> &evtList)
+    {
+        auto err = evtList->Init(groupEnable, evtLeader);
+        if (err != SUCCESS) {
+            return err;
+        }
+
+        err = AddToEpollFd(pd, evtList);
+        if (err != SUCCESS) {
+            return err;
+        }
+
+        return SUCCESS;
+    }
+
+    int PmuList::Init(const int pd)
+    {
+        std::unordered_map<int, struct EventGroupInfo> eventGroupInfoMap;
+        for (auto& evtList : GetEvtList(pd)) {
+            if (evtList->GetGroupId() == -1) {
+                auto err = EvtInit(false, nullptr, pd, evtList);
+                if (err != SUCCESS) {
+                    return err;
+                }
+                continue;
+            } 
+            if (eventGroupInfoMap.find(evtList->GetGroupId()) == eventGroupInfoMap.end()) {
+                auto err = EvtInit(false, nullptr, pd, evtList);
+                if (err != SUCCESS) {
+                    return err;
+                }
+                eventGroupInfoMap[evtList->GetGroupId()].evtLeader = evtList;
+                eventGroupInfoMap[evtList->GetGroupId()].uncoreState = static_cast<UncoreState>(UncoreState::InitState);
+            } else {
+                eventGroupInfoMap[evtList->GetGroupId()].evtGroupChildList.push_back(evtList);
             }
-            err = AddToEpollFd(pd, evtList);
-            if (err != SUCCESS) {
-                return err;
+            if (evtList->GetPmuType() == static_cast<PMU_TYPE>(UNCORE_TYPE) || evtList->GetPmuType() == static_cast<PMU_TYPE>(UNCORE_RAW_TYPE)) {
+                eventGroupInfoMap[evtList->GetGroupId()].uncoreState = static_cast<UncoreState>(static_cast<int>(UncoreState::HasUncore) | 
+                                                                    static_cast<int>(eventGroupInfoMap[evtList->GetGroupId()].uncoreState));
+            } else {
+                eventGroupInfoMap[evtList->GetGroupId()].uncoreState = static_cast<UncoreState>(static_cast<int>(UncoreState::HasUncore) & 
+                                                    static_cast<int>(eventGroupInfoMap[evtList->GetGroupId()].uncoreState));
             }
         }
-        this->OpenDummyEvent(taskParam, pd);
+        // handle the event group child event Init
+        for (auto evtGroup : eventGroupInfoMap) {
+            for (auto evtChild : evtGroup.second.evtGroupChildList) {
+                if (eventGroupInfoMap[evtChild->GetGroupId()].uncoreState == static_cast<UncoreState>(UncoreState::OnlyUncore)) {
+                    return LIBPERF_ERR_INVALID_GROUP_ALL_UNCORE;
+                }
+                int err = 0;
+                if (eventGroupInfoMap[evtChild->GetGroupId()].uncoreState == static_cast<UncoreState>(UncoreState::HasUncore)) {
+                    SetWarn(LIBPERF_WARN_INVALID_GROUP_HAS_UNCORE);
+                    err = EvtInit(false, nullptr, pd, evtChild);
+                } else {
+                    err = EvtInit(true, eventGroupInfoMap[evtChild->GetGroupId()].evtLeader, pd, evtChild);
+                }
+                if (err != SUCCESS) {
+                    return err;
+                }
+            }
+        }
+        groupMapPtr eventDataEvtGroup = std::make_shared<std::unordered_map<int, EventGroupInfo>>(eventGroupInfoMap);
+        InsertDataEvtGroupList(pd, eventDataEvtGroup);
+
         return SUCCESS;
     }
 
@@ -233,6 +299,7 @@ namespace KUNPENG_PMU {
         }
         EraseEvtList(pd);
         EraseDataList(pd);
+        EraseDataEvtGroupList(pd);
         RemoveEpollFd(pd);
         EraseSpeCpu(pd);
         EraseDummyEvent(pd);
@@ -324,6 +391,24 @@ namespace KUNPENG_PMU {
         pmuList.erase(pd);
     }
 
+    void PmuList::InsertDataEvtGroupList(const unsigned pd, groupMapPtr evtGroupList)
+    {
+        lock_guard<mutex> lg(dataEvtGroupListMtx);
+        dataEvtGroupList[pd] = evtGroupList;
+    }
+
+    void PmuList::EraseDataEvtGroupList(const unsigned pd)
+    {
+        lock_guard<mutex> lg(dataEvtGroupListMtx);
+        dataEvtGroupList.erase(pd);
+    }
+
+    groupMapPtr& PmuList::GetDataEvtGroupList(const unsigned pd)
+    {
+        lock_guard<mutex> lg(dataEvtGroupListMtx);
+        return dataEvtGroupList[pd];
+    }
+
     void PmuList::EraseParentEventMap()
     {
         lock_guard<mutex> lg(dataParentMtx);
@@ -395,21 +480,24 @@ namespace KUNPENG_PMU {
             newEvData.push_back(evtData.second);
         }
     }
-
-
-    bool comparePmuData(const PmuData& data1, const PmuData& data2)
-    {
-        return strcmp(data1.evt, data2.evt) < 0;
-    }
-
+    
+    
     void PmuList::AggregateUncoreData(const unsigned pd, const vector<PmuData>& evData, vector<PmuData>& newEvData)
     {
         // One count for same parent according to parentEventMap.
         auto parentMap = parentEventMap.at(pd);
         unordered_map<string, PmuData> dataMap;
+        vector<string> dataMapKeys;
         for (auto& pmuData: evData) {
             auto parentName = parentMap.at(pmuData.evt);
             if (strcmp(parentName, pmuData.evt) == 0) {
+                // collect aggregate event by order, when aggregate event is the middle of eventList
+                if (dataMap.size() == 1) {
+                    auto it = dataMap.begin();
+                    newEvData.emplace_back(it->second);
+                    dataMap.erase(it);
+                    dataMapKeys.clear();
+                }
                 // event was not split
                 newEvData.emplace_back(pmuData);
                 continue;
@@ -420,14 +508,15 @@ namespace KUNPENG_PMU {
                 dataMap[parentName].evt = parentMap.at(pmuData.evt);
                 dataMap[parentName].cpu = 0;
                 dataMap[parentName].cpuTopo = nullptr;
+                dataMapKeys.push_back(parentName);
             } else {
                 dataMap.at(parentMap.at(pmuData.evt)).count += pmuData.count;
             }
         }
-        for (const auto& pair: dataMap) {
-            newEvData.emplace_back(pair.second);
+        // if aggregate event is the last event in eventList
+        for (auto& key: dataMapKeys) {
+            newEvData.emplace_back(dataMap.at(key));
         }
-        std::sort(newEvData.begin(), newEvData.end(), comparePmuData);
     }
 
     vector<PmuData>& PmuList::ExchangeToUserData(const unsigned pd)
@@ -681,7 +770,7 @@ namespace KUNPENG_PMU {
         if (taskParam->numPid <= 0) {
             return;
         }
-        auto* dummyEvent = new DummyEvent(GetEvtList(pd), ppidList.at(pd));
+        auto* dummyEvent = new DummyEvent(GetEvtList(pd), ppidList.at(pd), GetDataEvtGroupList(pd));
         dummyEvent->ObserverForkThread();
         dummyList[pd] = dummyEvent;
     }

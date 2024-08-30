@@ -42,12 +42,12 @@ namespace KUNPENG_PMU {
         return true;
     }
 
-    int PerfSpe::MapPerfAttr()
+    int PerfSpe::MapPerfAttr(const bool groupEnable, const int groupFd)
     {
         return SUCCESS;
     }
 
-    int PerfSpe::Init()
+    int PerfSpe::Init(const bool groupEnable, const int groupFd)
     {
         auto findSpe = speSet.find(this->cpu);
         if (findSpe != speSet.end()) {

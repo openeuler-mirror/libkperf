@@ -64,6 +64,9 @@ enum SymbolMode {
     RESOLVE_ELF_DWARF = 2
 };
 
+struct EvtAttr {
+    int group_id; 
+};
 struct PmuAttr {
     // Event list.
     // Refer 'perf list' for details about event names.
@@ -90,6 +93,13 @@ struct PmuAttr {
     int* cpuList;
     // Length of core id list
     unsigned numCpu;
+
+    // event group id 
+    // if not use event group function, this field will be nullptr.
+    // if use event group function. please confrim the event group id with eveList is one by one.
+    // the same group id is the a event group. 
+    // Note: if the group id value is -1, it indicates that the event is not grouped.
+    struct EvtAttr *evtAttr;
 
     union {
         // Sample period, only available for SAMPLING and SPE_SAMPLING.
@@ -175,6 +185,7 @@ struct PmuData {
     const char *comm;               // process command
     uint64_t period;                // sample period
     uint64_t count;                 // event count. Only available for Counting.
+    double countPercent;            // event count Percent. when count = 0, countPercent = -1; Only available for Counting.
     struct PmuDataExt *ext;         // extension. Only available for Spe.
     struct SampleRawData *rawData;  // trace pointer collect data.
 };

@@ -18,6 +18,7 @@
 #include <thread>
 #include <atomic>
 #include <queue>
+#include <unordered_map>
 #include "pcerr.h"
 #include "evt_list.h"
 
@@ -26,29 +27,34 @@ namespace KUNPENG_PMU {
     struct DummyContext {
         std::shared_ptr<EvtList> evtList;
         pid_t pid;
+        bool groupEnable;
+        std::shared_ptr<EvtList> evtLeader;
     };
 
     class DummyEventStrategy {
     public:
-        virtual void DoHandler(DummyContext& ctx) = 0;
+        virtual void DoHandler(DummyContext& ctx, const bool groupEnable, const std::shared_ptr<EvtList> evtLeader) = 0;
     };
 
     class ProcessForkStrategy : public DummyEventStrategy {
     public:
-        void DoHandler(DummyContext& ctx)
+        void DoHandler(DummyContext& ctx, const bool groupEnable, const std::shared_ptr<EvtList> evtLeader)
         {
-            ctx.evtList->AddNewProcess(ctx.pid);
+            ctx.evtList->AddNewProcess(ctx.pid, groupEnable, evtLeader);
         }
     };
 
     class DummyEvent {
     public:
-        DummyEvent(std::vector<std::shared_ptr<EvtList>>& evtLists, std::vector<pid_t>& ppids) :
+        DummyEvent(std::vector<std::shared_ptr<EvtList>>& evtLists, std::vector<pid_t>& ppids, groupMapPtr& eventGroupInfoMap) :
                 evtLists(evtLists),
                 ppids(ppids),
+                eventGroupInfoMap(eventGroupInfoMap),
                 dummyFlag(true) {};
 
         ~DummyEvent();
+
+        std::pair<bool, std::shared_ptr<EvtList>> GetEvtGroupState(const int groupId, std::shared_ptr<EvtList> evtList, groupMapPtr eventGroupInfoMap);
 
         /**
          * @brief start a thread to observe fork thread.
@@ -63,6 +69,7 @@ namespace KUNPENG_PMU {
 
         std::vector<std::shared_ptr<EvtList>>& evtLists;
         std::vector<pid_t> ppids;
+        groupMapPtr eventGroupInfoMap;
         std::vector<pid_t> exitPids;
         std::unordered_map<pid_t, std::pair<int, void*>> dummyMap;
 

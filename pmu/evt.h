@@ -41,11 +41,11 @@ public:
     virtual int BeginRead();
     virtual int EndRead();
 
-    virtual int Init() = 0;
+    virtual int Init(const bool groupEnable, const int groupFd) = 0;
 
     virtual int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool) = 0;
 
-    virtual int MapPerfAttr() = 0;
+    virtual int MapPerfAttr(const bool groupEnable, const int groupFd) = 0;
 
     void SetSymbolMode(const SymbolMode &symMode)
     {
