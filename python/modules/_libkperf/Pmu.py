@@ -113,7 +113,7 @@ class CtypesPmuAttr(ctypes.Structure):
                  evtList: List[str]=None,
                  pidList: List[int]=None,
                  cpuList: List[int]=None,
-                 evtAttr: CtypesEvtAttr=None,
+                 evtAttr: List[int]=None,
                  sampleRate: int=0,
                  useFreq: bool=False,
                  excludeUser: bool=False,
@@ -156,7 +156,11 @@ class CtypesPmuAttr(ctypes.Structure):
         else:
             self.sampleRate.freq = ctypes.c_uint(sampleRate)
 
-        self.evtAttr = evtAttr
+        if evtAttr:
+            numEvtAttr = len(evtAttr)
+            self.evtAttr = (CtypesEvtAttr * numEvtAttr)(*[CtypesEvtAttr(evt) for evt in evtAttr])
+        else:
+            self.evtAttr = None
 
         self.useFreq = ctypes.c_bool(useFreq)
         self.excludeUser = ctypes.c_bool(excludeUser)
@@ -177,7 +181,7 @@ class PmuAttr:
                  evtList: List[str]=None,
                  pidList: List[int]=None,
                  cpuList: List[int]=None,
-                 evtAttr: CtypesEvtAttr=None,
+                 evtAttr: List[CtypesEvtAttr]=None,
                  sampleRate: int=0,
                  useFreq: bool=False,
                  excludeUser: bool=False,
@@ -187,12 +191,12 @@ class PmuAttr:
                  dataFilter: int=0,
                  evFilter: int=0,
                  minLatency: int=0,
-                 inlcludeNewFork: bool=False) -> None:
+                 includeNewFork: bool=False) -> None:
         self.__c_pmu_attr = CtypesPmuAttr(
             evtList=evtList,
             pidList=pidList,
             cpuList=cpuList,
-            evtAttr=evtAttr.c_evt_attr if evtAttr else None,
+            evtAttr=evtAttr,
             sampleRate=sampleRate,
             useFreq=useFreq,
             excludeUser=excludeUser,
@@ -202,7 +206,7 @@ class PmuAttr:
             dataFilter=dataFilter,
             evFilter=evFilter,
             minLatency=minLatency,
-            includeNewFork=inlcludeNewFork
+            includeNewFork=includeNewFork
         )
 
     @property
@@ -246,12 +250,16 @@ class PmuAttr:
             self.c_pmu_attr.numPid = ctypes.c_uint(0)
 
     @property
-    def evtAttr(self) -> EvtAttr:
-        return EvtAttr.from_c_evt_attr(self.c_pmu_attr.evtAttr.contents) if self.c_pmu_attr.evtAttr else None
+    def evtAttr(self) -> List[CtypesEvtAttr]:
+        return [self.c_pmu_attr.evtAttr[i] for i in range(len(self.c_pmu_attr.evtAttr))]
 
     @evtAttr.setter
-    def evtAttr(self, evtAttr: EvtAttr) -> None:
-        self.c_pmu_attr.evtAttr = evtAttr.c_evt_attr if evtAttr else None
+    def evtAttr(self, evtAttr: List[CtypesEvtAttr]) -> None:
+        if evtAttr:
+            numEvtAttr = len(evtAttr)
+            self.c_pmu_attr.evtAttr = (CtypesEvtAttr * numEvtAttr)(*[CtypesEvtAttr(evt) for evt in evtAttr])
+        else:
+            self.c_pmu_attr.evtAttr = None
     
     @property
     def numCpu(self) -> int:
@@ -654,7 +662,7 @@ class CtypesPmuData(ctypes.Structure):
                  comm: str='',
                  period: int=0,
                  count: int=0,
-                 countPercent: double=0,
+                 countPercent: float=0.0,
                  ext: CtypesPmuDataExt=None,
                  rawData: CtypesSampleRawData=None,
                  *args: Any, **kw: Any) -> None:
@@ -689,7 +697,7 @@ class ImplPmuData:
                  comm: str='',
                  period: int=0,
                  count: int=0,
-                 countPercent: double=0,
+                 countPercent: float=0.0,
                  ext: PmuDataExt=None,
                  rawData: SampleRawData=None) -> None:
         self.__c_pmu_data = CtypesPmuData(
@@ -793,11 +801,11 @@ class ImplPmuData:
         self.c_pmu_data.count = ctypes.c_uint64(count)
 
     @property
-    def countPercent(self) -> double:
+    def countPercent(self) -> float:
         return self.c_pmu_data.countPercent
     
     @countPercent.setter
-    def countPercent(self, countPercent: double) -> None:
+    def countPercent(self, countPercent: float) -> None:
         self.c_pmu_data.countPercent = ctypes.c_double(countPercent)
         
     @property
@@ -1028,6 +1036,8 @@ def PmuGetFieldExp(rawData: ctypes.POINTER(CtypesSampleRawData), field_name: str
 
 
 __all__ = [
+    'CtypesEvtAttr',
+    'EvtAttr',
     'CtypesPmuAttr',
     'PmuAttr',
     'CpuTopology',
@@ -1045,7 +1055,6 @@ __all__ = [
     'PmuRead',
     'PmuClose',
     'PmuDumpData',
-    'CtypesPmuAttr',
     'PmuGetField',
     'PmuGetFieldExp',
 ]
