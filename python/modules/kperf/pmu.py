@@ -82,7 +82,7 @@ class PmuAttr(_libkperf.PmuAttr):
                  evtList: List[str] = None,
                  pidList: List[int] = None,
                  cpuList: List[int] = None,
-                 evtAttr: CtypesEvtAttr = None,
+                 evtAttr: _libkperf.CtypesEvtAttr = None,
                  sampleRate: int = 0,
                  useFreq: bool = False,
                  excludeUser: bool = False,

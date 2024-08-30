@@ -187,7 +187,7 @@ class PmuAttr:
                  dataFilter: int=0,
                  evFilter: int=0,
                  minLatency: int=0,
-                 inlcludeNewFork: bool=False) -> None:
+                 includeNewFork: bool=False) -> None:
         self.__c_pmu_attr = CtypesPmuAttr(
             evtList=evtList,
             pidList=pidList,
@@ -202,7 +202,7 @@ class PmuAttr:
             dataFilter=dataFilter,
             evFilter=evFilter,
             minLatency=minLatency,
-            includeNewFork=inlcludeNewFork
+            includeNewFork=includeNewFork
         )
 
     @property
@@ -654,7 +654,7 @@ class CtypesPmuData(ctypes.Structure):
                  comm: str='',
                  period: int=0,
                  count: int=0,
-                 countPercent: double=0,
+                 countPercent: float=0.0,
                  ext: CtypesPmuDataExt=None,
                  rawData: CtypesSampleRawData=None,
                  *args: Any, **kw: Any) -> None:
@@ -689,7 +689,7 @@ class ImplPmuData:
                  comm: str='',
                  period: int=0,
                  count: int=0,
-                 countPercent: double=0,
+                 countPercent: float=0.0,
                  ext: PmuDataExt=None,
                  rawData: SampleRawData=None) -> None:
         self.__c_pmu_data = CtypesPmuData(
@@ -793,11 +793,11 @@ class ImplPmuData:
         self.c_pmu_data.count = ctypes.c_uint64(count)
 
     @property
-    def countPercent(self) -> double:
+    def countPercent(self) -> float:
         return self.c_pmu_data.countPercent
     
     @countPercent.setter
-    def countPercent(self, countPercent: double) -> None:
+    def countPercent(self, countPercent: float) -> None:
         self.c_pmu_data.countPercent = ctypes.c_double(countPercent)
         
     @property
@@ -1028,6 +1028,8 @@ def PmuGetFieldExp(rawData: ctypes.POINTER(CtypesSampleRawData), field_name: str
 
 
 __all__ = [
+    'CtypesEvtAttr',
+    'EvtAttr',
     'CtypesPmuAttr',
     'PmuAttr',
     'CpuTopology',
@@ -1045,7 +1047,6 @@ __all__ = [
     'PmuRead',
     'PmuClose',
     'PmuDumpData',
-    'CtypesPmuAttr',
     'PmuGetField',
     'PmuGetFieldExp',
 ]
