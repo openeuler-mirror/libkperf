@@ -70,7 +70,7 @@ Refer to pmu.h for details of interfaces.
 
 Here are some examples:
 * Get pmu count for a process.
-```
+```C
 int pidList[1];
 pidList[0] = pid;
 char *evtList[1];
@@ -104,7 +104,7 @@ PmuClose(pd);
 ```
 
 * Sample a process
-```
+```C
 int pidList[1];
 pidList[0] = pid;
 char *evtList[1];
@@ -147,6 +147,43 @@ PmuDataFree(data);
 // Like fd, call PmuClose if pd will not be used.
 PmuClose(pd);
 ```
+* config event group function 
+```C
+int pidList[1];
+pidList[0] = pid;
+unsigned numEvt = 16;
+char *evtList[numEvt] = {"r3", "r4", "r1", "r14", "r10", "r12", "r5", "r25",
+                        "r2", "r26", "r2d", "r17", "r8", "r22", "r24", "r11"};
+// initialize event list, the same group id is the same event group.
+// if event grouping is not required, leave the event group_id list blank.
+// In addition, if group_id is -1, the event group function is forcibly disabled.
+PmuAttr attr = {0};
+attr.evtList = evtList;
+attr.numEvt = numEvt;
+attr.pidList = pidList;
+attr.numPid = 1;
+struct EvttAttr groupId[numEvt] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13, 13, 13};
+attr.evtAttr = groupId;
+// Call PmuOpen and pmu descriptor <pd> is return.
+// <pd> is an identity for current task.
+int pd = PmuOpen(COUNTING, &attr);
+// Start collection.
+PmuEnable(pd);
+// Collect for one second.
+sleep(1);
+// Stop collection.
+PmuDisable(pd);
+PmuData *data = NULL;
+// Read pmu data. You can also read data before PmuDisable.
+int len = PmuRead(pd, &data);
+for (int i = 0; i < len; ++i) {
+	...
+}
+// To free PmuData, call PmuDataFree.
+PmuDataFree(data);
+// Like fd, call PmuClose if pd will not be used.
+PmuClose(pd);
+```
 
 Python examples:
 ```python
@@ -156,7 +193,8 @@ from collections import defaultdict
 import kperf
 
 def Counting():
-    evtList = ["r11", "cycles"]
+    evtList = ["r11", "r08"]
+    evtAttr = [2, 2] # List of event group ids for configuring event group function. the same group id is the same event group.
     pmu_attr = kperf.PmuAttr(evtList=evtList)
     pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
     if pd == -1:
