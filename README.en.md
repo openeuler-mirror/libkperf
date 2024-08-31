@@ -193,7 +193,7 @@ from collections import defaultdict
 import kperf
 
 def Counting():
-    evtList = ["r11", "r08"]
+    evtList = ["r11", "cycles"]
     evtAttr = [2, 2] # Event group id list corresponding to the event list. the same group id is the same event group.
     pmu_attr = kperf.PmuAttr(evtList=evtList)
     pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)

@@ -195,7 +195,7 @@ from collections import defaultdict
 import kperf
 
 def Counting():
-    evtList = ["r11", "r08"]
+    evtList = ["r11", "cycles"]
     evtAttr = [2, 2] # 与事件列表对应的事件分组id列表，相同的事件id表示是同一个事件组; 不启用的话，可以不使用这个参数
     pmu_attr = kperf.PmuAttr(evtList=evtList, evtAttr=evtAttr)
     pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
