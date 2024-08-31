@@ -194,7 +194,7 @@ import kperf
 
 def Counting():
     evtList = ["r11", "r08"]
-    evtAttr = [2, 2] # List of event group ids for configuring event group function. the same group id is the same event group.
+    evtAttr = [2, 2] # Event group id list corresponding to the event list. the same group id is the same event group.
     pmu_attr = kperf.PmuAttr(evtList=evtList)
     pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
     if pd == -1:
