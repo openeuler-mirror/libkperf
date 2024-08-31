@@ -32,11 +32,12 @@ using EvtQueryer = function<const char**(unsigned*)>;
 
 static const string SLASH = "/";
 static const string COLON = ":";
-static const string UNCORE_PREFIX = "hisi";
 static const string SYS_DEVICES = "/sys/devices/";
 static const string EVENT_DIR = "/events/";
 
 static std::mutex pmuEventListMtx;
+
+static vector<const char*> supportDevPrefixs = {"hisi", "smmuv3"};
 
 static vector<const char*> uncoreEventList;
 static vector<const char*> traceEventList;
@@ -157,11 +158,14 @@ const char** QueryUncoreEvent(unsigned *numEvt)
         return nullptr;
     }
     while ((entry = readdir(dir)) != nullptr) {
-        if (entry->d_type == DT_DIR) {
-            string folderName = entry->d_name;
-            if (folderName.find(UNCORE_PREFIX) == 0) {
-                string devName(entry->d_name);
-                GetEventName(devName, uncoreEventList);
+        if (entry->d_type != DT_DIR) {
+            continue;
+        }
+        string folderName = entry->d_name;
+        for (auto devPrefix: supportDevPrefixs) {
+            if (folderName.find(devPrefix) == 0) {
+                GetEventName(folderName, uncoreEventList);
+                break;
             }
         }
     }
