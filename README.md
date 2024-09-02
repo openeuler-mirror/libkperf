@@ -78,7 +78,7 @@ API的详细说明请参考pmu.h。
 
 - 获取进程的pmu计数。 
 
-```
+```C
 int pidList[1];
 pidList[0] = pid;
 char *evtList[1];
@@ -110,7 +110,7 @@ PmuClose(pd);
 ```
 
 - 对进程进行采样
-```
+```C
 int pidList[1];
 pidList[0] = pid;
 char *evtList[1];
@@ -150,7 +150,42 @@ PmuDataFree(data);
 // 类似fd，当任务结束时调用PmuClose释放资源。
 PmuClose(pd);
 ```
-  
+- 配置事件分组功能
+```C
+int pidList[1];
+pidList[0] = pid;
+unsigned numEvt = 16;
+char *evtList[numEvt] = {"r3", "r4", "r1", "r14", "r10", "r12", "r5", "r25",
+                        "r2", "r26", "r2d", "r17", "r8", "r22", "r24", "r11"};
+// 初始化事件列表，相同的group_id表示是同一个事件组
+// 如果不使用事件分组功能，需要配置事件组参数列表为空
+// 说明：如果事件的group_id为-1，表示此事件强制不进行分组
+PmuAttr attr = {0};
+attr.evtList = evtList;
+attr.numEvt = numEvt;
+attr.pidList = pidList;
+attr.numPid = 1;
+struct EvttAttr groupId[numEvt] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13, 13, 13};
+attr.evtAttr = groupId;
+// 调用PmuOpen，返回pd。pd表示该任务的id。
+int pd = PmuOpen(COUNTING, &attr);
+// 开始采集。
+PmuEnable(pd);
+// 采集1秒。
+sleep(1);
+// 停止采集。
+PmuDisable(pd);
+PmuData *data = NULL;
+// 读取PmuData，它是一个数组，长度是len。
+int len = PmuRead(pd, &data);
+for (int i = 0; i < len; ++i) {
+    ...
+}
+// 释放PmuData。
+PmuDataFree(data);
+// 类似fd，当任务结束时调用PmuClose释放资源。
+PmuClose(pd);
+```
 
 Python 例子:
 ```python
@@ -161,7 +196,8 @@ import kperf
 
 def Counting():
     evtList = ["r11", "cycles"]
-    pmu_attr = kperf.PmuAttr(evtList=evtList)
+    evtAttr = [2, 2] # 与事件列表对应的事件分组id列表，相同的事件id表示是同一个事件组; 不启用的话，可以不使用这个参数
+    pmu_attr = kperf.PmuAttr(evtList=evtList, evtAttr=evtAttr)
     pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
     if pd == -1:
         print(kperf.errorno())
