@@ -185,10 +185,45 @@ PmuDataFree(data);
 PmuClose(pd);
 ```
 
+- Couting supports fork thread.
+```C
+int pidList[1];
+pidList[0] = pid;
+unsigned numEvt = 1;
+char *evtList[numEvt] = {"cycles"};
+PmuAttr attr = {0};
+attr.evtList = evtList;
+attr.numEvt = numEvt;
+attr.pidList = pidList;
+attr.numPid = 1;
+// In count mode, enable it you can get the new child thread count, default is disabled.
+attr.includeNewFork = 1;
+// Call PmuOpen and pmu descriptor <pd> is return.
+// <pd> is an identity for current task.
+int pd = PmuOpen(COUNTING, &attr);
+// Start collection.
+PmuEnable(pd);
+// Collect for two second.
+sleep(2);
+// Stop collection.
+PmuDisable(pd);
+PmuData *data = NULL;
+// Read pmu data. You can also read data before PmuDisable.
+int len = PmuRead(pd, &data);
+for (int i = 0; i < len; ++i) {
+    ...
+}
+// To free PmuData, call PmuDataFree.
+PmuDataFree(data);
+// Like fd, call PmuClose if pd will not be used.
+PmuClose(pd);
+```
+
 Python examples:
 ```python
 import time
 from collections import defaultdict
+import subprocess
 
 import kperf
 
@@ -217,6 +252,25 @@ def Counting():
     kperf.close(pd)
 
 
+def NewFork():
+    # test_new_fork demo in test_perf, you can find test_new_fork.cpp
+    p=subprocess.Popen(['test_new_fork']);
+    pidList=[p.pid]
+    evtList=["cycles"]
+    pmu_attr = kperf.PmuAttr(evtList=evtList, includeNewFork=True, pidList=pidList)
+    pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
+    if pd == -1:
+        print(kperf.error())
+        return
+    kperf.enable(pd)
+    time.sleep(4)
+    pmu_data = kperf.read(pd)
+    for data in pmu_data.iter:
+        print(f"evt:{data.evt} count:{data.count} tid:{data.tid} pid:{data.pid}")
+    kperf.disable(pd)
+    kperf.close(pd)
+
+
 def PerfList():
     event_iter = kperf.event_list(kperf.PmuEventType.CORE_EVENT)
     for event in event_iter:
@@ -226,6 +280,7 @@ def PerfList():
 if __name__ == '__main__':
     Counting()
     PerfList()
+    NewFork()
 ```
 
 

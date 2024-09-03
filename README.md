@@ -187,10 +187,44 @@ PmuDataFree(data);
 PmuClose(pd);
 ```
 
+- Couting模式支持采集fork新生成子进程的能力
+```C
+int pidList[1];
+pidList[0] = pid;
+unsigned numEvt = 1;
+char *evtList[numEvt] = {"cycles"};
+PmuAttr attr = {0};
+attr.evtList = evtList;
+attr.numEvt = numEvt;
+attr.pidList = pidList;
+attr.numPid = 1;
+// 增加参数includeNewFork，为1可获取新生成子进程的数据，默认不获取
+attr.includeNewFork = 1;
+// 调用PmuOpen，返回pd。pd表示该任务的id。
+int pd = PmuOpen(COUNTING, &attr);
+// 开始采集。
+PmuEnable(pd);
+// 采集1秒。
+sleep(1);
+// 停止采集。
+PmuDisable(pd);
+PmuData *data = NULL;
+// 读取PmuData，它是一个数组，长度是len。
+int len = PmuRead(pd, &data);
+for (int i = 0; i < len; ++i) {
+    ...
+}
+// 释放PmuData。
+PmuDataFree(data);
+// 类似fd，当任务结束时调用PmuClose释放资源。
+PmuClose(pd);
+```
+
 Python 例子:
 ```python
 import time
 from collections import defaultdict
+import subprocess
 
 import kperf
 
@@ -215,6 +249,25 @@ def Counting():
         for evt, count in evtMap.items():
             print(f"event: {evt} count: {count}")
 
+    kperf.disable(pd)
+    kperf.close(pd)
+
+
+def NewFork():
+    # test_new_fork demo in test_perf, you can find test_new_fork.cpp
+    p=subprocess.Popen(['test_new_fork']);
+    pidList=[p.pid]
+    evtList=["cycles"]
+    pmu_attr = kperf.PmuAttr(evtList=evtList, includeNewFork=True, pidList=pidList)
+    pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
+    if pd == -1:
+        print(kperf.error())
+        return
+    kperf.enable(pd)
+    time.sleep(4)
+    pmu_data = kperf.read(pd)
+    for data in pmu_data.iter:
+        print(f"evt:{data.evt} count:{data.count} tid:{data.tid} pid:{data.pid}")
     kperf.disable(pd)
     kperf.close(pd)
 
