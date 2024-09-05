@@ -20,9 +20,9 @@ import _libkperf
 import ksym
 
 class PmuTaskType:
-    COUNTING = 0
-    SAMPLING = 1
-    SPE_SAMPLING = 2
+    COUNTING = 0        # pmu counting task
+    SAMPLING = 1        # pmu sampling task
+    SPE_SAMPLING = 2    # spe sampling task
     MAX_TASK_TYPE = 3
 
 
@@ -77,9 +77,47 @@ class SymbolMode:
 
 
 class PmuAttr(_libkperf.PmuAttr):
+    """
+    Args:
+        evtList: event list. Refer 'perf list' for details about event names.
+            Both event names likes 'cycles' or event ids like 'r11' are allowed.
+            For uncore events, event names should be of the form '<device>/<event>'
+            For tracepoints, event names should be of the form '<system>:<event>'
+            For spe sampling, this field should be NULL.
+        pidList: pid list.
+            For multi-threaded programs, all threads will be monitored regardless whether threads are created before or after PmuOpen.
+            For multi-process programs, only processes created after PmuOpen are monitored.
+            For short-lived programs, PmuOpen may fail and return error code.
+            To collect system, set pidList to NULL and cpu cores will be monitored according to the field <cpuList>.
+        cpuList: Core id list.
+            If both <cpuList> and <pidList> are NULL, all processes on all cores will be monitored.
+            If <cpuList> is NULL and <pidList> is not NULL, specified processes on all cores will be monitored.
+            if both <cpuList> and <pidList> are not NULL, specified processes on specified cores will be monitored.
+        evtAttr: event group id attributes.
+            if not use event group function, this field will be NULL.
+            if use event group function. please confrim the event group id with eveList is one by one.
+            the same group id is the a event group. 
+            Note: if the group id value is -1, it indicates that the event is not grouped.
+        sampleRate: sample time enum.
+            period enum: Sample period, only available for SAMPLING and SPE_SAMPLING.
+            freq enum: Sample frequency, only available for SAMPLING.
+        useFreq: use sample frequency or not.
+            If set to 1, the previous union will be used as sample frequency,
+            otherwise, it will be used as sample period.
+        excludeUser: Don't count user.
+        excludeKernel: Don't count kernel.
+        symbolMode: This indicates how to analyze symbols of samples.
+            Refer to  comments of SymbolMode.
+        callStack: This indicates whether to collect whole callchains or only top frame.
 
+        # SPE related fields:
+        dataFilter: spe data filter. Refer to comments of SpeFilter.
+        evFilter: spe event filter. Refer to comments of SpeEventFilter.
+        minLatency: collect only samples with latency or higher.
+        includeNewFork: In count mode, enable it you can get the new child thread count, default is disabled.
+    """
     def __init__(self,
-                 evtList: List[str] = None,
+                 evtList: List[str] = None, 
                  pidList: List[int] = None,
                  cpuList: List[int] = None,
                  evtAttr: List[_libkperf.CtypesEvtAttr] = None,
@@ -135,31 +173,77 @@ class PmuData(_libkperf.PmuData):
     pass
 
 
+
 def open(collect_type: PmuTaskType, pmu_attr: PmuAttr) -> int:
+    """
+    Initialize the collection target.
+    On success, a task id is returned which is the unique identifier of the task.
+    On error, -1 is returned.
+    Refer to comments of PmuAttr for details about setting.
+    :param collect_type: task type
+    :param pmu_attr: settings of the current task
+    :return: task id
+    """
     return _libkperf.PmuOpen(int(collect_type), pmu_attr)
 
 
 def event_list(event_type: PmuEventType)-> Iterator[str]:
+    """
+    Query all available event from system.
+    :param event_type: type of event chosen by user
+    :return: event list
+    """
     return _libkperf.PmuEventList(int(event_type))
 
 
 def enable(pd: int)-> int:
+    """
+    Enable counting or sampling of task <pd>.
+    On success, 0 is returned.
+    On error, -1 is returned.
+    :param pd: task id
+    :return: error code
+    """
     return _libkperf.PmuEnable(pd)
 
 
 def disable(pd: int)-> int:
+    """
+    Disable counting or sampling of task <pd>.
+    On success, 0 is returned.
+    On error, -1 is returned.
+    :param pd: task id
+    :return: error code
+    """
     return _libkperf.PmuDisable(pd)
 
 
 def read(pd: int) -> PmuData:
+    """
+    Collect data.
+    Pmu data are collected starting from the last PmuEnable or PmuRead.
+    That is to say, for COUNTING, counts of all pmu event are reset to zero in PmuRead.
+    For SAMPLING and SPE_SAMPLING, samples collected are started from the last PmuEnable or PmuRead.
+    :param pd: task id
+    :return: pmu data
+    """
     return _libkperf.PmuRead(pd)
 
 
 def stop(pd: int) -> None:
+    """
+    stop a sampling task in asynchronous mode
+    :param pd: task id.
+    """
     return _libkperf.PmuStop(pd)
 
 
 def close(pd: int) -> None:
+    """
+    Close task with id <pd>.
+    After PmuClose is called, all pmu data related to the task become invalid.
+    :param pd: task id
+    """
     return _libkperf.PmuClose(pd)
 
 

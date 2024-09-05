@@ -552,6 +552,15 @@ class PmuDataExt:
 
 
 class CtypesSampleRawField(ctypes.Structure):
+    """
+    struct SampleRawField {
+        char* fieldName;    // the field name of this field.
+        char* fieldStr;     // the field line.
+        unsigned offset;    // the data offset.
+        unsigned size;      // the field size.
+        unsigned isSigned;  // is signed or is unsigned
+    };
+    """
     _fields_ = [
         ('fieldName', ctypes.c_char_p),
         ('fieldStr',  ctypes.c_char_p),
@@ -630,7 +639,7 @@ class CtypesPmuData(ctypes.Structure):
         const char *comm;               // process command
         uint64_t period;                     // number of Samples
         uint64_t count;                 // event count. Only available for Counting.
-        double countPercent;              // event count percent. Only avaliable for Counting.
+        double countPercent;              // event count percent. when count = 0, countPercent = -1; Only avaliable for Counting.
         struct PmuDataExt *ext;         // extension. Only available for Spe.
     };
     """
