@@ -185,7 +185,7 @@ PmuDataFree(data);
 PmuClose(pd);
 ```
 
-- Couting supports fork thread.
+- Counting supports fork thread.
 ```C
 int pidList[1];
 pidList[0] = pid;
@@ -242,7 +242,7 @@ def Counting():
         time.sleep(1)
         data_iter = kperf.read(pd)
         evtMap = defaultdict(int)
-        for data in data_iter:
+        for data in data_iter.iter:
             evtMap[data.evt] += data.count
 
         for evt, count in evtMap.items():
