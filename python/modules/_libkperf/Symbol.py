@@ -676,7 +676,7 @@ def SymResolverMapAddr(pid: int,  addr: int) -> Symbol:
     c_addr = ctypes.c_ulong(addr)
 
     c_sym  = c_SymResolverMapAddr(c_pid, c_addr)
-    # 此处指针转换可能还有问题，TODO
+
     return Symbol.from_c_sym(c_sym)
 
 
