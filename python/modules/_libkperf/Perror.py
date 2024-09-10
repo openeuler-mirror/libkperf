@@ -14,14 +14,14 @@ Description: ctype python Perror module
 """
 import ctypes
 
-from  .Config import UTF_8, kperf_so
+from  .Config import UTF_8, sym_so
 
 
 def Perrorno() -> int:
     """
     int Perrorno();
     """
-    c_Perrorno = kperf_so.Perrorno
+    c_Perrorno = sym_so.Perrorno
     c_Perrorno.argtypes = []
     c_Perrorno.restype = ctypes.c_int
 
@@ -32,7 +32,7 @@ def Perror() -> str:
     """
     const char* Perror();
     """
-    c_Perror = kperf_so.Perror
+    c_Perror = sym_so.Perror
     c_Perror.argtypes = []
     c_Perror.restype = ctypes.c_char_p
 
@@ -43,7 +43,7 @@ def GetWarn() -> int:
     """
     int GetWarn();
     """
-    c_GetWarn = kperf_so.GetWarn
+    c_GetWarn = sym_so.GetWarn
     c_GetWarn.argtypes = []
     c_GetWarn.restype = ctypes.c_int
 
@@ -54,7 +54,7 @@ def GetWarnMsg() -> str:
     """
     const char* GetWarnMsg();
     """
-    c_GetWarnMsg = kperf_so.GetWarnMsg
+    c_GetWarnMsg = sym_so.GetWarnMsg
     c_GetWarnMsg.argtypes = []
     c_GetWarnMsg.restype = ctypes.c_char_p
 
