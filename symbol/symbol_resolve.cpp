@@ -250,15 +250,13 @@ namespace {
         }
     }
 
-    static inline size_t HashStr(unsigned long* stack, int nr)
+    static inline std::string HashStr(unsigned long* stack, int nr)
     {
         std::string str = {};
         for (int k = 0; k < nr; k++) {
-            str += stack[k];
+            str += std::to_string(stack[k]);
         }
-        std::hash<std::string> h;
-        size_t n = h(str);
-        return n;
+        return str;
     }
 
     static inline bool CheckColonSuffix(const std::string& str)
@@ -815,7 +813,7 @@ struct Stack* SymbolResolve::StackToHash(int pid, unsigned long* stack, int nr)
     if (this->stackMap.find(pid) == this->stackMap.end()) {
         this->stackMap[pid] = {};
     }
-    size_t stackId = HashStr(stack, nr);
+    std::string stackId = HashStr(stack, nr);
     if (this->stackMap.at(pid).find(stackId) != this->stackMap.at(pid).end()) {
         return this->stackMap.at(pid).at(stackId);
     }
