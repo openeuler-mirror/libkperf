@@ -126,7 +126,7 @@ namespace KUNPENG_SYM {
     };
 
     using SYMBOL_MAP = std::unordered_map<pid_t, std::unordered_map<__u64, struct Symbol *>>;
-    using STACK_MAP = std::unordered_map<pid_t, std::unordered_map<size_t, struct Stack*>>;
+    using STACK_MAP = std::unordered_map<pid_t, std::unordered_map<std::string, struct Stack*>>;
     using MODULE_MAP = std::unordered_map<pid_t, std::vector<std::shared_ptr<ModuleMap>>>;
     using DWARF_MAP = std::unordered_map<std::string, MyDwarf>;
     using ELF_MAP = std::unordered_map<std::string, MyElf>;
