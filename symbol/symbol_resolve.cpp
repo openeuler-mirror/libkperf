@@ -96,9 +96,11 @@ namespace {
         struct Symbol* symbol = new struct Symbol();
         symbol->module = UNKNOWN;
         symbol->symbolName = UNKNOWN;
+        symbol->mangleName = UNKNOWN;
         symbol->fileName = UNKNOWN;
         symbol->addr = addr;
         symbol->offset = 0;
+        symbol->lineNum = 0;
         return symbol;
     }
 
@@ -283,6 +285,12 @@ void SymbolUtils::FreeSymbol(struct Symbol* symbol)
         delete[] symbol->symbolName;
         symbol->symbolName = nullptr;
     }
+
+    if (symbol->mangleName && symbol->mangleName != UNKNOWN) {
+        delete[] symbol->mangleName;
+        symbol->mangleName = nullptr;
+    }
+
     if (symbol->fileName && symbol->fileName != UNKNOWN && symbol->fileName != KERNEL) {
         delete[] symbol->fileName;
         symbol->fileName = nullptr;
@@ -645,24 +653,24 @@ int SymbolResolve::RecordElf(const char* fileName)
         return LIBSYM_ERR_OPEN_FILE_FAILED;
     }
 
-    std::shared_ptr<elf::loader> efLoader = elf::create_mmap_loader(fd);
-    elf::elf ef(efLoader);
-    MyElf myElf(ef);
-
     try {
+        std::shared_ptr<elf::loader> efLoader = elf::create_mmap_loader(fd);
+        elf::elf ef(efLoader);
+        MyElf myElf(ef);
         for (const auto& sec : ef.sections()) {
             if (sec.get_hdr().type != elf::sht::symtab && sec.get_hdr().type != elf::sht::dynsym) {
                 continue;
             }
             ElfInfoRecord(myElf, sec);
         }
-    } catch (elf::format_error& error) {
+        this->elfMap.emplace(file, myElf);
+    } catch (std::exception& error) {
         close(fd);
         pcerr::New(LIBSYM_ERR_ELFIN_FOMAT_FAILED, "libsym record elf format error: " + std::string{error.what()});
         elfSafeHandler.releaseLock(file);
         return LIBSYM_ERR_ELFIN_FOMAT_FAILED;
     }
-    this->elfMap.emplace(file, myElf);
+    
     close(fd);
     pcerr::New(0, "success");
     elfSafeHandler.releaseLock(file);
@@ -695,15 +703,16 @@ int SymbolResolve::RecordDwarf(const char* fileName)
         return LIBSYM_ERR_OPEN_FILE_FAILED;
     }
     /** symbol cache logic should be implemented after this line */
-
-    auto efLoader = elf::create_mmap_loader(fd);
-    elf::elf ef(std::move(efLoader));
-
     try {
+        auto efLoader = elf::create_mmap_loader(fd);
+        elf::elf ef(std::move(efLoader));
+
         dwarf::dwarf dw(dwarf::elf::create_loader(ef));
         MyDwarf myDwarf(dw, file);
         dwarfMap.emplace(file, myDwarf);
-    } catch (dwarf::format_error& error) {
+
+        efLoader.reset();
+    } catch (std::exception& error) {
         close(fd);
         dwarfSafeHandler.releaseLock((file));
         pcerr::New(LIBSYM_ERR_DWARF_FORMAT_FAILED,
@@ -711,7 +720,6 @@ int SymbolResolve::RecordDwarf(const char* fileName)
         return LIBSYM_ERR_DWARF_FORMAT_FAILED;
     }
 
-    efLoader.reset();
     close(fd);
     pcerr::New(0, "success");
     dwarfSafeHandler.releaseLock((file));
@@ -746,20 +754,23 @@ void SymbolResolve::SearchElfInfo(MyElf& myElf, unsigned long addr, struct Symbo
 {
     ELF_SYM *elfSym = myElf.FindSymbol(addr);
     if (elfSym == nullptr) {
-        strcpy(symbol->symbolName, "UNKNOWN");
         return;
     }
     symbol->codeMapEndAddr = elfSym->get_data().value + elfSym->get_data().size;
     *offset = addr - elfSym->get_data().value;
     std::string symName = elfSym->get_name();
+    symbol->mangleName = InitChar(symName.size());
+    SymbolUtils::StrCpy(symbol->mangleName, symName.size(), symName.c_str());
     char *name = CppNamedDemangle(symName.c_str());
     if (name) {
-        SymbolUtils::StrCpy(symbol->symbolName, MAX_LINUX_SYMBOL_LEN, name);
+        symbol->symbolName = InitChar(strlen(name));
+        SymbolUtils::StrCpy(symbol->symbolName, strlen(name), name);
         free(name);
         name = nullptr;
         return;
     }
-    SymbolUtils::StrCpy(symbol->symbolName, MAX_LINUX_SYMBOL_LEN, symName.c_str());
+    symbol->symbolName = InitChar(symName.size());
+    SymbolUtils::StrCpy(symbol->symbolName, symName.size(), symName.c_str());
     return;
 }
 
@@ -774,11 +785,9 @@ void SymbolResolve::SearchDwarfInfo(MyDwarf& myDwarf, unsigned long addr, struct
     }
     dwarfLoadHandler.releaseLock(moduleName);
     if (dwarfEntry.find) {
-        strcpy(symbol->fileName, dwarfEntry.fileName.c_str());
+        symbol->fileName = InitChar(dwarfEntry.fileName.size());
+        SymbolUtils::StrCpy(symbol->fileName, dwarfEntry.fileName.size(), dwarfEntry.fileName.c_str());
         symbol->lineNum = dwarfEntry.lineNum;
-    } else {
-        strcpy(symbol->fileName, "UKNOWN");
-        symbol->lineNum = 0;
     }
 }
 
@@ -884,13 +893,9 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
     if (it != this->symbolMap.at(pid).end()) {
         return it->second;
     }
-    struct Symbol* symbol = new struct Symbol();
-    symbol->module = InitChar(MAX_LINUX_MODULE_LEN);
-    symbol->symbolName = InitChar(MAX_LINUX_SYMBOL_LEN);
-    symbol->fileName = InitChar(MAX_LINUX_FILE_NAME);
-    symbol->addr = addr;
-    symbol->offset = 0;
-    strcpy(symbol->module, module->moduleName.c_str());
+    struct Symbol* symbol = InitializeSymbol(addr);
+    symbol->module = InitChar(module->moduleName.size());
+    SymbolUtils::StrCpy(symbol->module, module->moduleName.size(), module->moduleName.c_str());
     unsigned long addrToSearch = addr;
     if (this->elfMap.find(module->moduleName) != this->elfMap.end()) {
         // If the largest symbol in the elf symbol table is detected to be smaller than the searched symbol, subtraction
@@ -901,15 +906,10 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
             addrToSearch = addrToSearch - module->start;
         }
         this->SearchElfInfo(myElf, addrToSearch, symbol, &symbol->offset);  
-    } else {
-        strcpy(symbol->symbolName, "UNKNOWN");
     }
 
     if (this->dwarfMap.find(module->moduleName) != this->dwarfMap.end()) {
         this->SearchDwarfInfo(this->dwarfMap.at(module->moduleName), addrToSearch, symbol);
-    } else {
-        strcpy(symbol->fileName, "UKNOWN");
-        symbol->lineNum = 0;
     }
     symbol->codeMapAddr = addrToSearch;
     this->symbolMap.at(pid).insert({addr, symbol});
@@ -965,6 +965,8 @@ int SymbolResolve::RecordKernel()
         std::shared_ptr<Symbol> data = std::make_shared<Symbol>();
         data->symbolName = InitChar(nameLen);
         strcpy(data->symbolName, name);
+        data->mangleName = InitChar(nameLen);
+        strcpy(data->mangleName, name);
         data->addr = addr;
         data->fileName = InitChar(KERNEL_NAME_LEN);
         strcpy(data->fileName, "[kernel]");
@@ -1029,14 +1031,11 @@ struct Symbol* SymbolResolve::MapCodeElfAddr(const std::string& moduleName, unsi
 
 struct Symbol* SymbolResolve::MapUserCodeAddr(const std::string& moduleName, unsigned long startAddr)
 {
-    struct Symbol* symbol = new Symbol();
-    symbol->symbolName = InitChar(MAX_LINUX_SYMBOL_LEN);
-    symbol->fileName = InitChar(MAX_LINUX_SYMBOL_LEN);
-    symbol->module = InitChar(MAX_LINUX_MODULE_LEN);
-    symbol->addr = startAddr;
+    struct Symbol* symbol = InitializeSymbol(startAddr);
     unsigned long addrToSearch = startAddr;
     symbol->codeMapAddr = addrToSearch;
-    strcpy(symbol->module, moduleName.c_str());
+    symbol->module = InitChar(moduleName.size());
+    SymbolUtils::StrCpy(symbol->module, moduleName.size(), moduleName.c_str());
     if (this->elfMap.find(moduleName) != this->elfMap.end()) {
         this->SearchElfInfo(this->elfMap.at(moduleName), addrToSearch, symbol, &symbol->offset);
     }

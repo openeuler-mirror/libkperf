@@ -23,7 +23,8 @@ extern "C" {
 struct Symbol {
     unsigned long addr;    // address (dynamic allocated) of this symbol
     char* module;          // binary name of which the symbol belongs to
-    char* symbolName;      // name of the symbol
+    char* symbolName;      // name of the symbol with demangle
+    char* mangleName;      // name of the symbol with no demangle
     char* fileName;        // corresponding file of current symbol
     unsigned int lineNum;  // line number of a symbol in the file
     unsigned long offset;

@@ -22,7 +22,8 @@ class CtypesSymbol(ctypes.Structure):
     struct Symbol {
         unsigned long addr;    // address (dynamic allocated) of this symbol
         char* module;          // binary name of which the symbol belongs to
-        char* symbolName;      // name of the symbol
+        char* symbolName;      // name of the symbol with demangle
+        char* mangleName;      // name of the symbol with no demangle
         char* fileName;        // corresponding file of current symbol
         unsigned int lineNum;  // line number of a symbol in the file
         unsigned long offset;
@@ -36,6 +37,7 @@ class CtypesSymbol(ctypes.Structure):
         ('addr',           ctypes.c_ulong),
         ('module',         ctypes.c_char_p),
         ('symbolName',     ctypes.c_char_p),
+        ('mangleName',     ctypes.c_char_p),
         ('fileName',       ctypes.c_char_p),
         ('lineNum',        ctypes.c_uint),
         ('offset',         ctypes.c_ulong),
@@ -48,6 +50,7 @@ class CtypesSymbol(ctypes.Structure):
                  addr: int = 0,
                  module: str = '',
                  symbolName: str = '',
+                 mangleName: str = '',
                  fileName: str = '',
                  lineNum: int = 0,
                  offset: int = 0,
@@ -60,6 +63,8 @@ class CtypesSymbol(ctypes.Structure):
         self.module = ctypes.c_char_p(module.encode(UTF_8))
 
         self.symbolName = ctypes.c_char_p(symbolName.encode(UTF_8))
+        self.mangleName = ctypes.c_char_p(mangleName.encode(UTF_8))
+
         self.fileName = ctypes.c_char_p(fileName.encode(UTF_8))
         self.lineNum = ctypes.c_uint(lineNum)
         self.offset = ctypes.c_ulong(offset)
@@ -77,6 +82,7 @@ class Symbol:
                  addr: int = 0,
                  module: str = '',
                  symbolName: str = '',
+                 mangleName: str = '',
                  fileName: str = '',
                  lineNum: int = 0,
                  offset: int = 0,
@@ -87,6 +93,7 @@ class Symbol:
             addr=addr,
             module=module,
             symbolName=symbolName,
+            mangleName=mangleName,
             fileName=fileName,
             lineNum=lineNum,
             offset=offset,
@@ -122,6 +129,14 @@ class Symbol:
     @symbolName.setter
     def symbolName(self, symbolName: str) -> None:
         self.c_sym.symbolName = ctypes.c_char_p(symbolName.encode(UTF_8))
+    
+    @property
+    def mangleName(self) -> str:
+        return self.c_sym.mangleName.decode(UTF_8)
+
+    @mangleName.setter
+    def mangleName(self, mangleName: str) -> None:
+        self.c_sym.mangleName = ctypes.c_char_p(mangleName.encode(UTF_8))
 
     @property
     def fileName(self) -> str:
