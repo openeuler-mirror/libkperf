@@ -223,12 +223,12 @@ int SpeOpen(PmuEvt *attr, int cpu, SpeContext *ctx)
     ctx->dummyMmapSize = RING_BUF_SIZE + pageSize;
 
     ctx->coreCtxes = (struct SpeCoreContext *)malloc(sizeof(struct SpeCoreContext));
-    ctx->coreCtxes->mask = ctx->auxMmapSize - 1;
-    ctx->coreCtxes->prev = 0;
     if (!ctx->coreCtxes) {
         free(ctx);
         return COMMON_ERR_NOMEM;
     }
+    ctx->coreCtxes->mask = ctx->auxMmapSize - 1;
+    ctx->coreCtxes->prev = 0;
 
     auto err = CoreSpeOpen(&ctx->coreCtxes, ctx, attr, cpu);
     if (err != 0) {
