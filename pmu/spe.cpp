@@ -361,7 +361,11 @@ void Spe::CoreDummyData(struct SpeCoreContext *context, struct ContextSwitchData
 
         if (header->type == PERF_RECORD_MMAP && symbolMode != NO_SYMBOL_RESOLVE) {
             struct PerfRecordMmap *sample = (struct PerfRecordMmap *)header;
-            SymResolverUpdateModule(sample->tid, sample->filename, sample->addr);
+            if (symbolMode == RESOLVE_ELF_DWARF) {
+                SymResolverUpdateModule(sample->tid, sample->filename, sample->addr);
+            } else if (symbolMode == RESOLVE_ELF) {
+                SymResolverUpdateModuleNoDwarf(sample->tid, sample->filename, sample->addr);
+            }
             dataTail += header->size;
             continue;
         }

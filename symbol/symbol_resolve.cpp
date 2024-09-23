@@ -562,7 +562,7 @@ int SymbolResolve::RecordModule(int pid, RecordModuleType recordModuleType)
     return 0;
 }
 
-int SymbolResolve::UpdateModule(int pid)
+int SymbolResolve::UpdateModule(int pid, RecordModuleType recordModuleType)
 {
     if (pid < 0) {
         pcerr::New(LIBSYM_ERR_PARAM_PID_INVALID, "libsym param process ID must be greater than 0");
@@ -602,7 +602,9 @@ int SymbolResolve::UpdateModule(int pid)
     // Load modules.
     for (auto& item : diffModVec) {
         this->RecordElf(item->moduleName.c_str());
-        this->RecordDwarf(item->moduleName.c_str());
+        if (recordModuleType != RecordModuleType::RECORD_NO_DWARF) {
+            this->RecordDwarf(item->moduleName.c_str());
+        }
     }
     for (auto mod : diffModVec) {
         oldModVec.push_back(mod);
@@ -981,7 +983,7 @@ int SymbolResolve::RecordKernel()
     return 0;
 }
 
-int SymbolResolve::UpdateModule(int pid, const char* moduleName, unsigned long startAddr)
+int SymbolResolve::UpdateModule(int pid, const char* moduleName, unsigned long startAddr, RecordModuleType recordModuleType)
 {
     if (pid < 0) {
         pcerr::New(LIBSYM_ERR_PARAM_PID_INVALID, "libsym param process ID must be greater than 0");
@@ -996,9 +998,11 @@ int SymbolResolve::UpdateModule(int pid, const char* moduleName, unsigned long s
         return ret;
     }
 
-    this->RecordDwarf(data->moduleName.c_str());
-    if (ret == LIBSYM_ERR_OPEN_FILE_FAILED || ret == LIBSYM_ERR_FILE_NOT_RGE) {
-        return ret;
+    if (recordModuleType != RecordModuleType::RECORD_NO_DWARF) {
+        ret = this->RecordDwarf(data->moduleName.c_str());
+        if (ret == LIBSYM_ERR_OPEN_FILE_FAILED || ret == LIBSYM_ERR_FILE_NOT_RGE) {
+            return ret;
+        }
     }
 
     if (this->moduleMap.find(pid) == this->moduleMap.end()) {
