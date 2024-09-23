@@ -67,7 +67,14 @@ int SymResolverRecordModuleNoDwarf(int pid);
  */
 int SymResolverIncrUpdateModule(int pid);
 
+/**
+ * Incremental update modules of pid, i.e. record newly loaded dynamic libraries with no dwarf by pid.
+ */
+int SymResolverIncrUpdateModuleNoDwarf(int pid);
+
 int SymResolverUpdateModule(int pid, const char* moduleName, unsigned long startAddr);
+
+int SymResolverUpdateModuleNoDwarf(int pid, const char* moduleName, unsigned long startAddr);
 
 /**
  * Record ELF data for a binary

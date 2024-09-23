@@ -102,7 +102,17 @@ struct Symbol* SymResolverMapAddr(int pid, unsigned long addr)
 int SymResolverIncrUpdateModule(int pid)
 {
     try {
-        return SymbolResolve::GetInstance()->UpdateModule(pid);
+        return SymbolResolve::GetInstance()->UpdateModule(pid, RecordModuleType::RECORD_ALL);
+    } catch (std::bad_alloc& err) {
+        pcerr::New(COMMON_ERR_NOMEM);
+        return COMMON_ERR_NOMEM;
+    }
+}
+
+int SymResolverIncrUpdateModuleNoDwarf(int pid)
+{
+    try {
+        return SymbolResolve::GetInstance()->UpdateModule(pid, RecordModuleType::RECORD_NO_DWARF);
     } catch (std::bad_alloc& err) {
         pcerr::New(COMMON_ERR_NOMEM);
         return COMMON_ERR_NOMEM;
@@ -112,7 +122,17 @@ int SymResolverIncrUpdateModule(int pid)
 int SymResolverUpdateModule(int pid, const char* moduleName, unsigned long startAddr)
 {
     try {
-        return SymbolResolve::GetInstance()->UpdateModule(pid, moduleName, startAddr);
+        return SymbolResolve::GetInstance()->UpdateModule(pid, moduleName, startAddr, RecordModuleType::RECORD_ALL);
+    } catch (std::bad_alloc& err) {
+        pcerr::New(COMMON_ERR_NOMEM);
+        return COMMON_ERR_NOMEM;
+    }
+}
+
+int SymResolverUpdateModuleNoDwarf(int pid, const char* moduleName, unsigned long startAddr)
+{
+    try {
+        return SymbolResolve::GetInstance()->UpdateModule(pid, moduleName, startAddr, RecordModuleType::RECORD_NO_DWARF);
     } catch (std::bad_alloc& err) {
         pcerr::New(COMMON_ERR_NOMEM);
         return COMMON_ERR_NOMEM;

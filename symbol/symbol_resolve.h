@@ -163,8 +163,8 @@ namespace KUNPENG_SYM {
         int RecordKernel();
         int RecordElf(const char* fileName);
         int RecordDwarf(const char* fileName);
-        int UpdateModule(int pid);
-        int UpdateModule(int pid, const char* moduleName, unsigned long startAddr);
+        int UpdateModule(int pid, RecordModuleType recordModuleType);
+        int UpdateModule(int pid, const char* moduleName, unsigned long startAddr, RecordModuleType recordModuleType);
         void Clear();
         std::shared_ptr<ModuleMap> AddrToModule(std::vector<std::shared_ptr<ModuleMap>>& processModule, unsigned long addr);
         struct Stack* StackToHash(int pid, unsigned long* stack, int nr);
