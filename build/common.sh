@@ -15,6 +15,10 @@ set -e
 
 cpu_core_num=$(($(nproc)-1))
 
+if [ "$cpu_core_num" -eq 0 ];then
+   cpu_core_num=1
+fi
+
 creat_dir(){
 	local target_dir="$1"
 	if [ -d "${target_dir}" ];then

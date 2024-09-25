@@ -13,6 +13,7 @@
  * Description: Unit test for counting.
  ******************************************************************************/
 #include "test_common.h"
+#include <dirent.h>
 
 using namespace std;
 
@@ -307,4 +308,60 @@ TEST_F(TestCount, SimdRatio)
     ASSERT_EQ(evtMap.size(), evts.size());
     auto simdRatio = (double)evtMap[aseSpec]/evtMap[instSpec];
     ASSERT_GT(simdRatio, 0.1);
+}
+
+static std::vector<string> GetHHADirs() {
+    vector<string> hhaEvents;
+    unique_ptr<DIR, decltype(&closedir)> dir(opendir("/sys/devices"), &closedir);
+    if(!dir) {
+        return hhaEvents;
+    }
+
+    struct dirent* dt;
+    while((dt = readdir(dir.get())) != nullptr) {
+        std::string name = dt->d_name;
+        if(name == "." || name == "..") {
+            continue;
+        }
+
+        if(dt->d_type == DT_DIR && strstr(name.c_str(), "hha") != nullptr) {
+            hhaEvents.push_back(name + "/");
+        }
+    }                                                                                                   
+    return hhaEvents;
+}
+
+
+TEST_F(TestCount, DeleteEvtAfterOpenPmuu) {
+    struct PmuAttr attr = {nullptr};
+    vector<string> hhaEvents = GetHHADirs();
+    ASSERT_TRUE(hhaEvents.size() > 0);
+    set<string> evtNames;
+    vector<string> eventsStr = {"rx_outer", "rx_sccl", "rx_ops_num"};
+    int evtNum = hhaEvents.size() * eventsStr.size();
+    char **evtList = new char *[evtNum];
+    for (int i = 0; i < hhaEvents.size(); ++i) {
+        for (int j = 0; j < eventsStr.size(); ++j) {
+             int evtLen = hhaEvents[i].size() + eventsStr[j].size() + 2;
+             evtList[i * eventsStr.size() + j] = new char[evtLen];
+             snprintf(evtList[i * eventsStr.size() + j], evtLen, "%s%s/", hhaEvents[i].c_str(), eventsStr[j].c_str());
+             evtNames.emplace(hhaEvents[i] + eventsStr[j] + "/");
+        }
+    }
+    attr.evtList = evtList;
+    attr.numEvt = evtNum;
+    int pd = PmuOpen(COUNTING, &attr);
+    for (int i = 0; i < evtNum; i++) {
+        delete[] evtList[i];
+    }
+    delete[] evtList;
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+    PmuData* pmuData = nullptr;
+    int len = PmuRead(pd, &pmuData);
+    for(int i = 0; i < len; i++) {
+        ASSERT_TRUE(evtNames.find(pmuData[i].evt) != evtNames.end());
+    }
+    PmuClose(pd);
 }

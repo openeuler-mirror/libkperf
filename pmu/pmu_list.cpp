@@ -283,8 +283,8 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    void PmuList::StoreSplitData(const unsigned pd, pair<unsigned, char**> previousEventList,
-                                 unordered_map<string, char*> eventSplitMap)
+    void PmuList::StoreSplitData(const unsigned pd, pair<unsigned, char**>& previousEventList,
+                                 unordered_map<string, char*>& eventSplitMap)
     {
         lock_guard<mutex> lg(dataParentMtx);
         parentEventMap.emplace(pd, move(eventSplitMap));
@@ -303,7 +303,7 @@ namespace KUNPENG_PMU {
         RemoveEpollFd(pd);
         EraseSpeCpu(pd);
         EraseDummyEvent(pd);
-        EraseParentEventMap();
+        EraseParentEventMap(pd);
         SymResolverDestroy();
         PmuEventListFree();
         PointerPasser::FreeRawFieldMap();
@@ -409,15 +409,23 @@ namespace KUNPENG_PMU {
         return dataEvtGroupList[pd];
     }
 
-    void PmuList::EraseParentEventMap()
+    void PmuList::EraseParentEventMap(const unsigned pd)
     {
         lock_guard<mutex> lg(dataParentMtx);
-        for (auto& pair: parentEventMap) {
-            auto& innerMap = pair.second;
-            innerMap.clear();
+        auto iter = parentEventMap.find(pd);
+        if (iter != parentEventMap.end()) {
+            parentEventMap.at(pd).clear();
+            parentEventMap.erase(iter);
         }
-        parentEventMap.clear();
-        previousEventMap.clear();
+        auto preIter = previousEventMap.find(pd);
+        if (preIter != previousEventMap.end()) {
+            auto pair = previousEventMap.at(pd);
+            for (int i = 0; i < pair.first; i++) {
+                delete[] pair.second[i];
+            }
+            delete[] pair.second;
+            previousEventMap.erase(preIter);
+        }
     }
 
     PmuList::EventData& PmuList::GetDataList(const unsigned pd)
