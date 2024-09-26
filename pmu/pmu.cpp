@@ -160,17 +160,29 @@ static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
         return LIBPERF_ERR_INVALID_SAMPLE_RATE;
     }
 
-    if ((collectType == SAMPLING || collectType == COUNTING) && attr->evtAttr == nullptr) {
-        struct EvtAttr *evtAttr = new struct EvtAttr[attr->numEvt];
-        // handle event group id. -1 means that it doesn't run event group feature.
-        for (int i = 0; i < attr->numEvt; ++i) {
-            evtAttr[i].group_id = -1;
+    return SUCCESS;
+}
+
+static void CopyAttrData(PmuAttr* newAttr, PmuAttr* inputAttr, enum PmuTaskType collectType) 
+{
+    //Coping event data to prevent delete exceptions
+    if (inputAttr->numEvt > 0) {
+        char **newEvtList = new char *[inputAttr->numEvt];
+        for (int i = 0; i < inputAttr->numEvt; ++i) {
+            newEvtList[i] = new char[strlen(inputAttr->evtList[i]) + 1];
+            strcpy(newEvtList[i], inputAttr->evtList[i]);
         }
-        attr->evtAttr = evtAttr;
-        
+        newAttr->evtList = newEvtList;
     }
 
-    return SUCCESS;
+    if ((collectType == SAMPLING || collectType == COUNTING) && inputAttr->evtAttr == nullptr) {
+        struct EvtAttr *evtAttr = new struct EvtAttr[inputAttr->numEvt];
+        // handle event group id. -1 means that it doesn't run event group feature.
+        for (int i = 0; i < inputAttr->numEvt; ++i) {
+            evtAttr[i].group_id = -1;
+        }
+        newAttr->evtAttr = evtAttr;
+    }
 }
 
 static bool FreeEvtAttr(struct PmuAttr *attr)
@@ -194,6 +206,21 @@ static bool FreeEvtAttr(struct PmuAttr *attr)
     }
 
     return SUCCESS;
+}
+
+static void FreeEvtList(unsigned evtNum, char** evtList)
+{
+    if (!evtList) {
+        return;
+    }
+    for (int i = 0; i < evtNum; i++) {
+        if (evtList[i]) {
+            delete[] evtList[i];
+            evtList[i] = nullptr;
+        }
+    }
+    delete[] evtList;
+    evtList = nullptr;
 }
 
 static bool AppendChildEvents(char* evt, unordered_map<string, char*>& eventSplitMap)
@@ -304,51 +331,64 @@ static void PmuTaskAttrFree(PmuTaskAttr *taskAttr)
 int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
 {
     SetWarn(SUCCESS);
+    PmuAttr copiedAttr = {*attr};
+    pair<unsigned, char**> previousEventList = {0, nullptr};
     try {
         auto err = CheckAttr(collectType, attr);
         if (err != SUCCESS) {
             return -1;
         }
+        CopyAttrData(&copiedAttr, attr, collectType);
+        previousEventList = make_pair(copiedAttr.numEvt, copiedAttr.evtList);
+        int pd = -1;
         unordered_map<string, char*> eventSplitMap;
-        if (!SplitUncoreEvent(attr, eventSplitMap)) {
-            return -1;
-        }
-        auto previousEventList = make_pair(attr->numEvt, attr->evtList);
-        vector<char*> newEvtlist;
-        vector<struct EvtAttr> newEvtAttrList;
-        auto numEvt = GenerateSplitList(eventSplitMap, newEvtlist, attr, newEvtAttrList);
-        FreeEvtAttr(attr);
-        attr->numEvt = numEvt;
-        attr->evtList = newEvtlist.data();
-        attr->evtAttr = newEvtAttrList.data();
+        do {
+            if (!SplitUncoreEvent(&copiedAttr, eventSplitMap)) {
+                break;
+            }
+            vector<char *> newEvtlist;
+            vector<struct EvtAttr> newEvtAttrList;
+            auto numEvt = GenerateSplitList(eventSplitMap, newEvtlist, &copiedAttr, newEvtAttrList);
+            FreeEvtAttr(&copiedAttr);
+            copiedAttr.numEvt = numEvt;
+            copiedAttr.evtList = newEvtlist.data();
+            copiedAttr.evtAttr = newEvtAttrList.data();
 
-        auto pTaskAttr = AssignPmuTaskParam(collectType, attr);
-        if (pTaskAttr == nullptr) {
-            return -1;
-        }
-        unique_ptr<PmuTaskAttr, void (*)(PmuTaskAttr*)> taskAttr(pTaskAttr, PmuTaskAttrFree);
+            auto pTaskAttr = AssignPmuTaskParam(collectType, &copiedAttr);
+            if (pTaskAttr == nullptr) {
+                break;
+            }
+            unique_ptr<PmuTaskAttr, void (*)(PmuTaskAttr *)> taskAttr(pTaskAttr, PmuTaskAttrFree);
 
-        auto pd = KUNPENG_PMU::PmuList::GetInstance()->NewPd();
+            pd = KUNPENG_PMU::PmuList::GetInstance()->NewPd();
+            if (pd == -1) {
+                New(LIBPERF_ERR_NO_AVAIL_PD);
+                break;
+            }
+
+            KUNPENG_PMU::PmuList::GetInstance()->SetSymbolMode(pd, attr->symbolMode);
+            err = KUNPENG_PMU::PmuList::GetInstance()->Register(pd, taskAttr.get());
+            if (err != SUCCESS) {
+                PmuList::GetInstance()->Close(pd);
+                pd = -1;
+            }
+            New(err);
+        } while(false);
+
         if (pd == -1) {
-            New(LIBPERF_ERR_NO_AVAIL_PD);
+            FreeEvtList(previousEventList.first, previousEventList.second);
             return -1;
-        }
-
-        KUNPENG_PMU::PmuList::GetInstance()->SetSymbolMode(pd, attr->symbolMode);
-        err = KUNPENG_PMU::PmuList::GetInstance()->Register(pd, taskAttr.get());
-        if (err != SUCCESS) {
-            PmuList::GetInstance()->Close(pd);
-            pd = -1;
         }
         // store eventList provided by user and the mapping relationship between the user eventList and the split
         // eventList into buff
         KUNPENG_PMU::PmuList::GetInstance()->StoreSplitData(pd, previousEventList, eventSplitMap);
-        New(err);
         return pd;
     } catch (std::bad_alloc&) {
+        FreeEvtList(previousEventList.first, previousEventList.second);
         New(COMMON_ERR_NOMEM);
         return -1;
     } catch (exception& ex) {
+        FreeEvtList(previousEventList.first, previousEventList.second);
         New(UNKNOWN_ERROR, ex.what());
         return -1;
     }

@@ -71,8 +71,8 @@ public:
     int NewPd();
 
     int GetHistoryData(const int pd, std::vector<PmuData>& pmuData);
-    void StoreSplitData(unsigned pd, std::pair<unsigned, char**> previousEventList,
-                        std::unordered_map<std::string, char*> eventSplitMap);
+    void StoreSplitData(unsigned pd, std::pair<unsigned, char**>& previousEventList,
+                        std::unordered_map<std::string, char*>& eventSplitMap);
     bool IsAllPidExit(const unsigned pd);
 
 private:
@@ -95,7 +95,7 @@ private:
     void InsertEvtList(const unsigned pd, std::shared_ptr<EvtList> evtList);
     std::vector<std::shared_ptr<EvtList>>& GetEvtList(const unsigned pd);
     void EraseEvtList(const unsigned pd);
-    void EraseParentEventMap();
+    void EraseParentEventMap(const unsigned pd);
 
     int EvtInit(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader, const int pd, const std::shared_ptr<EvtList> &evtList);
     int Init(const int pd);
