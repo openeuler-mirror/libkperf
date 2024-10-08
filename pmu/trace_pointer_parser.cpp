@@ -26,22 +26,30 @@ const char *POINTER_OFFSET_REGEX = "%*[^0-9]%i%*[;] %*[^0-9]%i%*[;] %*[^0-9]%i%*
 static std::unordered_map<std::string, std::unordered_map<string, Field>> efMap; //the key is event name, value is field and ths field name map.
 static std::unordered_map<char *, std::string> dEvtMap; //The key is the data pointer, value is event name.
 static std::map<Field, SampleRawField *> fsrMap;
+static std::unordered_map<std::string, std::string> formatMap;
 
-bool PointerPasser::IsNeedFormat(std::ifstream &file, const std::string &evtName) {
+static std::string GetFormatRealPath(const std::string &evtName) {
     auto colonId = evtName.find(':');
     if (colonId == string::npos) {
-        return false;
+        return {};
     }
     string eventName = evtName.substr(colonId + 1);
     string systemName = evtName.substr(0, colonId);
     const string &eventDir = GetTraceEventDir();
     if (eventDir.empty()) {
-        return false;
+        return {};
     }
     string formatPath = eventDir + systemName + "/" + eventName + "/format";
-    string realPath = GetRealPath(formatPath);
-    if (realPath.empty()) {
-        return false;
+    return GetRealPath(formatPath);
+}
+
+bool PointerPasser::IsNeedFormat(std::ifstream &file, const std::string &evtName) {
+    std::string realPath;
+    if (formatMap.find(evtName) != formatMap.end()) {
+        realPath = formatMap.at(evtName);
+    } else {
+        realPath = GetFormatRealPath(evtName);
+        formatMap.emplace(evtName, realPath);
     }
     if (!IsValidPath(realPath)) {
         return false;
@@ -88,7 +96,7 @@ void PointerPasser::ParserRawFormatData(struct PmuData *pd, KUNPENG_PMU::PerfRaw
                                                             union KUNPENG_PMU::PerfEvent *event,
                                                             const std::string &evtName) {
     ifstream file;
-    if (!IsNeedFormat(file, evtName)) {
+    if (efMap.find(evtName) == efMap.end() && !IsNeedFormat(file, evtName)) {
         pd->rawData = nullptr;
         return;
     }
