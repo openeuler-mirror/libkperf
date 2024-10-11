@@ -127,10 +127,16 @@ const char** QueryCoreEvent(unsigned *numEvt)
     }
     DIR* dir;
     struct dirent* entry;
-    string path = "/sys/devices/armv8_pmuv3_0/events/";
+    auto pmuDevPath = GetPmuDevicePath();
+    if (pmuDevPath.empty()) {
+        *numEvt = coreEventList.size();
+        return coreEventList.data(); 
+    }
+    string path = pmuDevPath + "/events/";
     dir = opendir(path.c_str());
     if (dir == nullptr) {
-        return nullptr;
+        *numEvt = coreEventList.size();
+        return coreEventList.data();
     }
     while ((entry = readdir(dir)) != nullptr) {
         if (entry->d_type == DT_REG) {

@@ -24,5 +24,7 @@ namespace KUNPENG_PMU {
 
 struct PmuEvt* GetCoreEvent(const char* pmuName, int collectType);
 
+std::string GetPmuDevicePath();
+
 #endif
 
