@@ -15,6 +15,7 @@
 #include <vector>
 #include <unordered_map>
 #include <fstream>
+#include <dirent.h>
 #include "pmu_event.h"
 #include "core.h"
 #include "common.h"
@@ -22,7 +23,7 @@
 using namespace std;
 using PMU_PAIR = std::pair<std::string, KUNPENG_PMU::CoreConfig>;
 static CHIP_TYPE g_chipType = UNDEFINED_TYPE;
-
+static string pmuDevice = "";
 
 namespace SOFTWARE_EVENT {
     PMU_PAIR ALIGNMENT_FAULTS = {
@@ -853,7 +854,11 @@ static struct PmuEvt* ConstructPmuEvtFromCore(KUNPENG_PMU::CoreConfig config, in
 
 static int64_t GetKernelCoreEventConfig(const string &name)
 {
-    string eventPath = "/sys/devices/armv8_pmuv3_0/events/" + name;
+    auto pmuDevicePath = GetPmuDevicePath();
+    if (pmuDevicePath.empty()) {
+        return -1;
+    }
+    string eventPath = pmuDevicePath + "/events/" + name;
     string realPath = GetRealPath(eventPath);
     if (!IsValidPath(realPath)) {
         return -1;
@@ -874,7 +879,11 @@ static int64_t GetKernelCoreEventConfig(const string &name)
 
 static int64_t GetKernelCoreEventType()
 {
-    string eventPath = "/sys/devices/armv8_pmuv3_0/type";
+    auto pmuDevicePath = GetPmuDevicePath();
+    if (pmuDevicePath.empty()) {
+        return -1;
+    }
+    string eventPath = pmuDevicePath + "/type";
     string realPath = GetRealPath(eventPath);
     if (!IsValidPath(realPath)) {
         return -1;
@@ -917,4 +926,33 @@ struct PmuEvt* GetCoreEvent(const char* pmuName, int collectType)
         return ConstructPmuEvtFromCore(KUNPENG_PMU::CORE_EVENT_MAP.at(g_chipType).at(pmuName), collectType);
     }
         return ConstructPmuEvtFromKernel(pmuName, collectType);
+}
+
+std::string GetPmuDevicePath()
+{
+    if (!pmuDevice.empty()) {
+        return pmuDevice;
+    }
+
+    static const string DEVICE_PATH = "/sys/bus/event_source/devices/";
+    DIR *dir = opendir(DEVICE_PATH.c_str());
+    if (dir == nullptr) {
+        return "";
+    }
+    struct dirent *dent;
+    while (dent = readdir(dir)) {
+        if (!strcmp(dent->d_name, ".") || !strcmp(dent->d_name, "..") || !strcmp(dent->d_name, "cpu")) {
+            continue;
+        }
+
+        // look for devices like /sys/bus/event_source/devices/armv8_pmuv3_0/cpus.
+        // Refer to function <is_arm_pmu_core> in kernel.
+        string armPmuPath = DEVICE_PATH + dent->d_name + "/cpus";
+        if (ExistPath(armPmuPath)) {
+            pmuDevice = DEVICE_PATH + dent->d_name;
+            break;
+        }
+    }
+
+    return pmuDevice;
 }
