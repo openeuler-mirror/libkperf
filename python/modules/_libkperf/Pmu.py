@@ -639,7 +639,7 @@ class CtypesPmuData(ctypes.Structure):
         const char *comm;               // process command
         uint64_t period;                     // number of Samples
         uint64_t count;                 // event count. Only available for Counting.
-        double countPercent;              // event count percent. when count = 0, countPercent = -1; Only avaliable for Counting.
+        double countPercent;              // event count percent. when count = 0, countPercent = -1; Only available for Counting.
         struct PmuDataExt *ext;         // extension. Only available for Spe.
     };
     """
