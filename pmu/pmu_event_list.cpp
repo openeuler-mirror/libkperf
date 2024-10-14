@@ -37,7 +37,7 @@ static const string EVENT_DIR = "/events/";
 
 static std::mutex pmuEventListMtx;
 
-static vector<const char*> supportDevPrefixs = {"hisi", "smmuv3"};
+static vector<const char*> supportDevPrefixs = {"hisi", "smmuv3", "hns3"};
 
 static vector<const char*> uncoreEventList;
 static vector<const char*> traceEventList;
