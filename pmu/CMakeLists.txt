@@ -25,7 +25,7 @@ include_directories(${PROJECT_TOP_DIR}/include)
 include_directories(${PMU_FILE_DIR}/)
 include_directories(${PFM_FILE_DIR})
 
-# directories for ultilities and symbol resolving
+# directories for utilities and symbol resolving
 include_directories(${UTIL_FILE_DIR})
 include_directories(${SYMBOL_FILE_DIR})
 include_directories(${PMU_DECODER_DIR})

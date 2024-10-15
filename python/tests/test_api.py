@@ -52,7 +52,7 @@ def TestAPI_SpeInitBusy():
         print(f"error number: {kperf.errorno()} error message: {kperf.error()}")
     badpd = kperf.open(kperf.PmuTaskType.SPE_SAMPLING, pmu_attr)
     if badpd == -1:
-        print(f"badpd rror number: {kperf.errorno()} badpd error message: {kperf.error()}")
+        print(f"badpd error number: {kperf.errorno()} badpd error message: {kperf.error()}")
     kperf.close(badpd)
     
 def TestAPI_OpenInvalidTaskType():

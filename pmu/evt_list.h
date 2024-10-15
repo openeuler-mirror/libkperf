@@ -131,7 +131,7 @@ struct EventGroupInfo {
     // store event group child events state flag info
     /* event group child state explain:
         * Enumeration variable uncoreState has four state, Initialization is the InitState;
-        * sacn the event List, if find the uncore event, the uncoreState is config the high bit set to 1;
+        * scan the event List, if found the uncore event, the uncoreState is configured with the high bit set to 1;
         * if find the other event, the uncoreState is config the low bit set to 0.
     */
     enum class UncoreState uncoreState;  
