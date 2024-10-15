@@ -331,7 +331,7 @@ static void PmuTaskAttrFree(PmuTaskAttr *taskAttr)
 int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
 {
     SetWarn(SUCCESS);
-    PmuAttr copiedAttr = {*attr};
+    PmuAttr copiedAttr = *attr;
     pair<unsigned, char**> previousEventList = {0, nullptr};
     try {
         auto err = CheckAttr(collectType, attr);
