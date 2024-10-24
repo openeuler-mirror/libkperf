@@ -601,4 +601,18 @@ TEST_F(TestAPI, TestSPEEventGroup)
     attr.evtAttr = groupId;
     pd = PmuOpen(SPE_SAMPLING, &attr);
     ASSERT_TRUE(pd == -1);
-}  
+}
+
+TEST_F(TestAPI, TestOperationNotSupported)
+{
+    PmuAttr attr = {0};
+    char* evtList[1] = {"hisi_sccl3_ddrc2/flux_rd/"};
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+    attr.freq = 1000;
+    attr.useFreq = 1;
+    attr.symbolMode = RESOLVE_ELF;
+    int pd = PmuOpen(SAMPLING, &attr);
+    ASSERT_EQ(pd, -1);
+    ASSERT_EQ(Perrorno(), LIBPERF_ERR_INVALID_EVENT);
+}
