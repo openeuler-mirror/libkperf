@@ -30,6 +30,8 @@ namespace KUNPENG_PMU {
                 return LIBPERF_ERR_NO_PROC;
             case EMFILE:
                 return LIBPERF_ERR_TOO_MANY_FD;
+            case EOPNOTSUPP:
+                return LIBPERF_ERR_INVALID_EVENT;
             default:
                 return UNKNOWN_ERROR;
         }
