@@ -262,3 +262,81 @@ attr.includeNewFork = 1;
 ```
 然后，通过PmuRead获取到的PmuData，便能包含子线程计数信息了。
 注意，该功能是针对Counting模式，因为Sampling和SPE Sampling本身就会采集子线程的数据。
+
+### 采集DDRC带宽
+基于uncore事件可以计算DDRC的访存带宽，不同硬件平台有不同的计算方式。
+鲲鹏芯片上的访存带宽公式可以参考openeuler kernel的tools/perf/pmu-events/arch/arm64/hisilicon/hip09/sys/uncore-ddrc.json：
+```json
+   {
+	"MetricExpr": "flux_wr * 32 / duration_time",
+	"BriefDescription": "Average bandwidth of DDRC memory write(Byte/s)",
+	"Compat": "0x00000030",
+	"MetricGroup": "DDRC",
+	"MetricName": "ddrc_bw_write",
+	"Unit": "hisi_sccl,ddrc"
+   },
+   {
+	"MetricExpr": "flux_rd * 32 / duration_time",
+	"BriefDescription": "Average bandwidth of DDRC memory read(Byte/s)",
+	"Compat": "0x00000030",
+	"MetricGroup": "DDRC",
+	"MetricName": "ddrc_bw_read",
+	"Unit": "hisi_sccl,ddrc"
+   },
+```
+
+根据公式，采集flux_wr和flux_rd事件，用于计算带宽：
+```c++
+    // 采集hisi_scclX_ddrc设备下的flux_rd和flux_wr，
+    // 具体设备名称因硬件而异，可以在/sys/devices/下查询。
+    vector<char *> evts = {
+        "hisi_sccl1_ddrc/flux_rd/",
+        "hisi_sccl3_ddrc/flux_rd/",
+        "hisi_sccl5_ddrc/flux_rd/",
+        "hisi_sccl7_ddrc/flux_rd/",
+        "hisi_sccl1_ddrc/flux_wr/",
+        "hisi_sccl3_ddrc/flux_wr/",
+        "hisi_sccl5_ddrc/flux_wr/",
+        "hisi_sccl7_ddrc/flux_wr/"
+    };
+
+    PmuAttr attr = {0};
+    attr.evtList = evts.data();
+    attr.numEvt = evts.size();
+
+    int pd = PmuOpen(COUNTING, &attr);
+    if (pd == -1) {
+        cout << Perror() << "\n";
+        return;
+    }
+
+    PmuEnable(pd);
+    for (int i=0;i<60;++i) {
+        sleep(1);
+        PmuData *data = nullptr;
+        int len = PmuRead(pd, &data);
+        // 有8个uncore事件，所以data的长度等于8.
+        // 前4个是4个numa的read带宽，后4个是4个numa的write带宽。
+        for (int j=0;j<4;++j) {
+            printf("read bandwidth: %f M/s\n", (float)data[j].count*32/1024/1024);
+        }
+        for (int j=4;j<8;++j) {
+            printf("write bandwidth: %f M/s\n", (float)data[j].count*32/1024/1024);
+        }
+        PmuDataFree(data);
+    }
+    PmuDisable(pd);
+    PmuClose(pd);
+```
+
+执行上述代码，输出的结果类似如下：
+```
+read bandwidth: 17.32 M/s
+read bandwidth: 5.43 M/s
+read bandwidth: 2.83 M/s
+read bandwidth: 4.09 M/s
+write bandwidth: 4.35 M/s
+write bandwidth: 2.29 M/s
+write bandwidth: 0.84 M/s
+write bandwidth: 0.97 M/s
+```
