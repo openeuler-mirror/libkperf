@@ -81,7 +81,7 @@ class Error:
 
     UNKNOWN_ERROR = 9999
 
-    # warnning code
+    # warning code
     LIBPERF_WARN_CTXID_LOST = 1000
     LIBPERF_WARN_FAIL_GET_PROC = 1001
     LIBPERF_WARN_INVALID_GROUP_HAS_UNCORE = 1002

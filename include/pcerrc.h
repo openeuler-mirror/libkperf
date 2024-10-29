@@ -82,7 +82,7 @@ extern "C" {
 
 #define UNKNOWN_ERROR 9999
 
-// warnning code
+// warning code
 #define LIBPERF_WARN_CTXID_LOST 1000
 #define LIBPERF_WARN_FAIL_GET_PROC 1001
 #define LIBPERF_WARN_INVALID_GROUP_HAS_UNCORE 1002
@@ -97,7 +97,7 @@ int Perrorno();
 const char* Perror();
 
 /**.
- * @brief Get warnning codes
+ * @brief Get warning codes
 */
 int GetWarn();
 
