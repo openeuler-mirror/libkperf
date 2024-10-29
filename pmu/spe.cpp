@@ -529,7 +529,7 @@ int Spe::SpeReadData(struct SpeContext *context, struct SpeRecord *buf, int size
     int remainSize = size;
     int dummySize = context->dummyMmapSize;
     CoreDummyData(context->coreCtxes, dummyData, dummySize, context->pageSize);
-    buf = CoreSpeData(context->coreCtxes, dummyData, buf, &remainSize, context->pageSize, cpu);
+    CoreSpeData(context->coreCtxes, dummyData, buf, &remainSize, context->pageSize, cpu);
     return size - remainSize;
 }
 
