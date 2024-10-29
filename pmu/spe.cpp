@@ -372,7 +372,13 @@ void Spe::CoreDummyData(struct SpeCoreContext *context, struct ContextSwitchData
         if (header->type == PERF_RECORD_FORK) {
             struct PerfRecordFork *sample = (struct PerfRecordFork *)header;
             DBG_PRINT("Fork pid: %d tid: %d\n", sample->pid, sample->tid);
-            UpdateProcMap(sample->pid, sample->tid);
+	    if (sample->pid == sample->tid) {
+		// A new process is forked and the parent pid is ppid.
+            	UpdateProcMap(sample->ppid, sample->tid);
+	    } else {
+		// A new thread is created and the parent pid is pid(process id).
+            	UpdateProcMap(sample->pid, sample->tid);
+	    }
             dataTail += header->size;
             continue;
         }
