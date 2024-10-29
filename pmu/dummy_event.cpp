@@ -140,7 +140,6 @@ namespace KUNPENG_PMU {
         uint8_t* ringBuf = (uint8_t*) (mapPage) + PAGE_SIZE;
         uint64_t dataHead = mapPage->data_head;
         uint64_t dataTail = mapPage->data_tail;
-        std::vector<pid_t> childPidList;
         while (dataTail < dataHead) {
             uint64_t off = dataTail % mapPage->data_size;
             auto* header = (struct perf_event_header*) (ringBuf + off);
