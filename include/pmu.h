@@ -96,7 +96,7 @@ struct PmuAttr {
 
     // event group id 
     // if not use event group function, this field will be nullptr.
-    // if use event group function. please confrim the event group id with eveList is one by one.
+    // if use event group function. please confirm the event group id with eveList is one by one.
     // the same group id is the a event group. 
     // Note: if the group id value is -1, it indicates that the event is not grouped.
     struct EvtAttr *evtAttr;
@@ -266,7 +266,7 @@ void PmuStop(int pd);
  * If <pmuData> is NULL and the error code is not 0, an error occurs in the collection process and data cannot be read.
  * @param pd task id
  * @param pmuData pmu data which is a pointer to an array
- * @return lenght of pmu data
+ * @return length of pmu data
  */
 int PmuRead(int pd, struct PmuData** pmuData);
 
