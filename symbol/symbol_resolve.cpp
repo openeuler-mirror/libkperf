@@ -85,10 +85,11 @@ namespace {
     static inline char* InitChar(int len)
     {
         char* str = new char[len + 1];
-        memset(str, 0, len + 1);
+
         if (str == nullptr) {
             return nullptr;
         }
+        memset(str, 0, len + 1);
         return str;
     }
 
