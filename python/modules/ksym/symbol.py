@@ -70,7 +70,7 @@ def record_module(pid: int, dwarf: bool = True) -> None:
 
 def get_stack(pid: int, stacks: List[int]) -> Iterator[Stack]:
     """
-    Convert a callstack to a unsigned long long hashid
+    Convert a callstack to an unsigned long long hashid
     """
     return _libkperf.StackToHash(pid, stacks)
 

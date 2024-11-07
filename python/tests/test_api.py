@@ -1,6 +1,3 @@
-import time
-from collections import defaultdict
-
 import kperf
 
 def TestAPI_InitCountNullEvt():
