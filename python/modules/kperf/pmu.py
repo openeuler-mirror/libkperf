@@ -95,7 +95,7 @@ class PmuAttr(_libkperf.PmuAttr):
             if both <cpuList> and <pidList> are not NULL, specified processes on specified cores will be monitored.
         evtAttr: event group id attributes.
             if not use event group function, this field will be NULL.
-            if use event group function. please confrim the event group id with eveList is one by one.
+            if use event group function. please confirm the event group id with eveList is one by one.
             the same group id is the a event group. 
             Note: if the group id value is -1, it indicates that the event is not grouped.
         sampleRate: sample time enum.

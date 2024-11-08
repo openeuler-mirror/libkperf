@@ -150,7 +150,7 @@ public:
 
     /**
      * @brief Start collect.
-     * @param clearPrevRecords whether clear all records from previos collection.
+     * @param clearPrevRecords whether clear all records from previous collection.
      */
     int Enable(bool clearPrevRecords = true);
 
