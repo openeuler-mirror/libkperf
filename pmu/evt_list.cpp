@@ -18,6 +18,7 @@
 #include "cpu_map.h"
 #include "pmu_event.h"
 #include "pcerrc.h"
+#include "pcerr.h"
 #include "log.h"
 #include "common.h"
 #include "evt_list.h"
@@ -96,6 +97,9 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
                 if (!perfEvt->IsMainPid()) {
                     hasHappenedErr = true;
                     continue;
+                }
+                if (err == LIBPERF_ERR_INVALID_EVENT) {
+                    pcerr::SetCustomErr(err, "Invalid event:" + perfEvt->GetEvtName() + ", " + std::string{strerror(errno)});
                 }
                 return err;
             }

@@ -13,6 +13,7 @@
  * Description: Error code mechanism, used to return error codes and error messages.
  ******************************************************************************/
 #include <unordered_map>
+#include <queue>
 #include "pcerrc.h"
 #include "pcerr.h"
 
@@ -53,13 +54,29 @@ namespace pcerr {
             {LIBPERF_WARN_CTXID_LOST, "Some SPE context packets are not found in the traces."},
             {LIBPERF_WARN_INVALID_GROUP_HAS_UNCORE, "event group has uncore event, cann`t event group, disabling event group"}
     };
+    static std::unordered_map<int, std::queue<std::string>> customErrMsgs;
     static int warnCode = SUCCESS;
     static std::string warnMsg = "";
     static int errCode = SUCCESS;
     static std::string errMsg = "";
 
+    static std::string GetCustomMsg(int code) {
+        std::string msg;
+        auto it = customErrMsgs.find(code);
+        if (it != customErrMsgs.end() && !it->second.empty()) {
+            msg = it->second.front();
+            it->second.pop();
+        }
+        return msg;
+    }
+
     void New(int code)
     {
+        std::string customMsg = GetCustomMsg(code);
+        if (!customMsg.empty()) {
+            New(code, customMsg);
+            return;
+        }
         auto findMsg = defaultMsg.find(code);
         if (findMsg != defaultMsg.end()) {
             New(code, findMsg->second);
@@ -88,6 +105,18 @@ namespace pcerr {
     {
         warnCode = code;
         warnMsg = msg;
+    }
+
+    void SetCustomErr(int code, const std::string &msg)
+    {
+        auto it = customErrMsgs.find(code);
+        if (it != customErrMsgs.end()) {
+            it->second.push(msg);
+        } else {
+            std::queue<std::string> errList;
+            errList.push(msg);
+            customErrMsgs.insert({code, errList});
+        }
     }
 }  // namespace pcerr
 
