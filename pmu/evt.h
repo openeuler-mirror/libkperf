@@ -69,6 +69,13 @@ public:
         return true;
     }
 
+    std::string GetEvtName() {
+        if (this->evt) {
+            return this->evt->name;
+        }
+        return "";
+    }
+
 protected:
     int fd;
     int cpu;
