@@ -82,7 +82,10 @@ extern "C" {
 
 #define UNKNOWN_ERROR 9999
 
-// warning code
+// libsym warning code
+#define LIBSYM_WARN_LOAD_DWARF_FAILED 100
+
+// libperf warning code
 #define LIBPERF_WARN_CTXID_LOST 1000
 #define LIBPERF_WARN_FAIL_GET_PROC 1001
 #define LIBPERF_WARN_INVALID_GROUP_HAS_UNCORE 1002
