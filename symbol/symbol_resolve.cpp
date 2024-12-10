@@ -784,7 +784,13 @@ void SymbolResolve::SearchDwarfInfo(MyDwarf& myDwarf, unsigned long addr, struct
     dwarfLoadHandler.tryLock(moduleName);
     myDwarf.FindLine(addr, dwarfEntry);
     if(!dwarfEntry.find) {
-        myDwarf.LoadDwarf(addr, dwarfEntry);
+        try {
+            myDwarf.LoadDwarf(addr, dwarfEntry);
+        } catch (std::exception& err) {
+            pcerr::SetWarn(LIBSYM_WARN_LOAD_DWARF_FAILED, "libsym find the exception " + std::string{err.what()} + " when load dwarf.");
+            dwarfLoadHandler.releaseLock(moduleName);
+            return;
+        }
     }
     dwarfLoadHandler.releaseLock(moduleName);
     if (dwarfEntry.find) {
