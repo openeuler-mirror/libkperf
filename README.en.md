@@ -3,6 +3,16 @@
 #### Description
 libkperf is a lightweight performance collection library on linux, that enables developers to perform performance collection in an API fashion. libkperf provides performance data in memory and allows develops to process data directly, reducing overhead of writing and reading perf.data.
 
+#### Supported CPU Architectures
+- Kunpeng
+
+#### Supported OS
+- openEuler
+- OpenCloudOS
+- TencentOS
+- KylinOS
+- CentOS
+
 #### Build
 
 To build a library with C API:

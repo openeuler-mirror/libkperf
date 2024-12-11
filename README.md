@@ -4,6 +4,16 @@
 
 libkperf是一个轻量级linux性能采集库，它能够让开发者以API的方式执行性能采集，包括pmu采样和符号解析。libkperf把采集数据内存化，使开发者能够在内存中直接处理采集数据，避免了读写perf.data带来的开销。
 
+#### 支持的CPU架构
+- 鲲鹏
+
+#### 支持的OS
+- openEuler
+- OpenCloudOS
+- TencentOS
+- KylinOS
+- CentOS
+
 #### 编译
 
 编译生成动态库和C的API：
