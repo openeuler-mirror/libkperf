@@ -993,6 +993,6 @@ std::string GetPmuDevicePath()
             break;
         }
     }
-
+    closedir(dir);
     return pmuDevice;
 }

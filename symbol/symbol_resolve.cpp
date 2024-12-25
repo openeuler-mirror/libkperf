@@ -225,6 +225,13 @@ namespace {
         }
     }
 
+    static inline void FreeSymUnmap(SYMBOL_UNMAP& symMap)
+    {
+        for (auto& item : symMap) {
+            SymbolUtils::FreeSymbol(item);
+        }
+    }
+
     static inline void FreeStackMap(STACK_MAP& stackMap)
     {
         for (auto& item : stackMap) {
@@ -249,6 +256,10 @@ namespace {
             if (symbol->symbolName) {
                 delete[] symbol->symbolName;
                 symbol->symbolName = nullptr;
+            }
+            if (symbol->mangleName) {
+                delete[] symbol->mangleName;
+                symbol->mangleName = nullptr;
             }
         }
     }
@@ -739,7 +750,7 @@ void SymbolResolve::Clear()
      * free the memory allocated for symbol table
      */
     FreeSymMap(this->symbolMap);
-
+    FreeSymUnmap(this->symbolUnmap);
     /**
      * free the memory allocated for stack table
      */
@@ -844,6 +855,7 @@ struct Stack* SymbolResolve::StackToHash(int pid, unsigned long* stack, int nr)
             current->symbol = symbol;
         } else {
             current->symbol = InitializeSymbol(stack[i]);
+            symbolUnmap.emplace_back(current->symbol);
         }
         AddDoubleLinkedTail<struct Stack>(&head, &current);
     }
@@ -935,6 +947,7 @@ struct Symbol* SymbolResolve::MapAddr(int pid, unsigned long addr)
             auto symbol = InitializeSymbol(addr);
             symbol->module = KERNEL;
             symbol->fileName = KERNEL;
+            symbolUnmap.emplace_back(symbol);
             return symbol;
         }
         data->offset = addr - data->addr;
