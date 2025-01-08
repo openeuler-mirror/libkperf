@@ -9,7 +9,9 @@ perf stat -e cycles,branch-misses
 该命令是对系统采集cycles和branch-misses这两个事件的计数。
 
 对于libkperf，可以这样来设置PmuAttr：
+
 ```c++
+// c++代码示例
 char *evtList[2];
 evtList[0] = "cycles";
 evtList[1] = "branch-misses";
@@ -18,19 +20,49 @@ attr.evtList = evtList;
 attr.numEvt = 2;
 int pd = PmuOpen(COUNTING, &attr);
 ```
+
+```python
+# python代码示例
+import time
+import kperf
+evtList = ["branch-misses", "cycles"]
+pmu_attr = kperf.PmuAttr(evtList=evtList)
+pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
+if pd == -1:
+    print(kperf.error())
+    return
+```
 通过调用```PmuOpen```初始化了采集任务，并获得了任务的标识符pd。
 然后，可以利用pd来启动采集：
 ```c++
+// c++代码示例
 PmuEnable(pd);
 sleep(any_duration);
 PmuDisable(pd);
 ```
+
+```python
+# python代码示例
+kperf.enable(pd)
+time.sleep(1)
+kperf.disable(pd)
+```
 不论是否停止了采集，都可以通过```PmuRead```来读取采集数据：
 ```c++
+// c++代码示例
 PmuData *data = NULL;
 int len = PmuRead(pd, &data);
 ```
 ```PmuRead```会返回采集数据的长度。
+
+```python
+# python代码示例
+pmu_data = kperf.read(pd)
+for data in pmu_data.iter:
+    print(f"cpu:{data.cpu} count:{data.count} evt:{data.evt}")
+```
+```kperf.read```会返回采集数据链表,可以通过遍历的方式读取。
+
 如果是对系统采集，那么PmuData的长度等于core的数量乘以事件的数量，PmuData的数据类似如下：
 ```
 cpu 0 count 123     evt cycles
@@ -63,10 +95,21 @@ perf record -e cycles,branch-misses
 
 设置PmuAttr的方式和Counting一样，在调用PmuOpen的时候，把任务类型设置为SAMPLING，并且设置采样频率：
 ```c++
-// 采样频率是1000HZ
-attr.freq = 1000;
+// c++代码示例
+attr.freq = 1000; // 采样频率是1000HZ
 attr.useFreq = 1;
 int pd = PmuOpen(SAMPLING, &attr);
+```
+
+```python
+# python代码示例
+evtList = ["branch-misses", "cycles"]
+pmu_attr = kperf.PmuAttr(
+        evtList=evtList,
+        sampleRate=1000, // 采样频率是1000HZ
+        symbolMode=kperf.SymbolMode.RESOLVE_ELF
+    )
+pd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
 ```
 
 启动采集和读取数据的方式和Counting一致。
@@ -97,11 +140,23 @@ perf record -e arm_spe_0/load_filter=1/
 
 对于libkperf，可以这样设置PmuAttr：
 ```c++
+// c++代码示例
 PmuAttr attr = {0};
-// 采样周期是8192
-attr.period = 8192;
-// 设置filter属性为load_filter
-attr.dataFilter = LOAD_FILTER;
+attr.period = 8192; // 采样周期是8192
+attr.dataFilter = LOAD_FILTER; // 设置filter属性为load_filter
+```
+
+```python
+# python代码示例
+pmu_attr = kperf.PmuAttr(
+    sampleRate = 1000,
+    symbolMode = kperf.SymbolMode.RESOLVE_ELF,
+    dataFilter = kperf.SpeFilter.SPE_DATA_ALL,
+    evFilter = kperf.SpeEventFilter.SPE_EVENT_RETIRED,
+    minLatency = 0x40
+) 
+# 需要root权限才能运行
+pd = kperf.open(kperf.PmuTaskType.SPE_SAMPLING, pmu_attr)
 ```
 对于spe采样，不需要设置evtList，而是通过设置dataFilter和evFilter来指定需要采集的事件。dataFilter和evFilter的含义仍然可以参考[perf spe的说明文档](https://www.man7.org/linux/man-pages/man1/perf-arm-spe.1.html)。
 
@@ -136,7 +191,6 @@ enum SPE_EVENTS {
     SPE_EV_EMPTY_PRED   = 1 << 18,
 };
 ```
-
 ### 获取符号信息
 结构体PmuData里提供了采样数据的调用栈信息，包含调用栈的地址、符号名称等。
 ```c++
@@ -175,6 +229,7 @@ Symbol的字段信息受PmuAttr影响：
 libkperf支持uncore事件的采集，只有Counting模式支持uncore事件的采集（和perf一致）。
 可以像这样设置PmuAttr：
 ```c++
+// c++代码示例
 char *evtList[1];
 evtList[0] = "hisi_sccl1_ddrc0/flux_rd/";
 PmuAttr attr = {0};
@@ -182,29 +237,60 @@ attr.evtList = evtList;
 attr.numEvt = 1;
 int pd = PmuOpen(COUNTING, &attr);
 ```
+```python
+# python代码示例
+evtList = ["hisi_sccl1_ddrc0/flux_rd/"]
+pmu_attr = kperf.PmuAttr(evtList=evtList)
+pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
+```
+
 uncore事件的格式为```<device>/<event>/```，上面代码是采集设备hisi_sccl1_ddrc0的flux_rd事件。
 
 也可以把设备索引号省略：
 ```c++
+// c++代码示例
 evtList[0] = "hisi_sccl1_ddrc/flux_rd/";
+```
+
+```python
+# python代码示例
+evtList = ["hisi_sccl1_ddrc/flux_rd/"]
 ```
 这里把hisi_sccl1_ddrc0改为了hisi_sccl1_ddrc，这样会采集设备hisi_sccl1_ddrc0、hisi_sccl1_ddrc1、hisi_sccl1_ddrc2...，并且采集数据PmuData是所有设备数据的总和：count = count(hisi_sccl1_ddrc0) + count(hisi_sccl1_ddrc1) + count(hisi_sccl1_ddrc2) + ...
 
 也可以通过```<device>/config=0xxx/```的方式来指定事件名：
 ```c++
+// c++代码示例
 evtList[0] = "hisi_sccl1_ddrc0/config=0x1/";
 ```
+
+```python
+# python代码示例
+evtList = ["hisi_sccl1_ddrc0/config=0x1/"]
+```
+
 这样效果是和指定flux_rd是一样的。
 
 ### 采集tracepoint
 libkperf支持tracepoint的采集，支持的tracepoint事件可以通过perf list来查看（通常需要root权限）。
 可以这样设置PmuAttr：
 ```c++
+// c++代码示例
 char *evtList[1];
 evtList[0] = "sched:sched_switch";
 PmuAttr attr = {0};
 attr.evtList = evtList;
 attr.numEvt = 1;
+```
+
+```python
+# python代码示例
+evtList = ["sched:sched_switch"]
+pmu_attr = kperf.PmuAttr(
+    evtList=evtList,
+    sampleRate=1000,
+    symbolMode=kperf.SymbolMode.RESOLVE_ELF # 不需要符号解析，可以不使用该参数
+)
 ```
 
 tracepoint支持Counting和Sampling两种模式，API调用流程和两者相似。
@@ -213,10 +299,32 @@ tracepoint能够获取每个事件特有的数据，比如sched:sched_switch包�
 
 libkperf提供了接口PmuGetField来获取tracepoint的数据。比如对于sched:sched_switch，可以这样调用：
 ```c++
+// c代码示例
 int prev_pid;
 PmuGetField(pmuData->rawData, "prev_pid", &prev_pid, sizeof(prev_pid));
 char next_comm[16];
 PmuGetField(pmuData->rawData, "next_comm", &next_comm, sizeof(next_comm));
+```
+
+```python
+# python代码示例
+import kperf
+import time
+from ctypes import *
+
+kperf.enable(pd)
+time.sleep(3)
+kperf.disable(pd)
+pmu_data = kperf.read(pd)
+for data in pmu_data.iter:
+    next_comm = create_string_buffer(128) #该长度可适当减少，但最好设置比最终获取的长度大，否则最终将无法获取对应结果。
+    kperf.get_field(data, "next_comm", next_comm)
+    next_comm = next_comm.value.decode("utf-8")
+
+    prev_pid = c_uint(0)
+    kperf.get_field(data, "prev_pid", pointer(prev_pid))
+
+    print(f"next_comm={next_comm};prev_pid={prev_pid.value}")
 ```
 这里调用者需要提前了解数据的类型，并且指定数据的大小。数据的类型和大小仍然可以从/sys/kernel/tracing/下每个事件的format文件来得知。
 
@@ -229,7 +337,8 @@ perf stat -e "{cycles,branch-loads,branch-load-misses,iTLB-loads}",inst_retired
 
 对于libkperf，可以通过设置PmuAttr的evtAttr字段来设定哪些事件放在一个group内。
 比如，可以这样调用：
-```c
+```c++
+// c++代码示例
 unsigned numEvt = 5;
 char *evtList[numEvt] = {"cycles","branch-loads","branch-load-misses","iTLB-loads","inst_retired"};
 // 前四个事件是一个分组
@@ -238,6 +347,22 @@ PmuAttr attr = {0};
 attr.evtList = evtList;
 attr.numEvt = numEvt;
 attr.evtAttr = groupId;
+```
+
+```python
+# python代码示例
+evtList = ["cycles","branch-loads","branch-load-misses","iTLB-loads","inst_retired"]
+# 前四个事件是一个分组
+evtAttrList = [1,1,1,1,-1]
+pmu_attr = kperf.PmuAttr(evtList=evtList, evtAttr = evtAttrList)
+pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
+kperf.enable(pd)
+time.sleep(1)
+kperf.disable(pd)
+pmu_data = kperf.read(pd)
+pd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
+for data in pmu_data.iter:
+    print(f"cpu:{data.cpu} count:{data.count} evt:{data.evt}")
 ```
 上述代码把前四个事件设定为一个分组，groupId都设定为1，最后一个事件不分组，groupId设定为-1。
 事件数组attr.evtList和事件属性数组attr.evtAttr必须一一对应，即长度必须一致。
@@ -258,7 +383,12 @@ c --end perf--> d(子线程退出)
 
 libkperf提供了采集子线程的能力。如果想要在上面场景中获取子线程的计数，可以把PmuAttr.incluceNewFork设置为1.
 ```c++
+// c++代码示例
 attr.includeNewFork = 1;
+```
+```python
+# python代码示例
+pmu_attr = kperf.PmuAttr(evtList=evtList, includeNewFork=True)
 ```
 然后，通过PmuRead获取到的PmuData，便能包含子线程计数信息了。
 注意，该功能是针对Counting模式，因为Sampling和SPE Sampling本身就会采集子线程的数据。
@@ -287,8 +417,8 @@ attr.includeNewFork = 1;
 
 根据公式，采集flux_wr和flux_rd事件，用于计算带宽：
 ```c++
-    // 采集hisi_scclX_ddrc设备下的flux_rd和flux_wr，
-    // 具体设备名称因硬件而异，可以在/sys/devices/下查询。
+// c++代码示例
+   
     vector<char *> evts = {
         "hisi_sccl1_ddrc/flux_rd/",
         "hisi_sccl3_ddrc/flux_rd/",
@@ -298,7 +428,7 @@ attr.includeNewFork = 1;
         "hisi_sccl3_ddrc/flux_wr/",
         "hisi_sccl5_ddrc/flux_wr/",
         "hisi_sccl7_ddrc/flux_wr/"
-    };
+    }; // 采集hisi_scclX_ddrc设备下的flux_rd和flux_wr，具体设备名称因硬件而异，可以在/sys/devices/下查询。
 
     PmuAttr attr = {0};
     attr.evtList = evts.data();
@@ -327,6 +457,38 @@ attr.includeNewFork = 1;
     }
     PmuDisable(pd);
     PmuClose(pd);
+```
+
+```python
+# python代码示例
+    evtList = [ "hisi_sccl1_ddrc/flux_rd/",
+        "hisi_sccl3_ddrc/flux_rd/",
+        "hisi_sccl5_ddrc/flux_rd/",
+        "hisi_sccl7_ddrc/flux_rd/",
+        "hisi_sccl1_ddrc/flux_wr/",
+        "hisi_sccl3_ddrc/flux_wr/",
+        "hisi_sccl5_ddrc/flux_wr/",
+        "hisi_sccl7_ddrc/flux_wr/"] # 采集hisi_scclX_ddrc设备下的flux_rd和flux_wr，具体设备名称因硬件而异，可以在/sys/devices/下查询。
+    
+    pmu_attr = kperf.PmuAttr(evtList=evtList) 
+    pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
+    if pd == -1:
+        print(kperf.error())
+        return
+    kperf.enable(pd)
+    for i in range(60):
+        time.sleep(1)
+        pmu_data = kperf.read(pd)
+        j = 0
+        for data in pmu_data.iter:
+            bandwidth = data.count*32/1024/1024
+            if j < 4:
+              print(f"read bandwidth: {bandwidth} M/s\n")
+            if j >= 4 and j < 8:
+              print(f"write bandwidth: {bandwidth} M/s\n")
+            j += 1
+    kperf.disable(pd)
+    kperf.close(pd)
 ```
 
 执行上述代码，输出的结果类似如下：
