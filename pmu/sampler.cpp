@@ -173,6 +173,7 @@ void KUNPENG_PMU::PerfSampler::RawSampleProcess(
     current->pid = static_cast<pid_t>(sample->pid);
     current->tid = static_cast<int>(sample->tid);
     current->period = static_cast<uint64_t>(sample->period);
+    current->ts = static_cast<int64_t>(sample->time);
     PointerPasser::ParserRawFormatData(current, sample, event, this->evt->name);
 }
 

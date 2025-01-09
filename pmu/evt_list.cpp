@@ -155,7 +155,9 @@ void KUNPENG_PMU::EvtList::FillFields(
         if (data[i].comm == nullptr) {
             data[i].comm = procTopo->comm;
         }
-        data[i].ts = this->ts;
+        if (data[i].ts == 0) {
+            data[i].ts = this->ts;
+        }
     }
 }
 
