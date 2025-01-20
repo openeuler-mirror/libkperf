@@ -133,6 +133,21 @@ struct PmuAttr {
     unsigned includeNewFork : 1;
 };
 
+enum PmuTraceType {
+    TRACE_SYS_CALL,
+};
+
+struct PmuTraceAttr {
+    // system call function List, if funcs is nullptr, it will collect all the system call function elapsed time.
+    const char **funcs;
+    // Length of system call function list
+    unsigned numFuncs;
+    int* pidList;
+    unsigned numPid;
+    int* cpuList;
+    unsigned numCpu;
+};
+
 struct CpuTopology {
     int coreId;
     int numaId;
@@ -188,6 +203,15 @@ struct PmuData {
     double countPercent;            // event count Percent. when count = 0, countPercent = -1; Only available for Counting.
     struct PmuDataExt *ext;         // extension. Only available for Spe.
     struct SampleRawData *rawData;  // trace pointer collect data.
+};
+
+struct PmuTraceData {
+    const char *funcs;              // system call function
+    double elapsedTime;             // elapsed time
+    pid_t pid;                      // process id
+    int tid;                        // thread id
+    unsigned cpu;                   // cpu id
+    const char *comm;               // process command
 };
 
 /**
@@ -327,6 +351,73 @@ int PmuGetField(struct SampleRawData *rawData, const char *fieldName, void *valu
  * @return
  */
 struct SampleRawField *PmuGetFieldExp(struct SampleRawData *rawData, const char *fieldName);
+
+/**
+ * @brief
+ * Initialize the trace collection target.
+ * On success, a trace collect task id is returned which is the unique identity for the task.
+ * On error, -1 is returned.
+ * Refer to comments of PmuTraceAttr for details about settings.
+ * @param PmuTraceType task type
+ * @param PmuTraceAttr settings of the current trace collect task
+ * @return trace collect task id
+ */
+int PmuTraceOpen(enum PmuTraceType traceType, struct PmuTraceAttr *traceAttr);
+
+/**
+ * @brief
+ * Enable trace collection of task <pd>.
+ * On success, 0 is returned.
+ * On error, -1 is returned.
+ * @param pd trace collect task id
+ * @return error code
+ */
+int PmuTraceEnable(int pd);
+
+/**
+ * @brief
+ * Disable trace collection of task <pd>.
+ * On success, 0 is returned.
+ * On error, -1 is returned.
+ * @param pd trace collect task id
+ * @return error code
+ */
+int PmuTraceDisable(int pd);
+
+/**
+ * @brief
+ * Collect data.
+ * Pmu trace data are collected starting from the last PmuTraceEnable or PmuTraceRead.
+ * On success, length of data array is returned.
+ * If <PmuTraceData> is NULL and the error code is 0, no data is available in the current collection time.
+ * If <PmuTraceData> is NULL and the error code is not 0, an error occurs in the collection process and data cannot be read.
+ * @param pd trace collect task id
+ * @param PmuTraceData pmu trace data which is a pointer to an array
+ * @return length of pmu trace data
+ */
+int PmuTraceRead(int pd, struct PmuTraceData** pmuData);
+
+/**
+ * @brief
+ * Close task with id <pd>.
+ * After PmuTraceClose is called, all pmu trace data related to the task become invalid.
+ * @param pd trace collect task id
+ */
+void PmuTraceClose(int pd);
+
+/**
+ * @brief Free PmuTraceData pointer.
+ * @param pmuTraceData
+ */
+void PmuTraceDataFree(struct PmuTraceData* pmuTraceData);
+
+/**
+ * @brief
+ * Query all available system call function from system.
+ * @param numFunc length of system call function list
+ * @return system call function list
+ */
+const char** PmuSysCallFuncList(unsigned *numFunc);
 
 #pragma GCC visibility pop
 #ifdef __cplusplus
