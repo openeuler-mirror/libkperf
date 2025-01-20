@@ -25,12 +25,12 @@ int pd = PmuOpen(COUNTING, &attr);
 # python代码示例
 import time
 import kperf
-evtList = ["branch-misses", "cycles"]
+evtList = ["cycles", "branch-misses"]
 pmu_attr = kperf.PmuAttr(evtList=evtList)
 pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
 if pd == -1:
     print(kperf.error())
-    return
+    exit(1)
 ```
 通过调用```PmuOpen```初始化了采集任务，并获得了任务的标识符pd。
 然后，可以利用pd来启动采集：
@@ -54,12 +54,12 @@ PmuData *data = NULL;
 int len = PmuRead(pd, &data);
 ```
 ```PmuRead```会返回采集数据的长度。
-
+                                              
 ```python
 # python代码示例
 pmu_data = kperf.read(pd)
 for data in pmu_data.iter:
-    print(f"cpu:{data.cpu} count:{data.count} evt:{data.evt}")
+    print(f"cpu {data.cpu} count {data.count} evt {data.evt}")
 ```
 ```kperf.read```会返回采集数据链表,可以通过遍历的方式读取。
 
@@ -103,10 +103,12 @@ int pd = PmuOpen(SAMPLING, &attr);
 
 ```python
 # python代码示例
+import kperf
+import time
 evtList = ["branch-misses", "cycles"]
 pmu_attr = kperf.PmuAttr(
         evtList=evtList,
-        sampleRate=1000, // 采样频率是1000HZ
+        sampleRate=1000, # 采样频率是1000HZ
         symbolMode=kperf.SymbolMode.RESOLVE_ELF
     )
 pd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
@@ -148,6 +150,7 @@ attr.dataFilter = LOAD_FILTER; // 设置filter属性为load_filter
 
 ```python
 # python代码示例
+import kperf
 pmu_attr = kperf.PmuAttr(
     sampleRate = 1000,
     symbolMode = kperf.SymbolMode.RESOLVE_ELF,
@@ -239,6 +242,7 @@ int pd = PmuOpen(COUNTING, &attr);
 ```
 ```python
 # python代码示例
+import kperf
 evtList = ["hisi_sccl1_ddrc0/flux_rd/"]
 pmu_attr = kperf.PmuAttr(evtList=evtList)
 pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
@@ -351,6 +355,8 @@ attr.evtAttr = groupId;
 
 ```python
 # python代码示例
+import kperf
+import time
 evtList = ["cycles","branch-loads","branch-load-misses","iTLB-loads","inst_retired"]
 # 前四个事件是一个分组
 evtAttrList = [1,1,1,1,-1]
@@ -362,7 +368,7 @@ kperf.disable(pd)
 pmu_data = kperf.read(pd)
 pd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
 for data in pmu_data.iter:
-    print(f"cpu:{data.cpu} count:{data.count} evt:{data.evt}")
+    print(f"cpu {data.cpu} count {data.count} evt {data.evt}")
 ```
 上述代码把前四个事件设定为一个分组，groupId都设定为1，最后一个事件不分组，groupId设定为-1。
 事件数组attr.evtList和事件属性数组attr.evtAttr必须一一对应，即长度必须一致。
@@ -461,6 +467,8 @@ pmu_attr = kperf.PmuAttr(evtList=evtList, includeNewFork=True)
 
 ```python
 # python代码示例
+    import kperf
+    import time
     evtList = [ "hisi_sccl1_ddrc/flux_rd/",
         "hisi_sccl3_ddrc/flux_rd/",
         "hisi_sccl5_ddrc/flux_rd/",
@@ -474,7 +482,7 @@ pmu_attr = kperf.PmuAttr(evtList=evtList, includeNewFork=True)
     pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
     if pd == -1:
         print(kperf.error())
-        return
+        exit(1)
     kperf.enable(pd)
     for i in range(60):
         time.sleep(1)
