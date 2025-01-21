@@ -104,7 +104,15 @@ static int CheckTraceAttr(enum PmuTraceType traceType, struct PmuTraceAttr *trac
         return LIBPERF_ERR_INVALID_TRACE_TYPE;
     }
     if (traceAttr->funcs == nullptr) {
-        traceAttr->funcs = PmuSysCallFuncList(&traceAttr->numFuncs);
+        const char **funcs = static_cast<const char**>(malloc(2 * sizeof(const char*)));
+        if (funcs == nullptr) {
+            New(COMMON_ERR_NOMEM);
+            return COMMON_ERR_NOMEM; // 处理内存分配失败的情况
+        }
+        funcs[0] = EXIT_RAW_SYSCALL;
+        funcs[1] = ENTER_RAW_SYSCALL;
+        traceAttr->funcs = funcs;
+        traceAttr->numFuncs = 2;
         return SUCCESS;
     }
     auto err = CheckSysCallName(traceAttr->funcs, traceAttr->numFuncs);
@@ -214,7 +222,12 @@ int PmuTraceRead(int pd, struct PmuTraceData **pmuTraceData)
         New(LIBPERF_ERR_INVALID_PD);
         return -1;
     }
-    auto& traceData = KUNPENG_PMU::PmuAnalysis::GetInstance()->AnalyzeTraceData(pd, pmuData, len);
+    std::vector<PmuTraceData>& traceData;
+    if (strcmp(pmuData[0].evt, ENTER_RAW_SYSCALL) == 0) {
+        traceData = KUNPENG_PMU::PmuAnalysis::GetInstance()->AnalyzeRawTraceData(pd, pmuData, len);
+    } else {
+        traceData = KUNPENG_PMU::PmuAnalysis::GetInstance()->AnalyzeTraceData(pd, pmuData, len);
+    }
     New(SUCCESS);
     if (!traceData.empty()) {
         *pmuTraceData = traceData.data();

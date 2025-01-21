@@ -23,6 +23,8 @@
 namespace KUNPENG_PMU {
     extern const char *SYSCALL_FUNC_ENTER_PREFIX;
     extern const char *SYSCALL_FUNC_EXIT_PREFIX;
+    extern char *ENTER_RAW_SYSCALL;
+    extern char *EXIT_RAW_SYSCALL;
 
     class PmuAnalysis {
     public:
