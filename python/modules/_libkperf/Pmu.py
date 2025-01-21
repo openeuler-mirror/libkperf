@@ -372,6 +372,131 @@ class PmuAttr:
         return pmu_attr
 
 
+class CtypesPmuTraceAttr(ctypes.Structure):
+    """
+    struct PmuTraceAttr {
+        // system call function List, if funcs is nullptr, it will collect all the system call function elapsed time.
+        const char **funcs;
+        // Length of system call function list
+        unsigned numFuncs;
+        int* pidList;
+        unsigned numPid;
+        int* cpuList;
+        unsigned numCpu;
+    };
+    """
+    _fields_ = [
+        ('funcs',       ctypes.POINTER(ctypes.c_char_p)),
+        ('numFuncs',    ctypes.c_uint),
+        ('pidList',     ctypes.POINTER(ctypes.c_int)),
+        ('numPid',      ctypes.c_uint),
+        ('cpuList',     ctypes.POINTER(ctypes.c_int)),
+        ('numCpu',      ctypes.c_uint),
+    ]
+
+    def __init__(self,
+                 funcs: List[str]=None,
+                 pidList: List[int]=None,
+                 cpuList: List[int]=None,
+                *args: Any, **kw:Any) -> None:
+        super().__init__(*args, **kw)
+
+        if funcs:
+            numFuncs = len(funcs)
+            self.funcs = (ctypes.c_char_p * numFuncs)(*[func.encode(UTF_8) for func in funcs])
+            self.numFuncs = ctypes.c_uint(numFuncs)
+        else:
+            self.funcs = None
+            self.numFuncs = ctypes.c_uint(0)
+        
+        if pidList:
+            numPid = len(pidList)
+            self.pidList = (ctypes.c_int * numPid)(*pidList)
+            self.numPid = ctypes.c_uint(numPid)
+        else:
+            self.pidList = None
+            self.numPid = ctypes.c_uint(0)
+        
+        if cpuList:
+            numCpu = len(cpuList)
+            self.cpuList = (ctypes.c_int * numCpu)(*cpuList)
+            self.numCpu = ctypes.c_uint(numCpu)
+        else:
+            self.cpuList = None
+            self.numCpu = ctypes.c_uint(0)
+
+
+class PmuTraceAttr:
+    __slots__ = ['__c_pmu_trace_attr']
+
+    def __init__(self,
+                 funcs: List[str]=None,
+                 pidList: List[int]=None,
+                 cpuList: List[int]=None) -> None:
+        self.__c_pmu_trace_attr = CtypesPmuTraceAttr(
+            funcs=funcs,
+            pidList=pidList,
+            cpuList=cpuList
+        )
+    
+    @property
+    def c_pmu_trace_attr(self) -> CtypesPmuTraceAttr:
+        return self.__c_pmu_trace_attr
+    
+    @property
+    def numFuncs(self) -> int:
+        return self.c_pmu_trace_attr.numFuncs
+    
+    @property
+    def funcs(self) -> List[str]:
+        return [self.c_pmu_trace_attr.funcs[i].decode(UTF_8) for i in range(self.numFuncs)]
+    
+    @funcs.setter
+    def funcs(self, funcs: List[str]) -> None:
+        if funcs:
+            numFuncs = len(funcs)
+            self.c_pmu_trace_attr.funcs = (ctypes.c_char_p * numFuncs)(*[func.encode(UTF_8) for func in funcs])
+            self.c_pmu_trace_attr.numFuncs = ctypes.c_uint(numFuncs)
+        else:
+            self.c_pmu_trace_attr.funcs = None
+            self.c_pmu_trace_attr.numFuncs = ctypes.c_uint(0)
+    
+    @property
+    def numPid(self) -> int:
+        return self.c_pmu_trace_attr.numPid
+    
+    @property
+    def pidList(self) -> List[int]:
+        return [self.c_pmu_trace_attr.pidList[i] for i in range(self.numPid)]
+    
+    @pidList.setter
+    def pidList(self, pidList: List[int]) -> None:
+        if pidList:
+            numPid = len(pidList)
+            self.c_pmu_trace_attr.pidList = (ctypes.c_int * numPid)(*[pid for pid in pidList])
+            self.c_pmu_trace_attr.numPid = ctypes.c_uint(numPid)
+        else:
+            self.c_pmu_trace_attr.pidList = None
+            self.c_pmu_trace_attr.numPid = ctypes.c_uint(0)
+    
+    @property
+    def numCpu(self) -> int:
+        return self.c_pmu_trace_attr.numCpu
+    
+    @property
+    def cpuList(self) -> List[int]:
+        return [self.c_pmu_trace_attr.cpuList[i] for i in range(self.numCpu)]
+    
+    @cpuList.setter
+    def cpuList(self, cpuList: List[int]) -> None:
+        if cpuList:
+            numCpu = len(cpuList)
+            self.c_pmu_trace_attr.cpuList = (ctypes.c_int * numCpu)(*[cpu for cpu in cpuList])
+            self.c_pmu_trace_attr.numCpu = ctypes.c_uint(numCpu)
+        else:
+            self.c_pmu_trace_attr.cpuList = None
+            self.c_pmu_trace_attr.numCpu = ctypes.c_uint(0)
+
 class CtypesCpuTopology(ctypes.Structure):
     """
     struct CpuTopology {
@@ -860,6 +985,143 @@ class PmuData:
             PmuDataFree(self.__pointer)
             self.__pointer = None
 
+class CtypesPmuTraceData(ctypes.Structure):
+    """
+    struct PmuTraceData {
+        const char *funcs;              // system call function
+        double elapsedTime;             // elapsed time
+        pid_t pid;                      // process id
+        int tid;                        // thread id
+        unsigned cpu;                   // cpu id
+        const char *comm;               // process command
+    };
+    """
+    _fields_ = [
+        ('funcs', ctypes.c_char_p),
+        ('elapsedTime', ctypes.c_double),
+        ('pid', ctypes.c_int),
+        ('tid', ctypes.c_int),
+        ('cpu', ctypes.c_uint),
+        ('comm', ctypes.c_char_p)
+    ]
+
+    def __init__(self,
+                 funcs: str = '',
+                 elapsedTime: float = 0.0,
+                 pid: int = 0,
+                 tid: int = 0,
+                 cpu: int = 0,
+                 comm: str = '',
+                 *args: Any, **kw: Any) -> None:
+        super().__init__(*args, **kw)
+
+        self.funcs = ctypes.c_char_p(funcs.encode(UTF_8))
+        self.elapsedTime = ctypes.c_double(elapsedTime)
+        self.pid = ctypes.c_int(pid)
+        self.tid = ctypes.c_int(tid)
+        self.cpu = ctypes.c_uint(cpu)
+        self.comm = ctypes.c_char_p(comm.encode(UTF_8))
+
+class ImplPmuTraceData:
+    __slots__ = ['__c_pmu_trace_data']
+    def __init__(self,
+                 funcs: str = '',
+                 elapsedTime: float = 0.0,
+                 pid: int = 0,
+                 tid: int = 0,
+                 cpu: int = 0,
+                 comm: str = '',
+                 *args: Any, **kw: Any) -> None:
+        self.__c_pmu_trace_data = CtypesPmuTraceData(
+            funcs=funcs,
+            elapsedTime=elapsedTime,
+            pid=pid,
+            tid=tid,
+            cpu=cpu,
+            comm=comm
+        )
+    
+    @property
+    def c_pmu_trace_data(self) -> CtypesPmuTraceData:
+        return self.__c_pmu_trace_data
+    
+    @property
+    def funcs(self) -> str:
+        return self.__c_pmu_trace_data.funcs.decode(UTF_8)
+    
+    @funcs.setter
+    def funcs(self, funcs: str) -> None:
+        self.__c_pmu_trace_data.funcs = ctypes.c_char_p(funcs.encode(UTF_8))
+    
+    @property
+    def elapsedTime(self) -> float:
+        return self.__c_pmu_trace_data.elapsedTime
+    
+    @elapsedTime.setter
+    def elapsedTime(self, elapsedTime: float) -> None:
+        self.__c_pmu_trace_data.elapsedTime = ctypes.c_double(elapsedTime)
+    
+    @property
+    def pid(self) -> int:
+        return self.__c_pmu_trace_data.pid
+    
+    @pid.setter
+    def pid(self, pid: int) -> None:
+        self.__c_pmu_trace_data.pid = ctypes.c_int(pid)
+    
+    @property
+    def tid(self) -> int:
+        return self.__c_pmu_trace_data.tid
+
+    @tid.setter
+    def tid(self, tid: int) -> None:
+        self.__c_pmu_trace_data.tid = ctypes.c_int(tid)
+    
+    @property
+    def cpu(self) -> int:
+        return self.__c_pmu_trace_data.cpu
+    
+    @cpu.setter
+    def cpu(self, cpu: int) -> None:
+        self.__c_pmu_trace_data.cpu = ctypes.c_uint(cpu)
+    
+    @property
+    def comm(self) -> str:
+        return self.__c_pmu_trace_data.comm.decode(UTF_8)
+    
+    @comm.setter
+    def comm(self, comm: str) -> None:
+        self.__c_pmu_trace_data.comm = ctypes.c_char_p(comm.encode(UTF_8))
+    
+    @classmethod
+    def from_c_pmu_trace_data(cls, c_pmu_trace_data: CtypesPmuTraceData) -> 'ImplPmuTraceData':
+        pmu_trace_data = cls()
+        pmu_trace_data.__c_pmu_trace_data = c_pmu_trace_data
+        return pmu_trace_data
+
+class PmuTraceData:
+    __slots__ = ['__pointer', '__iter', '__len']
+
+    def __init__(self, pointer: ctypes.POINTER(CtypesPmuTraceData) = None, len: int = 0) -> None:
+        self.__pointer = pointer
+        self.__len = len
+        self.__iter = (ImplPmuTraceData.from_c_pmu_trace_data(self.__pointer[i]) for i in range(self.__len))
+    
+    def __del__(self) -> None:
+        self.free()
+    
+    @property
+    def len(self) -> int:
+        return self.__len
+    
+    @property
+    def iter(self) -> Iterator[ImplPmuTraceData]:
+        return self.__iter
+    
+    def free(self) -> None:
+        if self.__pointer is not None:
+            PmuTraceDataFree(self.__pointer)
+            self.__pointer = None
 
 def PmuOpen(collectType: int, pmuAttr: PmuAttr) -> int:
     """
@@ -876,7 +1138,7 @@ def PmuOpen(collectType: int, pmuAttr: PmuAttr) -> int:
 
 def PmuEventListFree() -> None:
     """
-    int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr);
+    void PmuEventListFree();
     """
     c_PmuEventListFree = kperf_so.PmuEventListFree
     c_PmuEventListFree.argtypes = []
@@ -1044,6 +1306,101 @@ def PmuGetFieldExp(rawData: ctypes.POINTER(CtypesSampleRawData), field_name: str
     return SampleRawField.from_sample_raw_field(pointer_field.contents)
 
 
+def PmuTraceOpen(traceType: int, pmuTraceAttr: PmuTraceAttr) -> int:
+    """
+    int PmuTraceOpen(enum PmuTraceType traceType, struct PmuTraceAttr *traceAttr);
+    """
+    c_PmuTraceOpen = kperf_so.PmuTraceOpen
+    c_PmuTraceOpen.argtypes = [ctypes.c_int, ctypes.POINTER(CtypesPmuTraceAttr)]
+    c_PmuTraceOpen.restype = ctypes.c_int
+
+    c_traceType = ctypes.c_int(traceType)
+
+    return c_PmuTraceOpen(c_traceType, ctypes.byref(pmuTraceAttr.c_pmu_trace_attr))
+
+def PmuTraceEnable(pd: int) -> int:
+    """
+    int PmuTraceEnable(int pd);
+    """
+    c_PmuTraceEnable = kperf_so.PmuTraceEnable
+    c_PmuTraceEnable.argtypes = [ctypes.c_int]
+    c_PmuTraceEnable.restype = ctypes.c_int
+
+    c_pd = ctypes.c_int(pd)
+
+    return c_PmuTraceEnable(c_pd)
+
+def PmuTraceDisable(pd: int) -> int:
+    """
+    int PmuTraceDisable(int pd);
+    """
+    c_PmuTraceDisable = kperf_so.PmuTraceDisable
+    c_PmuTraceDisable.argtypes = [ctypes.c_int]
+    c_PmuTraceDisable.restype = ctypes.c_int
+
+    c_pd = ctypes.c_int(pd)
+
+    return c_PmuTraceDisable(c_pd)
+
+def PmuTraceRead(pd: int) -> PmuTraceData:
+    """
+    int PmuTraceRead(int pd, struct PmuTraceData** pmuTraceData);
+    """
+    c_PmuTraceRead = kperf_so.PmuTraceRead
+    c_PmuTraceRead.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.POINTER(CtypesPmuTraceData))]
+    c_PmuTraceRead.restype = ctypes.c_int
+
+    c_pd = ctypes.c_int(pd)
+    c_data_pointer = ctypes.pointer(CtypesPmuTraceData())
+
+    c_data_len = c_PmuTraceRead(c_pd, ctypes.byref(c_data_pointer))
+    return PmuTraceData(c_data_pointer, c_data_len)
+
+def PmuTraceClose(pd: int) -> None:
+    """
+    void PmuTraceClose(int pd);
+    """
+    c_PmuTraceClose = kperf_so.PmuTraceClose
+    c_PmuTraceClose.argtypes = [ctypes.c_int]
+    c_PmuTraceClose.restype = None
+
+    c_pd = ctypes.c_int(pd)
+
+    c_PmuTraceClose(c_pd)
+
+def PmuTraceDataFree(pmuTraceData: ctypes.POINTER(CtypesPmuTraceData)) -> None:
+    """
+    void PmuTraceDataFree(struct PmuTraceData* pmuTraceData);
+    """
+    c_PmuTraceDataFree = kperf_so.PmuTraceDataFree
+    c_PmuTraceDataFree.argtypes = [ctypes.POINTER(CtypesPmuTraceData)]
+    c_PmuTraceDataFree.restype = None
+    c_PmuTraceDataFree(pmuTraceData)
+
+def PmuSysCallFuncList() -> Iterator[str]:
+    """
+    char **PmuSysCallFuncList(unsigned *numFunc);
+    """
+    c_PmuSysCallFuncList = kperf_so.PmuSysCallFuncList
+    c_PmuSysCallFuncList.argtypes = [ctypes.c_int]
+    c_PmuSysCallFuncList.restype = ctypes.POINTER(ctypes.c_char_p)
+    
+    c_num_func = ctypes.c_int()
+    c_func_list = c_PmuSysCallFuncList(ctypes.byref(c_num_func))
+
+    return (c_func_list[i].decode(UTF_8) for i in range(c_num_func.value))
+
+def PmuSysCallFuncListFree() -> None:
+    """
+    void PmuSysCallFuncListFree();
+    """
+    c_PmuSysCallFuncListFree = kperf_so.PmuSysCallFuncListFree
+    c_PmuSysCallFuncListFree.argtypes = []
+    c_PmuSysCallFuncListFree.restype = None
+
+    c_PmuSysCallFuncListFree()
+
+
 __all__ = [
     'CtypesEvtAttr',
     'EvtAttr',
@@ -1066,4 +1423,17 @@ __all__ = [
     'PmuDumpData',
     'PmuGetField',
     'PmuGetFieldExp',
+    'CtypesPmuTraceAttr',
+    'PmuTraceAttr',
+    'CtypesPmuTraceData',
+    'ImplPmuTraceData',
+    'PmuTraceData',
+    'PmuTraceOpen',
+    'PmuTraceEnable',
+    'PmuTraceDisable',
+    'PmuTraceRead',
+    'PmuTraceClose',
+    'PmuTraceDataFree',
+    'PmuSysCallFuncList',
+    'PmuSysCallFuncListFree',
 ]

@@ -33,6 +33,9 @@ class PmuEventType:
     ALL_EVENT = 3
 
 
+class PmuTraceType:
+    TRACE_SYS_CALL = 0
+
 class SpeFilter:
     SPE_FILTER_NONE = 0
     TS_ENABLE = 1 << 0       # enable timestamping with value of generic timer
@@ -172,7 +175,34 @@ class ImplPmuData(_libkperf.ImplPmuData):
 class PmuData(_libkperf.PmuData):
     pass
 
+class PmuTraceAttr(_libkperf.PmuTraceAttr):
+    """
+    struct PmuTraceAttr {
+        // system call function List, if funcs is nullptr, it will collect all the system call function elapsed time.
+        const char **funcs;
+        // Length of system call function list
+        unsigned numFuncs;
+        int* pidList;
+        unsigned numPid;
+        int* cpuList;
+        unsigned numCpu;
+    };
+    """
+    def __init__(self,
+                 funcs: List[str] = None,
+                 pidList: List[int] = None,
+                 cpuList: List[int] = None) -> None:
+        super().__init__(
+            funcs=funcs,
+            pidList=pidList,
+            cpuList=cpuList
+        )
 
+class ImplPmuTraceData(_libkperf.ImplPmuTraceData):
+    pass
+
+class PmuTraceData(_libkperf.PmuTraceData):
+    pass
 
 def open(collect_type: PmuTaskType, pmu_attr: PmuAttr) -> int:
     """
@@ -282,10 +312,47 @@ def get_field_exp(pmu_data: _libkperf.ImplPmuData, field_name: str) -> SampleRaw
     """
     return _libkperf.PmuGetFieldExp(pmu_data.rawData.c_pmu_data_rawData, field_name)
 
+def trace_open(trace_type: PmuTraceType, pmu_trace_attr: PmuTraceAttr) -> int:
+    """
+    int PmuTraceOpen(enum PmuTraceType traceType, struct PmuTraceAttr *traceAttr);
+    """
+    return _libkperf.PmuTraceOpen(int(trace_type), pmu_trace_attr)
+
+def trace_enable(pd: int) -> int:
+    """
+    int PmuTraceEnable(int pd);
+    """
+    return _libkperf.PmuTraceEnable(pd)
+
+def trace_disable(pd: int) -> int:
+    """
+    int PmuTraceDisable(int pd);
+    """
+    return _libkperf.PmuTraceDisable(pd)
+
+def trace_read(pd: int) -> PmuTraceData:
+    """
+    int PmuTraceRead(int pd, struct PmuTraceData **traceData);
+    """
+    return _libkperf.PmuTraceRead(pd)
+
+def trace_close(pd: int) -> None:
+    """
+    void PmuTraceClose(int pd);
+    """
+    return _libkperf.PmuTraceClose(pd)
+
+def sys_call_func_list() -> Iterator[str]:
+    """
+    get the system call function list
+    :return: system call function list
+    """
+    return _libkperf.PmuSysCallFuncList()
 
 __all__ = [
     'PmuTaskType',
     'PmuEventType',
+    'PmuTraceType',
     'SpeFilter',
     'SpeEventFilter',
     'SymbolMode',
@@ -295,6 +362,9 @@ __all__ = [
     'SampleRawField',
     'ImplPmuData',
     'PmuData',
+    'PmuTraceAttr',
+    'ImplPmuTraceData',
+    'PmuTraceData',
     'open',
     'event_list',
     'enable',
@@ -305,4 +375,10 @@ __all__ = [
     'dump',
     'get_field',
     'get_field_exp',
+    'trace_open',
+    'trace_enable',
+    'trace_disable',
+    'trace_read',
+    'trace_close',
+    'sys_call_func_list',
 ]
