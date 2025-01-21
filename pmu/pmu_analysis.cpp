@@ -141,9 +141,9 @@ namespace KUNPENG_PMU {
         TraceEventData newTraceData = {
             .pd = pd,
             .traceType = TRACE_SYS_CALL,
-            .data = traceData,
+            .data = move(traceData),
         };
-        oriPmuData[pd] = pmuData;
+        oriPmuData[newTraceData.data.data()] = pmuData;
         auto inserted = traceDataList.emplace(newTraceData.data.data(), move(newTraceData));
         return inserted.first->second.data;
     }
@@ -159,6 +159,7 @@ namespace KUNPENG_PMU {
         lock_guard<mutex> lg(traceDataListMtx);
         for (auto iter = traceDataList.begin(); iter != traceDataList.end();) {
             if (iter->second.pd == pd) {
+                PmuDataFree(oriPmuData[iter->first]); // free the corresponding PmuData
                 iter = traceDataList.erase(iter);
             } else {
                 ++iter;
@@ -173,23 +174,15 @@ namespace KUNPENG_PMU {
         if (findData == traceDataList.end()) {
             return;
         }
-        for (auto& data : findData->second.data) {
-            if (data.funcs != nullptr) {
-                delete[] data.funcs;
-            }
-            if (data.comm != nullptr) {
-                delete[] data.comm;
-            }
-        }
+        PmuDataFree(oriPmuData[findData->first]); // free the corresponding PmuData
         traceDataList.erase(pmuTraceData);
     }
 
     void PmuAnalysis::Close(const int pd)
-    {
-        PmuDataFree(oriPmuData[pd]); // free the corresponding PmuData
-        PmuClose(pd);
+    {   
         EraseFuncsList(pd);
         EraseTraceDataList(pd);
+        PmuClose(pd);
     }
 
 }

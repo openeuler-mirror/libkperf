@@ -61,9 +61,9 @@ namespace KUNPENG_PMU {
         // Key: PmuTraceData raw point
         // Value: TraceEventData
         std::unordered_map<PmuTraceData*, TraceEventData> traceDataList;
-        // key: pd
+        // key: PmuTraceData*
         // Value: PmuData*
-        std::unordered_map<unsigned, PmuData*> oriPmuData;
+        std::unordered_map<PmuTraceData*, PmuData*> oriPmuData;
     };
 }   // namespace KUNPENG_PMU
 #endif
