@@ -13,7 +13,7 @@
  * Description: functions for analyze performance data in the KUNPENG_PMU namespace
  ******************************************************************************/
 #include <iostream>
-#include <string.h>
+#include <string>
 #include <algorithm>
 #include "pmu_analysis.h"
 
@@ -35,15 +35,15 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-     void PmuAnalysis::FillFuctionList(unsigned pd, PmuTraceAttr* traceParam)
-     {
+    void PmuAnalysis::FillFuctionList(unsigned pd, PmuTraceAttr* traceParam)
+    {
         lock_guard<std::mutex> lg(funcsListMtx);
         std::vector<std::string> funcs;
         for (int i = 0; i < traceParam->numFuncs; ++i) {
             funcs.emplace_back(traceParam->funcs[i]);
         }
         funcsList[pd] = funcs;
-     }
+    }
 
     bool PmuAnalysis::IsPdAlive(const unsigned pd) const
     {
@@ -77,11 +77,13 @@ namespace KUNPENG_PMU {
         return a.ts < b.ts;
     }
 
-    static void CollectPmuTraceData(const char *funName, const PmuData &enterPmuData, const PmuData &exitPmuData, vector<PmuTraceData> &traceData)
+    static void CollectPmuTraceData(
+        const char *funName, const PmuData &enterPmuData, const PmuData &exitPmuData, vector<PmuTraceData> &traceData)
     {
         PmuTraceData traceDataItem = {0};
         traceDataItem.funcs = funName;
-        traceDataItem.elapsedTime = (double)(exitPmuData.ts - enterPmuData.ts) / 1000000.0; // convert to ms
+        double nsToMsUnit = 1000000.0;
+        traceDataItem.elapsedTime = (double)(exitPmuData.ts - enterPmuData.ts) / nsToMsUnit; // convert to ms
         traceDataItem.pid = enterPmuData.pid;
         traceDataItem.tid = enterPmuData.tid;
         traceDataItem.cpu = enterPmuData.cpu;
@@ -99,7 +101,7 @@ namespace KUNPENG_PMU {
         vector<PmuTraceData> traceData;
         for (size_t i = 0; i < funList.size(); ++i) {
             map<int, vector<PmuData>> tidPmuData;
-            string funName = funList[i];
+            string& funName = funList[i];
             for (; oriLen < oriDataLen; ++oriLen) {
                 if (!CheckEventIsFunName(pmuData[oriLen].evt, funName.c_str())) {
                     break;
@@ -157,14 +159,6 @@ namespace KUNPENG_PMU {
         lock_guard<mutex> lg(traceDataListMtx);
         for (auto iter = traceDataList.begin(); iter != traceDataList.end();) {
             if (iter->second.pd == pd) {
-                for (int i = 0; i < iter->second.data.size(); ++i) {
-                    if (iter->second.data[i].funcs != nullptr) {
-                        delete[] iter->second.data[i].funcs;
-                    }
-                    if (iter->second.data[i].comm != nullptr) {
-                        delete[] iter->second.data[i].comm;
-                    }
-                }
                 iter = traceDataList.erase(iter);
             } else {
                 ++iter;
@@ -193,6 +187,7 @@ namespace KUNPENG_PMU {
     void PmuAnalysis::Close(const int pd)
     {
         PmuDataFree(oriPmuData[pd]); // free the corresponding PmuData
+        PmuClose(pd);
         EraseFuncsList(pd);
         EraseTraceDataList(pd);
     }

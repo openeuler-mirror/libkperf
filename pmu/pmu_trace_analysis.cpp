@@ -46,9 +46,6 @@ const char** PmuSysCallFuncList(unsigned *numFuncs)
             if (const char *pos = strstr(traceEventList[i], SYSCALL_FUNC_ENTER_PREFIX)) {
                 size_t funcNameLen = strlen(traceEventList[i]) - strlen(SYSCALL_FUNC_ENTER_PREFIX) + 1;
                 char *syscallFunName = new char[funcNameLen];
-                if (syscallFunName == nullptr) {
-                    return nullptr;
-                }
                 strcpy(syscallFunName, pos + strlen(SYSCALL_FUNC_ENTER_PREFIX));
                 SysCallFuncList.emplace_back(syscallFunName);
             }
@@ -156,7 +153,7 @@ static void EraseTraceAttrEvtList(char **evtList, unsigned numEvt)
     delete[] evtList;
 }
 
-static bool PdValid(const int &pd)
+static bool PdValid(const int pd)
 {
     return PmuAnalysis::GetInstance()->IsPdAlive(pd);
 }
@@ -213,7 +210,7 @@ int PmuTraceRead(int pd, struct PmuTraceData **pmuTraceData)
         *pmuTraceData = nullptr;
         return 0;
     }
-    if (!pdValid(pd)) {
+    if (!PdValid(pd)) {
         New(LIBPERF_ERR_INVALID_PD);
         return -1;
     }
@@ -230,7 +227,6 @@ int PmuTraceRead(int pd, struct PmuTraceData **pmuTraceData)
 
 void PmuTraceClose(int pd)
 {
-    PmuClose(pd);
     SetWarn(SUCCESS);
     try {
         KUNPENG_PMU::PmuAnalysis::GetInstance()->Close(pd);

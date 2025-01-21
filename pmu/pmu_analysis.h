@@ -25,45 +25,45 @@ namespace KUNPENG_PMU {
     extern const char *SYSCALL_FUNC_EXIT_PREFIX;
 
     class PmuAnalysis {
-        public:
-            static PmuAnalysis* GetInstance()
-            {
-                static PmuAnalysis instance;
-                return &instance;
-            }
+    public:
+        static PmuAnalysis* GetInstance()
+        {
+            static PmuAnalysis instance;
+            return &instance;
+        }
 
-            int Register(const int pd, PmuTraceAttr* traceParam);
-            std::vector<PmuTraceData>& AnalyzeTraceData(int pd, PmuData *pmuData, unsigned len);
-            void Close(const int pd);
-            void FreeTraceData(PmuTraceData* pmuTraceData);
+        int Register(const int pd, PmuTraceAttr* traceParam);
+        bool IsPdAlive(const unsigned pd) const;
+        std::vector<PmuTraceData>& AnalyzeTraceData(int pd, PmuData *pmuData, unsigned len);
+        void Close(const int pd);
+        void FreeTraceData(PmuTraceData* pmuTraceData);
 
-        private:
-            PmuAnalysis()
-            {}
-            PmuAnalysis(const PmuAnalysis&) = delete;
-            PmuAnalysis& operator=(const PmuAnalysis&) = delete;
-            ~PmuAnalysis() = default;
+    private:
+        PmuAnalysis()
+        {}
+        PmuAnalysis(const PmuAnalysis&) = delete;
+        PmuAnalysis& operator=(const PmuAnalysis&) = delete;
+        ~PmuAnalysis() = default;
 
-            struct TraceEventData {
-                unsigned pd;
-                PmuTraceType traceType;
-                std::vector<PmuTraceData> data;
-            };
+        struct TraceEventData {
+            unsigned pd;
+            PmuTraceType traceType;
+            std::vector<PmuTraceData> data;
+        };
 
-            void FillFuctionList(unsigned pd, PmuTraceAttr* traceParam);
-            bool IsPdAlive(const unsigned pd) const;
-            void EraseFuncsList(const unsigned pd);
-            static std::mutex funcsListMtx;
-            std::unordered_map<unsigned, std::vector<std::string>> funcsList;
+        void FillFuctionList(unsigned pd, PmuTraceAttr* traceParam);
+        void EraseFuncsList(const unsigned pd);
+        static std::mutex funcsListMtx;
+        std::unordered_map<unsigned, std::vector<std::string>> funcsList;
 
-            void EraseTraceDataList(const unsigned pd);
-            static std::mutex traceDataListMtx;
-            // Key: PmuTraceData raw point
-            // Value: TraceEventData
-            std::unordered_map<PmuTraceData*, TraceEventData> traceDataList;
-            // key: pd
-            // Value: PmuData*
-            std::unordered_map<unsigned, PmuData*> oriPmuData;
+        void EraseTraceDataList(const unsigned pd);
+        static std::mutex traceDataListMtx;
+        // Key: PmuTraceData raw point
+        // Value: TraceEventData
+        std::unordered_map<PmuTraceData*, TraceEventData> traceDataList;
+        // key: pd
+        // Value: PmuData*
+        std::unordered_map<unsigned, PmuData*> oriPmuData;
     };
 }   // namespace KUNPENG_PMU
 #endif
