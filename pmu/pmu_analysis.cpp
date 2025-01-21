@@ -26,6 +26,8 @@ namespace KUNPENG_PMU {
 
     const char *SYSCALL_FUNC_ENTER_PREFIX = "syscalls:sys_enter_";
     const char *SYSCALL_FUNC_EXIT_PREFIX = "syscalls:sys_exit_";
+    const size_t g_enterPrefixLen = strlen(SYSCALL_FUNC_ENTER_PREFIX);
+    const size_t g_exitPrefixLen = strlen(SYSCALL_FUNC_EXIT_PREFIX);
 
     int PmuAnalysis::Register(const int pd, PmuTraceAttr* traceParam)
     {
@@ -43,34 +45,28 @@ namespace KUNPENG_PMU {
         funcsList[pd] = funcs;
      }
 
+    bool PmuAnalysis::IsPdAlive(const unsigned pd) const
+    {
+        lock_guard<mutex> lg(funcsListMtx);
+        return funcsList.find(pd) != funcsList.end();
+    }
+
     bool CheckEventIsFunName(const char *evt, const char *funName)
     {
-        if (const char *pos = strstr(evt, SYSCALL_FUNC_ENTER_PREFIX)) {
-            size_t evtFunLen = strlen(evt) - strlen(SYSCALL_FUNC_ENTER_PREFIX) + 1;
-            char *evtFunName = new char[evtFunLen];
-            if (evtFunName == nullptr) {
-                return false;
-            }
-            strcpy(evtFunName, pos + strlen(SYSCALL_FUNC_ENTER_PREFIX));
-            if (strcmp(evtFunName, funName) == 0) {
-                delete[] evtFunName;
+        const char *pos;
+
+        if ((pos = strstr(evt, SYSCALL_FUNC_ENTER_PREFIX))) {
+            pos += g_enterPrefixLen;
+            if (strcmp(pos, funName) == 0) {
                 return true;
             }
-            delete[] evtFunName;
         }
 
-        if (const char *pos = strstr(evt, SYSCALL_FUNC_EXIT_PREFIX)) {
-            size_t evtFunLen = strlen(evt) - strlen(SYSCALL_FUNC_EXIT_PREFIX) + 1;
-            char *evtFunName = new char[evtFunLen];
-            if (evtFunName == nullptr) {
-                return false;
-            }
-            strcpy(evtFunName, pos + strlen(SYSCALL_FUNC_EXIT_PREFIX));
-            if (strcmp(evtFunName, funName) == 0) {
-                delete[] evtFunName;
+        if ((pos = strstr(evt, SYSCALL_FUNC_EXIT_PREFIX))) {
+            pos += g_exitPrefixLen;
+            if (strcmp(pos, funName) == 0) {
                 return true;
             }
-            delete[] evtFunName;
         }
 
         return false;
@@ -84,17 +80,12 @@ namespace KUNPENG_PMU {
     static void CollectPmuTraceData(const char *funName, const PmuData &enterPmuData, const PmuData &exitPmuData, vector<PmuTraceData> &traceData)
     {
         PmuTraceData traceDataItem = {0};
-        unsigned funLen = strlen(funName) + 1;
-        char *funcName = new char[funLen];
-        strcpy(funcName, funName);
-        traceDataItem.funcs = funcName;
+        traceDataItem.funcs = funName;
         traceDataItem.elapsedTime = (double)(exitPmuData.ts - enterPmuData.ts) / 1000000.0; // convert to ms
         traceDataItem.pid = enterPmuData.pid;
         traceDataItem.tid = enterPmuData.tid;
-        unsigned commLen = strlen(enterPmuData.comm) + 1;
-        char *commName = new char[commLen];
-        strcpy(commName, enterPmuData.comm);
-        traceDataItem.comm = commName;
+        traceDataItem.cpu = enterPmuData.cpu;
+        traceDataItem.comm = enterPmuData.comm;
 
         traceData.emplace_back(traceDataItem);
     }
@@ -106,7 +97,7 @@ namespace KUNPENG_PMU {
         vector<string>& funList = funcsList.at(pd);
         int oriLen = 0;
         vector<PmuTraceData> traceData;
-        for (int i = 0; i < funList.size(); ++i) {
+        for (size_t i = 0; i < funList.size(); ++i) {
             map<int, vector<PmuData>> tidPmuData;
             string funName = funList[i];
             for (; oriLen < oriDataLen; ++oriLen) {
@@ -150,7 +141,7 @@ namespace KUNPENG_PMU {
             .traceType = TRACE_SYS_CALL,
             .data = traceData,
         };
-
+        oriPmuData[pd] = pmuData;
         auto inserted = traceDataList.emplace(newTraceData.data.data(), move(newTraceData));
         return inserted.first->second.data;
     }
@@ -201,6 +192,7 @@ namespace KUNPENG_PMU {
 
     void PmuAnalysis::Close(const int pd)
     {
+        PmuDataFree(oriPmuData[pd]); // free the corresponding PmuData
         EraseFuncsList(pd);
         EraseTraceDataList(pd);
     }

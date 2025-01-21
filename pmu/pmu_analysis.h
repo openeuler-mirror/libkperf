@@ -51,6 +51,7 @@ namespace KUNPENG_PMU {
             };
 
             void FillFuctionList(unsigned pd, PmuTraceAttr* traceParam);
+            bool IsPdAlive(const unsigned pd) const;
             void EraseFuncsList(const unsigned pd);
             static std::mutex funcsListMtx;
             std::unordered_map<unsigned, std::vector<std::string>> funcsList;
@@ -60,6 +61,9 @@ namespace KUNPENG_PMU {
             // Key: PmuTraceData raw point
             // Value: TraceEventData
             std::unordered_map<PmuTraceData*, TraceEventData> traceDataList;
+            // key: pd
+            // Value: PmuData*
+            std::unordered_map<unsigned, PmuData*> oriPmuData;
     };
 }   // namespace KUNPENG_PMU
 #endif

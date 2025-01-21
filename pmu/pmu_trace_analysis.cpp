@@ -156,6 +156,11 @@ static void EraseTraceAttrEvtList(char **evtList, unsigned numEvt)
     delete[] evtList;
 }
 
+static bool PdValid(const int &pd)
+{
+    return PmuAnalysis::GetInstance()->IsPdAlive(pd);
+}
+
 int PmuTraceOpen(enum PmuTraceType traceType, struct PmuTraceAttr *traceAttr)
 {
     SetWarn(SUCCESS);
@@ -208,14 +213,16 @@ int PmuTraceRead(int pd, struct PmuTraceData **pmuTraceData)
         *pmuTraceData = nullptr;
         return 0;
     }
+    if (!pdValid(pd)) {
+        New(LIBPERF_ERR_INVALID_PD);
+        return -1;
+    }
     auto& traceData = KUNPENG_PMU::PmuAnalysis::GetInstance()->AnalyzeTraceData(pd, pmuData, len);
     New(SUCCESS);
     if (!traceData.empty()) {
-        PmuDataFree(pmuData); // free other useless trace data.
         *pmuTraceData = traceData.data();
         return traceData.size();
     } else {
-        PmuDataFree(pmuData);
         *pmuTraceData = nullptr;
         return 0;
     }
