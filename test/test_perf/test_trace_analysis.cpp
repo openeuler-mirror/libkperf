@@ -150,5 +150,5 @@ TEST_F(TestAnaylzeData, collect_all_trace_data_success) {
     EnableTracePointer(pd, 1);
     int len = PmuTraceRead(pd, &data);
     EXPECT_TRUE(data != nullptr);
-    EXPECT_TRUE(data[len - 1].funcs, != nullptr);
+    EXPECT_TRUE(data[len - 1].funcs != nullptr);
 }
