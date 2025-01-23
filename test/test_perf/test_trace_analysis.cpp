@@ -31,6 +31,21 @@ public:
     }
 
 protected:
+    pid_t RunApp(const string &name)
+    {
+        char myDir[PATH_MAX] = {0};
+        readlink("/proc/self/exe", myDir, sizeof(myDir) - 1);
+        auto pid = vfork();
+        if (pid == 0) {
+            string fullPath = string(dirname(myDir)) + "/case/" + name;
+            char *const *dummy = nullptr;
+            execvp(fullPath.c_str(), dummy);
+            _exit(errno);
+        }
+
+        return pid;
+    }
+
     void EnableTracePointer(unsigned pd, unsigned int second) {
         PmuTraceEnable(pd);
         sleep(second);
@@ -57,11 +72,12 @@ TEST_F(TestAnaylzeData, config_param_error) {
 }
 
 /**
- * @brief test for collecting single syscall trace data
+ * @brief test for collecting single syscall trace data and single cpu
  */
 TEST_F(TestAnaylzeData, collect_single_trace_data_success) {
     appPid = RunTestApp("test_12threads");
     int pidList[1] = {appPid};
+    int cpuList[1] = {1};
     const char *func1 = "futex";
     const char *funcs[1] = {func1};
     PmuTraceAttr traceAttr = {0};
@@ -69,6 +85,8 @@ TEST_F(TestAnaylzeData, collect_single_trace_data_success) {
     traceAttr.numFuncs = 1;
     traceAttr.pidList = pidList;
     traceAttr.numPid = 1;
+    traceAttr.cpuList = cpuList;
+    traceAttr.numCpu = 1;
 
     pd = PmuTraceOpen(TRACE_SYS_CALL, &traceAttr);
     ASSERT_NE(pd, -1);
@@ -78,10 +96,10 @@ TEST_F(TestAnaylzeData, collect_single_trace_data_success) {
 }
 
 /**
- * @brief test for collecting single syscall trace data
+ * @brief test for collecting single syscall trace data and all cpu
  */
 TEST_F(TestAnaylzeData, collect_sleep_trace_data_success) {
-    appPid = RunTestApp("test_syscall_sleep");
+    appPid = RunApp("test_syscall_sleep");
     int pidList[1] = {appPid};
     const char *func1 = "clock_nanosleep";
     const char *funcs[1] = {func1};
@@ -96,13 +114,14 @@ TEST_F(TestAnaylzeData, collect_sleep_trace_data_success) {
     EnableTracePointer(pd, 1);
     int len = PmuTraceRead(pd, &data);
     EXPECT_TRUE(data != nullptr);
+    ASSERT_LT(data[0].elapsedTime, 0.1);
 }
 
 /**
- * @brief test for collecting double syscall trace data
+ * @brief test for collecting double syscall trace data and all cpu
  */
 TEST_F(TestAnaylzeData, collect_double_trace_data_success) {
-    appPid = RunTestApp("test_syscall_read_write");
+    appPid = RunApp("test_syscall_read_write");
     int pidList[1] = {appPid};
     const char *func1 = "write";
     const char *func2 = "read";
@@ -118,4 +137,18 @@ TEST_F(TestAnaylzeData, collect_double_trace_data_success) {
     EnableTracePointer(pd, 1);
     int len = PmuTraceRead(pd, &data);
     EXPECT_TRUE(data != nullptr);
+}
+
+/**
+ * @brief test for collecting all syscall trace data in all cpu and all process
+ */
+TEST_F(TestAnaylzeData, collect_all_trace_data_success) {
+    PmuTraceAttr traceAttr = {0};
+
+    pd = PmuTraceOpen(TRACE_SYS_CALL, &traceAttr);
+    ASSERT_NE(pd, -1);
+    EnableTracePointer(pd, 1);
+    int len = PmuTraceRead(pd, &data);
+    EXPECT_TRUE(data != nullptr);
+    EXPECT_TRUE(data[len - 1].funcs, != nullptr);
 }
