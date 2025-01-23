@@ -16,8 +16,6 @@
 #include <string>
 #include <unordered_map>
 #include <fstream>
-#include <sstream>
-#include <regex>
 #include <algorithm>
 #include "pcerr.h"
 #include "pmu_analysis.h"
@@ -62,27 +60,33 @@ namespace KUNPENG_PMU {
         ifstream syscallFile(UNISTD_PATH);
         if (!syscallFile.is_open()) {
             New(LIBPERF_ERR_OPEN_SYSCALL_HEADER_FAILED,
-                "open syscall header file failed! unable to generate syscall table!");
+                "open /usr/include/asm-generic/unistd.h file failed! unable to generate syscall table!");
             return LIBPERF_ERR_OPEN_SYSCALL_HEADER_FAILED;
         }
 
-        stringstream buffer;
-        buffer << syscallFile.rdbuf();
-        string syscallContent = buffer.str();
+        string line;
+        while (getline(syscallFile, line)) {
+            if (line.find("#define __NR_")) {
+                size_t nameStart = line.find("__NR_") + 5; // "__NR_" len is 5
+                size_t nameEnd = line.find_first_of(' ', nameStart);
+                size_t numberStart = line.find_first_of(' ') + 1;
+
+                if (nameStart != string::npos && nameEnd != string::npos && numberStart != string::npos) {
+                    string funName = line.substr(nameStart, nameEnd - nameStart);
+                    string numberStr = line.substr(numberStart);
+
+                    try {
+                        int syscallNumber = stoi(numberStr);
+                        syscallTable[syscallNumber] = funName;
+                    } catch (const invalid_argument& e) {
+                        // Handle invalid argument exception
+                        continue;
+                    }
+                }
+            }
+        }
 
         syscallFile.close();
-
-        // 正则匹配
-        regex syscall_regex(R"(#define\s+__NR_(\w+)\s+(\d+))");
-        smatch matches;
-
-        auto begin = sregex_iterator(syscallContent.begin(), syscallContent.end(), syscall_regex);
-        auto end = sregex_iterator();
-
-        for (sregex_iterator it = begin; it != end; ++it) {
-            matches = *it;
-            syscallTable[stoi(matches[2].str())] = matches[1].str();
-        }
 
         return SUCCESS;
     }
@@ -95,14 +99,7 @@ namespace KUNPENG_PMU {
 
     static bool CheckEventIsRawSysCall(const char *evt)
     {
-        if (strcmp(evt, ENTER_RAW_SYSCALL) == 0) {
-            return true;
-        }
-        if (strcmp(evt, EXIT_RAW_SYSCALL) == 0) {
-            return true;
-        }
-
-        return false;
+        return (strcmp(evt, ENTER_RAW_SYSCALL) == 0) || (strcmp(evt, EXIT_RAW_SYSCALL) == 0);
     }
 
     static bool CheckEventIsFunName(const char *evt, const char *funName)
@@ -164,7 +161,8 @@ namespace KUNPENG_PMU {
     std::vector<PmuTraceData>& PmuAnalysis::AnalyzeRawTraceData(int pd, PmuData *pmuData, unsigned len)
     {
         vector<PmuTraceData> traceData;
-        traceData.reserve(len / 2);
+        const int pairNum = 2;
+        traceData.reserve(len / pairNum);
         unordered_map<int, vector<PmuData>> tidPmuDatas;
         for (int orilen = 0; orilen < len; ++orilen) {
             tidPmuDatas[pmuData[orilen].tid].emplace_back(pmuData[orilen]);
@@ -192,8 +190,8 @@ namespace KUNPENG_PMU {
                     if (enterEvts[enterIndex].ts < exitEvts[exitIndex].ts) {
                         CollectPmuTraceData(GetRawSysCallName(sysCallPair.first), enterEvts[enterIndex],
                                             exitEvts[exitIndex], traceData);
-                       enterIndex++;
-                       exitIndex++;
+                        enterIndex++;
+                        exitIndex++;
                     } else {
                         exitIndex++;
                     }
@@ -218,7 +216,8 @@ namespace KUNPENG_PMU {
         vector<string>& funList = funcsList.at(pd);
         int oriLen = 0;
         vector<PmuTraceData> traceData;
-        traceData.reserve(len / 2);
+        const int pairNum = 2;
+        traceData.reserve(len / pairNum);
         for (size_t i = 0; i < funList.size(); ++i) {
             unordered_map<int, vector<PmuData>> tidPmuDatas;
             string& funName = funList[i];
