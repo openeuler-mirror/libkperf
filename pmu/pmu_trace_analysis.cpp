@@ -104,8 +104,7 @@ static int CheckTraceAttr(enum PmuTraceType traceType, struct PmuTraceAttr *trac
         return LIBPERF_ERR_INVALID_TRACE_TYPE;
     }
     if (traceAttr->funcs == nullptr) {
-        traceAttr->funcs = PmuSysCallFuncList(&traceAttr->numFuncs);
-        return SUCCESS;
+        return PmuAnalysis::GetInstance()->GenerateSysCallTable();
     }
     auto err = CheckSysCallName(traceAttr->funcs, traceAttr->numFuncs);
     if (err != SUCCESS) {
@@ -113,36 +112,6 @@ static int CheckTraceAttr(enum PmuTraceType traceType, struct PmuTraceAttr *trac
     }
 
     return SUCCESS;
-}
-
-static char **GenerateSysCallFuncTraceEvtList(const char **sysCallFuncs, const unsigned numFuncs, unsigned int &numEvt)
-{
-    SetWarn(SUCCESS);
-    try {
-        numEvt = 0;
-        char **syscallEvts = new char* [numFuncs * 2];
-        for (size_t i = 0; i < numFuncs; ++i) {
-            size_t enterLen = strlen(SYSCALL_FUNC_ENTER_PREFIX) + strlen(sysCallFuncs[i]) + 1;
-            syscallEvts[numEvt] = new char[enterLen];
-            strcpy(syscallEvts[numEvt], SYSCALL_FUNC_ENTER_PREFIX);
-            strcat(syscallEvts[numEvt], sysCallFuncs[i]);
-            numEvt++;
-
-            size_t exitLen = strlen(SYSCALL_FUNC_EXIT_PREFIX) + strlen(sysCallFuncs[i]) + 1;
-            syscallEvts[numEvt] = new char[exitLen];
-            strcpy(syscallEvts[numEvt], SYSCALL_FUNC_EXIT_PREFIX);
-            strcat(syscallEvts[numEvt], sysCallFuncs[i]);
-            numEvt++;
-        }
-        New(SUCCESS);
-        return syscallEvts;
-    } catch (std::bad_alloc&) {
-        New(COMMON_ERR_NOMEM);
-        return nullptr;
-    } catch (std::exception& ex) {
-        New(UNKNOWN_ERROR, ex.what());
-        return nullptr;
-    }
 }
 
 static void EraseTraceAttrEvtList(char **evtList, unsigned numEvt)
@@ -158,6 +127,49 @@ static bool PdValid(const int pd)
     return PmuAnalysis::GetInstance()->IsPdAlive(pd);
 }
 
+static char **GeneratePmuAttrEvtList(const char **sysCallFuncs, const unsigned numFuncs, unsigned int &numEvt)
+{
+    SetWarn(SUCCESS);
+    try {
+        if (sysCallFuncs == nullptr) {
+            numEvt = 2;
+            char **syscallEvts = new char* [numEvt];
+            size_t exitLen = strlen(EXIT_RAW_SYSCALL) + 1;
+            syscallEvts[0] = new char[exitLen];
+            strcpy(syscallEvts[0], EXIT_RAW_SYSCALL);
+            size_t enterLen = strlen(ENTER_RAW_SYSCALL) + 1;
+            syscallEvts[1] = new char[enterLen];
+            strcpy(syscallEvts[1], ENTER_RAW_SYSCALL);
+            New(SUCCESS);
+            return syscallEvts;
+        } else {
+            numEvt = 0;
+            char **syscallEvts = new char* [numFuncs * 2];
+            for (size_t i = 0; i < numFuncs; ++i) {
+                size_t exitLen = strlen(SYSCALL_FUNC_EXIT_PREFIX) + strlen(sysCallFuncs[i]) + 1;
+                syscallEvts[numEvt] = new char[exitLen];
+                strcpy(syscallEvts[numEvt], SYSCALL_FUNC_EXIT_PREFIX);
+                strcat(syscallEvts[numEvt], sysCallFuncs[i]);
+                numEvt++;
+
+                size_t enterLen = strlen(SYSCALL_FUNC_ENTER_PREFIX) + strlen(sysCallFuncs[i]) + 1;
+                syscallEvts[numEvt] = new char[enterLen];
+                strcpy(syscallEvts[numEvt], SYSCALL_FUNC_ENTER_PREFIX);
+                strcat(syscallEvts[numEvt], sysCallFuncs[i]);
+                numEvt++;
+            }
+            New(SUCCESS);
+            return syscallEvts;
+        }
+    } catch (std::bad_alloc&) {
+        New(COMMON_ERR_NOMEM);
+        return nullptr;
+    } catch (std::exception& ex) {
+        New(UNKNOWN_ERROR, ex.what());
+        return nullptr;
+    }
+}
+
 int PmuTraceOpen(enum PmuTraceType traceType, struct PmuTraceAttr *traceAttr)
 {
     SetWarn(SUCCESS);
@@ -166,7 +178,7 @@ int PmuTraceOpen(enum PmuTraceType traceType, struct PmuTraceAttr *traceAttr)
         return -1;
     }
     PmuAttr attr = {0};
-    attr.evtList = GenerateSysCallFuncTraceEvtList(traceAttr->funcs, traceAttr->numFuncs, attr.numEvt);
+    attr.evtList = GeneratePmuAttrEvtList(traceAttr->funcs, traceAttr->numFuncs, attr.numEvt);
     attr.pidList = traceAttr->pidList;
     attr.numPid = traceAttr->numPid;
     attr.cpuList = traceAttr->cpuList;
@@ -214,7 +226,10 @@ int PmuTraceRead(int pd, struct PmuTraceData **pmuTraceData)
         New(LIBPERF_ERR_INVALID_PD);
         return -1;
     }
-    auto& traceData = KUNPENG_PMU::PmuAnalysis::GetInstance()->AnalyzeTraceData(pd, pmuData, len);
+    bool isAllCollect =
+        (strcmp(pmuData[0].evt, ENTER_RAW_SYSCALL) == 0) || (strcmp(pmuData[0].evt, EXIT_RAW_SYSCALL) == 0);
+    std::vector<PmuTraceData>& traceData = isAllCollect ? PmuAnalysis::GetInstance()->AnalyzeRawTraceData(pd, pmuData, len)
+                                                        : PmuAnalysis::GetInstance()->AnalyzeTraceData(pd, pmuData, len);
     New(SUCCESS);
     if (!traceData.empty()) {
         *pmuTraceData = traceData.data();

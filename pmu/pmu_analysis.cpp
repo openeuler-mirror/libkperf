@@ -14,10 +14,14 @@
  ******************************************************************************/
 #include <iostream>
 #include <string>
+#include <unordered_map>
+#include <fstream>
 #include <algorithm>
+#include "pcerr.h"
 #include "pmu_analysis.h"
 
 using namespace std;
+using namespace pcerr;
 
 namespace KUNPENG_PMU {
     // Initializing PmuAnalysis singleton instance and global lock
@@ -28,6 +32,12 @@ namespace KUNPENG_PMU {
     const char *SYSCALL_FUNC_EXIT_PREFIX = "syscalls:sys_exit_";
     const size_t g_enterPrefixLen = strlen(SYSCALL_FUNC_ENTER_PREFIX);
     const size_t g_exitPrefixLen = strlen(SYSCALL_FUNC_EXIT_PREFIX);
+
+    char *ENTER_RAW_SYSCALL = "raw_syscalls:sys_enter";
+    char *EXIT_RAW_SYSCALL = "raw_syscalls:sys_exit";
+
+    static const string UNISTD_PATH = "/usr/include/asm-generic/unistd.h";
+    static unordered_map<long, string> syscallTable;
 
     int PmuAnalysis::Register(const int pd, PmuTraceAttr* traceParam)
     {
@@ -45,13 +55,54 @@ namespace KUNPENG_PMU {
         funcsList[pd] = funcs;
     }
 
+    int PmuAnalysis::GenerateSysCallTable()
+    {
+        ifstream syscallFile(UNISTD_PATH);
+        if (!syscallFile.is_open()) {
+            New(LIBPERF_ERR_OPEN_SYSCALL_HEADER_FAILED,
+                "open /usr/include/asm-generic/unistd.h file failed! unable to generate syscall table!");
+            return LIBPERF_ERR_OPEN_SYSCALL_HEADER_FAILED;
+        }
+
+        string line;
+        while (getline(syscallFile, line)) {
+            if (line.find("#define __NR_")) {
+                size_t nameStart = line.find("__NR_") + 5; // "__NR_" len is 5
+                size_t nameEnd = line.find_first_of(' ', nameStart);
+                size_t numberStart = line.find_first_of(' ') + 1;
+
+                if (nameStart != string::npos && nameEnd != string::npos && numberStart != string::npos) {
+                    string funName = line.substr(nameStart, nameEnd - nameStart);
+                    string numberStr = line.substr(numberStart);
+
+                    try {
+                        int syscallNumber = stoi(numberStr);
+                        syscallTable[syscallNumber] = funName;
+                    } catch (const invalid_argument& e) {
+                        // Handle invalid argument exception
+                        continue;
+                    }
+                }
+            }
+        }
+
+        syscallFile.close();
+
+        return SUCCESS;
+    }
+
     bool PmuAnalysis::IsPdAlive(const unsigned pd) const
     {
         lock_guard<mutex> lg(funcsListMtx);
         return funcsList.find(pd) != funcsList.end();
     }
 
-    bool CheckEventIsFunName(const char *evt, const char *funName)
+    static bool CheckEventIsRawSysCall(const char *evt)
+    {
+        return (strcmp(evt, ENTER_RAW_SYSCALL) == 0) || (strcmp(evt, EXIT_RAW_SYSCALL) == 0);
+    }
+
+    static bool CheckEventIsFunName(const char *evt, const char *funName)
     {
         const char *pos;
 
@@ -92,24 +143,92 @@ namespace KUNPENG_PMU {
         traceData.emplace_back(traceDataItem);
     }
 
+    static int GetRawSysCallId(PmuData &pmuData)
+    {
+        long NR_SYSCALL = 0;
+        int ret = PmuGetField(pmuData.rawData, "id", &NR_SYSCALL, sizeof(NR_SYSCALL));
+        if (ret != SUCCESS) {
+            return -1;
+        }
+        return NR_SYSCALL;
+    }
+
+    static const char *GetRawSysCallName(long NR_SYSCALL)
+    {
+        return syscallTable[NR_SYSCALL].c_str();
+    }
+
+    std::vector<PmuTraceData>& PmuAnalysis::AnalyzeRawTraceData(int pd, PmuData *pmuData, unsigned len)
+    {
+        vector<PmuTraceData> traceData;
+        const int pairNum = 2;
+        traceData.reserve(len / pairNum);
+        unordered_map<int, vector<PmuData>> tidPmuDatas;
+        for (int orilen = 0; orilen < len; ++orilen) {
+            tidPmuDatas[pmuData[orilen].tid].emplace_back(pmuData[orilen]);
+        }
+        for (auto &tidPmuData : tidPmuDatas) {
+            unordered_map<long, pair<vector<PmuData>, vector<PmuData>>> sysCallPairs;
+            for (int j = 0; j < tidPmuData.second.size(); ++j) {
+                long sysCallId = GetRawSysCallId(tidPmuData.second[j]);
+                if (strcmp(tidPmuData.second[j].evt, ENTER_RAW_SYSCALL) == 0) {
+                    sysCallPairs[sysCallId].first.emplace_back(tidPmuData.second[j]);
+                } else if (strcmp(tidPmuData.second[j].evt, EXIT_RAW_SYSCALL) == 0) {
+                    sysCallPairs[sysCallId].second.emplace_back(tidPmuData.second[j]);
+                }
+            }
+            for (auto &sysCallPair : sysCallPairs) {
+                auto& [enterEvts, exitEvts] = sysCallPair.second;
+                if (enterEvts.empty() || exitEvts.empty()) {
+                    continue;
+                }
+                sort(enterEvts.begin(), enterEvts.end(), CompareByTimeStamp);
+                sort(exitEvts.begin(), exitEvts.end(), CompareByTimeStamp);
+                int enterIndex = 0;
+                int exitIndex = 0;
+                while (enterIndex < enterEvts.size() && exitIndex < enterEvts.size()) {
+                    if (enterEvts[enterIndex].ts < exitEvts[exitIndex].ts) {
+                        CollectPmuTraceData(GetRawSysCallName(sysCallPair.first), enterEvts[enterIndex],
+                                            exitEvts[exitIndex], traceData);
+                        enterIndex++;
+                        exitIndex++;
+                    } else {
+                        exitIndex++;
+                    }
+                }
+            }
+        }
+
+        lock_guard<std::mutex> lg(traceDataListMtx);
+        TraceEventData newTraceData = {
+            .pd = pd,
+            .traceType = TRACE_SYS_CALL,
+            .data = move(traceData),
+        };
+        oriPmuData[newTraceData.data.data()] = pmuData;
+        auto inserted = traceDataList.emplace(newTraceData.data.data(), move(newTraceData));
+        return inserted.first->second.data;
+    }
+
     std::vector<PmuTraceData>& PmuAnalysis::AnalyzeTraceData(int pd, PmuData *pmuData, unsigned len)
     {
-        lock_guard<std::mutex> lg(traceDataListMtx);
         int oriDataLen = len;
         vector<string>& funList = funcsList.at(pd);
         int oriLen = 0;
         vector<PmuTraceData> traceData;
+        const int pairNum = 2;
+        traceData.reserve(len / pairNum);
         for (size_t i = 0; i < funList.size(); ++i) {
-            map<int, vector<PmuData>> tidPmuData;
+            unordered_map<int, vector<PmuData>> tidPmuDatas;
             string& funName = funList[i];
             for (; oriLen < oriDataLen; ++oriLen) {
                 if (!CheckEventIsFunName(pmuData[oriLen].evt, funName.c_str())) {
                     break;
                 }
-                tidPmuData[pmuData[oriLen].tid].emplace_back(pmuData[oriLen]);
+                tidPmuDatas[pmuData[oriLen].tid].emplace_back(pmuData[oriLen]);
             }
 
-            for (auto& tidPmuData : tidPmuData) {
+            for (auto& tidPmuData : tidPmuDatas) {
                 vector<PmuData> enterList;
                 vector<PmuData> exitList;
                 for (int j = 0; j < tidPmuData.second.size(); ++j) {
@@ -137,7 +256,7 @@ namespace KUNPENG_PMU {
                 }
             }
         }
-
+        lock_guard<std::mutex> lg(traceDataListMtx);
         TraceEventData newTraceData = {
             .pd = pd,
             .traceType = TRACE_SYS_CALL,

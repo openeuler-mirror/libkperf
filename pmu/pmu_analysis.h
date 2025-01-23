@@ -16,6 +16,7 @@
 #define PMU_ANALYSIS_H
 #include <mutex>
 #include <vector>
+#include <string>
 #include <unordered_map>
 #include "pmu.h"
 #include "pmu_list.h"
@@ -23,6 +24,8 @@
 namespace KUNPENG_PMU {
     extern const char *SYSCALL_FUNC_ENTER_PREFIX;
     extern const char *SYSCALL_FUNC_EXIT_PREFIX;
+    extern char *ENTER_RAW_SYSCALL;
+    extern char *EXIT_RAW_SYSCALL;
 
     class PmuAnalysis {
     public:
@@ -34,6 +37,8 @@ namespace KUNPENG_PMU {
 
         int Register(const int pd, PmuTraceAttr* traceParam);
         bool IsPdAlive(const unsigned pd) const;
+        int GenerateSysCallTable();
+        std::vector<PmuTraceData>& AnalyzeRawTraceData(int pd, PmuData *pmuData, unsigned len);
         std::vector<PmuTraceData>& AnalyzeTraceData(int pd, PmuData *pmuData, unsigned len);
         void Close(const int pd);
         void FreeTraceData(PmuTraceData* pmuTraceData);

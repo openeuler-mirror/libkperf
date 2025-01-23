@@ -542,7 +542,7 @@ namespace KUNPENG_PMU {
             EventData newEvData = {
                     .pd = pd,
                     .collectType = COUNTING,
-                    .data = newPmuData,
+                    .data = move(newPmuData),
             };
 
             auto inserted = userDataList.emplace(newEvData.data.data(), move(newEvData));
