@@ -5,28 +5,36 @@ import subprocess
 import kperf
 import ksym
 
-def run_test_exe(exe_path):
-    process = subprocess.Popen(exe_path, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+def run_test_exe(exe_path, cpu_list):
+    cpu_mask = ",".join(map(str, cpu_list))
+    process = subprocess.Popen(["taskset", "-c", cpu_mask, exe_path])
     pid = process.pid
 
     return pid
     
 
 def test_config_param_error():
+    print(f"============start to test config param error ===================")
     funcList = ["testName"]
     pmu_trace_data = kperf.PmuTraceAttr(funcs=funcList)
 
-    pd = kperf.trace_open(kperf.TRACE_SYS_CALL, pmu_trace_data)
+    pd = kperf.trace_open(kperf.PmuTraceType.TRACE_SYS_CALL, pmu_trace_data)
     if pd == -1:
         print(kperf.errorno())
         print(kperf.error())
     
 
 def test_collect_single_trace_data():
-    apppid = run_test_exe(../../_build/test/test_perf/case/test_12threads)
+    print(f"============start to test collect single syscall and single cpu and single process ===================")
+    main_dir = os.path.dirname(os.path.dirname(os.getcwd()))
+    sub_dir = "_build/test/test_perf/case"
+    app_path = main_dir + sub_dir + "/test_12threads"
+    cpuList = [1]
+    apppid = run_test_exe(app_path, cpuList)
+    pidList = [apppid]
     funcList = ["futex"]
-    pmu_trace_data = kperf.PmuTraceAttr(funcs=funcList, pidList=[apppid])
-    pd = kperf.trace_open(kperf.TRACE_SYS_CALL, pmu_trace_data)
+    pmu_trace_data = kperf.PmuTraceAttr(funcs=funcList, pidList=pidList, cpuList=cpuList)
+    pd = kperf.trace_open(kperf.PmuTraceType.TRACE_SYS_CALL, pmu_trace_data)
 
     if pd == -1:
         print(kperf.errorno())
@@ -43,9 +51,11 @@ def test_collect_single_trace_data():
     
     kperf.trace_close(pd)
 
+
 def test_collect_all_syscall_trace_data():
+    print(f"============start to test collect all syscall and all cpu and all process ===================")
     pmu_trace_data = kperf.PmuTraceAttr()
-    pd = kperf.trace_open(kperf.TRACE_SYS_CALL, pmu_trace_data)
+    pd = kperf.trace_open(kperf.PmuTraceType.TRACE_SYS_CALL, pmu_trace_data)
     if pd == -1:
         print(kperf.errorno())
         print(kperf.error())
