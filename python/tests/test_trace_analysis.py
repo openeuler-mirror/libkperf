@@ -27,8 +27,8 @@ def test_config_param_error():
 def test_collect_single_trace_data():
     print(f"============start to test collect single syscall and single cpu and single process ===================")
     main_dir = os.path.dirname(os.path.dirname(os.getcwd()))
-    sub_dir = "_build/test/test_perf/case"
-    app_path = main_dir + sub_dir + "/test_12threads"
+    sub_dir = "_build/test/test_perf/case/test_12threads"
+    app_path = os.path.join(main_dir, sub_dir)
     cpuList = [1]
     apppid = run_test_exe(app_path, cpuList)
     pidList = [apppid]
