@@ -66,10 +66,10 @@ namespace KUNPENG_PMU {
 
         string line;
         while (getline(syscallFile, line)) {
-            if (line.find("#define __NR_")) {
+            if (line.find("#define __NR_") == 0) {
                 size_t nameStart = line.find("__NR_") + 5; // "__NR_" len is 5
-                size_t nameEnd = line.find_first_of(' ', nameStart);
-                size_t numberStart = line.find_first_of(' ') + 1;
+                size_t nameEnd = line.find(' ', nameStart);
+                size_t numberStart = line.find_last_of(' ') + 1;
 
                 if (nameStart != string::npos && nameEnd != string::npos && numberStart != string::npos) {
                     string funName = line.substr(nameStart, nameEnd - nameStart);
