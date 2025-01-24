@@ -616,3 +616,57 @@ TEST_F(TestAPI, TestOperationNotSupported)
     ASSERT_EQ(pd, -1);
     ASSERT_EQ(Perrorno(), LIBPERF_ERR_INVALID_EVENT);
 }
+
+TEST_F(TestAPI, TestBrBe) 
+{
+    auto attr = GetPmuAttribute();
+    attr.symbolMode = NO_SYMBOL_RESOLVE;
+    auto pid = RunTestApp("bad_branch_pred");
+    attr.pidList[0] = pid;
+    attr.numPid = 1;
+    attr.branchSampleFilter = KPERF_SAMPLE_BRANCH_USER | KPERF_SAMPLE_BRANCH_ANY;
+    pd = PmuOpen(SAMPLING, &attr);
+    ASSERT_NE(pd, -1);
+    PmuEnable(pd);
+    sleep(3);
+    PmuDisable(pd);
+    int len = PmuRead(pd, &data);
+    for (int i = 0; i < len; i++)
+    {
+        PmuData &pmuData = data[i];
+        if (pmuData.ext)
+        {
+            for (int j = 0; j < pmuData.ext->nr; j++)
+            {
+                auto *rd = pmuData.ext->branchRecords;
+                std::cout << std::hex << rd[j].fromAddr << "->" << rd[j].toAddr << " " << rd[j].cycles << " " << rd[j].predicted << " " << rd[j].mispred << std::endl;
+            }
+        }
+    }
+    PmuDataFree(data);
+    PmuClose(pd);
+}
+
+TEST_F(TestAPI, TestBrBeBadFilter) {
+    auto attr = GetPmuAttribute();
+    attr.symbolMode = NO_SYMBOL_RESOLVE;
+    auto pid = RunTestApp("bad_branch_pred");
+    attr.pidList[0] = pid;
+    attr.numPid = 1;
+    attr.branchSampleFilter = KPERF_SAMPLE_BRANCH_USER;
+    pd = PmuOpen(SAMPLING, &attr);
+    ASSERT_EQ(pd, -1);
+    ASSERT_EQ(Perrorno(), LIBPERF_ERR_INVALID_BRANCH_SAMPLE_FILTER);
+}
+
+TEST_F(TestAPI, TestBrBeBadMode) {
+    auto attr = GetPmuAttribute();
+    attr.symbolMode = NO_SYMBOL_RESOLVE;
+    auto pid = RunTestApp("bad_branch_pred");
+    attr.pidList[0] = pid;
+    attr.numPid = 1;
+    attr.branchSampleFilter = KPERF_SAMPLE_BRANCH_USER;
+    pd = PmuOpen(COUNTING, &attr);
+    ASSERT_EQ(pd, -1);
+    ASSERT_EQ(Perrorno(), LIBPERF_ERR_BRANCH_JUST_SUPPORT_SAMPLING);
+}

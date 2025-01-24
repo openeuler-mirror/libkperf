@@ -91,6 +91,7 @@ namespace KUNPENG_PMU {
             fdNum += CalRequireFd(cpuTopoList.size(), procTopoList.size(), taskParam->pmuEvt->collectType);
             std::shared_ptr<EvtList> evtList =
                     std::make_shared<EvtList>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt, pmuTaskAttrHead->group_id);
+            evtList->SetBranchSampleFilter(GetBranchSampleFilter(pd));
             InsertEvtList(pd, evtList);
             pmuTaskAttrHead = pmuTaskAttrHead->next;
         }
@@ -563,10 +564,20 @@ namespace KUNPENG_PMU {
         if (findData == userDataList.end()) {
             return;
         }
-        // Delete ext pointer malloced in SpeSampler.
-        for (auto& extMem: findData->second.extPool) {
-            delete[] extMem;
+        if (findData->second.collectType == SAMPLING) {
+            for (auto &extMem : findData->second.extPool) {
+                if (extMem->branchRecords) {
+                    delete[] extMem->branchRecords;
+                }
+                delete extMem;
+            }
+        } else if (findData->second.collectType == SPE_SAMPLING) {
+            // Delete ext pointer malloced in SpeSampler.
+            for (auto &extMem : findData->second.extPool) {
+                delete[] extMem;
+            }
         }
+
         for (auto pd: findData->second.data) {
             if (pd.rawData != nullptr) {
                 PointerPasser::FreePointerData(pd.rawData->data);
@@ -761,11 +772,24 @@ namespace KUNPENG_PMU {
         symModeList[pd] = mode;
     }
 
+    void PmuList::SetBranchSampleFilter(const int pd, const unsigned long& branchSampleFilter)
+    {
+        lock_guard<mutex> lg(dataListMtx);
+        branchSampleFilterList[pd] = branchSampleFilter;
+    }
+
     SymbolMode PmuList::GetSymbolMode(const unsigned pd)
     {
         lock_guard<mutex> lg(dataListMtx);
         return symModeList[pd];
     }
+
+    unsigned long  PmuList::GetBranchSampleFilter(const unsigned pd)
+    {
+        lock_guard<mutex> lg(dataListMtx);
+        return branchSampleFilterList[pd];
+    }
+
 
     void PmuList::OpenDummyEvent(KUNPENG_PMU::PmuTaskAttr* taskParam, const unsigned pd)
     {

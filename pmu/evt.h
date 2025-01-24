@@ -52,6 +52,11 @@ public:
         this->symMode = symMode;
     }
 
+    void SetBranchSampleFilter(const unsigned long& branchSampleFilter)
+    {
+        this->branchSampleFilter = branchSampleFilter;
+    }
+
     int GetFd() const
     {
         return fd;
@@ -83,6 +88,7 @@ protected:
     struct PmuEvt* evt;
     ProcMap &procMap;
     SymbolMode symMode = NO_SYMBOL_RESOLVE;
+    unsigned long branchSampleFilter = KPERF_NO_BRANCH_SAMPLE;
 };
 int PerfEventOpen(struct perf_event_attr* attr, pid_t pid, int cpu, int groupFd, unsigned long flags);
 __u64 ReadOnce(__u64 *head);

@@ -64,9 +64,38 @@ enum SymbolMode {
     RESOLVE_ELF_DWARF = 2
 };
 
+enum BranchSampleFilter {
+    KPERF_NO_BRANCH_SAMPLE          = 0,
+    /**
+     * The first part of the value is the privilege level,which is a combination of 
+     * one of the values listed below. If the user does not set privilege level explicitly,
+     * the kernel will use the event's privilege level.Event and branch privilege levels do
+     * not have to match.
+     */
+    KPERF_SAMPLE_BRANCH_USER        = 1U << 0,
+    KPERF_SAMPLE_BRANCH_KERNEL      = 1U << 1,
+    KPERF_SAMPLE_BRANCH_HV          = 1U << 2,
+    // In addition to privilege value , at least one or more of the following bits must be set.
+    KPERF_SAMPLE_BRANCH_ANY         = 1U << 3,
+    KPERF_SAMPLE_BRANCH_ANY_CALL    = 1U << 4,
+    KPERF_SAMPLE_BRANCH_ANY_RETURN  = 1U << 5,
+    KPERF_SAMPLE_BRANCH_IND_CALL    = 1U << 6,
+    KPERF_SAMPLE_BRANCH_ABORT_TX    = 1U << 7,
+    KPERF_SAMPLE_BRANCH_IN_TX       = 1U << 8,
+    KPERF_SAMPLE_BRANCH_NO_TX       = 1U << 9,
+    KPERF_SAMPLE_BRANCH_COND        = 1U << 10,
+    KPERF_SAMPLE_BRANCH_CALL_STACK  = 1U << 11,
+    KPERF_SAMPLE_BRANCH_IND_JUMP    = 1U << 12,
+    KPERF_SAMPLE_BRANCH_CALL        = 1U << 13,
+    KPERF_SAMPLE_BRANCH_NO_FLAGES   = 1U << 14,
+    KPERF_SAMPLE_BRANCH_NO_CYCLES   = 1U << 15,
+    KPERF_SAMPLE_BRANCH_TYPE_SAVE   = 1U << 16,
+};
+
 struct EvtAttr {
     int group_id; 
 };
+
 struct PmuAttr {
     // Event list.
     // Refer 'perf list' for details about event names.
@@ -131,6 +160,8 @@ struct PmuAttr {
     unsigned long minLatency;
     // In count mode, enable it you can get the new child thread count, default is disabled.
     unsigned includeNewFork : 1;
+    // if the filtering mode is set, the branch_sample_stack data is collectd in sampling mode.By default,the filtering mode dose not take effect.
+    unsigned long branchSampleFilter;
 };
 
 enum PmuTraceType {
@@ -171,10 +202,29 @@ enum SPE_EVENTS {
     SPE_EV_EMPTY_PRED   = 1 << 18,
 };
 
+struct BranchSampleRecord {
+    unsigned long fromAddr;
+    unsigned long toAddr;
+    unsigned long cycles;
+    unsigned long mispred;
+    unsigned long predicted;
+    unsigned long inTx;
+    unsigned long abort;
+};
+
 struct PmuDataExt {
-    unsigned long pa;               // physical address
-    unsigned long va;               // virtual address
-    unsigned long event;            // event id, which is a bit map of mixed events, event bit is defined in SPE_EVENTS.
+    union {
+        struct {
+            unsigned long pa;    // physical address
+            unsigned long va;    // virtual address
+            unsigned long event; // event id, which is a bit map of mixed events, event bit is defined in SPE_EVENTS.
+        };
+
+        struct {
+            unsigned long nr;                  // number of branchRecords
+            BranchSampleRecord *branchRecords; // branch pointer array
+        };
+    };
 };
 
 struct SampleRawData {

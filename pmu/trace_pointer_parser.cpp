@@ -15,8 +15,6 @@
 
 #include "trace_pointer_parser.h"
 
-#define offset(type, v) (&(((type *)0)->v))
-
 using namespace KUNPENG_PMU;
 using namespace pcerr;
 

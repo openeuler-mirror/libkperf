@@ -129,6 +129,39 @@ static bool InvalidSampleRate(enum PmuTaskType collectType, struct PmuAttr *attr
     return attr->freq > maxRate;
 }
 
+static int CheckBranchSampleFilter(const unsigned long& branchSampleFilter, enum PmuTaskType collectType)
+{
+    if (branchSampleFilter == KPERF_NO_BRANCH_SAMPLE) {
+        return SUCCESS;
+    }
+
+    if (collectType != SAMPLING) {
+        return LIBPERF_ERR_BRANCH_JUST_SUPPORT_SAMPLING;
+    }
+
+    unsigned long branchFilterTmp = 0;
+    for (int i = 0; i <= 16; i++) {
+        if (branchSampleFilter & (1U << i)) {
+            branchFilterTmp |= 1U << i;
+        }
+    }
+
+    if (branchSampleFilter != branchFilterTmp) {
+        return LIBPERF_ERR_INVALID_BRANCH_SAMPLE_FILTER;
+    }
+
+    // if the filter type is kernel or user or hv, the filter type is not supported. In this case, add the filter type after KPERF_SAMPLE_BRANCH_ANY
+    // needs to be added.attr.branchSampleFilter = KPERF_SAMPLE_BRANCH_KERNEL | KPERF_SAMPLE_BRANCH_ANY.
+    if (branchSampleFilter <= (KPERF_SAMPLE_BRANCH_KERNEL | KPERF_SAMPLE_BRANCH_USER | KPERF_SAMPLE_BRANCH_HV)) {
+        pcerr::SetCustomErr(LIBPERF_ERR_INVALID_BRANCH_SAMPLE_FILTER,
+                            "invalid value for branchSampleFilter, must set at least one or more "
+                            "bits values greater than or equal to KPERF_SAMPLE_BRANCH_ANY.");
+        return LIBPERF_ERR_INVALID_BRANCH_SAMPLE_FILTER;
+    }
+
+    return SUCCESS;
+}
+
 static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
 {
     auto err = CheckCpuList(attr->numCpu, attr->cpuList);
@@ -158,6 +191,12 @@ static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
     if (InvalidSampleRate(collectType, attr)) {
         New(LIBPERF_ERR_INVALID_SAMPLE_RATE);
         return LIBPERF_ERR_INVALID_SAMPLE_RATE;
+    }
+
+    err = CheckBranchSampleFilter(attr->branchSampleFilter, collectType);
+    if (err != SUCCESS) {
+        New(err);
+        return err;
     }
 
     return SUCCESS;
@@ -360,14 +399,15 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
             }
             unique_ptr<PmuTaskAttr, void (*)(PmuTaskAttr *)> taskAttr(pTaskAttr, PmuTaskAttrFree);
 
-            pd = KUNPENG_PMU::PmuList::GetInstance()->NewPd();
+            pd = PmuList::GetInstance()->NewPd();
             if (pd == -1) {
                 New(LIBPERF_ERR_NO_AVAIL_PD);
                 break;
             }
 
-            KUNPENG_PMU::PmuList::GetInstance()->SetSymbolMode(pd, attr->symbolMode);
-            err = KUNPENG_PMU::PmuList::GetInstance()->Register(pd, taskAttr.get());
+            PmuList::GetInstance()->SetSymbolMode(pd, attr->symbolMode);
+            PmuList::GetInstance()->SetBranchSampleFilter(pd, attr->branchSampleFilter);
+            err = PmuList::GetInstance()->Register(pd, taskAttr.get());
             if (err != SUCCESS) {
                 PmuList::GetInstance()->Close(pd);
                 pd = -1;
@@ -381,7 +421,7 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
         }
         // store eventList provided by user and the mapping relationship between the user eventList and the split
         // eventList into buff
-        KUNPENG_PMU::PmuList::GetInstance()->StoreSplitData(pd, previousEventList, eventSplitMap);
+        PmuList::GetInstance()->StoreSplitData(pd, previousEventList, eventSplitMap);
         return pd;
     } catch (std::bad_alloc&) {
         FreeEvtList(previousEventList.first, previousEventList.second);

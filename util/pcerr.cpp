@@ -49,6 +49,8 @@ namespace pcerr {
             {LIBPERF_ERR_COUNT_OVERFLOW, "pmu count is overflowed"},
             {LIBPERF_ERR_INVALID_GROUP_SPE, "event group not support SPE_SAMPLING collect mode"},
             {LIBPERF_ERR_INVALID_GROUP_ALL_UNCORE, "event group not support all events is uncore event"},
+            {LIBPERF_ERR_INVALID_BRANCH_SAMPLE_FILTER, "invalid value for branchSampleFilter, use the correct accumulated bits value of BranchSampleFilter"},
+            {LIBPERF_ERR_BRANCH_JUST_SUPPORT_SAMPLING, "branch filter just support sampling mode"},
     };
     static std::unordered_map<int, std::string> warnMsgs = {
             {LIBPERF_WARN_CTXID_LOST, "Some SPE context packets are not found in the traces."},
