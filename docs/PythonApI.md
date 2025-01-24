@@ -222,3 +222,44 @@ print("field_str={} field_name={} size={} offset={} isSigned={}"
     * ALL_EVENT = 3 获取所有的事件列表
 * 返回数据 Iterator[str]，可通过for循环遍历该单元
 
+### kperf.trace_open
+    kperf.trace_open(trace_type=kperf.PmuTraceType, pmu_trace_attr=kperf.PmuTraceAttr()) # 初始化采集系统调用函数能力
+* class PmuTraceType:
+    * TRACE_SYS_CALL = 0  采集系统调用函数事件
+* class PmuTraceAttr:
+    * funcs：采集的系统调用函数列表，可以查看/usr/include/asm-generic/unistd.h文件，默认为空，表示采集所有系统调用函数
+    * pidList：采集的进程列表，默认为空，表示采集所有进程
+    * cpuList：采集的cpu列表，默认为空，表示采集所有cpu
+* 返回值是int类型的, pd > 0 表示打开成功， pd == -1 初始化失败，可通过kperf.error()查看错误信息，调用样例类似kperf.open()
+
+### kperf.trace_enable、kperf.trace_disable
+    调用逻辑类似kperf.enable、kperf.disable，用于配置采集启动和结束的时刻，两个调用之间的时间即是采集的时间段
+
+### kperf.trace_read
+    kperf.trace_read(pd)
+* class PmuTraceData:
+    * len: 数据长度
+    * iter: 返回iterator[lmplPmuTraceData]
+    * free: 释放当前PmuTraceData数据
+* class lmplPmuTraceData:
+    * funcs: 系统调用函数名
+    * elapsedTime: 耗时时间
+    * pid: 进程id
+    * tid: 线程id
+    * cpu: cpu号
+    * comm: 执行指令名称
+以下为kperf.trace_read示例
+```python
+pmu_trace_data = kperf.trace_read(pd)
+for pmu_trace in pmu_trace_data.iter():
+    print("funcs: %s, elapsedTime: %d, pid: %d, tid: %d, cpu: %d, comm: %s" % (pmu_trace.funcs, pmu_trace.elapsedTime, pmu_trace.pid, pmu_trace.tid, pmu_trace.cpu, pmu_trace.comm))
+```
+### kperf.trace_close
+    kperf.trace_close(pd): 该接口用于清理该pd所有对应的数据，并移除该pd
+
+### kperf.sys_call_func_list
+    kperf.sys_call_func_list(trace_type: PmuTraceType): 查找所有的系统调用函数列表
+
+* class PmuTraceType:
+    * TRACE_SYS_CALL = 0  采集系统调用函数事件
+* 返回数据 iterator[str], 可通过for循环遍历该单元

@@ -510,3 +510,60 @@ write bandwidth: 2.29 M/s
 write bandwidth: 0.84 M/s
 write bandwidth: 0.97 M/s
 ```
+
+### 采集系统调用函数耗时信息
+libkperf基于tracepoint事件采集能力，在原有能力的基础上，重新封装了一组相关的调用API，来提供采集系统调用函数耗时信息的能力，类似于perf trace命令
+
+```
+perf trace -e read,write
+```
+
+对于libkperf，可以通过设置PmuTraceAttr的funcs字段来需要采集哪些系统调用函数的耗时信息，pidList字段用于设定需要采集耗时的进程，cpuList字段用于设定需要采集哪些cpu上的系统调用耗时信息。三个参数如果任何一个为空，表示采集此字段采集系统上存在的所有信息，比如funcs为空，表示采集所有系统调用耗时信息。
+比如，可以这样调用：
+```c++
+// c++代码示例
+unsigned numFunc = 2;
+const char *funs1 = "read";
+const char *funs2 = "write";
+const char *funcs[numEvt] = {funs1,funs2};
+PmuTraceAttr traceAttr = {0};
+traceAttr.funcs = funcs;
+traceAttr.numFuncs = numFunc;
+pd = PmuTraceOpen(TRACE_SYS_CALL, &traceAttr);
+PmuTraceEnable(pd);
+sleep(1);
+PmuTraceDisable(pd);
+int len = PmuTraceRead(pd, &data);
+for(int i = 0; i < len; ++i) {
+    print("funcName: %s, elspsedTime: %f ms pid: %d tid: %d cpu: %d comm: %s", data[i].funcs, data[i].elapsedTime, data[i].pid, data[i].tid, data[i].cpu, data[i].comm)
+}
+PmuTraceClose(pd);
+```
+
+```python
+# python代码示例
+import kperf
+import time
+funcList = ["read","write"]
+pmu_trace_attr = kperf.PmuTraceAttr(funcs=funcList)
+pd = kperf.trace_open(kperf.PmuTraceType.TRACE_SYS_CALL, pmu_trace_data)
+kperf.trace_enable(pd)
+time.sleep(1)
+kperf.trace_disable(pd)
+pmu_trace_data = kperf.trace_read(pd)
+    for data in pmu_trace_data.iter:
+        print(f"funcName: {data.funcs} elapsedTime: {data.elapsedTime} ms pid: {data.pid} tid: {data.tid} cpu: {data.cpu} comm: {data.comm}")
+    
+kperf.trace_close(pd)
+```
+执行上述代码，输出的结果类似如下：
+```
+funcName: read elapsedTime: 0.00110 ms pid: 997235 tid: 997235 cpu: 110 comm: taskset
+funcName: read elapsedTime: 0.00118 ms pid: 997235 tid: 997235 cpu: 110 comm: taskset
+funcName: read elapsedTime: 0.00125 ms pid: 997235 tid: 997235 cpu: 110 comm: taskset
+funcName: read elapsedTime: 0.00123 ms pid: 997235 tid: 997235 cpu: 110 comm: taskset
+funcName: write elapsedTime: 0.00105 ms pid: 997235 tid: 997235 cpu: 110 comm: taskset
+funcName: write elapsedTime: 0.00107 ms pid: 997235 tid: 997235 cpu: 110 comm: taskset
+funcName: write elapsedTime: 0.00118 ms pid: 997235 tid: 997235 cpu: 110 comm: taskset
+```
+支持采集的系统调用函数列表，在查看/sys/kernel/tracing/events/syscalls/下所有系统调用对应的enter和exit文件，去掉相同的前缀就是对应的系统调用函数名称；也可以基于提供的PmuSysCallFuncList函数获取对应的系统调用函数列表。
