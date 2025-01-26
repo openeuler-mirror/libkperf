@@ -14,6 +14,11 @@ libkperf is a lightweight performance collection library on linux, that enables 
 - CentOS
 
 #### Build
+Minimum required GCC version:
+- gcc-4.8.5 and glibc-2.17.
+
+Minimum required Python version:
+- python-3.7.
 
 To build a library with C API:
 ```shell
@@ -21,6 +26,9 @@ git clone --recurse-submodules https://gitee.com/openeuler/libkperf.git
 cd libkperf
 bash build.sh install_path=/path/to/install
 ```
+Note:
+
+- If the compilation error message indicates that numa.h file is missing, you need to first install the corresponding numactl-devel package.
 
 To build a library with debug version:
 ```shell

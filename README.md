@@ -15,6 +15,11 @@ libkperf是一个轻量级linux性能采集库，它能够让开发者以API的�
 - CentOS
 
 #### 编译
+最低依赖gcc版本：
+- gcc-4.8.5 和 glibc-2.17
+
+最低依赖python版本：
+- python-3.7
 
 编译生成动态库和C的API：
 ```shell
@@ -22,6 +27,8 @@ git clone --recurse-submodules https://gitee.com/openeuler/libkperf.git
 cd libkperf
 bash build.sh install_path=/path/to/install
 ```
+说明：
+- 如果编译报错提示没有numa.h文件，需要先安装对应的numactl-devel包。
 
 如果想要编译调试版本：
 ```shell
