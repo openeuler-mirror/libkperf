@@ -29,6 +29,7 @@ bash build.sh install_path=/path/to/install
 Note:
 
 - If the compilation error message indicates that numa.h file is missing, you need to first install the corresponding numactl-devel package.
+- If you encounter a CMake error related to 'Found PythonInterp' during compilation and linking, you need to first install the required python3-devel package.
 
 To build a library with debug version:
 ```shell
@@ -47,7 +48,10 @@ python3 -m pip uninstall -y libkperf
 
 #### Documents
 Refer to ```docs``` directory for detailed docs:
-- [Detailed usage](./docs/Details.md)
+- [Detailed usage](./docs/Details_Usage.md)
+
+Refer to ```docs``` directory for python API specification docs:
+- [Python API specification](./docs/Python_API.md)
 
 #### Instructions
 All pmu functions are accomplished by the following interfaces:
@@ -64,7 +68,7 @@ All pmu functions are accomplished by the following interfaces:
 
 Here are some examples:
 * Get pmu count for a process.
-```C
+```C++
 int pidList[1];
 pidList[0] = pid;
 char *evtList[1];
@@ -98,7 +102,7 @@ PmuClose(pd);
 ```
 
 * Sample a process
-```C
+```C++
 int pidList[1];
 pidList[0] = pid;
 char *evtList[1];
@@ -171,4 +175,22 @@ def Counting():
 
     kperf.disable(pd)
     kperf.close(pd)
+```
+
+#### Quick Run Reference for Example Code:
+
+* **For C++ Example Code:**
+You can place the sample code into the main function of a C++ source file, and include the header files related to this dynamic library (#include "symbol.h", #include "pmu.h", #include "pcerrc.h"). Then, use g++ to compile and link this dynamic library to generate an executable file that can be run.
+
+Compilation Command Reference:
+```bash
+g++ -o example example.cpp -I /install_path/include -L /install_path/lib -lkperf -lsym
+```
+
+* **For Python Example Code:**
+You can place the sample code into the main function of a Python source file, and import the packages related to this dynamic library (import kperf, import ksym). Running the Python file will then utilize the functionalities provided by these packages.
+
+Run Command Reference:
+```bash
+python example.py
 ```
