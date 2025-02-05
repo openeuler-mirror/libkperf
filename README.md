@@ -29,6 +29,7 @@ bash build.sh install_path=/path/to/install
 ```
 说明：
 - 如果编译报错提示没有numa.h文件，需要先安装对应的numactl-devel包。
+- 如果编译连接在Found PythonInterp报CMake错误，需要先安装所需的python3-devel包。
 
 如果想要编译调试版本：
 ```shell
@@ -47,7 +48,10 @@ python3 -m pip uninstall -y libkperf
 
 #### 文档
 详细文档可以参考docs目录：
-- [详细使用文档](./docs/Details.md)
+- [详细使用文档](./docs/Details_Usage.md)
+
+Python API文档可以参考docs目录：
+- [Python API说明文档](./docs/Python_API.md)
 
 #### 快速使用
 

@@ -29,6 +29,7 @@ bash build.sh install_path=/path/to/install
 Note:
 
 - If the compilation error message indicates that numa.h file is missing, you need to first install the corresponding numactl-devel package.
+- If you encounter a CMake error related to 'Found PythonInterp' during compilation and linking, you need to first install the required python3-devel package.
 
 To build a library with debug version:
 ```shell
@@ -47,7 +48,10 @@ python3 -m pip uninstall -y libkperf
 
 #### Documents
 Refer to ```docs``` directory for detailed docs:
-- [Detailed usage](./docs/Details.md)
+- [Detailed usage](./docs/Details_Usage.md)
+
+Refer to ```docs``` directory for python API specification docs:
+- [Python API specification](./docs/Python_API.md)
 
 #### Instructions
 All pmu functions are accomplished by the following interfaces:
