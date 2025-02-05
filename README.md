@@ -67,7 +67,7 @@ python3 -m pip uninstall -y libkperf
 
 - 获取进程的pmu计数。 
 
-```C
+```C++
 int pidList[1];
 pidList[0] = pid;
 char *evtList[1];
@@ -100,7 +100,7 @@ PmuClose(pd);
 ```
 
 - 对进程进行采样
-```C
+```C++
 int pidList[1];
 pidList[0] = pid;
 char *evtList[1];
@@ -172,4 +172,23 @@ def Counting():
     kperf.disable(pd)
     kperf.close(pd)
 
+```
+
+
+#### 示例代码快速运行参考：
+
+* **针对C++示例代码：**
+可以将示例代码放到一个c++源文件的main函数中，并引用此动态库相关的头文件(#include "symbol.h"、#include "pmu.h"、#include "pcerrc.h")，再使用g++编译链接此动态库，生成可执行文件即可运行。
+
+编译指令参考：
+```bash
+g++ -o example example.cpp -I /install_path/include -L /install_path/lib -lkperf -lsym
+```
+
+* **针对python示例代码：**
+可以将示例代码放到一个python源文件的main函数中，并导入此动态库相关的头文件包(import kperf、import ksym)，在运行此python文件即可。
+
+运行指令参考：
+```bash
+python example.py
 ```

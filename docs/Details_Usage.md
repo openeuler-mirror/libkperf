@@ -303,7 +303,7 @@ tracepoint能够获取每个事件特有的数据，比如sched:sched_switch包�
 
 libkperf提供了接口PmuGetField来获取tracepoint的数据。比如对于sched:sched_switch，可以这样调用：
 ```c++
-// c代码示例
+// c++代码示例
 int prev_pid;
 PmuGetField(pmuData->rawData, "prev_pid", &prev_pid, sizeof(prev_pid));
 char next_comm[16];
