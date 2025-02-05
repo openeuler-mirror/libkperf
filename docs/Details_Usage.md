@@ -285,6 +285,7 @@ evtList[0] = "sched:sched_switch";
 PmuAttr attr = {0};
 attr.evtList = evtList;
 attr.numEvt = 1;
+int pd = PmuOpen(SAMPLING, &attr);
 ```
 
 ```python
@@ -295,6 +296,7 @@ pmu_attr = kperf.PmuAttr(
     sampleRate=1000,
     symbolMode=kperf.SymbolMode.RESOLVE_ELF # 不需要符号解析，可以不使用该参数
 )
+pd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
 ```
 
 tracepoint支持Counting和Sampling两种模式，API调用流程和两者相似。
