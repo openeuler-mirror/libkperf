@@ -22,7 +22,7 @@ kperf.open(collector_type=kperf.PmuTaskType, pmu_attr=kperf.PmuAttr)
     * sampleRate
     采样频率，可通过/proc/sys/kernel/perf_event_max_sample_rate调整最大的采样频率
     * useFreq
-    是否启用采样频率，如果设置，将可以使用采用频率
+    是否启用采样频率，如果设置，将可以使用采样频率
     * excludeUser
     排除对用户态数据的采集
     * excludeKernel
