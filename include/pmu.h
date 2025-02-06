@@ -192,7 +192,7 @@ struct SampleRawField {
 struct PmuData {
     struct Stack* stack;            // call stack
     const char *evt;                // event name
-    int64_t ts;                     // time stamp
+    int64_t ts;                     // time stamp. unit: ns
     pid_t pid;                      // process id
     int tid;                        // thread id
     unsigned cpu;                   // cpu id

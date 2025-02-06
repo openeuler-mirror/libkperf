@@ -527,7 +527,7 @@ perf trace -e read,write
 unsigned numFunc = 2;
 const char *funs1 = "read";
 const char *funs2 = "write";
-const char *funcs[numEvt] = {funs1,funs2};
+const char *funcs[numFunc] = {funs1,funs2};
 PmuTraceAttr traceAttr = {0};
 traceAttr.funcs = funcs;
 traceAttr.numFuncs = numFunc;
