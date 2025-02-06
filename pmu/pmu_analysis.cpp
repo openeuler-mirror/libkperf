@@ -73,7 +73,7 @@ namespace KUNPENG_PMU {
 
                 if (nameStart != string::npos && nameEnd != string::npos && numberStart != string::npos) {
                     string funName = line.substr(nameStart, nameEnd - nameStart);
-                    string numberStr = line.substr(numberStart);
+                    string numberStr = line.substr(numberStart); // get the number of NR_SYSCALL
 
                     try {
                         int syscallNumber = stoi(numberStr);
@@ -164,10 +164,14 @@ namespace KUNPENG_PMU {
         const int pairNum = 2;
         traceData.reserve(len / pairNum);
         unordered_map<int, vector<PmuData>> tidPmuDatas;
+        // Collect the original data according to the TID number.
         for (int orilen = 0; orilen < len; ++orilen) {
             tidPmuDatas[pmuData[orilen].tid].emplace_back(pmuData[orilen]);
         }
         for (auto &tidPmuData : tidPmuDatas) {
+            // Collect the original data according to the syscall id.
+            // The key is the syscall id, and the value is a pair of vectors.
+            // the pair of vectors is the enter and exit events corresponding to this system call function
             unordered_map<long, pair<vector<PmuData>, vector<PmuData>>> sysCallPairs;
             for (int j = 0; j < tidPmuData.second.size(); ++j) {
                 long sysCallId = GetRawSysCallId(tidPmuData.second[j]);
@@ -221,8 +225,11 @@ namespace KUNPENG_PMU {
         for (size_t i = 0; i < funList.size(); ++i) {
             unordered_map<int, vector<PmuData>> tidPmuDatas;
             string& funName = funList[i];
+            // Collect the original data according to the TID number.
             for (; oriLen < oriDataLen; ++oriLen) {
                 if (!CheckEventIsFunName(pmuData[oriLen].evt, funName.c_str())) {
+                    // if the event is not the function name, break.
+                    // The current system call function data processing is completed.
                     break;
                 }
                 tidPmuDatas[pmuData[oriLen].tid].emplace_back(pmuData[oriLen]);

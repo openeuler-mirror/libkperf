@@ -222,6 +222,13 @@ print("field_str={} field_name={} size={} offset={} isSigned={}"
     * ALL_EVENT = 3 获取所有的事件列表
 * 返回数据 Iterator[str]，可通过for循环遍历该单元
 
+以下为kperf.event_list示例
+```python
+# python代码示例
+for evt in kperf.event_list(kperf.PmuEventType.CORE_EVENT):
+    print(f"event name: {evt}")
+```
+
 ### kperf.trace_open
     kperf.trace_open(trace_type=kperf.PmuTraceType, pmu_trace_attr=kperf.PmuTraceAttr()) # 初始化采集系统调用函数能力
 * class PmuTraceType:
@@ -231,6 +238,19 @@ print("field_str={} field_name={} size={} offset={} isSigned={}"
     * pidList：采集的进程列表，默认为空，表示采集所有进程
     * cpuList：采集的cpu列表，默认为空，表示采集所有cpu
 * 返回值是int类型的, pd > 0 表示打开成功， pd == -1 初始化失败，可通过kperf.error()查看错误信息，调用样例类似kperf.open()
+
+以下是kperf.trace_open的一个示例:
+```python
+# python代码示例
+import time
+import kperf
+funcs = ["read", "write"]
+pmu_trace_attr = kperf.PmuTraceAttr(funcs=funcs)
+pd = kperf.trace_open(kperf.PmuTraceType.TRACE_SYS_CALL, pmu_trace_attr)
+if pd == -1:
+    print(kperf.error())
+    exit(1)
+```
 
 ### kperf.trace_enable、kperf.trace_disable
     调用逻辑类似kperf.enable、kperf.disable，用于配置采集启动和结束的时刻，两个调用之间的时间即是采集的时间段
@@ -258,8 +278,13 @@ for pmu_trace in pmu_trace_data.iter():
     kperf.trace_close(pd): 该接口用于清理该pd所有对应的数据，并移除该pd
 
 ### kperf.sys_call_func_list
-    kperf.sys_call_func_list(trace_type: PmuTraceType): 查找所有的系统调用函数列表
+    kperf.sys_call_func_list(): 查找所有的系统调用函数列表
 
-* class PmuTraceType:
-    * TRACE_SYS_CALL = 0  采集系统调用函数事件
 * 返回数据 iterator[str], 可通过for循环遍历该单元
+
+以下为kperf.sys_call_func_list示例
+```python
+# python代码示例
+for func_name in kperf.sys_call_func_list():
+    print(f"syscall function name: {func_name}")
+```

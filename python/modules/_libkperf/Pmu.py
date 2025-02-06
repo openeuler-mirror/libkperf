@@ -756,7 +756,7 @@ class CtypesPmuData(ctypes.Structure):
     struct PmuData {
         struct Stack* stack;            // call stack
         const char *evt;                // event name
-        int64_t ts;                     // time stamp
+        int64_t ts;                     // time stamp. unit: ns
         pid_t pid;                      // process id
         int tid;                        // thread id
         unsigned cpu;                   // cpu id
@@ -1382,10 +1382,10 @@ def PmuSysCallFuncList() -> Iterator[str]:
     char **PmuSysCallFuncList(unsigned *numFunc);
     """
     c_PmuSysCallFuncList = kperf_so.PmuSysCallFuncList
-    c_PmuSysCallFuncList.argtypes = [ctypes.c_int]
+    c_PmuSysCallFuncList.argtypes = []
     c_PmuSysCallFuncList.restype = ctypes.POINTER(ctypes.c_char_p)
     
-    c_num_func = ctypes.c_int()
+    c_num_func = ctypes.c_uint()
     c_func_list = c_PmuSysCallFuncList(ctypes.byref(c_num_func))
 
     return (c_func_list[i].decode(UTF_8) for i in range(c_num_func.value))
