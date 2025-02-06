@@ -1,6 +1,6 @@
 ### kperf.open
 
-kperf.open(collector_type=kperf.PmuTaskType, pmu_attr=kperf.PmuAttr)
+kperf.open(collector_type: kperf.PmuTaskType, pmu_attr: kperf.PmuAttr)
 初始化Pmu事件
 
 * class PmuTaskType
@@ -142,7 +142,7 @@ for data in pmu_data.iter:
 ```
 
 ### kperf.close
-    kperf.close(pd:int) 该接口用于清理该pd所有的对应数据，并移除该pd
+    kperf.close(pd: int) 该接口用于清理该pd所有的对应数据，并移除该pd
 
 ### kperf.dump
     dump(pmuData: PmuData, filepath: str, dump_dwf: int)
@@ -192,7 +192,7 @@ for data in pmu_data.iter:
 ```
 
 ### kperf.get_field_exp
-    get_field_exp(pmu_data:ImplPmuData, field_name:str) 
+    get_field_exp(pmu_data: ImplPmuData, field_name: str) 
     获取某个字段属性说明
 * pmu_data: ImplePmuData 
     详细见kperf.read返回数据说明
@@ -230,7 +230,7 @@ for evt in kperf.event_list(kperf.PmuEventType.CORE_EVENT):
 ```
 
 ### kperf.trace_open
-    kperf.trace_open(trace_type=kperf.PmuTraceType, pmu_trace_attr=kperf.PmuTraceAttr()) # 初始化采集系统调用函数能力
+    kperf.trace_open(trace_type: kperf.PmuTraceType, pmu_trace_attr: kperf.PmuTraceAttr) # 初始化采集系统调用函数能力
 * class PmuTraceType:
     * TRACE_SYS_CALL = 0  采集系统调用函数事件
 * class PmuTraceAttr:
@@ -256,7 +256,9 @@ if pd == -1:
     调用逻辑类似kperf.enable、kperf.disable，用于配置采集启动和结束的时刻，两个调用之间的时间即是采集的时间段
 
 ### kperf.trace_read
-    kperf.trace_read(pd)
+    kperf.trace_read(pd: int)
+    pd为kperf.trace_open返回值
+    返回值是PmuTraceData
 * class PmuTraceData:
     * len: 数据长度
     * iter: 返回iterator[lmplPmuTraceData]
@@ -275,7 +277,7 @@ for pmu_trace in pmu_trace_data.iter():
     print("funcs: %s, elapsedTime: %d, pid: %d, tid: %d, cpu: %d, comm: %s" % (pmu_trace.funcs, pmu_trace.elapsedTime, pmu_trace.pid, pmu_trace.tid, pmu_trace.cpu, pmu_trace.comm))
 ```
 ### kperf.trace_close
-    kperf.trace_close(pd): 该接口用于清理该pd所有对应的数据，并移除该pd
+    kperf.trace_close(pd: int): 该接口用于清理该pd所有对应的数据，并移除该pd
 
 ### kperf.sys_call_func_list
     kperf.sys_call_func_list(): 查找所有的系统调用函数列表
