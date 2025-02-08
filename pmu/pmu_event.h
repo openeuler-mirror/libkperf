@@ -28,6 +28,8 @@
 #include <linux/types.h>
 #include <linux/perf_event.h>
 
+#define offset(type, v) (&(((type *)0)->v))
+
 struct PmuEvt {
     __u64 type;     // pmu event type defined in linux/perf_event.h
     __u64 config;   // event configuration
@@ -67,6 +69,11 @@ struct PerfRawSample {
 struct TraceRawData {
     __u32 size;
     char data[];
+};
+
+struct BranchSampleData {
+    __u64 bnr;
+    struct perf_branch_entry lbr[];
 };
 
 struct PerfTraceSample {

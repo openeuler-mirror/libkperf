@@ -67,6 +67,7 @@ public:
     void FreeData(PmuData* pmuData);
     int GetTaskType(const int pd) const;
     void SetSymbolMode(const int pd, const SymbolMode &mode);
+    void SetBranchSampleFilter(const int pd, const unsigned long& branchSampleFilter);
 
     int NewPd();
 
@@ -129,6 +130,7 @@ private:
     void AggregateUncoreData(const unsigned pd, const std::vector<PmuData> &evData, std::vector<PmuData> &newEvData);
     std::vector<PmuData>& GetPreviousData(const unsigned pd);
     SymbolMode GetSymbolMode(const unsigned pd);
+    unsigned long GetBranchSampleFilter(const unsigned pd);
     void FillPidList(PmuTaskAttr* taskParam, const unsigned pd);
     void OpenDummyEvent(PmuTaskAttr* taskParam, const unsigned pd);
     void EraseDummyEvent(const unsigned pd);
@@ -175,6 +177,9 @@ private:
     std::unordered_map<unsigned, DummyEvent*> dummyList;
 
     std::unordered_map<unsigned, groupMapPtr> dataEvtGroupList;
+    // Key: pd
+    // Value: branchSampleFilter
+    std::unordered_map<unsigned, unsigned long> branchSampleFilterList;
 };
 }   // namespace KUNPENG_PMU
 #endif

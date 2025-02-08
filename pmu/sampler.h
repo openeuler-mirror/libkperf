@@ -53,14 +53,15 @@ namespace KUNPENG_PMU {
         int ReadInit();
         int Mmap();
         union PerfEvent *SampleReadEvent();
-        void RawSampleProcess(struct PmuData *sampleHead, PerfSampleIps *ips, union KUNPENG_PMU::PerfEvent *event);
+        void RawSampleProcess(struct PmuData *sampleHead, PerfSampleIps *ips, union KUNPENG_PMU::PerfEvent *event, std::vector<PmuDataExt*> &extPool);
         void MmapSampleProcess();
         void Mmap2SampleProcess();
         void ForkSampleProcess();
-        void ReadRingBuffer(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps);
+        void ReadRingBuffer(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool);
         void FillComm(const size_t &start, const size_t &end, std::vector<PmuData> &data);
         void UpdatePidInfo(const pid_t &pid, const int &tid);
         void UpdateCommInfo(KUNPENG_PMU::PerfEvent *event);
+        void ParseBranchSampleData(struct PmuData *pmuData, PerfRawSample *sample, union PerfEvent *event, std::vector<PmuDataExt*> &extPool);
 
         static int pages;
         std::shared_ptr<PerfMmap> sampleMmap = std::make_shared<PerfMmap>();

@@ -76,6 +76,11 @@ public:
         this->ts = timestamp;
     }
 
+    void SetBranchSampleFilter(const unsigned long& branchSampleFilter)
+    {
+        this->branchSampleFilter = branchSampleFilter;
+    }
+
     std::set<int> GetFdList() const
     {
         return fdList;
@@ -118,6 +123,7 @@ private:
     int64_t ts = 0;
     std::unordered_map<pid_t, ProcPtr> procMap;
     SymbolMode symMode = NO_SYMBOL_RESOLVE;
+    unsigned long branchSampleFilter = KPERF_NO_BRANCH_SAMPLE;
     int prevStat;
     int evtStat;
     std::mutex mutex;

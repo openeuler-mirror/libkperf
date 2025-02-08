@@ -86,6 +86,7 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
                 continue;
             }
             perfEvt->SetSymbolMode(symMode);
+            perfEvt->SetBranchSampleFilter(branchSampleFilter);
             int err = 0;
             if (groupEnable) {
                 err = perfEvt->Init(groupEnable, evtLeader->xyCounterArray[row][col]->GetFd());
@@ -99,7 +100,11 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
                     continue;
                 }
                 if (err == LIBPERF_ERR_INVALID_EVENT) {
-                    pcerr::SetCustomErr(err, "Invalid event:" + perfEvt->GetEvtName() + ", " + std::string{strerror(errno)});
+                    if (branchSampleFilter != KPERF_NO_BRANCH_SAMPLE) {
+                        pcerr::SetCustomErr(err, "Invalid event:" + perfEvt->GetEvtName() + ", PMU Hardware or event type doesn't support branch stack sampling");
+                    } else {
+                        pcerr::SetCustomErr(err, "Invalid event:" + perfEvt->GetEvtName() + ", " + std::string{strerror(errno)});
+                    }
                 }
                 return err;
             }
@@ -242,6 +247,7 @@ void KUNPENG_PMU::EvtList::AddNewProcess(pid_t pid, const bool groupEnable, cons
             return;
         }
         perfEvt->SetSymbolMode(symMode);
+        perfEvt->SetBranchSampleFilter(branchSampleFilter);
         int err = 0;
         if (groupEnable) {
             int sz = this->pidList.size();

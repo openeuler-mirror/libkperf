@@ -55,6 +55,11 @@ int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupEnable, const int grou
     attr.size = sizeof(struct perf_event_attr);
     attr.sample_type = PERF_SAMPLE_IP | PERF_SAMPLE_TID | PERF_SAMPLE_TIME | PERF_SAMPLE_CALLCHAIN | PERF_SAMPLE_ID |
                        PERF_SAMPLE_CPU | PERF_SAMPLE_PERIOD | PERF_SAMPLE_IDENTIFIER | PERF_SAMPLE_RAW;
+    // if the branch sample type is not nullptr, set the branch sample type.                       
+    if (branchSampleFilter != KPERF_NO_BRANCH_SAMPLE) {
+        attr.sample_type |= PERF_SAMPLE_BRANCH_STACK;
+        attr.branch_sample_type = branchSampleFilter;
+    }
     attr.freq = this->evt->useFreq;
     attr.sample_period = this->evt->period;
     attr.read_format = PERF_FORMAT_ID;
@@ -144,8 +149,50 @@ void KUNPENG_PMU::PerfSampler::UpdateCommInfo(KUNPENG_PMU::PerfEvent *event)
     }
 }
 
+void KUNPENG_PMU::PerfSampler::ParseBranchSampleData(struct PmuData *pmuData, PerfRawSample *sample, union PerfEvent *event, std::vector<PmuDataExt*> &extPool)
+{
+    if (branchSampleFilter == KPERF_NO_BRANCH_SAMPLE) {
+        return;
+    }
+
+    auto ipsOffset = (unsigned long)offset(struct PerfRawSample, ips);
+    auto traceOffset = ipsOffset + sample->nr * (sizeof(unsigned long));
+    auto *traceData = (TraceRawData *)((char *)&event->sample.array + traceOffset);
+    if (traceData == nullptr) {
+        return;
+    }
+
+    auto branchOffset = traceOffset + sizeof(unsigned int) + sizeof(char) * traceData->size;
+    auto branchData = (BranchSampleData *)((char *)&event->sample.array + branchOffset);
+    if (branchData->bnr == 0) {
+        return;
+    }
+
+    try {
+        auto *branchExt = new struct PmuDataExt();
+        auto *records = new struct BranchSampleRecord[branchData->bnr];
+        for (int i = 0; i < branchData->bnr; i++) {
+            auto branchItem = branchData->lbr[i];
+            records[i].fromAddr = branchItem.from;
+            records[i].toAddr = branchItem.to;
+            records[i].cycles = branchItem.cycles;
+            records[i].mispred = branchItem.mispred;
+            records[i].predicted = branchItem.predicted;
+            records[i].inTx = branchItem.in_tx;
+            records[i].abort = branchItem.abort;
+        }
+        branchExt->nr = branchData->bnr;
+        branchExt->branchRecords = records;
+        extPool.push_back(branchExt);
+        pmuData->ext = branchExt;
+    } catch (std::bad_alloc &err) {
+        return;
+    }
+}
+
+
 void KUNPENG_PMU::PerfSampler::RawSampleProcess(
-        struct PmuData *current, PerfSampleIps *ips, union KUNPENG_PMU::PerfEvent *event)
+        struct PmuData *current, PerfSampleIps *ips, union KUNPENG_PMU::PerfEvent *event, std::vector<PmuDataExt*> &extPool)
 {
     if (current == nullptr) {
         return;
@@ -175,9 +222,10 @@ void KUNPENG_PMU::PerfSampler::RawSampleProcess(
     current->period = static_cast<uint64_t>(sample->period);
     current->ts = static_cast<int64_t>(sample->time);
     PointerPasser::ParserRawFormatData(current, sample, event, this->evt->name);
+    ParseBranchSampleData(current, sample, event, extPool);
 }
 
-void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<PerfSampleIps> &sampleIps)
+void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool)
 {
     union KUNPENG_PMU::PerfEvent *event;
     while (true) {
@@ -192,7 +240,7 @@ void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<Perf
                 auto& current = data.back();
                 sampleIps.emplace_back(PerfSampleIps());
                 auto& ips = sampleIps.back();
-                this->RawSampleProcess(&current, &ips, event);
+                this->RawSampleProcess(&current, &ips, event, extPool);
                 break;
             }
             case PERF_RECORD_MMAP: {
@@ -253,7 +301,7 @@ int KUNPENG_PMU::PerfSampler::Read(vector<PmuData> &data, std::vector<PerfSample
         return err;
     }
     auto cnt = data.size();
-    this->ReadRingBuffer(data, sampleIps);
+    this->ReadRingBuffer(data, sampleIps, extPool);
     if (this->pid == -1) {
         FillComm(cnt, data.size(), data);
     }
