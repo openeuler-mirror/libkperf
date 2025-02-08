@@ -65,23 +65,30 @@ namespace KUNPENG_PMU {
         }
 
         string line;
+        const std::string perfixDefineNr = "#define __NR_";
+        const std::string perfixDefineNr3264 = "#define __NR3264_";
+        size_t nameStart = 0;
         while (getline(syscallFile, line)) {
-            if (line.find("#define __NR_") == 0) {
-                size_t nameStart = line.find("__NR_") + 5; // "__NR_" len is 5
-                size_t nameEnd = line.find(' ', nameStart);
-                size_t numberStart = line.find_last_of(' ') + 1;
+            if (line.compare(0, perfixDefineNr.length(), perfixDefineNr) == 0) {
+                nameStart = perfixDefineNr.length();
+            } else if (line.compare(0, perfixDefineNr3264.length(), perfixDefineNr3264) == 0) {
+                nameStart = perfixDefineNr3264.length();
+            } else {
+                continue; // skip line if it doesn't start with perfixDefineNr or perfixDefineNr3264
+            }
+            size_t nameEnd = line.find(' ', nameStart);
+            size_t numberStart = line.find_last_of(' ') + 1;
 
-                if (nameStart != string::npos && nameEnd != string::npos && numberStart != string::npos) {
-                    string funName = line.substr(nameStart, nameEnd - nameStart);
-                    string numberStr = line.substr(numberStart); // get the number of NR_SYSCALL
+            if (nameStart != string::npos && nameEnd != string::npos && numberStart != string::npos) {
+                string funName = line.substr(nameStart, nameEnd - nameStart);
+                string numberStr = line.substr(numberStart); // get the number of NR_SYSCALL
 
-                    try {
-                        int syscallNumber = stoi(numberStr);
-                        syscallTable[syscallNumber] = funName;
-                    } catch (const invalid_argument& e) {
-                        // Handle invalid argument exception
-                        continue;
-                    }
+                try {
+                    int syscallNumber = stoi(numberStr);
+                    syscallTable[syscallNumber] = funName;
+                } catch (const invalid_argument& e) {
+                    // Handle invalid argument exception
+                    continue;
                 }
             }
         }
@@ -155,6 +162,8 @@ namespace KUNPENG_PMU {
 
     static const char *GetRawSysCallName(long NR_SYSCALL)
     {
+        // already test checked that all syscall numbers is in the syscall table.
+        // so we can use it directly.
         return syscallTable[NR_SYSCALL].c_str();
     }
 
