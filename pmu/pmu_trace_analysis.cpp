@@ -222,21 +222,29 @@ int PmuTraceRead(int pd, struct PmuTraceData **pmuTraceData)
         *pmuTraceData = nullptr;
         return 0;
     }
-    if (!PdValid(pd)) {
-        New(LIBPERF_ERR_INVALID_PD);
+    try {
+        if (!PdValid(pd)) {
+            New(LIBPERF_ERR_INVALID_PD);
+            return -1;
+        }
+        New(SUCCESS);
+        bool isAllCollect =
+            (strcmp(pmuData[0].evt, ENTER_RAW_SYSCALL) == 0) || (strcmp(pmuData[0].evt, EXIT_RAW_SYSCALL) == 0);
+        std::vector<PmuTraceData>& traceData = isAllCollect ? PmuAnalysis::GetInstance()->AnalyzeRawTraceData(pd, pmuData, len)
+                                                            : PmuAnalysis::GetInstance()->AnalyzeTraceData(pd, pmuData, len);
+        if (!traceData.empty()) {
+            *pmuTraceData = traceData.data();
+            return traceData.size();
+        } else {
+            *pmuTraceData = nullptr;
+            return 0;
+        }
+    } catch (std::bad_alloc&) {
+        New(COMMON_ERR_NOMEM);
         return -1;
-    }
-    bool isAllCollect =
-        (strcmp(pmuData[0].evt, ENTER_RAW_SYSCALL) == 0) || (strcmp(pmuData[0].evt, EXIT_RAW_SYSCALL) == 0);
-    std::vector<PmuTraceData>& traceData = isAllCollect ? PmuAnalysis::GetInstance()->AnalyzeRawTraceData(pd, pmuData, len)
-                                                        : PmuAnalysis::GetInstance()->AnalyzeTraceData(pd, pmuData, len);
-    New(SUCCESS);
-    if (!traceData.empty()) {
-        *pmuTraceData = traceData.data();
-        return traceData.size();
-    } else {
-        *pmuTraceData = nullptr;
-        return 0;
+    } catch (std::exception& ex) {
+        New(UNKNOWN_ERROR, ex.what());
+        return -1;
     }
 }
 
