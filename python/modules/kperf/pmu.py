@@ -73,6 +73,34 @@ class SpeEvent:
     SPE_EV_EMPTY_PRED   = 1 << 18
 
 
+class BranchSampleFilter:
+    KPERF_NO_BRANCH_SAMPLE         = 0
+    """
+    The first part of the value is the privilege level,which is a combination of 
+    one of the values listed below. If the user does not set privilege level explicitly,
+    the kernel will use the event's privilege level.Event and branch privilege levels do
+    not have to match.
+    """
+    KPERF_SAMPLE_BRANCH_USER        = 1 << 0
+    KPERF_SAMPLE_BRANCH_KERNEL      = 1 << 1
+    KPERF_SAMPLE_BRANCH_HV          = 1 << 2
+    # In addition to privilege value , at least one or more of the following bits must be set.
+    KPERF_SAMPLE_BRANCH_ANY         = 1 << 3
+    KPERF_SAMPLE_BRANCH_ANY_CALL    = 1 << 4
+    KPERF_SAMPLE_BRANCH_ANY_RETURN  = 1 << 5
+    KPERF_SAMPLE_BRANCH_IND_CALL    = 1 << 6
+    KPERF_SAMPLE_BRANCH_ABORT_TX    = 1 << 7
+    KPERF_SAMPLE_BRANCH_IN_TX       = 1 << 8
+    KPERF_SAMPLE_BRANCH_NO_TX       = 1 << 9
+    KPERF_SAMPLE_BRANCH_COND        = 1 << 10
+    KPERF_SAMPLE_BRANCH_CALL_STACK  = 1 << 11
+    KPERF_SAMPLE_BRANCH_IND_JUMP    = 1 << 12
+    KPERF_SAMPLE_BRANCH_CALL        = 1 << 13
+    KPERF_SAMPLE_BRANCH_NO_FLAGES   = 1 << 14
+    KPERF_SAMPLE_BRANCH_NO_CYCLES   = 1 << 15
+    KPERF_SAMPLE_BRANCH_TYPE_SAVE   = 1 << 16
+
+
 class SymbolMode:
     NO_SYMBOL_RESOLVE = 0  # <stack> in PmuData will be set to NULL.
     RESOLVE_ELF = 1        # Resolve elf only. Fields except lineNum and fileName in Symbol will be valid.
@@ -133,7 +161,8 @@ class PmuAttr(_libkperf.PmuAttr):
                  dataFilter: int = 0,
                  evFilter: int = 0,
                  minLatency: int = 0,
-                 includeNewFork: bool = False) -> None:
+                 includeNewFork: bool = False,
+                 branchSampleFilter: int = 0) -> None:
         super().__init__(
             evtList=evtList,
             pidList=pidList,
@@ -148,7 +177,8 @@ class PmuAttr(_libkperf.PmuAttr):
             dataFilter=dataFilter,
             evFilter=evFilter,
             minLatency=minLatency,
-            includeNewFork=includeNewFork
+            includeNewFork=includeNewFork,
+            branchSampleFilter=branchSampleFilter,
         )
 
 
@@ -381,4 +411,5 @@ __all__ = [
     'trace_read',
     'trace_close',
     'sys_call_func_list',
+    'BranchSampleFilter',
 ]

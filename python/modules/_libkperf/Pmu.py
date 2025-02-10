@@ -60,6 +60,8 @@ class EvtAttr:
         evt_attr = cls()
         evt_attr.__c_evt_attr = c_evt_attr
         return evt_attr
+
+
 class CtypesPmuAttr(ctypes.Structure):
     """
     struct PmuAttr {
@@ -107,6 +109,7 @@ class CtypesPmuAttr(ctypes.Structure):
         ('evFilter',      ctypes.c_uint),
         ('minLatency',    ctypes.c_ulong),
         ('includeNewFork', ctypes.c_bool),
+        ('branchSampleFilter', ctypes.c_ulong),
     ]
 
     def __init__(self,
@@ -124,6 +127,7 @@ class CtypesPmuAttr(ctypes.Structure):
                  evFilter: int=0,
                  minLatency: int=0,
                  includeNewFork: bool=False,
+                 branchSampleFilter: int=0,
                  *args: Any, **kw: Any) -> None:
         super().__init__(*args, **kw)
 
@@ -172,6 +176,7 @@ class CtypesPmuAttr(ctypes.Structure):
         self.evFilter = ctypes.c_uint(evFilter)
         self.minLatency = ctypes.c_ulong(minLatency)
         self.includeNewFork = ctypes.c_bool(includeNewFork)
+        self.branchSampleFilter = ctypes.c_ulong(branchSampleFilter)
 
 
 class PmuAttr:
@@ -191,7 +196,8 @@ class PmuAttr:
                  dataFilter: int=0,
                  evFilter: int=0,
                  minLatency: int=0,
-                 includeNewFork: bool=False) -> None:
+                 includeNewFork: bool=False,
+                 branchSampleFilter: int=0) -> None:
         self.__c_pmu_attr = CtypesPmuAttr(
             evtList=evtList,
             pidList=pidList,
@@ -206,7 +212,8 @@ class PmuAttr:
             dataFilter=dataFilter,
             evFilter=evFilter,
             minLatency=minLatency,
-            includeNewFork=includeNewFork
+            includeNewFork=includeNewFork,
+            branchSampleFilter=branchSampleFilter,
         )
 
     @property
@@ -364,6 +371,14 @@ class PmuAttr:
     @includeNewFork.setter
     def includeNewFork(self, includeNewFork: bool) -> None:
         self.c_pmu_attr.includeNewFork = ctypes.c_bool(includeNewFork)
+    
+    @property
+    def branchSampleFilter(self) -> int:
+        return self.c_pmu_attr.branchSampleFilter
+
+    @branchSampleFilter.setter
+    def branchSampleFilter(self, branchSampleFilter: int) -> None:
+        self.c_pmu_attr.branchSampleFilter = ctypes.c_ulong(branchSampleFilter)
 
     @classmethod
     def from_c_pmu_data(cls, c_pmu_attr: CtypesPmuAttr) -> 'PmuAttr':
@@ -602,21 +617,107 @@ class SampleRawData:
         return sample_raw_data
 
 
-class CtypesPmuDataExt(ctypes.Structure):
-    """
-    struct PmuDataExt {
-        unsigned long pa;               // physical address
-        unsigned long va;               // virtual address
-        unsigned long event;            // event id
-    };
-    """
+class CytpesBranchSampleRecord(ctypes.Structure):
+    _fields_ = [
+        ("fromAddr",    ctypes.c_ulong),
+        ("toAddr",      ctypes.c_ulong),
+        ("cycles",      ctypes.c_ulong),
+        ("mispred",     ctypes.c_ulong),
+        ("predicted",   ctypes.c_ulong),
+        ("in_tx",       ctypes.c_ulong),
+        ("abort",       ctypes.c_ulong),
+    ]
 
+
+class CtypesBranchRecords(ctypes.Structure):
+    _fields_ = [
+        ("nr", ctypes.c_ulong),
+        ("branchRecords", ctypes.POINTER(CytpesBranchSampleRecord))
+    ]
+
+
+class ImplBranchRecords():
+    __slots__ = ['__c_branch_record']
+
+    def __init__(self,
+                 fromAddr:  int=0,
+                 toAddr:    int=0,
+                 cycles:    int=0,
+                 mispred:   int=0,
+                 predicted: int=0,
+                 in_tx:     int=0,
+                 abort:     int=0) -> None:
+        self.__c_branch_record = CytpesBranchSampleRecord(
+            fromAddr=fromAddr,
+            toAddr=toAddr,
+            cycles=cycles,
+            mispred=mispred,
+            predicted=predicted,
+            in_tx=in_tx,
+            abort=abort
+        )
+
+    @property
+    def c_branch_record(self) -> CytpesBranchSampleRecord:
+        return self.__c_branch_record
+
+    @property
+    def fromAddr(self) -> int:
+        return self.c_branch_record.fromAddr
+    
+    @property
+    def toAddr(self) -> int:
+        return self.c_branch_record.toAddr
+    
+    @property
+    def cycles(self) -> int:
+        return self.c_branch_record.cycles
+    
+    @property
+    def mispred(self) -> int:
+        return self.c_branch_record.mispred
+    
+    @property
+    def predicted(self) -> int:
+        return self.c_branch_record.predicted
+    
+    @property
+    def in_tx(self) -> int:
+        return self.c_branch_record.in_tx
+    
+    @property
+    def abort(self) -> int:
+        return self.c_branch_record.abort
+    
+    @classmethod
+    def from_c_branch_record(cls, c_branch_record: CytpesBranchSampleRecord) -> 'ImplBranchRecords':
+        branch_record = cls()
+        branch_record.__c_branch_record = c_branch_record
+        return branch_record
+
+
+class BranchRecords():
+    __slots__ = ['__pointer', '__iter', '__len']
+
+    def __init__(self, pointer: ctypes.POINTER(CytpesBranchSampleRecord) = None, nr: int=0) -> None:
+        self.__pointer = pointer
+        self.__len = nr
+        self.__iter = (ImplBranchRecords.from_c_branch_record(self.__pointer[i]) for i in range(self.__len))
+    
+    @property
+    def len(self) -> int:
+        return self.__len
+
+    @property
+    def iter(self) -> Iterator[ImplBranchRecords]:
+        return self.__iter
+    
+class CytpesSpeDataExt(ctypes.Structure):
     _fields_ = [
         ('pa',    ctypes.c_ulong),
         ('va',    ctypes.c_ulong),
         ('event', ctypes.c_ulong)
     ]
-
     def __init__(self,
                  pa: int=0,
                  va: int=0,
@@ -627,19 +728,27 @@ class CtypesPmuDataExt(ctypes.Structure):
         self.va = ctypes.c_ulong(va)
         self.event = ctypes.c_ulong(event)
 
+class PmuDataExtUnion(ctypes.Union):
+    _fields_ = [
+        ("speDataExt", CytpesSpeDataExt),
+        ("branchRecords", CtypesBranchRecords)
+    ]
+
+class CtypesPmuDataExt(ctypes.Structure):
+    """
+    struct PmuDataExt {
+        unsigned long pa;               // physical address
+        unsigned long va;               // virtual address
+        unsigned long event;            // event id
+    };
+    """
+
+    _fields_ = [
+        ('ext',   PmuDataExtUnion),
+    ]
 
 class PmuDataExt:
     __slots__ = ['__c_pmu_data_ext']
-
-    def __init__(self,
-                 pa: int=0,
-                 va: int=0,
-                 event: int=0) -> None:
-        self.__c_pmu_data_ext = CtypesPmuDataExt(
-            pa=pa,
-            va=va,
-            event=event
-        )
 
     @property
     def c_pmu_data_ext(self) -> CtypesPmuDataExt:
@@ -647,27 +756,21 @@ class PmuDataExt:
 
     @property
     def pa(self) -> int:
-        return self.c_pmu_data_ext.pa
-
-    @pa.setter
-    def pa(self, pa: int) -> None:
-        self.c_pmu_data_ext.pa = ctypes.c_ulong(pa)
+        return self.c_pmu_data_ext.ext.speDataExt.pa
 
     @property
     def va(self) -> int:
-        return self.c_pmu_data_ext.va
-
-    @va.setter
-    def va(self, va: int) -> None:
-        self.c_pmu_data_ext.va = ctypes.c_ulong(va)
+        return self.c_pmu_data_ext.ext.speDataExt.va
 
     @property
     def event(self) -> int:
-        return self.c_pmu_data_ext.event
+        return self.c_pmu_data_ext.ext.speDataExt.event
 
-    @event.setter
-    def event(self, event) -> None:
-        self.c_pmu_data_ext.event = ctypes.c_ulong(event)
+    @property
+    def branchRecords(self) -> BranchRecords:
+        if self.__c_pmu_data_ext.ext.branchRecords.branchRecords:
+            return BranchRecords(self.__c_pmu_data_ext.ext.branchRecords.branchRecords, self.__c_pmu_data_ext.ext.branchRecords.nr)
+        return None
 
     @classmethod
     def from_pmu_data_ext(cls, c_pmu_data_ext: CtypesPmuDataExt) -> 'PmuDataExt':

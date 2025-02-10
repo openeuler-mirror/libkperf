@@ -569,3 +569,83 @@ funcName: write elapsedTime: 0.00107 ms pid: 997235 tid: 997235 cpu: 110 comm: t
 funcName: write elapsedTime: 0.00118 ms pid: 997235 tid: 997235 cpu: 110 comm: taskset
 ```
 支持采集的系统调用函数列表，在查看/sys/kernel/tracing/events/syscalls/下所有系统调用对应的enter和exit文件，去掉相同的前缀就是对应的系统调用函数名称；也可以基于提供的PmuSysCallFuncList函数获取对应的系统调用函数列表。
+
+### 采集BRBE数据
+libkperf基于sampling的能力，增加了对branch sample stack数据的采集能力。
+```c++
+char* evtList = {"cycles"}
+int* cpuList = nullptr;
+PmuAttr attr = {0};
+attr.evtList = evtList;
+attr.numEvt = 1; 
+attr.cpuList = cpuList;
+attr.numCpu = 0;
+attr.freq = 1000;
+attr.useFreq = 1;
+attr.symbolMode = NO_SYMBOL_RESOLVE;
+int pidList[1] = {1}; // 该pid值替换成对应需要采集应用的pid
+attr.pidList = pidList;
+attr.numPid = 1;
+attr.branchSampleFilter = KPERF_SAMPLE_BRANCH_USER | KPERF_SAMPLE_BRANCH_ANY;
+pd = PmuOpen(SAMPLING, &attr);
+ASSERT_NE(pd, -1);
+PmuEnable(pd);
+sleep(3);
+PmuDisable(pd);
+int len = PmuRead(pd, &data);
+for (int i = 0; i < len; i++)
+{
+    PmuData &pmuData = data[i];
+    if (pmuData.ext)
+    {
+        for (int j = 0; j < pmuData.ext->nr; j++)
+        {
+            auto *rd = pmuData.ext->branchRecords;
+            std::cout << std::hex << rd[j].fromAddr << "->" << rd[j].toAddr << " " << rd[j].cycles << " " << rd[j].predicted << " " << rd[j].mispred << std::endl;
+        }
+    }
+}
+PmuDataFree(data);
+PmuClose(pd);
+```
+执行上述代码，输出的结果类似如下：
+```
+ffff88f6065c->ffff88f60b0c 35 1 0
+ffff88f60aa0->ffff88f60618 1  1 0
+40065c->ffff88f60b00 1 1 0
+400824->400650 1 1 0
+400838->400804 1 1 0
+```
+
+```python
+import time
+import kperf
+
+evtList = ["cycles"]
+pidList = [1] # 该pid值替换成对应需要采集应用的pid
+branchSampleMode = kperf.BranchSampleFilter.KPERF_SAMPLE_BRANCH_ANY | kperf.BranchSampleFilter.KPERF_SAMPLE_BRANCH_USER
+pmu_attr = kperf.PmuAttr(sampleRate=1000, useFreq=True, pidList=pidList, evtList=evtList, branchSampleFilter=branchSampleMode)
+pd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
+if pd == -1:
+    print(kperf.error())
+    exit(1)
+kperf.enable(pd)
+time.sleep(1)
+kperf.disable(pd)
+pmu_data = kperf.read(pd)
+for data in pmu_data.iter:
+    if data.ext and data.ext.branchRecords:
+        for item in data.ext.branchRecords.iter:
+            predicted = 'P'
+            if item.mispred:
+                predicted = 'M'
+            print(f"{hex(item.fromAddr)}->{hex(item.toAddr)} {item.cycles} {predicted}")
+```
+执行上述代码，输出的结果类似如下：
+```
+0xffff88f6065c->0xffff88f60b0c 35 P
+0xffff88f60aa0->0xffff88f60618 1  P
+0x40065c->0xffff88f60b00 1 P
+0x400824->0x400650 1 P
+0x400838->0x400804 1 P
+```
