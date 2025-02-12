@@ -573,7 +573,7 @@ funcName: write elapsedTime: 0.00118 ms pid: 997235 tid: 997235 cpu: 110 comm: t
 ### 采集BRBE数据
 libkperf基于sampling的能力，增加了对branch sample stack数据的采集能力。
 ```c++
-char* evtList = {"cycles"}
+char* evtList[1] = {"cycles"};
 int* cpuList = nullptr;
 PmuAttr attr = {0};
 attr.evtList = evtList;
@@ -587,11 +587,15 @@ int pidList[1] = {1}; // 该pid值替换成对应需要采集应用的pid
 attr.pidList = pidList;
 attr.numPid = 1;
 attr.branchSampleFilter = KPERF_SAMPLE_BRANCH_USER | KPERF_SAMPLE_BRANCH_ANY;
-pd = PmuOpen(SAMPLING, &attr);
-ASSERT_NE(pd, -1);
+int pd = PmuOpen(SAMPLING, &attr);
+if (pd == -1) {
+    std::cout << Perror() << std::endl;
+    return;
+}
 PmuEnable(pd);
 sleep(3);
 PmuDisable(pd);
+PmuData* data = nullptr;
 int len = PmuRead(pd, &data);
 for (int i = 0; i < len; i++)
 {
