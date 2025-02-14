@@ -304,7 +304,7 @@ pd为kperf.trace_open返回值
 
 ```python
 pmu_trace_data = kperf.trace_read(pd)
-for pmu_trace in pmu_trace_data.iter():
+for pmu_trace in pmu_trace_data.iter:
     print("funcs: %s, elapsedTime: %d, pid: %d, tid: %d, cpu: %d, comm: %s" % (pmu_trace.funcs, pmu_trace.elapsedTime, pmu_trace.pid, pmu_trace.tid, pmu_trace.cpu, pmu_trace.comm))
 ```
 ### kperf.trace_close
