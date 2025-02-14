@@ -25,7 +25,6 @@ namespace KUNPENG_PMU {
     int RingbufferReadInit(PerfMmap& map);
     void PerfMmapConsume(PerfMmap& map);
     void PerfMmapReadDone(PerfMmap& map);
-    int CreateRingbuffer(PerfMmap& map, int mask, int prot, int fd);
 
 }  // namespace KUNPENG_PMU
 
