@@ -639,7 +639,7 @@ TEST_F(TestAPI, TestBrBe)
             for (int j = 0; j < pmuData.ext->nr; j++)
             {
                 auto *rd = pmuData.ext->branchRecords;
-                std::cout << std::hex << rd[j].fromAddr << "->" << rd[j].toAddr << " " << rd[j].cycles << " " << rd[j].predicted << " " << rd[j].mispred << std::endl;
+                std::cout << std::hex << rd[j].fromAddr << "->" << rd[j].toAddr << " " << rd[j].cycles << std::endl;
             }
         }
     }
