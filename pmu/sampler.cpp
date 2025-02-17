@@ -176,10 +176,6 @@ void KUNPENG_PMU::PerfSampler::ParseBranchSampleData(struct PmuData *pmuData, Pe
             records[i].fromAddr = branchItem.from;
             records[i].toAddr = branchItem.to;
             records[i].cycles = branchItem.cycles;
-            records[i].mispred = branchItem.mispred;
-            records[i].predicted = branchItem.predicted;
-            records[i].inTx = branchItem.in_tx;
-            records[i].abort = branchItem.abort;
         }
         branchExt->nr = branchData->bnr;
         branchExt->branchRecords = records;

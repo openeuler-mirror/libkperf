@@ -622,10 +622,6 @@ class CytpesBranchSampleRecord(ctypes.Structure):
         ("fromAddr",    ctypes.c_ulong),
         ("toAddr",      ctypes.c_ulong),
         ("cycles",      ctypes.c_ulong),
-        ("mispred",     ctypes.c_ulong),
-        ("predicted",   ctypes.c_ulong),
-        ("inTx",        ctypes.c_ulong),
-        ("abort",       ctypes.c_ulong),
     ]
 
 
@@ -642,19 +638,11 @@ class ImplBranchRecords():
     def __init__(self,
                  fromAddr:  int=0,
                  toAddr:    int=0,
-                 cycles:    int=0,
-                 mispred:   int=0,
-                 predicted: int=0,
-                 inTx:     int=0,
-                 abort:     int=0) -> None:
+                 cycles:    int=0) -> None:
         self.__c_branch_record = CytpesBranchSampleRecord(
             fromAddr=fromAddr,
             toAddr=toAddr,
-            cycles=cycles,
-            mispred=mispred,
-            predicted=predicted,
-            inTx=inTx,
-            abort=abort
+            cycles=cycles
         )
 
     @property
@@ -672,22 +660,6 @@ class ImplBranchRecords():
     @property
     def cycles(self) -> int:
         return self.c_branch_record.cycles
-    
-    @property
-    def mispred(self) -> int:
-        return self.c_branch_record.mispred
-    
-    @property
-    def predicted(self) -> int:
-        return self.c_branch_record.predicted
-    
-    @property
-    def inTx(self) -> int:
-        return self.c_branch_record.inTx
-    
-    @property
-    def abort(self) -> int:
-        return self.c_branch_record.abort
     
     @classmethod
     def from_c_branch_record(cls, c_branch_record: CytpesBranchSampleRecord) -> 'ImplBranchRecords':

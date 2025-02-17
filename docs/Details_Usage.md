@@ -571,7 +571,7 @@ funcName: write elapsedTime: 0.00118 ms pid: 997235 tid: 997235 cpu: 110 comm: t
 支持采集的系统调用函数列表，在查看/sys/kernel/tracing/events/syscalls/下所有系统调用对应的enter和exit文件，去掉相同的前缀就是对应的系统调用函数名称；也可以基于提供的PmuSysCallFuncList函数获取对应的系统调用函数列表。
 
 ### 采集BRBE数据
-libkperf基于sampling的能力，增加了对branch sample stack数据的采集能力。
+libkperf基于sampling的能力，增加了对branch sample stack数据的采集能力，用于获取CPU的跳转记录， 通过branchSampleFilter可指定获取不同类型的分支跳转记录。
 ```c++
 char* evtList[1] = {"cycles"};
 int* cpuList = nullptr;
@@ -605,7 +605,7 @@ for (int i = 0; i < len; i++)
         for (int j = 0; j < pmuData.ext->nr; j++)
         {
             auto *rd = pmuData.ext->branchRecords;
-            std::cout << std::hex << rd[j].fromAddr << "->" << rd[j].toAddr << " " << rd[j].cycles << " " << rd[j].predicted << " " << rd[j].mispred << std::endl;
+            std::cout << std::hex << rd[j].fromAddr << "->" << rd[j].toAddr << " " << rd[j].cycles << std::endl;
         }
     }
 }
@@ -614,11 +614,11 @@ PmuClose(pd);
 ```
 执行上述代码，输出的结果类似如下：
 ```
-ffff88f6065c->ffff88f60b0c 35 1 0
-ffff88f60aa0->ffff88f60618 1  1 0
-40065c->ffff88f60b00 1 1 0
-400824->400650 1 1 0
-400838->400804 1 1 0
+ffff88f6065c->ffff88f60b0c 35
+ffff88f60aa0->ffff88f60618 1
+40065c->ffff88f60b00 1
+400824->400650 1
+400838->400804 1
 ```
 
 ```python
@@ -640,16 +640,13 @@ pmu_data = kperf.read(pd)
 for data in pmu_data.iter:
     if data.ext and data.ext.branchRecords:
         for item in data.ext.branchRecords.iter:
-            predicted = 'P'
-            if item.mispred:
-                predicted = 'M'
-            print(f"{hex(item.fromAddr)}->{hex(item.toAddr)} {item.cycles} {predicted}")
+            print(f"{hex(item.fromAddr)}->{hex(item.toAddr)} {item.cycles}")
 ```
 执行上述代码，输出的结果类似如下：
 ```
-0xffff88f6065c->0xffff88f60b0c 35 P
-0xffff88f60aa0->0xffff88f60618 1  P
-0x40065c->0xffff88f60b00 1 P
-0x400824->0x400650 1 P
-0x400838->0x400804 1 P
+0xffff88f6065c->0xffff88f60b0c 35
+0xffff88f60aa0->0xffff88f60618 1
+0x40065c->0xffff88f60b00 1
+0x400824->0x400650 1
+0x400838->0x400804 1
 ```

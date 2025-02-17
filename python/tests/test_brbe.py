@@ -18,10 +18,7 @@ def TestBrBe():
     for data in pmu_data.iter:
         if data.ext and data.ext.branchRecords:
             for item in data.ext.branchRecords.iter:
-                predicted = 'P'
-                if item.mispred:
-                    predicted = 'M'
-                print(f"{hex(item.fromAddr)}->{hex(item.toAddr)} {item.cycles} {predicted}")
+                print(f"{hex(item.fromAddr)}->{hex(item.toAddr)} {item.cycles}")
 
 if __name__ == "__main__":
     TestBrBe()
