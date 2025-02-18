@@ -28,5 +28,4 @@ int RaiseNumFd(uint64_t numFd);
 bool ExistPath(const std::string& filePath);
 std::string GetTraceEventDir();
 
-
 #endif  // LIBKPROF_COMMON_H

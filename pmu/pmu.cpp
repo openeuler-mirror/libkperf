@@ -33,11 +33,10 @@ using namespace pcerr;
 using namespace KUNPENG_PMU;
 using namespace std;
 
-#define MAX_CPU_NUM sysconf(_SC_NPROCESSORS_ONLN)
-
 static unordered_map<unsigned, bool> runningStatus;
 static SafeHandler<unsigned> pdMutex;
 static pair<unsigned, const char**> uncoreEventPair;
+static std::set<int> onLineCpuIds;
 
 struct PmuTaskAttr* AssignPmuTaskParam(PmuTaskType collectType, struct PmuAttr *attr);
 
@@ -63,6 +62,7 @@ static int PmuCollectPause(const int pd)
 
 static int CheckCpuList(unsigned numCpu, int* cpuList)
 {
+    const set<int>& onLineCpus = GetOnLineCpuIds();
     if (numCpu > MAX_CPU_NUM) {
         string errMsg = "Invalid numCpu: " + to_string(numCpu);
         New(LIBPERF_ERR_INVALID_CPULIST, errMsg);
@@ -75,6 +75,11 @@ static int CheckCpuList(unsigned numCpu, int* cpuList)
     for (int i = 0; i < numCpu; i++) {
         if (cpuList[i] < 0 || cpuList[i] >= MAX_CPU_NUM) {
             string errMsg = "Invalid cpu id: " + to_string(cpuList[i]);
+            New(LIBPERF_ERR_INVALID_CPULIST, errMsg);
+            return LIBPERF_ERR_INVALID_CPULIST;
+        }
+        if (!onLineCpus.count(cpuList[i])) {
+            string errMsg = "OffLine cpu id: " + to_string(cpuList[i]);
             New(LIBPERF_ERR_INVALID_CPULIST, errMsg);
             return LIBPERF_ERR_INVALID_CPULIST;
         }
@@ -746,10 +751,14 @@ static void PrepareCpuList(PmuAttr *attr, PmuTaskAttr *taskParam, PmuEvt* pmuEvt
         taskParam->cpuList[0] = -1;
     } else if (attr->cpuList == nullptr) {
         // For null cpulist, open fd with cpu 0,1,2...max_cpu
-        taskParam->numCpu = MAX_CPU_NUM;
-        taskParam->cpuList = new int[taskParam->numCpu];
-        for (int i = 0; i < taskParam->numCpu; i++) {
-            taskParam->cpuList[i] = i;
+        const set<int> &onLineCpus = GetOnLineCpuIds();
+        int cpuNum = onLineCpus.size();
+        taskParam->numCpu = cpuNum;
+        taskParam->cpuList = new int[cpuNum];
+        int i = 0;
+        for (const auto &cpuId : onLineCpus) {
+            taskParam->cpuList[i] = cpuId;
+            i++;
         }
     } else {
         taskParam->numCpu = attr->numCpu;
