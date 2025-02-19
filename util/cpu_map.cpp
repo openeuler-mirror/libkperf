@@ -27,7 +27,10 @@ using namespace std;
 
 static const std::string CPU_TOPOLOGY_PACKAGE_ID = "/sys/bus/cpu/devices/cpu%d/topology/physical_package_id";
 static const std::string MIDR_EL1 = "/sys/devices/system/cpu/cpu0/regs/identification/midr_el1";
+static const std::string CPU_ONLINE_PATH = "/sys/devices/system/cpu/online";
+
 static constexpr int PATH_LEN = 256;
+static constexpr int LINE_LEN = 1024;
 
 static CHIP_TYPE g_chipType = CHIP_TYPE::UNDEFINED_TYPE;
 static map<string, CHIP_TYPE> chipMap = {{"0x00000000481fd010", HIPA},
@@ -35,6 +38,8 @@ static map<string, CHIP_TYPE> chipMap = {{"0x00000000481fd010", HIPA},
                                          {"0x00000000480fd030", HIPC},
                                          {"0x00000000480fd220", HIPF},
                                          {"0x00000000480fd450", HIPE},};
+
+static std::set<int> onLineCpuIds;
 
 static inline bool ReadCpuPackageId(int coreId, CpuTopology* cpuTopo)
 {
@@ -98,4 +103,41 @@ CHIP_TYPE GetCpuType()
         return UNDEFINED_TYPE;
     }
     return g_chipType;
+}
+
+set<int> GetOnLineCpuIds()
+{
+    if (!onLineCpuIds.empty()) {
+        return onLineCpuIds;
+    }
+    ifstream onLineFile(CPU_ONLINE_PATH);
+    if (!onLineFile.is_open()) {
+        for (int i = 0; i < MAX_CPU_NUM; i++)
+        {
+            onLineCpuIds.emplace(i);
+        }
+        return onLineCpuIds;
+    }
+    char line[LINE_LEN];
+    onLineFile >> line;
+    onLineFile.close();
+    char *tokStr = strtok(line, ",");
+    while (tokStr != nullptr) {
+        if (strstr(tokStr, "-") != nullptr) {
+            int minCpu, maxCpu;
+            if (sscanf(tokStr, "%d-%d", &minCpu, &maxCpu) != 2) {
+                continue;
+            }
+            for (int i = minCpu; i <= maxCpu; i++) {
+                onLineCpuIds.emplace(i);
+            }
+        } else {
+            int aloneNumber;
+            if (sscanf(tokStr, "%d", &aloneNumber) == 1) {
+                onLineCpuIds.emplace(aloneNumber);
+            }
+        }
+        tokStr = strtok(nullptr, ",");
+    }
+    return onLineCpuIds;
 }

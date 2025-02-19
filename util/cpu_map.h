@@ -15,10 +15,10 @@
 #ifndef CPU_MAP_H
 #define CPU_MAP_H
 #include <numa.h>
+#include <set>
 #include "pmu.h"
-#ifdef __cplusplus
-extern "C" {
-#endif
+
+#define MAX_CPU_NUM sysconf(_SC_NPROCESSORS_CONF)
 
 enum CHIP_TYPE {
     UNDEFINED_TYPE = 0,
@@ -31,7 +31,5 @@ enum CHIP_TYPE {
 
 struct CpuTopology* GetCpuTopology(int coreId);
 CHIP_TYPE GetCpuType();
-#ifdef __cplusplus
-}
-#endif
-#endif
+std::set<int> GetOnLineCpuIds();
+#endif       
