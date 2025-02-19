@@ -97,6 +97,8 @@ private:
     std::vector<std::shared_ptr<EvtList>>& GetEvtList(const unsigned pd);
     void EraseEvtList(const unsigned pd);
     void EraseParentEventMap(const unsigned pd);
+    void EraseSymModeList(const unsigned pd);
+    void ErasePpidList(const unsigned pd);
 
     int EvtInit(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader, const int pd, const std::shared_ptr<EvtList> &evtList);
     int Init(const int pd);
