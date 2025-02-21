@@ -119,7 +119,9 @@ static uint8_t *GetPkt(struct SpePacket *pkt, uint8_t *buf)
     } else if ((header >> 3) == 0b10011) {
         pkt->type = SpePacketType::SPE_PACKET_COUNTER;
         buf += sizeof(uint8_t);
-        buf += sizeof(uint16_t);
+        pkt->payloadSize = 1 << ((header & 0b110000) >> 4);
+        SetPktPayload(pkt, buf);
+        buf += pkt->payloadSize;
     } else if ((header >> 10) == 0b001000) {
         header = *(uint16_t *)(buf);
         if ((header & 0b11111000) == 0b10110000) {
@@ -191,6 +193,14 @@ static void DecodeAddressPkt(struct SpePacket *pkt, struct SpeRecord *record)
     }
 }
 
+static void DecodeCounterPkt(struct SpePacket *pkt, struct SpeRecord *record)
+{
+    uint16_t index = (pkt->header & 0b111) | (((pkt->header >> 8) & 0b11) << 3);
+    if (index == 0) {
+        record->lat = pkt->payload;
+    }
+}       
+
 static void DecodeEventPkt(struct SpePacket *pkt, struct SpeRecord *record)
 {
     record->event = pkt->payload;
@@ -216,6 +226,7 @@ static void DecodePkt(struct SpePacket *pkt, struct SpeRecord *record)
             DecodeContextPkt(pkt, record);
             break;
         case SpePacketType::SPE_PACKET_COUNTER:
+            DecodeCounterPkt(pkt, record);
             break;
         case SpePacketType::SPE_PACKET_DATA_SOURCE:
             break;

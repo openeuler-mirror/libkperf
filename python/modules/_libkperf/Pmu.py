@@ -688,17 +688,20 @@ class CytpesSpeDataExt(ctypes.Structure):
     _fields_ = [
         ('pa',    ctypes.c_ulong),
         ('va',    ctypes.c_ulong),
-        ('event', ctypes.c_ulong)
+        ('event', ctypes.c_ulong),
+        ('lat',   ctypes.c_ushort),
     ]
     def __init__(self,
                  pa: int=0,
                  va: int=0,
                  event: int=0,
+                 lat: int=0,
                  *args: Any, **kw: Any) -> None:
         super().__init__(*args, **kw)
         self.pa = ctypes.c_ulong(pa)
         self.va = ctypes.c_ulong(va)
         self.event = ctypes.c_ulong(event)
+        self.lat = ctypes.c_ushort(lat)
 
 class PmuDataExtUnion(ctypes.Union):
     _fields_ = [
@@ -737,6 +740,10 @@ class PmuDataExt:
     @property
     def event(self) -> int:
         return self.c_pmu_data_ext.ext.speDataExt.event
+
+    @property
+    def lat(self) -> int:
+        return self.c_pmu_data_ext.ext.speDataExt.lat
 
     @property
     def branchRecords(self) -> BranchRecords:
