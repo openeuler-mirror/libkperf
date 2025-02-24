@@ -214,6 +214,7 @@ struct PmuDataExt {
             unsigned long pa;    // physical address
             unsigned long va;    // virtual address
             unsigned long event; // event id, which is a bit map of mixed events, event bit is defined in SPE_EVENTS.
+            unsigned short lat; // latency, Number of cycles between the time when an operation is dispatched and the time when the operation is executed.
         };
 
         struct {
