@@ -162,3 +162,22 @@ TEST_F(TestSPE, SpeProcCollectSubProc)
     ASSERT_TRUE(data != nullptr);
     ASSERT_TRUE(FoundAllChildren(data, len, appPid));
 }
+
+TEST_F(TestSPE, SpeProcCollect100000threadCase)
+{
+    appPid = RunTestApp("test_100000thread");
+    sleep(1);
+    pid_t pidList[1] = {appPid};
+    int cpuList[1] = {1};
+    auto attr = GetProcAttribute(pidList, 1);
+    attr.cpuList = cpuList;
+    attr.numCpu = 1;
+    pd = PmuOpen(SPE_SAMPLING, &attr);
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+    int len = PmuRead(pd, &data);
+    ASSERT_GT(len, 0);
+    PmuDataFree(data);
+    PmuClose(pd);
+}

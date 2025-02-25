@@ -44,11 +44,6 @@ namespace KUNPENG_PMU {
 
         int MapPerfAttr(const bool groupEnable, const int groupFd) override;
 
-        bool IsMainPid() const override
-        {
-            return true;
-        };
-
     private:
         int ReadInit();
         int Mmap();

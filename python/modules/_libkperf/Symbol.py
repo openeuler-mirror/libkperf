@@ -202,29 +202,15 @@ class CtypesStack(ctypes.Structure):
         __u64 count;
     } __attribute__((aligned(64)));
     """
+    pass
 
-    _fields_ = [
+
+CtypesStack._fields_ = [
         ('symbol', ctypes.POINTER(CtypesSymbol)),
-        ('next',   ctypes.POINTER('CtypesStack')),
-        ('prev',   ctypes.POINTER('CtypesStack')),
+        ('next',   ctypes.POINTER(CtypesStack)),
+        ('prev',   ctypes.POINTER(CtypesStack)),
         ('count',  ctypes.c_uint64)
     ]
-
-    def __init__(self,
-                 symbol: CtypesSymbol = None,
-                 next: 'CtypesStack' = None,
-                 prev: 'CtypesStack' = None,
-                 count: int = 0,
-                 *args: Any, **kw: Any) -> None:
-        super().__init__(*args, **kw)
-        """
-        ctypes中，一个ctypes对象赋值给一个ctypes.POINTER类型的字段时
-        ctypes会自动创建一个指向该对象的指针,不需要显式地调用ctypes.byref()或ctypes.pointer()来获取对象的引用
-        """
-        self.symbol = symbol
-        self.next = next
-        self.prev = prev
-        self.count = ctypes.c_uint64(count)
 
 
 class Stack:

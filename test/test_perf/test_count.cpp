@@ -365,3 +365,28 @@ TEST_F(TestCount, DeleteEvtAfterOpenPmuu) {
     }
     PmuClose(pd);
 }
+
+TEST_F(TestCount, Test100000ThreadInCountingMode) {
+    // Count a process with one event.
+    appPid = RunTestApp("test_100000thread");
+    sleep(1);
+    int pidList[1] = {appPid};
+    int cpuList[1] = {1};
+    char *evtList[1] = {"cycles"};
+    PmuAttr attr = {0};
+    attr.pidList = pidList;
+    attr.numPid = 1;
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+    attr.cpuList = cpuList;
+    attr.numCpu = 1;
+    pd = PmuOpen(COUNTING, &attr);
+    ASSERT_NE(pd, -1);
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+    int len = PmuRead(pd, &data);
+    ASSERT_GT(len, 0);
+    PmuDataFree(data);
+    PmuClose(pd);
+}
