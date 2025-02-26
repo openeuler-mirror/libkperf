@@ -183,3 +183,21 @@ TEST_F(TestPMU, NoDataAfterDisable)
     ASSERT_EQ(len, 0);
 }
 
+TEST_F(TestPMU, TestSampling100000ThreadCase)
+{
+    appPid = RunTestApp("test_100000thread");
+    sleep(1);
+    pid_t pidList[1] = {appPid};
+    int cpuList[1] = {1};
+    auto attr = GetProcAttribute(pidList, 1);
+    attr.cpuList = cpuList;
+    attr.numCpu = 1;
+    auto pd = PmuOpen(SAMPLING, &attr);
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+    int len = PmuRead(pd, &data);
+    ASSERT_GT(len, 0);
+    PmuDataFree(data);
+    PmuClose(pd);
+}

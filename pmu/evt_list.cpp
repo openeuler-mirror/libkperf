@@ -94,9 +94,9 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
                 err = perfEvt->Init(groupEnable, -1);
             }
             if (err != SUCCESS) {
+                hasHappenedErr = true;
                 // The SPE and SAMPLING modes are not changed.
                 if (!perfEvt->IsMainPid()) {
-                    hasHappenedErr = true;
                     continue;
                 }
                 if (err == LIBPERF_ERR_INVALID_EVENT) {
@@ -112,10 +112,10 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
             evtVec.emplace_back(perfEvt);
         }
         this->xyCounterArray.emplace_back(evtVec);
-        // if an exception occurs due to exited threads, clear the exited fds.
-        if (hasHappenedErr) {
-            this->ClearExitFd();
-        }
+    }
+    // if an exception occurs due to exited threads, clear the exited fds.
+    if (hasHappenedErr) {
+        this->ClearExitFd();
     }
     return SUCCESS;
 }
@@ -281,10 +281,6 @@ void KUNPENG_PMU::EvtList::ClearExitFd()
         return;
     }
 
-    if (this->pmuEvt->collectType != COUNTING) {
-        return;
-    }
-
     std::set<pid_t> exitPidVet;
     for (const auto& it: this->pidList) {
         std::string path = "/proc/" + std::to_string(it->tid);
@@ -298,8 +294,10 @@ void KUNPENG_PMU::EvtList::ClearExitFd()
         for (auto it = perfVet.begin(); it != perfVet.end();) {
             int pid = it->get()->GetPid();
             if (exitPidVet.find(pid) != exitPidVet.end()) {
+                int fd = it->get()->GetFd();
+                this->fdList.erase(fd);
+                close(fd);
                 it = perfVet.erase(it);
-                this->fdList.erase(it->get()->GetFd());
                 continue;
             }
             ++it;
