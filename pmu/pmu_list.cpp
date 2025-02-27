@@ -299,6 +299,8 @@ namespace KUNPENG_PMU {
             item->Close();
         }
         EraseEvtList(pd);
+        EraseSymModeList(pd);
+        ErasePpidList(pd);
         EraseDataList(pd);
         EraseDataEvtGroupList(pd);
         RemoveEpollFd(pd);
@@ -390,6 +392,17 @@ namespace KUNPENG_PMU {
     {
         lock_guard<mutex> lg(pmuListMtx);
         pmuList.erase(pd);
+    }
+
+    void PmuList::EraseSymModeList(const unsigned pd)
+    {
+        lock_guard<mutex> lg(dataListMtx);
+        symModeList.erase(pd);
+    }
+
+    void PmuList::ErasePpidList(const unsigned pd)
+    {
+        ppidList.erase(pd);
     }
 
     void PmuList::InsertDataEvtGroupList(const unsigned pd, groupMapPtr evtGroupList)
