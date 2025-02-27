@@ -74,7 +74,7 @@ static int CheckCpuList(unsigned numCpu, int* cpuList)
     }
     for (int i = 0; i < numCpu; i++) {
         if (cpuList[i] < 0 || cpuList[i] >= MAX_CPU_NUM) {
-            string errMsg = "Invalid cpu id: " + to_string(cpuList[i]);
+            string errMsg = "Invalid cpu id: " + to_string(cpuList[i]) + ", Please check cpu config parameter.";
             New(LIBPERF_ERR_INVALID_CPULIST, errMsg);
             return LIBPERF_ERR_INVALID_CPULIST;
         }
@@ -95,7 +95,7 @@ static int CheckPidList(unsigned numPid, int* pidList)
     }
     for (int i = 0; i < numPid; i++) {
         if (pidList[i] < 0) {
-            string errMsg = "Invalid pid: " + to_string(pidList[i]);
+            string errMsg = "Invalid pid: " + to_string(pidList[i]) + ", Please check pid config parameter.";
             New(LIBPERF_ERR_INVALID_PIDLIST, errMsg);
             return LIBPERF_ERR_INVALID_PIDLIST;
         }
