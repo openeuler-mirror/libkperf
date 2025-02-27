@@ -531,13 +531,14 @@ const char *funcs[numFunc] = {funs1,funs2};
 PmuTraceAttr traceAttr = {0};
 traceAttr.funcs = funcs;
 traceAttr.numFuncs = numFunc;
-pd = PmuTraceOpen(TRACE_SYS_CALL, &traceAttr);
+int pd = PmuTraceOpen(TRACE_SYS_CALL, &traceAttr);
 PmuTraceEnable(pd);
 sleep(1);
 PmuTraceDisable(pd);
+PmuTraceData *data = nullptr;
 int len = PmuTraceRead(pd, &data);
 for(int i = 0; i < len; ++i) {
-    print("funcName: %s, elspsedTime: %f ms pid: %d tid: %d cpu: %d comm: %s", data[i].funcs, data[i].elapsedTime, data[i].pid, data[i].tid, data[i].cpu, data[i].comm)
+    printf("funcName: %s, elspsedTime: %f ms pid: %d tid: %d cpu: %d comm: %s", data[i].funcs, data[i].elapsedTime, data[i].pid, data[i].tid, data[i].cpu, data[i].comm)
 }
 PmuTraceClose(pd);
 ```
