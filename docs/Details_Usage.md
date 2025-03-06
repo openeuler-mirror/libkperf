@@ -554,9 +554,8 @@ kperf.trace_enable(pd)
 time.sleep(1)
 kperf.trace_disable(pd)
 pmu_trace_data = kperf.trace_read(pd)
-    for data in pmu_trace_data.iter:
-        print(f"funcName: {data.funcs} elapsedTime: {data.elapsedTime} ms pid: {data.pid} tid: {data.tid} cpu: {data.cpu} comm: {data.comm}")
-    
+for data in pmu_trace_data.iter:
+    print(f"funcName: {data.funcs} elapsedTime: {data.elapsedTime} ms pid: {data.pid} tid: {data.tid} cpu: {data.cpu} comm: {data.comm}")
 kperf.trace_close(pd)
 ```
 执行上述代码，输出的结果类似如下：
