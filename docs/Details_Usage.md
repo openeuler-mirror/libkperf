@@ -549,7 +549,7 @@ import kperf
 import time
 funcList = ["read","write"]
 pmu_trace_attr = kperf.PmuTraceAttr(funcs=funcList)
-pd = kperf.trace_open(kperf.PmuTraceType.TRACE_SYS_CALL, pmu_trace_data)
+pd = kperf.trace_open(kperf.PmuTraceType.TRACE_SYS_CALL, pmu_trace_attr)
 kperf.trace_enable(pd)
 time.sleep(1)
 kperf.trace_disable(pd)
