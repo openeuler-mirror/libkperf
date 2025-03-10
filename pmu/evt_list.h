@@ -53,7 +53,7 @@ class EvtList {
 public:
     using ProcPtr = std::shared_ptr<ProcTopology>;
     using CpuPtr = std::shared_ptr<CpuTopology>;
-    EvtList(const SymbolMode& symbolMode, std::vector<CpuPtr>& cpuList, std::vector<ProcPtr>& pidList,
+    EvtList(const SymbolMode &symbolMode, std::vector<CpuPtr> &cpuList, std::vector<ProcPtr> &pidList,
             std::shared_ptr<PmuEvt> pmuEvt, const int group_id)
         : symMode(symbolMode), cpuList(cpuList), pidList(pidList), pmuEvt(pmuEvt), group_id(group_id)
     {
@@ -106,6 +106,7 @@ public:
 private:
     using PerfEvtPtr = std::shared_ptr<KUNPENG_PMU::PerfEvt>;
 
+    void PredictRemainMemoryIsEnough();
     int CollectorDoTask(PerfEvtPtr collector, int task);
     int CollectorXYArrayDoTask(std::vector<std::vector<PerfEvtPtr>>& xyArray, int task);
     void FillFields(const size_t& start, const size_t& end, CpuTopology* cpuTopo, ProcTopology* procTopo,
@@ -127,6 +128,7 @@ private:
     int prevStat;
     int evtStat;
     std::mutex mutex;
+    bool isMemoryEnough = true;
 };
 
 struct EventGroupInfo {

@@ -47,7 +47,7 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    int PerfSpe::Init(const bool groupEnable, const int groupFd)
+    int PerfSpe::Init(const bool groupEnable, const int groupFd, const int resetOutputFd)
     {
         auto findSpe = speSet.find(this->cpu);
         if (findSpe != speSet.end()) {

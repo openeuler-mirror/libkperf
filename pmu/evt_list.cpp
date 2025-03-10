@@ -45,8 +45,6 @@ int KUNPENG_PMU::EvtList::CollectorDoTask(PerfEvtPtr collector, int task)
             }
             return ret;
         }
-        case INIT:
-            return collector->Init(false, -1); // by default, the grouping initialization feature is not implemented.
         default:
             return UNKNOWN_ERROR;
     }
@@ -77,7 +75,9 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
         }
     }
     bool hasHappenedErr = false;
+    this->PredictRemainMemoryIsEnough();
     for (unsigned int row = 0; row < numCpu; row++) {
+        int resetOutPutFd = -1;
         std::vector<PerfEvtPtr> evtVec{};
         for (unsigned int col = 0; col < numPid; col++) {
             PerfEvtPtr perfEvt =
@@ -85,13 +85,16 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
             if (perfEvt == nullptr) {
                 continue;
             }
+            if (!isMemoryEnough && col > 0 && !evtVec.empty()) {
+                resetOutPutFd = evtVec[0]->GetFd();
+            }
             perfEvt->SetSymbolMode(symMode);
             perfEvt->SetBranchSampleFilter(branchSampleFilter);
             int err = 0;
             if (groupEnable) {
-                err = perfEvt->Init(groupEnable, evtLeader->xyCounterArray[row][col]->GetFd());
+                err = perfEvt->Init(groupEnable, evtLeader->xyCounterArray[row][col]->GetFd(), resetOutPutFd);
             } else {
-                err = perfEvt->Init(groupEnable, -1);
+                err = perfEvt->Init(groupEnable, -1, resetOutPutFd);
             }
             if (err != SUCCESS) {
                 hasHappenedErr = true;
@@ -251,9 +254,9 @@ void KUNPENG_PMU::EvtList::AddNewProcess(pid_t pid, const bool groupEnable, cons
         int err = 0;
         if (groupEnable) {
             int sz = this->pidList.size();
-            err = perfEvt->Init(groupEnable, evtLeader->xyCounterArray[row][sz - 1]->GetFd());
+            err = perfEvt->Init(groupEnable, evtLeader->xyCounterArray[row][sz - 1]->GetFd(), -1);
         } else {
-            err = perfEvt->Init(groupEnable, -1);
+            err = perfEvt->Init(groupEnable, -1, -1);
         }
         if (err != SUCCESS) {
             return;
@@ -314,5 +317,22 @@ void KUNPENG_PMU::EvtList::ClearExitFd()
         }
         procMap.erase(exitPid);
         numPid--;
+    }
+}
+
+void KUNPENG_PMU::EvtList::PredictRemainMemoryIsEnough()
+{
+    if (GetEvtType() == SAMPLING) {
+        uint64_t predictMmapNum = numCpu * numPid;
+        uint64_t reservedSpace = 2 * 1024 * 1024 * 1024;
+        // copiedEvent memory and mmap memory and reserved space memory, mmap memory 528384 is PAGE_SIZE * (pages + 1)
+        uint64_t needBytesNum = predictMmapNum * (PERF_SAMPLE_MAX_SIZE) + predictMmapNum * 528384 + reservedSpace;
+        char *callocMem = (char *)calloc(needBytesNum, sizeof(char));
+        if (callocMem != nullptr) {
+            isMemoryEnough = true;
+            free(callocMem);
+        } else {
+            isMemoryEnough = false;
+        }
     }
 }

@@ -36,7 +36,7 @@ namespace KUNPENG_PMU {
         ~PerfSpe()
         {}
 
-        int Init(const bool groupEnable, const int groupFd) override;
+        int Init(const bool groupEnable, const int groupFd, const int resetOutputFd) override;
         int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool) override;
         int MapPerfAttr(const bool groupEnable, const int groupFd) override;
         bool Mmap();

@@ -51,6 +51,8 @@ namespace pcerr {
             {LIBPERF_ERR_INVALID_GROUP_ALL_UNCORE, "event group not support all events is uncore event"},
             {LIBPERF_ERR_INVALID_BRANCH_SAMPLE_FILTER, "invalid value for branchSampleFilter, use the correct accumulated bits value of BranchSampleFilter"},
             {LIBPERF_ERR_BRANCH_JUST_SUPPORT_SAMPLING, "branch filter just support sampling mode"},
+            {LIBPERF_ERR_RESET_FD, "failed to reset fd output"},
+            {LIBPERF_ERR_SET_FD_RDONLY_NONBLOCK, "failed to set fd readonly and nonbolock"},
     };
     static std::unordered_map<int, std::string> warnMsgs = {
             {LIBPERF_WARN_CTXID_LOST, "Some SPE context packets are not found in the traces."},
