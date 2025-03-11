@@ -115,6 +115,18 @@ int KUNPENG_PMU::PerfSampler::Mmap()
     return SUCCESS;
 }
 
+int KUNPENG_PMU::PerfSampler::Close()
+{
+    if (this->sampleMmap && this->sampleMmap->base && this->sampleMmap->base != MAP_FAILED) {
+        munmap(this->sampleMmap->base, this->sampleMmap->mask + 1 + PAGE_SIZE);
+    }
+    this->sampleMmap->base = nullptr;
+    if (this->sampleMmap->fd > 0) {
+        close(this->sampleMmap->fd);
+    }
+    return SUCCESS;
+}
+
 int KUNPENG_PMU::PerfSampler::ReadInit()
 {
     if (!this->sampleMmap->base) {

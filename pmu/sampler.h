@@ -44,6 +44,8 @@ namespace KUNPENG_PMU {
 
         int MapPerfAttr(const bool groupEnable, const int groupFd) override;
 
+        int Close() override;
+
     private:
         int ReadInit();
         int Mmap();

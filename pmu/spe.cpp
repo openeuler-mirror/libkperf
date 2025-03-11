@@ -130,14 +130,6 @@ static uint64_t TscToPerfTime(uint64_t cyc, struct PerfTscConversion *tc)
 
 static void CoreSpeClose(struct SpeCoreContext *ctx, struct SpeContext *speCtx)
 {
-    if (ctx->speFd > 0) {
-        close(ctx->speFd);
-    }
-
-    if (ctx->dummyFd > 0) {
-        close(ctx->dummyFd);
-    }
-
     if (ctx->speMpage && ctx->speMpage != MAP_FAILED) {
         munmap(ctx->speMpage, speCtx->speMmapSize);
     }
@@ -148,6 +140,14 @@ static void CoreSpeClose(struct SpeCoreContext *ctx, struct SpeContext *speCtx)
 
     if (ctx->dummyMpage && ctx->dummyMpage != MAP_FAILED) {
         munmap(ctx->dummyMpage, speCtx->dummyMmapSize);
+    }
+
+    if (ctx->speFd > 0) {
+        close(ctx->speFd);
+    }
+
+    if (ctx->dummyFd > 0) {
+        close(ctx->dummyFd);
     }
 
     memset(ctx, 0, sizeof(*ctx));
