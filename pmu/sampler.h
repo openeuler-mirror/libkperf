@@ -39,15 +39,16 @@ namespace KUNPENG_PMU {
         ~PerfSampler()
         {}
 
-        int Init(const bool groupEnable, const int groupFd) override;
-        int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool) override;
+        int Init(const bool groupEnable, const int groupFd, const int resetOutputFd) override;
+        int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt *> &extPool) override;
 
         int MapPerfAttr(const bool groupEnable, const int groupFd) override;
 
         int Close() override;
 
     private:
-        int ReadInit();
+        int MmapNormal();
+        int MmapResetOutput(const int resetOutputFd);
         int Mmap();
         union PerfEvent *SampleReadEvent();
         void RawSampleProcess(struct PmuData *sampleHead, PerfSampleIps *ips, union KUNPENG_PMU::PerfEvent *event, std::vector<PmuDataExt*> &extPool);
@@ -58,7 +59,7 @@ namespace KUNPENG_PMU {
         void ParseBranchSampleData(struct PmuData *pmuData, PerfRawSample *sample, union PerfEvent *event, std::vector<PmuDataExt*> &extPool);
 
         static int pages;
-        std::shared_ptr<PerfMmap> sampleMmap = std::make_shared<PerfMmap>();
+        std::shared_ptr<PerfMmap> sampleMmap = nullptr;
     };
 }  // namespace KUNPENG_PMU
 #endif

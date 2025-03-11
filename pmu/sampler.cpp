@@ -120,19 +120,10 @@ int KUNPENG_PMU::PerfSampler::Close()
     if (this->sampleMmap && this->sampleMmap->base && this->sampleMmap->base != MAP_FAILED) {
         munmap(this->sampleMmap->base, this->sampleMmap->mask + 1 + PAGE_SIZE);
     }
-    this->sampleMmap->base = nullptr;
-    if (this->sampleMmap->fd > 0) {
-        close(this->sampleMmap->fd);
+    if (this->fd > 0) {
+        close(this->fd);
     }
     return SUCCESS;
-}
-
-int KUNPENG_PMU::PerfSampler::ReadInit()
-{
-    if (!this->sampleMmap->base) {
-        return UNKNOWN_ERROR;
-    }
-    return RingbufferReadInit(*this->sampleMmap.get());
 }
 
 void KUNPENG_PMU::PerfSampler::UpdatePidInfo(const pid_t &pid, const int &tid)
@@ -304,7 +295,11 @@ void KUNPENG_PMU::PerfSampler::FillComm(const size_t &start, const size_t &end, 
 
 int KUNPENG_PMU::PerfSampler::Read(vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool)
 {
-    auto err = this->ReadInit();
+    // This may be a lack of space.
+    if(!this->sampleMmap || !this->sampleMmap->base) {
+        return SUCCESS;
+    }
+    auto err =  RingbufferReadInit(*this->sampleMmap.get());
     if (__glibc_unlikely(err != SUCCESS)) {
         return err;
     }
@@ -313,20 +308,39 @@ int KUNPENG_PMU::PerfSampler::Read(vector<PmuData> &data, std::vector<PerfSample
     if (this->pid == -1) {
         FillComm(cnt, data.size(), data);
     }
-
+                                                                
     return SUCCESS;
 }
 
-int KUNPENG_PMU::PerfSampler::Init(const bool groupEnable, const int groupFd)
-{
-    auto err = this->MapPerfAttr(groupEnable, groupFd);
-    if (err != SUCCESS) {
-        return err;
-    }
-    err = this->Mmap();
+int KUNPENG_PMU::PerfSampler::MmapNormal() {
+    this->sampleMmap = std::make_shared<PerfMmap>();
+    int err = this->Mmap();
     if (__glibc_unlikely(err != SUCCESS)) {
         close(this->fd);
         return LIBPERF_ERR_FAIL_MMAP;
     }
     return SUCCESS;
+}
+
+int KUNPENG_PMU::PerfSampler::MmapResetOutput(const int resetOutputFd)
+{
+    if (ioctl(fd, PERF_EVENT_IOC_SET_OUTPUT, resetOutputFd) != 0) {
+        return LIBPERF_ERR_RESET_FD;
+    }
+    if (fcntl(fd, F_SETFL, O_RDONLY | O_NONBLOCK) != 0) {
+        return LIBPERF_ERR_SET_FD_RDONLY_NONBLOCK;
+    }
+    return SUCCESS;
+}
+
+int KUNPENG_PMU::PerfSampler::Init(const bool groupEnable, const int groupFd, const int resetOutputFd)
+{
+    auto err = this->MapPerfAttr(groupEnable, groupFd);
+    if (err != SUCCESS) {
+        return err;
+    }
+    if (resetOutputFd > 0) {
+         return MmapResetOutput(resetOutputFd);
+    }
+    return MmapNormal();
 }

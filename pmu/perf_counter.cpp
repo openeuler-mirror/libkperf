@@ -87,7 +87,7 @@ int KUNPENG_PMU::PerfCounter::Read(vector<PmuData> &data, std::vector<PerfSample
 /**
  * Initialize counting
  */
-int KUNPENG_PMU::PerfCounter::Init(const bool groupEnable, const int groupFd)
+int KUNPENG_PMU::PerfCounter::Init(const bool groupEnable, const int groupFd, const int resetOutputFd)
 {
     return this->MapPerfAttr(groupEnable, groupFd);
 }

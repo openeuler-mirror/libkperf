@@ -30,7 +30,7 @@ public:
     using ProcPtr = std::shared_ptr<ProcTopology>;
     using ProcMap = std::unordered_map<pid_t, ProcPtr>;
 
-    PerfEvt(int cpu, int pid, struct PmuEvt* evt, ProcMap& procMap) : cpu(cpu), pid(pid), evt(evt), procMap(procMap) {}
+    PerfEvt(int cpu, int pid, struct PmuEvt *evt, ProcMap &procMap) : cpu(cpu), pid(pid), evt(evt), procMap(procMap) {}
     ~PerfEvt() {}
     virtual int Start();
     virtual int Pause();
@@ -41,7 +41,7 @@ public:
     virtual int BeginRead();
     virtual int EndRead();
 
-    virtual int Init(const bool groupEnable, const int groupFd) = 0;
+    virtual int Init(const bool groupEnable, const int groupFd, const int resetOutputFd) = 0;
 
     virtual int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool) = 0;
 
