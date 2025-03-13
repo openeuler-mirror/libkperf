@@ -66,7 +66,7 @@ int KUNPENG_PMU::EvtList::CollectorXYArrayDoTask(std::vector<std::vector<PerfEvt
     return SUCCESS;
 }
 
-int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader)
+int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader, bool isMemoryEnough)
 {
     // Init process map.
     for (auto& proc: pidList) {
@@ -75,7 +75,6 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
         }
     }
     bool hasHappenedErr = false;
-    this->PredictRemainMemoryIsEnough();
     for (unsigned int row = 0; row < numCpu; row++) {
         int resetOutPutFd = -1;
         std::vector<PerfEvtPtr> evtVec{};
@@ -317,22 +316,5 @@ void KUNPENG_PMU::EvtList::ClearExitFd()
         }
         procMap.erase(exitPid);
         numPid--;
-    }
-}
-
-void KUNPENG_PMU::EvtList::PredictRemainMemoryIsEnough()
-{
-    if (GetEvtType() == SAMPLING) {
-        uint64_t predictMmapNum = numCpu * numPid;
-        uint64_t reservedSpace = 2 * 1024 * 1024 * 1024;
-        // copiedEvent memory and mmap memory and reserved space memory, mmap memory 528384 is PAGE_SIZE * (pages + 1)
-        uint64_t needBytesNum = predictMmapNum * (PERF_SAMPLE_MAX_SIZE) + predictMmapNum * 528384 + reservedSpace;
-        char *callocMem = (char *)calloc(needBytesNum, sizeof(char));
-        if (callocMem != nullptr) {
-            isMemoryEnough = true;
-            free(callocMem);
-        } else {
-            isMemoryEnough = false;
-        }
     }
 }

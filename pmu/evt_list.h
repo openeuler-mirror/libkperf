@@ -62,7 +62,7 @@ public:
         this->prevStat = OPEN;
         this->evtStat = OPEN;
     }
-    int Init(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader);
+    int Init(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader, bool isMemoryEnough);
     int Pause();
     int Close();
     int Start();
@@ -105,8 +105,7 @@ public:
     void ClearExitFd();
 private:
     using PerfEvtPtr = std::shared_ptr<KUNPENG_PMU::PerfEvt>;
-
-    void PredictRemainMemoryIsEnough();
+    
     int CollectorDoTask(PerfEvtPtr collector, int task);
     int CollectorXYArrayDoTask(std::vector<std::vector<PerfEvtPtr>>& xyArray, int task);
     void FillFields(const size_t& start, const size_t& end, CpuTopology* cpuTopo, ProcTopology* procTopo,
@@ -128,7 +127,6 @@ private:
     int prevStat;
     int evtStat;
     std::mutex mutex;
-    bool isMemoryEnough = true;
 };
 
 struct EventGroupInfo {
