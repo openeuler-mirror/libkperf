@@ -39,7 +39,7 @@ namespace KUNPENG_PMU {
     std::mutex PmuList::dataParentMtx;
 
     static uint64_t PredictRequiredMemory(int collectType, uint64_t cpuNum, uint64_t pidNum) {
-        if (collectType == SAMPLING) {
+        if (collectType == SAMPLING || collectType == BLOCK_SAMPLING) {
             uint64_t predictMmapNum = cpuNum * pidNum;
             uint64_t reservedSpace  = 2 * 1024 * 1024;
             uint64_t mmapSpaceSize  = sizeof(struct PerfMmap) * predictMmapNum;
@@ -281,6 +281,75 @@ namespace KUNPENG_PMU {
         return userData;
     }
 
+    void HandleBlockData(std::vector<PmuData>& pmuData, std::vector<PmuSwitchData>& switchData)
+    {
+        std::sort(switchData.begin(), switchData.end(), [](const PmuSwitchData& a, const PmuSwitchData& b) {
+            if (a.tid == b.tid) {
+                return a.ts < b.ts;
+            }
+            return a.tid < b.tid;
+        });
+        std::unordered_map<int, std::vector<int64_t>> tidToOffTimeStamps;
+        int64_t outTime = 0;
+        int prevTid = -1;
+        for (const auto& item: switchData) {
+            if (item.swOut) {
+                outTime = item.ts;
+                prevTid = item.tid;
+            } else {
+                // if the first event is sched_in, we need to ignore it.
+                if (prevTid == -1) {
+                    continue;
+                }
+                if (prevTid == item.tid && outTime > 0) {
+                    tidToOffTimeStamps[item.tid].emplace_back(item.ts - outTime);
+                    outTime = 0;
+                }
+            }
+        }
+
+        std::sort(pmuData.begin(), pmuData.end(), [](const PmuData& a, const PmuData& b) {
+            if (a.tid == b.tid) {
+                return a.ts < b.ts;
+            }
+            return a.tid < b.tid;
+        });
+        int csCnt = 0;
+        int64_t prevTs = 0;
+        int64_t currentTs = 0;
+        int64_t curPeriod = 0;
+        int currentTid = -1;
+        for (auto& item: pmuData) {
+            if (currentTid != item.tid) {
+                currentTid = item.tid;
+                csCnt = 0;
+                prevTs = 0;
+                currentTs = 0;
+                curPeriod = 0;
+            }
+            if (strcmp(item.evt, "context-switches") == 0) {
+                // Before the context-switches event, there is only one cycles event, which we need to ignore. 
+                if (currentTs == 0) {
+                    continue;
+                }
+                // only the on cpu event is cycles or cpu-clock, this compute is right.
+                if (csCnt < tidToOffTimeStamps[item.tid].size()) {
+                    item.period = tidToOffTimeStamps[item.tid][csCnt] * curPeriod / (currentTs - prevTs);
+                    csCnt++;
+                }
+            } else {
+                // on cpu event data update.
+                if (prevTs == 0) {
+                    prevTs = item.ts;
+                } else {
+                    prevTs = currentTs;
+                    currentTs = item.ts;
+                    curPeriod = item.period;
+                }
+            }
+        }
+    }
+    
     int PmuList::ReadDataToBuffer(const int pd)
     {
         // Read data from prev sampling,
@@ -292,10 +361,13 @@ namespace KUNPENG_PMU {
         auto eventList = GetEvtList(pd);
         for (auto item: eventList) {
             item->SetTimeStamp(ts);
-            auto err = item->Read(evtData.data, evtData.sampleIps, evtData.extPool);
+            auto err = item->Read(evtData.data, evtData.sampleIps, evtData.extPool, evtData.switchData);
             if (err != SUCCESS) {
                 return err;
             }
+        }
+        if (GetTaskType(pd) == BLOCK_SAMPLING) {
+            HandleBlockData(evtData.data, evtData.switchData);
         }
 
         return SUCCESS;
@@ -637,7 +709,7 @@ namespace KUNPENG_PMU {
         if (findData == userDataList.end()) {
             return;
         }
-        if (findData->second.collectType == SAMPLING) {
+        if (findData->second.collectType == SAMPLING || findData->second.collectType == BLOCK_SAMPLING) {
             for (auto &extMem : findData->second.extPool) {
                 if (extMem->branchRecords) {
                     delete[] extMem->branchRecords;

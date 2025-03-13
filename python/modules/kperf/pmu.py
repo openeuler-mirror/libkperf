@@ -23,7 +23,8 @@ class PmuTaskType:
     COUNTING = 0        # pmu counting task
     SAMPLING = 1        # pmu sampling task
     SPE_SAMPLING = 2    # spe sampling task
-    MAX_TASK_TYPE = 3
+    BLOCK_SAMPLING = 3  # block sampling task
+    MAX_TASK_TYPE = 4
 
 
 class PmuEventType:

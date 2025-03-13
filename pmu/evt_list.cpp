@@ -169,7 +169,7 @@ void KUNPENG_PMU::EvtList::FillFields(
 }
 
 int KUNPENG_PMU::EvtList::Read(vector<PmuData>& data, std::vector<PerfSampleIps>& sampleIps,
-                               std::vector<PmuDataExt*>& extPool)
+                               std::vector<PmuDataExt*>& extPool, std::vector<PmuSwitchData>& switchData)
 {
     for (unsigned int row = 0; row < numCpu; row++) {
         for (unsigned int col = 0; col < numPid; col++) {
@@ -185,7 +185,7 @@ int KUNPENG_PMU::EvtList::Read(vector<PmuData>& data, std::vector<PerfSampleIps>
         auto cpuTopo = this->cpuList[row].get();
         for (unsigned int col = 0; col < numPid; col++) {
             auto cnt = data.size();
-            int err = this->xyCounterArray[row][col]->Read(data, sampleIps, extPool);
+            int err = this->xyCounterArray[row][col]->Read(data, sampleIps, extPool, switchData);
             if (err != SUCCESS) {
                 return err;
             }
@@ -222,6 +222,7 @@ std::shared_ptr<KUNPENG_PMU::PerfEvt> KUNPENG_PMU::EvtList::MapPmuAttr(int cpu, 
         case (COUNTING):
             return std::make_shared<KUNPENG_PMU::PerfCounter>(cpu, pid, pmuEvent, procMap);
         case (SAMPLING):
+        case (BLOCK_SAMPLING):
             return std::make_shared<KUNPENG_PMU::PerfSampler>(cpu, pid, pmuEvent, procMap);
         case (SPE_SAMPLING):
             return std::make_shared<KUNPENG_PMU::PerfSpe>(cpu, pid, pmuEvent, procMap);

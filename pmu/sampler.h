@@ -43,7 +43,8 @@ namespace KUNPENG_PMU {
         {}
 
         int Init(const bool groupEnable, const int groupFd, const int resetOutputFd) override;
-        int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt *> &extPool) override;
+        int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps,
+            std::vector<PmuDataExt *> &extPool, std::vector<PmuSwitchData> &switchData) override;
 
         int MapPerfAttr(const bool groupEnable, const int groupFd) override;
 
@@ -55,10 +56,12 @@ namespace KUNPENG_PMU {
         int Mmap();
         union PerfEvent *SampleReadEvent();
         void RawSampleProcess(struct PmuData *sampleHead, PerfSampleIps *ips, union KUNPENG_PMU::PerfEvent *event, std::vector<PmuDataExt*> &extPool);
-        void ReadRingBuffer(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool);
+        void ReadRingBuffer(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps,
+            std::vector<PmuDataExt*> &extPool, std::vector<PmuSwitchData> &switchData);
         void FillComm(const size_t &start, const size_t &end, std::vector<PmuData> &data);
         void UpdatePidInfo(const pid_t &pid, const int &tid);
         void UpdateCommInfo(KUNPENG_PMU::PerfEvent *event);
+        void ParseSwitch(KUNPENG_PMU::PerfEvent *event, struct PmuSwitchData *switchCurData);
         void ParseBranchSampleData(struct PmuData *pmuData, PerfRawSample *sample, union PerfEvent *event, std::vector<PmuDataExt*> &extPool);
 
         std::shared_ptr<PerfMmap> sampleMmap = nullptr;

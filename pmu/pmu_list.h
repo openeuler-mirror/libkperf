@@ -91,6 +91,7 @@ private:
         std::vector<PmuData> data;
         std::vector<PerfSampleIps> sampleIps;
         std::vector<PmuDataExt*> extPool;
+        std::vector<PmuSwitchData> switchData;
     };
 
     void InsertEvtList(const unsigned pd, std::shared_ptr<EvtList> evtList);

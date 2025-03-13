@@ -37,7 +37,8 @@ namespace KUNPENG_PMU {
         {}
 
         int Init(const bool groupEnable, const int groupFd, const int resetOutputFd) override;
-        int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool) override;
+        int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps,
+            std::vector<PmuDataExt*> &extPool, std::vector<PmuSwitchData> &switchData) override;
         int MapPerfAttr(const bool groupEnable, const int groupFd) override;
         bool Mmap();
 
@@ -49,7 +50,6 @@ namespace KUNPENG_PMU {
         int EndRead() override;
         
     private:
-        bool SpeExist(int cpu) const;
         void InsertSpeRecords(const int &tid, const std::vector<SpeRecord *> &speRecords, std::vector<PmuData> &data,
                               std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool);
         void UpdatePidList(const Spe &spe);

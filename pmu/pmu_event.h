@@ -93,6 +93,18 @@ struct sampleId {
     __u64 identifier;   /* if PERF_SAMPLE_IDENTIFIER set */
 };
 
+struct ContextSwitchEvent {
+    struct perf_event_header header;
+    struct sampleId sampleId;
+};
+
+struct PmuSwitchData {
+    __u32 pid, tid;         // process id and thread id
+    __u64 ts;               // time stamp. unit: ns
+    __u32 cpu;              // cpu id
+    unsigned swOut : 1;     // 1: switch out, 0: switch in, 0 is the default value
+};
+
 struct PerfRawMmap {
     __u32 pid, tid;
     __u64 addr;
@@ -174,6 +186,7 @@ union PerfEvent {
     struct PerfRecordSample sample;
     struct PerfRecordExit exit;
     struct PerfRecordMmap2 mmap2;
+    struct ContextSwitchEvent context_switch;
 };
 
 int MapErrno(int sysErr);
