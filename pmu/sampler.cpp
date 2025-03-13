@@ -36,16 +36,6 @@
 
 using namespace std;
 
-static constexpr int PAGE_SIZE = 4096;
-static constexpr int MAX_ATTR_SIZE = 120;
-int KUNPENG_PMU::PerfSampler::pages = 128;
-
-template <typename T>
-static inline bool IsPowerOfTwo(T x)
-{
-    return (x) != 0 && (((x) & ((x) - 1)) == 0);
-}
-
 int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupEnable, const int groupFd)
 {
     struct perf_event_attr attr;
@@ -96,8 +86,8 @@ union KUNPENG_PMU::PerfEvent *KUNPENG_PMU::PerfSampler::SampleReadEvent()
 
 int KUNPENG_PMU::PerfSampler::Mmap()
 {
-    int mmapLen = (this->pages + 1) * PAGE_SIZE;
-    auto mask = mmapLen - PAGE_SIZE - 1;
+    int mmapLen = (SAMPLE_PAGES + 1) * SAMPLE_PAGE_SIZE;
+    auto mask = mmapLen - SAMPLE_PAGE_SIZE - 1;
     if (mask < 0) {
         return UNKNOWN_ERROR;
     }
@@ -105,7 +95,7 @@ int KUNPENG_PMU::PerfSampler::Mmap()
     this->sampleMmap->prev = 0;
     this->sampleMmap->mask = static_cast<__u64>(mask);
     void *currentMap =
-            mmap(NULL, this->sampleMmap->mask + 1 + PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+            mmap(NULL, this->sampleMmap->mask + 1 + SAMPLE_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (__glibc_unlikely(currentMap == MAP_FAILED)) {
         this->sampleMmap->base = nullptr;
         return UNKNOWN_ERROR;
@@ -118,7 +108,7 @@ int KUNPENG_PMU::PerfSampler::Mmap()
 int KUNPENG_PMU::PerfSampler::Close()
 {
     if (this->sampleMmap && this->sampleMmap->base && this->sampleMmap->base != MAP_FAILED) {
-        munmap(this->sampleMmap->base, this->sampleMmap->mask + 1 + PAGE_SIZE);
+        munmap(this->sampleMmap->base, this->sampleMmap->mask + 1 + SAMPLE_PAGE_SIZE);
     }
     if (this->fd > 0) {
         close(this->fd);

@@ -33,6 +33,9 @@ namespace KUNPENG_PMU {
         __u64 mask;
     };
 
+    static constexpr int SAMPLE_PAGE_SIZE = 4096;
+    static constexpr int SAMPLE_PAGES = 128;
+
     class PerfSampler : public PerfEvt {
     public:
         using PerfEvt::PerfEvt;
@@ -58,7 +61,6 @@ namespace KUNPENG_PMU {
         void UpdateCommInfo(KUNPENG_PMU::PerfEvent *event);
         void ParseBranchSampleData(struct PmuData *pmuData, PerfRawSample *sample, union PerfEvent *event, std::vector<PmuDataExt*> &extPool);
 
-        static int pages;
         std::shared_ptr<PerfMmap> sampleMmap = nullptr;
     };
 }  // namespace KUNPENG_PMU
