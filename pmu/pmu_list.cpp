@@ -39,7 +39,7 @@ namespace KUNPENG_PMU {
     std::mutex PmuList::dataParentMtx;
 
     static uint64_t PredictRequiredMemory(int collectType, uint64_t cpuNum, uint64_t pidNum) {
-        if (collectType == SAMPLING || collectType == BLOCK_SAMPLING) {
+        if (collectType == SAMPLING) {
             uint64_t predictMmapNum = cpuNum * pidNum;
             uint64_t reservedSpace  = 2 * 1024 * 1024;
             uint64_t mmapSpaceSize  = sizeof(struct PerfMmap) * predictMmapNum;
@@ -296,13 +296,16 @@ namespace KUNPENG_PMU {
             if (item.swOut) {
                 outTime = item.ts;
                 prevTid = item.tid;
+                DBG_PRINT("Switch out: tid=%d, ts=%ld\n", item.tid, item.ts);
             } else {
                 // if the first event is sched_in, we need to ignore it.
                 if (prevTid == -1) {
+                    DBG_PRINT("Ignoring first sched_in event: tid=%d, ts=%ld\n", item.tid, item.ts);
                     continue;
                 }
                 if (prevTid == item.tid && outTime > 0) {
                     tidToOffTimeStamps[item.tid].emplace_back(item.ts - outTime);
+                    DBG_PRINT("Switch in: tid=%d, ts=%ld, offTime=%ld\n", item.tid, item.ts, item.ts - outTime);
                     outTime = 0;
                 }
             }
@@ -326,15 +329,18 @@ namespace KUNPENG_PMU {
                 prevTs = 0;
                 currentTs = 0;
                 curPeriod = 0;
+                DBG_PRINT("New tid encountered: tid=%d\n", currentTid);
             }
             if (strcmp(item.evt, "context-switches") == 0) {
                 // Before the context-switches event, there is only one cycles event, which we need to ignore. 
                 if (currentTs == 0) {
+                    DBG_PRINT("Ignoring first cycles event for tid=%d\n", item.tid);
                     continue;
                 }
                 // only the on cpu event is cycles or cpu-clock, this compute is right.
                 if (csCnt < tidToOffTimeStamps[item.tid].size()) {
                     item.period = tidToOffTimeStamps[item.tid][csCnt] * curPeriod / (currentTs - prevTs);
+                    DBG_PRINT("Context switch: tid=%d, period=%ld\n", item.tid, item.period);
                     csCnt++;
                 }
             } else {
@@ -365,9 +371,6 @@ namespace KUNPENG_PMU {
             if (err != SUCCESS) {
                 return err;
             }
-        }
-        if (GetTaskType(pd) == BLOCK_SAMPLING) {
-            HandleBlockData(evtData.data, evtData.switchData);
         }
 
         return SUCCESS;
@@ -506,6 +509,19 @@ namespace KUNPENG_PMU {
             return -1;
         }
         return findEvtList->second[0]->GetEvtType();
+    }
+
+    int PmuList::GetBlockedSampleState(const int pd) const
+    {
+        lock_guard<mutex> lg(pmuListMtx);
+        auto findEvtList = pmuList.find(pd);
+        if (findEvtList == pmuList.end()) {
+            return -1;
+        }
+        if (findEvtList->second.empty()) {
+            return -1;
+        }
+        return findEvtList->second[0]->GetBlockedSample();
     }
 
     void PmuList::InsertEvtList(const unsigned pd, std::shared_ptr<EvtList> evtList)
@@ -695,9 +711,12 @@ namespace KUNPENG_PMU {
             dataList.erase(pd);
             return inserted.first->second.data;
         } else {
+            FillStackInfo(evData);
+            if (GetBlockedSampleState(pd) == 1) {
+                HandleBlockData(evData.data, evData.switchData);
+            }
             auto inserted = userDataList.emplace(pData, move(evData));
             dataList.erase(pd);
-            FillStackInfo(inserted.first->second);
             return inserted.first->second.data;
         }
     }
@@ -709,7 +728,7 @@ namespace KUNPENG_PMU {
         if (findData == userDataList.end()) {
             return;
         }
-        if (findData->second.collectType == SAMPLING || findData->second.collectType == BLOCK_SAMPLING) {
+        if (findData->second.collectType == SAMPLING) {
             for (auto &extMem : findData->second.extPool) {
                 if (extMem->branchRecords) {
                     delete[] extMem->branchRecords;

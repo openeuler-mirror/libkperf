@@ -222,7 +222,6 @@ std::shared_ptr<KUNPENG_PMU::PerfEvt> KUNPENG_PMU::EvtList::MapPmuAttr(int cpu, 
         case (COUNTING):
             return std::make_shared<KUNPENG_PMU::PerfCounter>(cpu, pid, pmuEvent, procMap);
         case (SAMPLING):
-        case (BLOCK_SAMPLING):
             return std::make_shared<KUNPENG_PMU::PerfSampler>(cpu, pid, pmuEvent, procMap);
         case (SPE_SAMPLING):
             return std::make_shared<KUNPENG_PMU::PerfSpe>(cpu, pid, pmuEvent, procMap);

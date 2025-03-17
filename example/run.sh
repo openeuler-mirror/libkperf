@@ -2,9 +2,9 @@
 # open the script debug
 set -x
 # compile case files
-g++ -o ./case/sleep_off_cpu ./case/sleep_off_cpu.cpp -lrt
-g++ -o ./case/read_off_cpu ./case/read_off_cpu.cpp -lrt
-g++ -o ./case/on_cpu_hotspot ./case/on_cpu_hotspot.cpp
+g++ -g -o ./case/sleep_off_cpu ./case/sleep_off_cpu.cpp -lrt
+g++ -g -o ./case/read_off_cpu ./case/read_off_cpu.cpp -lrt
+g++ -g -o ./case/on_cpu_hotspot ./case/on_cpu_hotspot.cpp
 
 # compile sample files
 g++ -o pmu_hotspot pmu_hotspot.cpp -I ../output/include -L ../output/lib -lkperf -lsym

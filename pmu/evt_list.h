@@ -102,9 +102,9 @@ public:
         return group_id;
     }
 
-    std::string GetEvtName() const
+    int GetBlockedSample() const
     {
-        return pmuEvt->name;
+        return pmuEvt->blockedSample;
     }
 
     void AddNewProcess(pid_t pid, const bool groupEnable, const std::shared_ptr<EvtList> evtLeader);

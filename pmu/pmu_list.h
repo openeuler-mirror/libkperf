@@ -66,6 +66,7 @@ public:
     bool IsPdAlive(const int pd) const;
     void FreeData(PmuData* pmuData);
     int GetTaskType(const int pd) const;
+    int GetBlockedSampleState(const int pd) const;
     void SetSymbolMode(const int pd, const SymbolMode &mode);
     void SetBranchSampleFilter(const int pd, const unsigned long& branchSampleFilter);
 

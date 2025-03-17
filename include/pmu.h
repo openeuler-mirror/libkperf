@@ -25,7 +25,6 @@ enum PmuTaskType {
     COUNTING = 0, // pmu counting task
     SAMPLING = 1, // pmu sampling task
     SPE_SAMPLING = 2, // spe sampling task
-    BLOCK_SAMPLING = 3, // block sampling task
     MAX_TASK_TYPE
 };
 
@@ -150,6 +149,9 @@ struct PmuAttr {
     enum SymbolMode symbolMode;
     // This indicates whether to collect whole callchains or only top frame.
     unsigned callStack : 1;
+    // This indicates whether the blocked sample mode is enabled.
+    // In this mode, both on CPU and off CPU data is collected.
+    unsigned blockedSample : 1;
 
     // SPE related fields.
 

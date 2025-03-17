@@ -55,7 +55,7 @@ std::string ProcessSymbol(const Symbol* symbol)
     return res;
 }
 
-bool CmparePmuData(const PmuData &a, const PmuData &b)
+bool ComparePmuData(const PmuData &a, const PmuData &b)
 {
     if (strcmp(a.evt, b.evt) != 0) {
         return false;
@@ -93,7 +93,7 @@ int GetPmuDataHotspot(PmuData* pmuData, int pmuDataLen, std::vector<PmuData>& tm
         g_totalPeriod += data.period;
         bool isExist = false;
         for (auto &tmp : tmpData) {
-            if (CmparePmuData(data, tmp)) {
+            if (ComparePmuData(data, tmp)) {
                 isExist = true;
                 tmp.period += data.period;
                 break;
@@ -171,13 +171,14 @@ void PrintHotSpotGraph(std::vector<PmuData>& hotSpotData)
     std::cout << std::string(140, '_') << std::endl;
 }
 
-void BlockSample(int pid)
+void BlockedSample(int pid)
 {
     char* evtList[1];
-    evtList[0] = (char*)"cycles";
+    // evtList[0] = (char*)"cycles";
     struct PmuAttr attr = {0};
-    attr.evtList = evtList;
-    attr.numEvt = 1;
+    attr.evtList = nullptr;
+    attr.numEvt = 0;
+    attr.blockedSample = 1;
     attr.pidList = &pid;
     attr.numPid = 1;
     attr.cpuList = nullptr;
@@ -187,9 +188,10 @@ void BlockSample(int pid)
     attr.callStack = 1;
     attr.symbolMode = RESOLVE_ELF_DWARF;
 
-    int pd = PmuOpen(BLOCK_SAMPLING, &attr);
+    int pd = PmuOpen(SAMPLING, &attr);
     if (pd == -1) {
         std::cerr << "PmuOpen failed" << std::endl;
+        std::cerr << "error msg:" << Perror() << std::endl;
         return;
     }
 
@@ -200,7 +202,7 @@ void BlockSample(int pid)
     PmuData* pmuData = nullptr;
     int len = PmuRead(pd, &pmuData);
     if (len == -1) {
-        std::cerr << "error msg:%s\n" << Perror() << std::endl;
+        std::cerr << "error msg:" << Perror() << std::endl;
         return;
     }
 
@@ -244,7 +246,7 @@ int main(int argc, char** argv)
     if (argc > 1) {
         StartProc(argv[1], pid);
     }
-    BlockSample(pid);
+    BlockedSample(pid);
     EndProc(pid);
     
     return 0;

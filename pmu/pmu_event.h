@@ -42,6 +42,7 @@ struct PmuEvt {
     unsigned excludeUser : 1;     // don't count user
     unsigned excludeKernel : 1;   //  don't count kernel
     unsigned callStack : 1;   //  collect complete call stack
+    unsigned blockedSample : 1; // collect on cpu and off cpu data at the same time
     union {
         unsigned period;            // sample period
         unsigned freq;              // sample frequency

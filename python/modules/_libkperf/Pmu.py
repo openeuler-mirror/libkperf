@@ -87,7 +87,7 @@ class CtypesPmuAttr(ctypes.Structure):
         enum SpeFilter dataFilter;      // spe data filter
         enum SpeEventFilter evFilter;   // spe event filter
         unsigned long minLatency;       // collect only samples with latency or higher
-        unsigned includeNewFork;  // include new fork thread
+        unsigned includeNewFork : 1;  // include new fork thread
     };
     """
 

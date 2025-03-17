@@ -115,7 +115,7 @@ static int CheckEvtList(unsigned numEvt, char** evtList)
 static bool InvalidSampleRate(enum PmuTaskType collectType, struct PmuAttr *attr)
 {
     // When sampling, sample frequency must be less than or equal to perf_event_max_sample_rate.
-    if (collectType != SAMPLING || collectType != BLOCK_SAMPLING) {
+    if (collectType != SAMPLING) {
         return false;
     }
     if (!attr->useFreq) {
@@ -167,6 +167,37 @@ static int CheckBranchSampleFilter(const unsigned long& branchSampleFilter, enum
     return SUCCESS;
 }
 
+static int CheckCollectTypeConfig(enum PmuTaskType collectType, struct PmuAttr *attr)
+{
+    if (collectType < 0 || collectType >= MAX_TASK_TYPE) {
+        New(LIBPERF_ERR_INVALID_TASK_TYPE);
+        return LIBPERF_ERR_INVALID_TASK_TYPE;
+    }
+    if ((collectType == COUNTING) && attr->evtList == nullptr) {
+        New(LIBPERF_ERR_INVALID_EVTLIST);
+        return LIBPERF_ERR_INVALID_EVTLIST;
+    }
+    if (collectType != SAMPLING && attr->blockedSample == 1) {
+        New(LIBPERF_ERR_INVALID_BLOCKED_SAMPLE, "blocked sample mode only support sampling mode!");
+        return LIBPERF_ERR_INVALID_BLOCKED_SAMPLE;
+    }
+    if (collectType == SAMPLING) {
+        if (attr->blockedSample == 0 && attr->evtList == nullptr) {
+            New(LIBPERF_ERR_INVALID_EVTLIST);
+            return LIBPERF_ERR_INVALID_EVTLIST;
+        } else if (attr->blockedSample == 1 && attr->evtList != nullptr) {
+            New(LIBPERF_ERR_NOT_SUPPORT_CONFIG_EVENT, "blocked sampling mode not support config event to sample!");
+            return LIBPERF_ERR_NOT_SUPPORT_CONFIG_EVENT;
+        }
+    }
+    if (collectType == SPE_SAMPLING && attr->evtAttr != nullptr) {
+        New(LIBPERF_ERR_INVALID_GROUP_SPE);
+        return LIBPERF_ERR_INVALID_GROUP_SPE;
+    }
+
+    return SUCCESS;
+}
+
 static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
 {
     auto err = CheckCpuList(attr->numCpu, attr->cpuList);
@@ -181,22 +212,11 @@ static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
     if (err != SUCCESS) {
         return err;
     }
-    if (collectType < 0 || collectType >= MAX_TASK_TYPE) {
-        New(LIBPERF_ERR_INVALID_TASK_TYPE);
-        return LIBPERF_ERR_INVALID_TASK_TYPE;
+    err = CheckCollectTypeConfig(collectType, attr);
+    if (err != SUCCESS) {
+        return err;
     }
-    if ((collectType == SAMPLING || collectType == COUNTING || collectType != BLOCK_SAMPLING) && attr->evtList == nullptr) {
-        New(LIBPERF_ERR_INVALID_EVTLIST);
-        return LIBPERF_ERR_INVALID_EVTLIST;
-    }
-    if (collectType == BLOCK_SAMPLING && attr->numEvt != 1) {
-        New(LIBPERF_ERR_ONLY_SUPPORT_ONE_EVENT, "block sampling mode only support config one event to sample!");
-        return LIBPERF_ERR_ONLY_SUPPORT_ONE_EVENT;
-    }
-    if (collectType == SPE_SAMPLING && attr->evtAttr != nullptr) {
-        New(LIBPERF_ERR_INVALID_GROUP_SPE);
-        return LIBPERF_ERR_INVALID_GROUP_SPE;
-    }
+
     if (InvalidSampleRate(collectType, attr)) {
         New(LIBPERF_ERR_INVALID_SAMPLE_RATE);
         return LIBPERF_ERR_INVALID_SAMPLE_RATE;
@@ -214,31 +234,31 @@ static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
 static void CopyAttrData(PmuAttr* newAttr, PmuAttr* inputAttr, enum PmuTaskType collectType) 
 {
     //Coping event data to prevent delete exceptions
-    if (inputAttr->numEvt > 0) {
-        char **newEvtList = nullptr;
-        if ((collectType == BLOCK_SAMPLING) && inputAttr->numEvt == 1) {
-            newEvtList = new char* [inputAttr->numEvt + 1];
-            newEvtList[0] = new char[strlen(inputAttr->evtList[0]) + 1];
-            strcpy(newEvtList[0], inputAttr->evtList[0]);
-            char* cs = "context-switches";
-            newEvtList[1] = new char[strlen(cs) + 1];
-            strcpy(newEvtList[1], cs);
-            newAttr->numEvt = inputAttr->numEvt + 1;
-        } else {
-            newEvtList = new char *[inputAttr->numEvt];
-            for (int i = 0; i < inputAttr->numEvt; ++i) {
-                newEvtList[i] = new char[strlen(inputAttr->evtList[i]) + 1];
-                strcpy(newEvtList[i], inputAttr->evtList[i]);
-            }
+    char **newEvtList = nullptr;
+    if ((inputAttr->blockedSample == 1)) {
+        newEvtList = new char* [2];
+        char* cycles = "cycles";
+        newEvtList[0] = new char[strlen(cycles) + 1];
+        strcpy(newEvtList[0], cycles);
+        char* cs = "context-switches";
+        newEvtList[1] = new char[strlen(cs) + 1];
+        strcpy(newEvtList[1], cs);
+        inputAttr->numEvt = 2;
+    } else if (inputAttr->numEvt > 0) {
+        newEvtList = new char *[inputAttr->numEvt];
+        for (int i = 0; i < inputAttr->numEvt; ++i) {
+            newEvtList[i] = new char[strlen(inputAttr->evtList[i]) + 1];
+            strcpy(newEvtList[i], inputAttr->evtList[i]);
         }
-        newAttr->evtList = newEvtList;
     }
+    newAttr->evtList = newEvtList;
+    newAttr->numEvt = inputAttr->numEvt;
 
     // If the event group ID is not enabled, set the group_id to -1. It indicates that the event is not grouped.
-    if ((collectType == SAMPLING || collectType == COUNTING || collectType == BLOCK_SAMPLING) && inputAttr->evtAttr == nullptr) {
-        struct EvtAttr *evtAttr = new struct EvtAttr[inputAttr->numEvt];
+    if ((collectType == SAMPLING || collectType == COUNTING) && inputAttr->evtAttr == nullptr) {
+        struct EvtAttr *evtAttr = new struct EvtAttr[newAttr->numEvt];
         // handle event group id. -1 means that it doesn't run event group feature.
-        for (int i = 0; i < inputAttr->numEvt; ++i) {
+        for (int i = 0; i < newAttr->numEvt; ++i) {
             evtAttr[i].group_id = -1;
         }
         newAttr->evtAttr = evtAttr;
@@ -824,6 +844,7 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
     taskParam->pmuEvt->excludeKernel = attr->excludeKernel;
     taskParam->pmuEvt->excludeUser = attr->excludeUser;
     taskParam->pmuEvt->callStack = attr->callStack;
+    taskParam->pmuEvt->blockedSample = attr->blockedSample;
     taskParam->pmuEvt->includeNewFork = attr->includeNewFork;
     return taskParam.release();
 }
