@@ -3,6 +3,16 @@
 #### Description
 libkperf is a lightweight performance collection library on linux, that enables developers to perform performance collection in an API fashion. libkperf provides performance data in memory and allows develops to process data directly, reducing overhead of writing and reading perf.data.
 
+#### When may I use libkperf?
+- Want to collect performance data of system or appliation with low overhead.
+- When Analyzing performance of a heavy workload without having a large impact on performance.
+- Do not want to manage multiple performance processes and want to parse performance data in a friendly way.
+- Collect hotspot with low overhead.
+- Want to analyze latency and miss rate of cpu cache.
+- Want to trace elapsed time of system calls.
+- Want to collect bandwidth of ddr controller.
+- Want to collect bandwidth and latency of network.
+
 #### Supported CPU Architectures
 - Kunpeng
 
@@ -12,6 +22,23 @@ libkperf is a lightweight performance collection library on linux, that enables 
 - TencentOS
 - KylinOS
 - CentOS
+
+#### Release Notes
+v1.3:
+- Support elapsed time collection of system calls.
+- Support branch record sampling.
+
+v1.2:
+- Support tracepoint.
+- Support group event collection.
+
+v1.1:
+- Support python API.
+
+v1.0:
+- Support performance counting, sampling and SPE sampling.
+- Support core and uncore events.
+- Support symbol analysis.
 
 #### Build
 Minimum required GCC version:
