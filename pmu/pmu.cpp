@@ -106,7 +106,7 @@ static int CheckPidList(unsigned numPid, int* pidList)
 static int CheckEvtList(unsigned numEvt, char** evtList)
 {
     if (numEvt > 0 && evtList == nullptr) {
-        New(LIBPERF_ERR_INVALID_EVTLIST);
+        New(LIBPERF_ERR_INVALID_EVTLIST, "Invalid event list: numEvt is greater than 0, but evtList is null.");
         return LIBPERF_ERR_INVALID_EVTLIST;
     }
     return SUCCESS;
@@ -174,7 +174,7 @@ static int CheckCollectTypeConfig(enum PmuTaskType collectType, struct PmuAttr *
         return LIBPERF_ERR_INVALID_TASK_TYPE;
     }
     if ((collectType == COUNTING) && attr->evtList == nullptr) {
-        New(LIBPERF_ERR_INVALID_EVTLIST);
+        New(LIBPERF_ERR_INVALID_EVTLIST, "Counting mode requires a non-null event list.");
         return LIBPERF_ERR_INVALID_EVTLIST;
     }
     if (collectType != SAMPLING && attr->blockedSample == 1) {
@@ -183,11 +183,17 @@ static int CheckCollectTypeConfig(enum PmuTaskType collectType, struct PmuAttr *
     }
     if (collectType == SAMPLING) {
         if (attr->blockedSample == 0 && attr->evtList == nullptr) {
-            New(LIBPERF_ERR_INVALID_EVTLIST);
+            New(LIBPERF_ERR_INVALID_EVTLIST, "In sampling mode without blocked sample, the event list cannot be null.");
             return LIBPERF_ERR_INVALID_EVTLIST;
-        } else if (attr->blockedSample == 1 && attr->evtList != nullptr) {
-            New(LIBPERF_ERR_NOT_SUPPORT_CONFIG_EVENT, "blocked sampling mode not support config event to sample!");
-            return LIBPERF_ERR_NOT_SUPPORT_CONFIG_EVENT;
+        } else if (attr->blockedSample == 1) {
+            if (attr->evtList != nullptr) {
+                New(LIBPERF_ERR_NOT_SUPPORT_CONFIG_EVENT, "Blocked sampling mode does not support configuring events to sample!");
+                return LIBPERF_ERR_NOT_SUPPORT_CONFIG_EVENT;
+            }
+            if (attr->evtAttr != nullptr) {
+                New(LIBPERF_ERR_NOT_SUPPORT_GROUP_EVENT, "Blocked sampling mode does not support grouped events!");
+                return LIBPERF_ERR_NOT_SUPPORT_GROUP_EVENT;
+            }
         }
     }
     if (collectType == SPE_SAMPLING && attr->evtAttr != nullptr) {

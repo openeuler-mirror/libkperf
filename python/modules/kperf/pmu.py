@@ -140,6 +140,7 @@ class PmuAttr(_libkperf.PmuAttr):
         symbolMode: This indicates how to analyze symbols of samples.
             Refer to  comments of SymbolMode.
         callStack: This indicates whether to collect whole callchains or only top frame.
+        blockedSample: This indicates whether to enable blocked sampling.
 
         # SPE related fields:
         dataFilter: spe data filter. Refer to comments of SpeFilter.
@@ -158,6 +159,7 @@ class PmuAttr(_libkperf.PmuAttr):
                  excludeKernel: bool = False,
                  symbolMode: int = 0,
                  callStack: bool = False,
+                 blockedSample: bool = False,
                  dataFilter: int = 0,
                  evFilter: int = 0,
                  minLatency: int = 0,
@@ -174,6 +176,7 @@ class PmuAttr(_libkperf.PmuAttr):
             excludeKernel=excludeKernel,
             symbolMode=symbolMode,
             callStack=callStack,
+            blockedSample=blockedSample,
             dataFilter=dataFilter,
             evFilter=evFilter,
             minLatency=minLatency,

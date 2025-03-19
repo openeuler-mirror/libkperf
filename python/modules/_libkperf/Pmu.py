@@ -83,6 +83,7 @@ class CtypesPmuAttr(ctypes.Structure):
         unsigned excludeKernel : 1;   //  don't count kernel
         enum SymbolMode symbolMode;     // refer to comments of SymbolMode
         unsigned callStack : 1;   //  collect complete call stack
+        unsigned blockedSample : 1;   //  enable blocked sample
         // SPE related fields.
         enum SpeFilter dataFilter;      // spe data filter
         enum SpeEventFilter evFilter;   // spe event filter
@@ -100,15 +101,16 @@ class CtypesPmuAttr(ctypes.Structure):
         ('numCpu',        ctypes.c_uint),
         ('evtAttr',       ctypes.POINTER(CtypesEvtAttr)),
         ('sampleRate',    SampleRateUnion),
-        ('useFreq',       ctypes.c_bool),
-        ('excludeUser',   ctypes.c_bool),
-        ('excludeKernel', ctypes.c_bool),
+        ('useFreq',       ctypes.c_uint, 1),
+        ('excludeUser',   ctypes.c_uint, 1),
+        ('excludeKernel', ctypes.c_uint, 1),
         ('symbolMode',    ctypes.c_uint),
-        ('callStack',     ctypes.c_bool),
+        ('callStack',     ctypes.c_uint, 1),
+        ('blockedSample',     ctypes.c_uint, 1),
         ('dataFilter',    ctypes.c_uint64),  # The enumeration for dataFilter will use 64 bits
         ('evFilter',      ctypes.c_uint),
         ('minLatency',    ctypes.c_ulong),
-        ('includeNewFork', ctypes.c_bool),
+        ('includeNewFork', ctypes.c_uint, 1),
         ('branchSampleFilter', ctypes.c_ulong),
     ]
 
@@ -123,6 +125,7 @@ class CtypesPmuAttr(ctypes.Structure):
                  excludeKernel: bool=False,
                  symbolMode: int=0,
                  callStack: bool=False,
+                 blockedSample: bool=False,
                  dataFilter: int=0,
                  evFilter: int=0,
                  minLatency: int=0,
@@ -166,17 +169,18 @@ class CtypesPmuAttr(ctypes.Structure):
         else:
             self.evtAttr = None
 
-        self.useFreq = ctypes.c_bool(useFreq)
-        self.excludeUser = ctypes.c_bool(excludeUser)
-        self.excludeKernel = ctypes.c_bool(excludeKernel)
-
         self.symbolMode = ctypes.c_uint(symbolMode)
-        self.callStack = ctypes.c_bool(callStack)
         self.dataFilter = ctypes.c_uint64(dataFilter)
         self.evFilter = ctypes.c_uint(evFilter)
         self.minLatency = ctypes.c_ulong(minLatency)
-        self.includeNewFork = ctypes.c_bool(includeNewFork)
         self.branchSampleFilter = ctypes.c_ulong(branchSampleFilter)
+
+        self.useFreq = useFreq
+        self.excludeUser = excludeUser
+        self.excludeKernel = excludeKernel
+        self.callStack = callStack
+        self.blockedSample = blockedSample
+        self.includeNewFork = includeNewFork
 
 
 class PmuAttr:
@@ -193,6 +197,7 @@ class PmuAttr:
                  excludeKernel: bool=False,
                  symbolMode: int=0,
                  callStack: bool=False,
+                 blockedSample: bool=False,
                  dataFilter: int=0,
                  evFilter: int=0,
                  minLatency: int=0,
@@ -209,6 +214,7 @@ class PmuAttr:
             excludeKernel=excludeKernel,
             symbolMode=symbolMode,
             callStack=callStack,
+            blockedSample=blockedSample,
             dataFilter=dataFilter,
             evFilter=evFilter,
             minLatency=minLatency,
@@ -306,7 +312,7 @@ class PmuAttr:
 
     @useFreq.setter
     def useFreq(self, useFreq: bool) -> None:
-        self.c_pmu_attr.useFreq = ctypes.c_bool(useFreq)
+        self.c_pmu_attr.useFreq = int(useFreq)
 
     @property
     def excludeUser(self) -> bool:
@@ -314,7 +320,7 @@ class PmuAttr:
 
     @excludeUser.setter
     def excludeUser(self, excludeUser: bool) -> None:
-        self.c_pmu_attr.excludeUser = ctypes.c_bool(excludeUser)
+        self.c_pmu_attr.excludeUser = int(excludeUser)
 
     @property
     def excludeKernel(self) -> bool:
@@ -322,7 +328,7 @@ class PmuAttr:
 
     @excludeKernel.setter
     def excludeKernel(self, excludeKernel: bool) -> None:
-        self.c_pmu_attr.excludeKernel = ctypes.c_bool(excludeKernel)
+        self.c_pmu_attr.excludeKernel = int(excludeKernel)
 
     @property
     def symbolMode(self) -> int:
@@ -338,7 +344,15 @@ class PmuAttr:
 
     @callStack.setter
     def callStack(self, callStack: bool) -> None:
-        self.c_pmu_attr.callStack = ctypes.c_bool(callStack)
+        self.c_pmu_attr.callStack = int(callStack)
+
+    @property
+    def blockedSample(self) -> bool:
+        return bool(self.c_pmu_attr.blockedSample)
+    
+    @blockedSample.setter
+    def blockedSample(self, blockedSample: bool) -> None:
+        self.c_pmu_attr.blockedSample = int(blockedSample)
 
     @property
     def dataFilter(self) -> int:
@@ -370,7 +384,7 @@ class PmuAttr:
 
     @includeNewFork.setter
     def includeNewFork(self, includeNewFork: bool) -> None:
-        self.c_pmu_attr.includeNewFork = ctypes.c_bool(includeNewFork)
+        self.c_pmu_attr.includeNewFork = int(includeNewFork)
     
     @property
     def branchSampleFilter(self) -> int:

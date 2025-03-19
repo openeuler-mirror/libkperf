@@ -1,42 +1,73 @@
+#!/bin/bash
 # Description: This script is used to run the sample files.
-# open the script debug
+# Enable script debugging
 set -x
-# compile case files
+
+# Default values
+PYTHON=false
+
+# Parse user input arguments
+if [ $# -lt 1 ]; then
+    echo "Usage: $0 {sleep|read|oncpu|all} [python=true]"
+    exit 1
+fi
+
+# Extract the first argument (case type)
+CASE_TYPE=$1
+shift
+
+# Parse optional arguments (e.g., python=true)
+for arg in "$@"; do
+    if [[ "$arg" == "python=true" ]]; then
+        PYTHON=true
+    fi
+done
+
+# Build the kperf library and compile case files
+cd ../
+bash build.sh python=$PYTHON
+cd example
+
+# Compile case files
 g++ -g -o ./case/sleep_off_cpu ./case/sleep_off_cpu.cpp -lrt
 g++ -g -o ./case/read_off_cpu ./case/read_off_cpu.cpp -lrt
 g++ -g -o ./case/on_cpu_hotspot ./case/on_cpu_hotspot.cpp
 
-# compile sample files
+# Compile sample files
 g++ -o pmu_hotspot pmu_hotspot.cpp -I ../output/include -L ../output/lib -lkperf -lsym
 
-# import kperf library
+# Import kperf library
 export LD_LIBRARY_PATH=../output/lib:$LD_LIBRARY_PATH
 
-# check user input
-if [ $# -eq 0 ]; then
-    echo "Usage: $0 {sleep|read|oncpu|all}"
-    exit 1
-fi
+# Function to run a case with C or Python
+run_case() {
+    local case_file=$1
+    if [[ "$PYTHON" == true ]]; then
+        python3 pmu_hotspot.py "$case_file"
+    else
+        ./pmu_hotspot "$case_file"
+    fi
+}
 
-# run sample files based on user input
-case "$1" in
+# Run cases based on user input
+case "$CASE_TYPE" in
     sleep)
-        ./pmu_hotspot ./case/sleep_off_cpu
+        run_case ./case/sleep_off_cpu
         ;;
     read)
-        ./pmu_hotspot ./case/read_off_cpu
+        run_case ./case/read_off_cpu
         ;;
     oncpu)
-        ./pmu_hotspot ./case/on_cpu_hotspot
+        run_case ./case/on_cpu_hotspot
         ;;
     all)
-        ./pmu_hotspot ./case/sleep_off_cpu
-        ./pmu_hotspot ./case/read_off_cpu
-        ./pmu_hotspot ./case/on_cpu_hotspot
+        run_case ./case/sleep_off_cpu
+        run_case ./case/read_off_cpu
+        run_case ./case/on_cpu_hotspot
         ;;
     *)
-        echo "Invalid option: $1"
-        echo "Usage: $0 {sleep|read|oncpu|all}"
+        echo "Invalid option: $CASE_TYPE"
+        echo "Usage: $0 {sleep|read|oncpu|all} [python=true]"
         exit 1
         ;;
 esac
