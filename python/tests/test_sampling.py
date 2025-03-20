@@ -2,48 +2,61 @@ import time
 from ctypes import *
 import kperf
 from kperf import PointerEvt as evt
+import pytest
 
 STR_BUFFER_SIZE = 128
 UTF_8 = "utf-8"
 
 
-class TraceEvt:
-    def __init__(self, evtName):
-        self.evtName = evtName
-        self.pd = None
+@pytest.fixture
+def setup_pmu():
+    """Fixture to set up and tear down PMU resources."""
+    pd_list = []
 
-    def do_read_field(self, data):
-        pass
-
-    def sample(self):
-        print(f"============start to test {self.evtName} ===================")
-        evtList = [self.evtName]
+    def _setup(event_name):
         pmu_attr = kperf.PmuAttr(
-            evtList=evtList,
+            evtList=[event_name],
             sampleRate=1000,
             symbolMode=kperf.SymbolMode.RESOLVE_ELF
         )
-        self.pd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
-        if self.pd == -1:
-            print(kperf.error())
-        err = kperf.enable(self.pd)
+        pd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
+        if pd == -1:
+            pytest.fail(f"Failed to open PMU for event {event_name}: {kperf.error()}")
+        pd_list.append(pd)
+        return pd
+    
+    yield _setup
+
+    # Cleanup all PMU resources after the test
+    for pd in pd_list:
+        kperf.disable(pd)
+        kperf.close(pd)
+
+
+class TraceEvt:
+    def __init__(self, evtName):
+        self.evtName = evtName
+
+    def do_read_field(self, data):
+        raise NotImplementedError("Subclasses must implement this method")
+
+    def sample(self, pd):
+        print(f"============start to test {self.evtName} ===================")
+        err = kperf.enable(pd)
         if err != 0:
-            print(kperf.error())
-            return
+            pytest.fail(f"Failed to enable PMU for event {self.evtName}: {kperf.error()}")
         total = 0
         i = 3
         while i > 0:
             time.sleep(1)
-            pmu_data = kperf.read(self.pd)
+            pmu_data = kperf.read(pd)
             for data in pmu_data.iter:
                 self.do_read_field(data)
             pmu_data.free()
             i -= 1
-        err = kperf.disable(self.pd)
+        err = kperf.disable(pd)
         if err != 0:
-            print("disable pmu err!")
-            return
-        kperf.close(self.pd)
+            pytest.fail(f"Failed to disable PMU for event {self.evtName}: {kperf.error()}")
 
 
 class NetRx(TraceEvt):
@@ -61,10 +74,9 @@ class NetRx(TraceEvt):
 
 
 class NetSkebCopy(TraceEvt):
-
     def __init__(self):
         super().__init__(evt.SkebSkbCopyDatagramIovec.event_name)
-
+    
     def do_read_field(self, data):
         skbaddr = c_ulong(0x0)
         kperf.get_field(data, evt.SkebSkbCopyDatagramIovec.skbaddr, pointer(skbaddr))
@@ -74,7 +86,6 @@ class NetSkebCopy(TraceEvt):
 
 
 class NetNAPI(TraceEvt):
-
     def __init__(self):
         super().__init__(evt.NetApiGroReceiveEntry.event_name)
 
@@ -110,15 +121,33 @@ class NetNAPI(TraceEvt):
 class NetNAPIExp(TraceEvt):
     def __init__(self):
         super().__init__(evt.NetApiGroReceiveEntry.event_name)
-
+    
     def do_read_field(self, data):
         field = kperf.get_field_exp(data, evt.NetApiGroReceiveEntry.name)
         print("field_str={} field_name={} size={} offset={} isSigned={}"
               .format(field.field_name, field.field_str, field.size, field.offset, field.is_signed))
 
 
+@pytest.mark.parametrize("trace_class", [
+    NetRx,
+    NetSkebCopy,
+    NetNAPI,
+    NetNAPIExp
+])
+def test_trace_events(setup_pmu, trace_class):
+    """Test case for all trace events."""
+    # Instantiate the trace class and get the event name
+    trace_instance = trace_class()
+    event_name = trace_instance.evtName
+
+    # Set up PMU resources for the event
+    pd = setup_pmu(event_name)
+
+    # Run the sampling process
+    trace_instance.sample(pd)
+
 if __name__ == '__main__':
-    NetRx().sample()
-    NetSkebCopy().sample()
-    NetNAPI().sample()
-    NetNAPIExp().sample()
+    # 提示用户使用pytest 运行测试文件
+    print("This is a pytest script. Run it using the 'pytest' command.")
+    print("For example: pytest test_*.py -v")
+    print("if need print the run log, use pytest test_*.py -s -v")
