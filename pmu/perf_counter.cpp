@@ -103,6 +103,7 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int grou
     attr.size = sizeof(struct perf_event_attr);
     attr.type = this->evt->type;
     attr.config = this->evt->config;
+    attr.config1 = this->evt->config1;
 
     /**
      * We want to set the disabled and inherit bit to collect child processes
@@ -120,7 +121,7 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int grou
         * and any child events are initialized with disabled bit set to 0. Despite disabled bit being set to 0,
         * the child events will not start counting until the group leader is enabled.
         */
-        attr.disabled = 0; 
+        attr.disabled = 0;
         this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, 0);
     } else {
         if (this->evt->pmuType == KUNPENG_PMU::UNCORE_TYPE) {
@@ -129,7 +130,8 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int grou
             this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, 0);
         }
     }
-    DBG_PRINT("type: %d cpu: %d config: %X myfd: %d groupfd: %d\n", attr.type, cpu, attr.config, this->fd, groupFd);
+    DBG_PRINT("type: %d cpu: %d config: %llx config1: %llx myfd: %d groupfd: %d\n",
+        attr.type, cpu, attr.config, attr.config1, this->fd, groupFd);
     if (__glibc_unlikely(this->fd < 0)) {
         return MapErrno(errno);
     }
