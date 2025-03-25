@@ -370,6 +370,11 @@ struct PmuEvt* GetUncoreRawEvent(const char* pmuName, int collectType)
     } else {
         pmuEvtPtr->config1 = fieldsValues.at("config1");
     }
+    if (fieldsValues.find("config2") == fieldsValues.end()) {
+        pmuEvtPtr->config2 = 0;
+    } else {
+        pmuEvtPtr->config2 = fieldsValues.at("config2");
+    }
 
     pmuEvtPtr->name = pmuName;
     pmuEvtPtr->pmuType = UNCORE_RAW_TYPE;
