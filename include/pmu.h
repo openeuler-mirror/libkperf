@@ -399,6 +399,141 @@ int PmuGetField(struct SampleRawData *rawData, const char *fieldName, void *valu
  */
 struct SampleRawField *PmuGetFieldExp(struct SampleRawData *rawData, const char *fieldName);
 
+enum PmuDeviceMetric {
+    // Collect ddr read bandwidth.
+    PMU_DDR_READ_BW,
+    // Collect ddr write bandwidth.
+    PMU_DDR_WRITE_BW,
+    // Collect L3 access bandwidth.
+    PMU_L3_BW,
+    // Collect L3 hit count.
+    PMU_L3_HIT,
+    // Collect L3 total reference count, including miss and hit count.
+    PMU_L3_REF,
+    // Collect L3 average latency.
+    PMU_L3_LAT,
+    // Collect pcie rx bandwidth.
+    PMU_PCIE_RX_BW,
+    // Collect pcie tx bandwidth.
+    PMU_PCIE_TX_BW,
+    // Collect pcie rx latency.
+    PMU_PCIE_RX_LAT,
+    // Collect pcie tx latency.
+    PMU_PCIE_TX_LAT,
+    // Collect smmu address transaction.
+    PMU_SMMU_TRAN
+};
+
+struct PmuDeviceAttr {
+    enum PmuDeviceMetric metric;
+
+    // Used for PMU_PCIE_XXX and PMU_SMMU_XXX to collect a specifi pcie device.
+    // The string of bdf is something like '7a:01.0'.
+    char *bdf;
+};
+
+/**
+ * @brief
+ * A high level interface for initializing pmu events for devices,
+ * such as L3 cache, DDRC, PCIe, and SMMU, to collect metrics like bandwidth, latency, and others.
+ * This interface is an alternative option for initializing events besides PmuOpen.
+ * @param attr Array of metrics to collect
+ * @param len Length of array
+ * @return Task Id, similar with returned value of PmuOpen
+ */
+int PmuDeviceOpen(struct PmuDeviceAttr *attr, unsigned len);
+
+/**
+ * @brief
+ * Get DDR read or write bandwidth of numa node <numaId> from PmuData array.
+ * @param data Data from PmuRead
+ * @param len Length of data
+ * @param numaId Index of numa node
+ * @param isRead 0 for write bandwidth and otherwise for read bandwidth
+ * @return On success, bandwidth(Bytes/s) is returned.
+ * On error, -1 is returned and call Perrorno to get error.
+ */
+int PmuGetDDRNumaBW(struct PmuData *data, unsigned len, unsigned numaId, unsigned isRead);
+
+/**
+ * @brief
+ * Get L3 bandwidth of core <coreId> from PmuData array.
+ * @param data Data from PmuRead
+ * @param len Length of data
+ * @param coreId Index of cpu core
+ * @return On success, bandwidth(Bytes/s) is returned.
+ * On error, -1 is returned and call Perrorno to get error.
+ */
+int PmuGetL3BW(struct PmuData *data, unsigned len, unsigned coreId);
+
+/**
+ * @brief
+ * Get L3 hit count of core <coreId> from PmuData array.
+ * @param data Data from PmuRead
+ * @param len Length of data
+ * @param coreId Index of cpu core
+ * @return On success, hit count is returned.
+ * On error, -1 is returned and call Perrorno to get error.
+ */
+int PmuGetL3Hit(struct PmuData *data, unsigned len, unsigned coreId);
+
+/**
+ * @brief
+ * Get L3 total reference of core <coreId> from PmuData array.
+ * @param data Data from PmuRead
+ * @param len Length of data
+ * @param coreId Index of cpu core
+ * @return On success, total reference is returned.
+ * On error, -1 is returned and call Perrorno to get error.
+ */
+int PmuGetL3Ref(struct PmuData *data, unsigned len, unsigned coreId);
+
+/**
+ * @brief
+ * Get L3 average latency of numa node <numaId> from PmuData array.
+ * @param data Data from PmuRead
+ * @param len Length of data
+ * @param numaId Index of numa node
+ * @return On success, latency(cycle) is returned.
+ * On error, -1 is returned and call Perrorno to get error.
+ */
+int PmuGetL3NumaLat(struct PmuData *data, unsigned len, unsigned numaId);
+
+/**
+ * @brief
+ * Get pcie rx or tx bandwidth of a specific device.
+ * @param data Data from PmuRead
+ * @param len Length of data
+ * @param bdf bdf striing of device
+ * @param rx 0 for tx bandwidth and otherwise for rx bandwidth
+ * @return On success, bandwidth(Byte/s) is returned.
+ * On error, -1 is returned and call Perrorno to get error.
+ */
+int PmuGetPcieBW(struct PmuData *data, unsigned len, char *bdf, unsigned rx);
+
+/**
+ * @brief
+ * Get pcie rx or tx latency of a specific device.
+ * @param data Data from PmuRead
+ * @param len Length of data
+ * @param bdf bdf striing of device
+ * @param rx 0 for tx latency and otherwise for rx latency
+ * @return On success, latency(cycle) is returned.
+ * On error, -1 is returned and call Perrorno to get error.
+ */
+int PmuGetPcieLat(struct PmuData *data, unsigned len, char *bdf, unsigned rx);
+
+/**
+ * @brief
+ * Get address transaction count of a specific device.
+ * @param data Data from PmuRead
+ * @param len Length of data
+ * @param bdf bdf striing of device
+ * @return On success, transaction count is returned.
+ * On error, -1 is returned and call Perrorno to get error.
+ */
+int PmuGetSmmuTransaction(struct PmuData *data, unsigned len, char *bdf);
+
 /**
  * @brief
  * Initialize the trace collection target.
@@ -465,6 +600,15 @@ void PmuTraceDataFree(struct PmuTraceData* pmuTraceData);
  * @return system call function list
  */
 const char** PmuSysCallFuncList(unsigned *numFunc);
+
+/**
+ * @brief
+ * Get cpu frequency of cpu core.
+ * @param core Index of core
+ * @return On success, core frequency(Hz) is returned.
+ * On error, -1 is returned and call Perrorno to get error.
+ */
+int PmuGetCpuFreq(unsigned core);
 
 #pragma GCC visibility pop
 #ifdef __cplusplus
