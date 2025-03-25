@@ -29,6 +29,14 @@ namespace KUNPENG_PMU {
         TRACE_TYPE,
     };
 
+    // prase /sys/devices/<uncore_devname>/format config params bitfiled
+    struct UncoreConfigBitFiled {
+        std::string configName;
+        unsigned startBit;
+        unsigned endBit;
+    };
+    
+
     struct UncoreConfig {
         __u64 type;
         __u64 config;

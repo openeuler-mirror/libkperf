@@ -136,6 +136,7 @@ static int GetEventType(const char *pmuName)
         return UNCORE_TYPE;
     }
     // Parse uncore event raw name like 'hisi_sccl3_ddrc0/config=0x0/'
+    // or smmuv3_pmcg_100020/transaction,filter_enable=1,filter_stream_id=0x7d/
     if (CheckUncoreRawEvent(pmuName)) {
         return UNCORE_RAW_TYPE;
     }

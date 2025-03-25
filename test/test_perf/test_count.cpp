@@ -235,6 +235,49 @@ TEST_F(TestCount, RawEventCycles)
     ASSERT_NEAR(evtMap[cycles], evtMap[cyclesRaw], evtMap[cyclesRaw] * relativeErr);
 }
 
+TEST_F(TestCount, UncoreRawEventSmmuVarError)
+{
+    // Test whether raw uncore event. filter_enable is bigger 1
+    char* evtList[1] = {"smmuv3_pmcg_100020/filter_enable=2,filter_stream_id=0x7d/"};
+    PmuAttr attr = {0};
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+
+    pd = PmuOpen(COUNTING, &attr);
+    ASSERT_EQ(pd, -1);
+}
+
+TEST_F(TestCount, UncoreRawEventSmmuConfigError)
+{
+    // Test whether raw uncore event. filterEnable spell error.
+    char* evtList[1] = {"smmuv3_pmcg_100020/filterEnable=1,filter_stream_id=0x7d/"};
+    PmuAttr attr = {0};
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+
+    pd = PmuOpen(COUNTING, &attr);
+    ASSERT_EQ(pd, -1);
+}
+
+TEST_F(TestCount, UncoreRawEventSmmu)
+{
+    // Test whether raw uncore event.
+    char* evtList[1] = {"smmuv3_pmcg_100020/cycles,filter_enable=1,filter_stream_id=0x7d/"};
+    PmuAttr attr = {0};
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+
+    pd = PmuOpen(COUNTING, &attr);
+    ASSERT_NE(pd, -1);
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+
+    PmuData *data = nullptr;
+    int len = PmuRead(pd, &data);
+    ASSERT_EQ(len, 1);
+}
+
 TEST_F(TestCount, BranchMissRatio)
 {
     // Check branch miss ratio of two cases.
