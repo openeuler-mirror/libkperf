@@ -222,7 +222,7 @@ struct PmuDataExt {
 
         struct {
             unsigned long nr;                  // number of branchRecords
-            BranchSampleRecord *branchRecords; // branch pointer array
+            struct BranchSampleRecord *branchRecords; // branch pointer array
         };
     };
 };

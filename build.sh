@@ -25,6 +25,8 @@ BUILD_TYPE=Release
 PYTHON=false
 # Test cases are not compiled by default.
 INCLUDE_TEST=false
+# Go support, copy so and head files
+GO=false
 
 source ${PROJECT_DIR}/build/common.sh
 
@@ -56,6 +58,9 @@ for arg in "$@"; do
             ;;
         python_exe=*)
             PYTHON_EXE="${arg#*=}"
+            ;;
+        go=*)
+            GO="${arg#*=}"
             ;;
     esac
 done
@@ -95,9 +100,9 @@ build_libkperf()
     cd $BUILD_DIR
     # Remove the PYTHON_KPERF warning
     if [ -z ${PYTHON_EXE} ];then
-        cmake -DINCLUDE_TEST=${INCLUDE_TEST} -DPYTHON=${PYTHON} -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ..
+        cmake -DINCLUDE_TEST=${INCLUDE_TEST} -DPYTHON=${PYTHON} -DGO=${GO} -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ..
     else
-        cmake -DINCLUDE_TEST=${INCLUDE_TEST} -DPYTHON=${PYTHON} -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DPYTHON_KPERF=${PYTHON_EXE} ..
+        cmake -DINCLUDE_TEST=${INCLUDE_TEST} -DPYTHON=${PYTHON} -DGO=${GO} -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DPYTHON_KPERF=${PYTHON_EXE} ..
     fi
     make -j ${cpu_core_num}
     make install
