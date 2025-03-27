@@ -171,14 +171,19 @@ void PrintHotSpotGraph(std::vector<PmuData>& hotSpotData)
     std::cout << std::string(140, '_') << std::endl;
 }
 
-void BlockedSample(int pid)
+void BlockedSample(int pid, double interval, int count, bool blockedSample)
 {
     char* evtList[1];
-    // evtList[0] = (char*)"cycles";
+    evtList[0] = (char*)"cycles";
     struct PmuAttr attr = {0};
-    attr.evtList = nullptr;
-    attr.numEvt = 0;
-    attr.blockedSample = 1;
+    if (blockedSample == true) {
+        attr.evtList = nullptr;
+        attr.numEvt = 0;
+    } else {
+        attr.evtList = evtList;
+        attr.numEvt = 1;
+    }
+    attr.blockedSample = blockedSample;
     attr.pidList = &pid;
     attr.numPid = 1;
     attr.cpuList = nullptr;
@@ -196,27 +201,27 @@ void BlockedSample(int pid)
     }
 
     PmuEnable(pd);
-    sleep(1);
+    for (int i = 0; i < count; ++i) {
+        sleep(interval);
+        PmuData* pmuData = nullptr;
+        int len = PmuRead(pd, &pmuData);
+        if (len == -1) {
+            std::cerr << "error msg:" << Perror() << std::endl;
+            return;
+        }
+        std::vector<PmuData> hotSpotData;
+        GetPmuDataHotspot(pmuData, len, hotSpotData);
+        PrintHotSpotGraph(hotSpotData);
+        std::cout << std::string(50, '=') << "Print the call stack of the hotspot function";
+        std::cout << std::string(50, '=') << std::endl;
+        std::cout << std::setw(40) << "@symbol" << std::setw(40) << "@module";
+        std::cout << std::setw(40) << std::right << "@percent" << std::endl;
+        for (int i = 0; i < hotSpotData.size(); ++i) {
+            PrintStack(hotSpotData[i].stack, 0, hotSpotData[i].period);
+        }
+        PmuDataFree(pmuData);
+    }
     PmuDisable(pd);
-
-    PmuData* pmuData = nullptr;
-    int len = PmuRead(pd, &pmuData);
-    if (len == -1) {
-        std::cerr << "error msg:" << Perror() << std::endl;
-        return;
-    }
-
-    std::vector<PmuData> hotSpotData;
-    GetPmuDataHotspot(pmuData, len, hotSpotData);
-    PrintHotSpotGraph(hotSpotData);
-    std::cout << std::string(50, '=') << "Print the call stack of the hotspot function";
-    std::cout << std::string(50, '=') << std::endl;
-    std::cout << std::setw(40) << "@symbol" << std::setw(40) << "@module";
-    std::cout << std::setw(40) << std::right << "@percent" << std::endl;
-    for (int i = 0; i < hotSpotData.size(); ++i) {
-        PrintStack(hotSpotData[i].stack, 0, hotSpotData[i].period);
-    }
-    PmuDataFree(pmuData);
     PmuClose(pd);
     return;
 }
@@ -240,13 +245,50 @@ void EndProc(int pid)
     }
 }
 
+void print_usage() {
+    std::cerr << "Usage: pmu_hotspot <interval> <count> <blockedSample> <process name>\n";
+    std::cerr << " interval: sample interval, unit s\n";
+    std::cerr << " count: sample print count\n";
+    std::cerr << " blockedSample: blockedSample flag, 1 is stand for enable blockedSample mode, 0 is disable blockedSample mode\n";
+    std::cerr << " process name: process path or input process number\n";
+    std::cerr << " example: pmu_hotspot 0.1 10 0 ./process\n";
+    std::cerr << " example: pmu_hotspot 1 100 1 ./process\n";
+}
+
 int main(int argc, char** argv)
 {
-    int pid = 0;
-    if (argc > 1) {
-        StartProc(argv[1], pid);
+    if (argc < 5) {
+        print_usage();
+        return 0;
     }
-    BlockedSample(pid);
+    double interval = 0.0;
+    int count = 0;
+    bool blockedSample = false;
+    int pid = 0;
+    try {
+        interval = std::stod(argv[1]);
+        if (interval <= 0) {
+            throw std::invalid_argument("Interval must be a positive number.");
+        }
+
+        count = std::stoi(argv[2]);
+        if (count <= 0) {
+            throw std::invalid_argument("Count must be a positive integer.");
+        }
+
+        blockedSample = std::stoi(argv[3]) != 0;
+
+        try {
+            pid = std::stoi(argv[4]);
+        } catch (const std::invalid_argument&) {
+            StartProc(argv[4], pid);
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Error parsing arguments: " << e.what() << "\n";
+        print_usage();
+        return EXIT_FAILURE;
+    }
+    BlockedSample(pid, interval, count, blockedSample);
     EndProc(pid);
     
     return 0;

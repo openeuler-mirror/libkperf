@@ -125,13 +125,18 @@ def print_hotspot_graph(hotspot_data):
 
 
 
-def blocked_sample(pid):
+def blocked_sample(pid, interval, count, blockedSample):
+    if blockedSample == True:
+        evtList = []
+    else:
+        evtList = ["cycles"]
     pmu_attr = kperf.PmuAttr(
+        evtList = evtList,
         pidList = [pid],
         sampleRate = 4000,
         useFreq = True,
         callStack = True,
-        blockedSample = True,
+        blockedSample = blockedSample,
         symbolMode = kperf.SymbolMode.RESOLVE_ELF_DWARF
     )
 
@@ -145,22 +150,25 @@ def blocked_sample(pid):
     if err != 0:
         print(f"enable failed, error msg: {kperf.error()}")
         return
-    time.sleep(1)
+    for _ in range(count):
+        time.sleep(interval)
+        
+        pmu_data = kperf.read(pd)
+        if pmu_data == -1:
+            print(f"read failed, error msg: {kperf.error()}")
+            return
+        hotspot_data = []
+        get_pmu_data_hotspot(pmu_data, hotspot_data)
+        print_hotspot_graph(hotspot_data)
+        print("=" * 50 + "Print the call stack of the hotspot function" + "=" * 50)
+        print(f"{'@symbol':<40}{'@module':<40}{'@percent':>40}")
+        for data in hotspot_data:
+            print_stack(data.stack, 0, data.period)
     err = kperf.disable(pd)
     if err != 0:
         print(f"disable failed, error msg: {kperf.error()}")
         return
-    pmu_data = kperf.read(pd)
-    if pmu_data == -1:
-        print(f"read failed, error msg: {kperf.error()}")
-        return
-    hotspot_data = []
-    get_pmu_data_hotspot(pmu_data, hotspot_data)
-    print_hotspot_graph(hotspot_data)
-    print("=" * 50 + "Print the call stack of the hotspot function" + "=" * 50)
-    print(f"{'@symbol':<40}{'@module':<40}{'@percent':>40}")
-    for data in hotspot_data:
-        print_stack(data.stack, 0, data.period)
+    kperf.close(pd)
 
 def start_proc(process):
     pid = os.fork()
@@ -176,14 +184,43 @@ def end_proc(pid):
     if pid > 0:
         os.kill(pid, 9)
 
+def print_usage():
+    print("Usage: python3 pmu_hotspot.py <interval> <count> <blockedSample> <process name>")
+    print(" interval: sample interval, unit s (must be a positive number)")
+    print(" count: sample print count (must be a positive integer)")
+    print(" blockedSample: blockedSample flag, 1 for enable, 0 for disable")
+    print(" process name: process path or input process number")
+    print(" example: python3 pmu_hotspot.py 0.1 10 0 ./process")
+    print(" example: python3 pmu_hotspot.py 1 100 1 ./process")
+
 def main():
     pid = 0
-    if len(sys.argv) < 2:
-        print("Usage: python pmu_hotspot.py <process name>")
+    if len(sys.argv) < 5:
+        print_usage()
         sys.exit(1)
+    try:
+        interval = float(sys.argv[1])
+        if interval <= 0:
+            raise ValueError("Interval must be a positive number.")
 
-    pid = start_proc(sys.argv[1])
-    blocked_sample(pid)
+        count = int(sys.argv[2])
+        if count <= 0:
+            raise ValueError("Count must be a positive integer.")
+
+        blockedSample = int(sys.argv[3])
+        if blockedSample not in (0, 1):
+            raise ValueError("BlockedSample must be 0 or 1.")
+
+        try:
+            pid = int(sys.argv[4])
+        except ValueError:
+            pid = start_proc(sys.argv[4])
+
+    except ValueError as e:
+        print(f"Invalid argument: {e}")
+        print_usage()
+        sys.exit(1)
+    blocked_sample(pid, interval, count, blockedSample)
     end_proc(pid)
 
 if __name__ == "__main__":

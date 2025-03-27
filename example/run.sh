@@ -43,9 +43,9 @@ export LD_LIBRARY_PATH=../output/lib:$LD_LIBRARY_PATH
 run_case() {
     local case_file=$1
     if [[ "$PYTHON" == true ]]; then
-        python3 pmu_hotspot.py "$case_file"
+        python3 pmu_hotspot.py 1 1 1 "$case_file"
     else
-        ./pmu_hotspot "$case_file"
+        ./pmu_hotspot 1 1 1 "$case_file"
     fi
 }
 
