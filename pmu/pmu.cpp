@@ -106,7 +106,7 @@ static int CheckPidList(unsigned numPid, int* pidList)
 static int CheckEvtList(unsigned numEvt, char** evtList)
 {
     if (numEvt > 0 && evtList == nullptr) {
-        New(LIBPERF_ERR_INVALID_EVTLIST);
+        New(LIBPERF_ERR_INVALID_EVTLIST, "Invalid event list: numEvt is greater than 0, but evtList is null.");
         return LIBPERF_ERR_INVALID_EVTLIST;
     }
     return SUCCESS;
@@ -167,6 +167,43 @@ static int CheckBranchSampleFilter(const unsigned long& branchSampleFilter, enum
     return SUCCESS;
 }
 
+static int CheckCollectTypeConfig(enum PmuTaskType collectType, struct PmuAttr *attr)
+{
+    if (collectType < 0 || collectType >= MAX_TASK_TYPE) {
+        New(LIBPERF_ERR_INVALID_TASK_TYPE);
+        return LIBPERF_ERR_INVALID_TASK_TYPE;
+    }
+    if ((collectType == COUNTING) && attr->evtList == nullptr) {
+        New(LIBPERF_ERR_INVALID_EVTLIST, "Counting mode requires a non-null event list.");
+        return LIBPERF_ERR_INVALID_EVTLIST;
+    }
+    if (collectType != SAMPLING && attr->blockedSample == 1) {
+        New(LIBPERF_ERR_INVALID_BLOCKED_SAMPLE, "blocked sample mode only support sampling mode!");
+        return LIBPERF_ERR_INVALID_BLOCKED_SAMPLE;
+    }
+    if (collectType == SAMPLING) {
+        if (attr->blockedSample == 0 && attr->evtList == nullptr) {
+            New(LIBPERF_ERR_INVALID_EVTLIST, "In sampling mode without blocked sample, the event list cannot be null.");
+            return LIBPERF_ERR_INVALID_EVTLIST;
+        } else if (attr->blockedSample == 1) {
+            if (attr->evtList != nullptr) {
+                New(LIBPERF_ERR_NOT_SUPPORT_CONFIG_EVENT, "Blocked sampling mode does not support configuring events to sample!");
+                return LIBPERF_ERR_NOT_SUPPORT_CONFIG_EVENT;
+            }
+            if (attr->evtAttr != nullptr) {
+                New(LIBPERF_ERR_NOT_SUPPORT_GROUP_EVENT, "Blocked sampling mode does not support grouped events!");
+                return LIBPERF_ERR_NOT_SUPPORT_GROUP_EVENT;
+            }
+        }
+    }
+    if (collectType == SPE_SAMPLING && attr->evtAttr != nullptr) {
+        New(LIBPERF_ERR_INVALID_GROUP_SPE);
+        return LIBPERF_ERR_INVALID_GROUP_SPE;
+    }
+
+    return SUCCESS;
+}
+
 static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
 {
     auto err = CheckCpuList(attr->numCpu, attr->cpuList);
@@ -181,18 +218,11 @@ static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
     if (err != SUCCESS) {
         return err;
     }
-    if (collectType < 0 || collectType >= MAX_TASK_TYPE) {
-        New(LIBPERF_ERR_INVALID_TASK_TYPE);
-        return LIBPERF_ERR_INVALID_TASK_TYPE;
+    err = CheckCollectTypeConfig(collectType, attr);
+    if (err != SUCCESS) {
+        return err;
     }
-    if ((collectType == SAMPLING || collectType == COUNTING) && attr->evtList == nullptr) {
-        New(LIBPERF_ERR_INVALID_EVTLIST);
-        return LIBPERF_ERR_INVALID_EVTLIST;
-    }
-    if (collectType == SPE_SAMPLING && attr->evtAttr != nullptr) {
-        New(LIBPERF_ERR_INVALID_GROUP_SPE);
-        return LIBPERF_ERR_INVALID_GROUP_SPE;
-    }
+
     if (InvalidSampleRate(collectType, attr)) {
         New(LIBPERF_ERR_INVALID_SAMPLE_RATE);
         return LIBPERF_ERR_INVALID_SAMPLE_RATE;
@@ -210,19 +240,31 @@ static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
 static void CopyAttrData(PmuAttr* newAttr, PmuAttr* inputAttr, enum PmuTaskType collectType) 
 {
     //Coping event data to prevent delete exceptions
-    if (inputAttr->numEvt > 0) {
-        char **newEvtList = new char *[inputAttr->numEvt];
+    char **newEvtList = nullptr;
+    if ((inputAttr->blockedSample == 1)) {
+        newEvtList = new char* [2];
+        char* cycles = "cycles";
+        newEvtList[0] = new char[strlen(cycles) + 1];
+        strcpy(newEvtList[0], cycles);
+        char* cs = "context-switches";
+        newEvtList[1] = new char[strlen(cs) + 1];
+        strcpy(newEvtList[1], cs);
+        inputAttr->numEvt = 2;
+    } else if (inputAttr->numEvt > 0) {
+        newEvtList = new char *[inputAttr->numEvt];
         for (int i = 0; i < inputAttr->numEvt; ++i) {
             newEvtList[i] = new char[strlen(inputAttr->evtList[i]) + 1];
             strcpy(newEvtList[i], inputAttr->evtList[i]);
         }
-        newAttr->evtList = newEvtList;
     }
+    newAttr->evtList = newEvtList;
+    newAttr->numEvt = inputAttr->numEvt;
 
+    // If the event group ID is not enabled, set the group_id to -1. It indicates that the event is not grouped.
     if ((collectType == SAMPLING || collectType == COUNTING) && inputAttr->evtAttr == nullptr) {
-        struct EvtAttr *evtAttr = new struct EvtAttr[inputAttr->numEvt];
+        struct EvtAttr *evtAttr = new struct EvtAttr[newAttr->numEvt];
         // handle event group id. -1 means that it doesn't run event group feature.
-        for (int i = 0; i < inputAttr->numEvt; ++i) {
+        for (int i = 0; i < newAttr->numEvt; ++i) {
             evtAttr[i].group_id = -1;
         }
         newAttr->evtAttr = evtAttr;
@@ -398,6 +440,7 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
             copiedAttr.evtList = newEvtlist.data();
             copiedAttr.evtAttr = newEvtAttrList.data();
 
+            // Configure the attributes of the performance events to be monitored.
             auto pTaskAttr = AssignPmuTaskParam(collectType, &copiedAttr);
             if (pTaskAttr == nullptr) {
                 break;
@@ -769,7 +812,7 @@ static void PrepareCpuList(PmuAttr *attr, PmuTaskAttr *taskParam, PmuEvt* pmuEvt
     }
 }
 
-static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *attr, const char* name, const int group_id)
+static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *attr, const char* evtName, const int group_id)
 {
     unique_ptr<PmuTaskAttr, void (*)(PmuTaskAttr*)> taskParam(CreateNode<struct PmuTaskAttr>(), PmuTaskAttrFree);
     /**
@@ -788,9 +831,9 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
             return nullptr;
         }
     } else {
-        pmuEvt = GetPmuEvent(name, collectType);
+        pmuEvt = GetPmuEvent(evtName, collectType);
         if (pmuEvt == nullptr) {
-            New(LIBPERF_ERR_INVALID_EVENT, "Invalid event: " + string(name));
+            New(LIBPERF_ERR_INVALID_EVENT, "Invalid event: " + string(evtName));
             return nullptr;
         }
     }
@@ -807,6 +850,7 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
     taskParam->pmuEvt->excludeKernel = attr->excludeKernel;
     taskParam->pmuEvt->excludeUser = attr->excludeUser;
     taskParam->pmuEvt->callStack = attr->callStack;
+    taskParam->pmuEvt->blockedSample = attr->blockedSample;
     taskParam->pmuEvt->includeNewFork = attr->includeNewFork;
     return taskParam.release();
 }

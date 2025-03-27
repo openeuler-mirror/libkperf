@@ -281,6 +281,81 @@ namespace KUNPENG_PMU {
         return userData;
     }
 
+    void HandleBlockData(std::vector<PmuData>& pmuData, std::vector<PmuSwitchData>& switchData)
+    {
+        std::sort(switchData.begin(), switchData.end(), [](const PmuSwitchData& a, const PmuSwitchData& b) {
+            if (a.tid == b.tid) {
+                return a.ts < b.ts;
+            }
+            return a.tid < b.tid;
+        });
+        std::unordered_map<int, std::vector<int64_t>> tidToOffTimeStamps;
+        int64_t outTime = 0;
+        int prevTid = -1;
+        for (const auto& item: switchData) {
+            if (item.swOut) {
+                outTime = item.ts;
+                prevTid = item.tid;
+                DBG_PRINT("Switch out: tid=%d, ts=%ld\n", item.tid, item.ts);
+            } else {
+                // if the first event is sched_in, we need to ignore it.
+                if (prevTid == -1) {
+                    DBG_PRINT("Ignoring first sched_in event: tid=%d, ts=%ld\n", item.tid, item.ts);
+                    continue;
+                }
+                if (prevTid == item.tid && outTime > 0) {
+                    tidToOffTimeStamps[item.tid].emplace_back(item.ts - outTime);
+                    DBG_PRINT("Switch in: tid=%d, ts=%ld, offTime=%ld\n", item.tid, item.ts, item.ts - outTime);
+                    outTime = 0;
+                }
+            }
+        }
+
+        std::sort(pmuData.begin(), pmuData.end(), [](const PmuData& a, const PmuData& b) {
+            if (a.tid == b.tid) {
+                return a.ts < b.ts;
+            }
+            return a.tid < b.tid;
+        });
+        int csCnt = 0;
+        int64_t prevTs = 0;
+        int64_t currentTs = 0;
+        int64_t curPeriod = 0;
+        int currentTid = -1;
+        for (auto& item: pmuData) {
+            if (currentTid != item.tid) {
+                currentTid = item.tid;
+                csCnt = 0;
+                prevTs = 0;
+                currentTs = 0;
+                curPeriod = 0;
+                DBG_PRINT("New tid encountered: tid=%d\n", currentTid);
+            }
+            if (strcmp(item.evt, "context-switches") == 0) {
+                // Before the context-switches event, there is only one cycles event, which we need to ignore. 
+                if (currentTs == 0) {
+                    DBG_PRINT("Ignoring first cycles event for tid=%d\n", item.tid);
+                    continue;
+                }
+                // only the on cpu event is cycles or cpu-clock, this compute is right.
+                if (csCnt < tidToOffTimeStamps[item.tid].size()) {
+                    item.period = tidToOffTimeStamps[item.tid][csCnt] * curPeriod / (currentTs - prevTs);
+                    DBG_PRINT("Context switch: tid=%d, period=%ld\n", item.tid, item.period);
+                    csCnt++;
+                }
+            } else {
+                // on cpu event data update.
+                if (prevTs == 0) {
+                    prevTs = item.ts;
+                } else {
+                    prevTs = currentTs;
+                    currentTs = item.ts;
+                    curPeriod = item.period;
+                }
+            }
+        }
+    }
+    
     int PmuList::ReadDataToBuffer(const int pd)
     {
         // Read data from prev sampling,
@@ -292,7 +367,7 @@ namespace KUNPENG_PMU {
         auto eventList = GetEvtList(pd);
         for (auto item: eventList) {
             item->SetTimeStamp(ts);
-            auto err = item->Read(evtData.data, evtData.sampleIps, evtData.extPool);
+            auto err = item->Read(evtData.data, evtData.sampleIps, evtData.extPool, evtData.switchData);
             if (err != SUCCESS) {
                 return err;
             }
@@ -434,6 +509,19 @@ namespace KUNPENG_PMU {
             return -1;
         }
         return findEvtList->second[0]->GetEvtType();
+    }
+
+    int PmuList::GetBlockedSampleState(const int pd) const
+    {
+        lock_guard<mutex> lg(pmuListMtx);
+        auto findEvtList = pmuList.find(pd);
+        if (findEvtList == pmuList.end()) {
+            return -1;
+        }
+        if (findEvtList->second.empty()) {
+            return -1;
+        }
+        return findEvtList->second[0]->GetBlockedSample();
     }
 
     void PmuList::InsertEvtList(const unsigned pd, std::shared_ptr<EvtList> evtList)
@@ -623,9 +711,12 @@ namespace KUNPENG_PMU {
             dataList.erase(pd);
             return inserted.first->second.data;
         } else {
+            FillStackInfo(evData);
+            if (GetBlockedSampleState(pd) == 1) {
+                HandleBlockData(evData.data, evData.switchData);
+            }
             auto inserted = userDataList.emplace(pData, move(evData));
             dataList.erase(pd);
-            FillStackInfo(inserted.first->second);
             return inserted.first->second.data;
         }
     }

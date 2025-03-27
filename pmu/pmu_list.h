@@ -66,6 +66,7 @@ public:
     bool IsPdAlive(const int pd) const;
     void FreeData(PmuData* pmuData);
     int GetTaskType(const int pd) const;
+    int GetBlockedSampleState(const int pd) const;
     void SetSymbolMode(const int pd, const SymbolMode &mode);
     void SetBranchSampleFilter(const int pd, const unsigned long& branchSampleFilter);
 
@@ -91,6 +92,7 @@ private:
         std::vector<PmuData> data;
         std::vector<PerfSampleIps> sampleIps;
         std::vector<PmuDataExt*> extPool;
+        std::vector<PmuSwitchData> switchData;
     };
 
     void InsertEvtList(const unsigned pd, std::shared_ptr<EvtList> evtList);

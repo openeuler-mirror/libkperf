@@ -69,7 +69,8 @@ public:
     int Enable();
     int Stop();
     int Reset();
-    int Read(std::vector<PmuData>& pmuData, std::vector<PerfSampleIps>& sampleIps, std::vector<PmuDataExt*>& extPool);
+    int Read(std::vector<PmuData>& pmuData, std::vector<PerfSampleIps>& sampleIps, std::vector<PmuDataExt*>& extPool, 
+             std::vector<PmuSwitchData>& switchData);
 
     void SetTimeStamp(const int64_t& timestamp)
     {
@@ -99,6 +100,11 @@ public:
     int GetGroupId() const
     {
         return group_id;
+    }
+
+    int GetBlockedSample() const
+    {
+        return pmuEvt->blockedSample;
     }
 
     void AddNewProcess(pid_t pid, const bool groupEnable, const std::shared_ptr<EvtList> evtLeader);

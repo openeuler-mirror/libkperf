@@ -42,6 +42,7 @@ struct PmuEvt {
     unsigned excludeUser : 1;     // don't count user
     unsigned excludeKernel : 1;   //  don't count kernel
     unsigned callStack : 1;   //  collect complete call stack
+    unsigned blockedSample : 1; // collect on cpu and off cpu data at the same time
     union {
         unsigned period;            // sample period
         unsigned freq;              // sample frequency
@@ -91,6 +92,18 @@ struct sampleId {
     __u64 id;           /* if PERF_SAMPLE_ID set */
     __u32 cpu, res;     /* if PERF_SAMPLE_CPU set */
     __u64 identifier;   /* if PERF_SAMPLE_IDENTIFIER set */
+};
+
+struct ContextSwitchEvent {
+    struct perf_event_header header;
+    struct sampleId sampleId;
+};
+
+struct PmuSwitchData {
+    __u32 pid, tid;         // process id and thread id
+    __u64 ts;               // time stamp. unit: ns
+    __u32 cpu;              // cpu id
+    unsigned swOut : 1;     // 1: switch out, 0: switch in, 0 is the default value
 };
 
 struct PerfRawMmap {
@@ -174,6 +187,7 @@ union PerfEvent {
     struct PerfRecordSample sample;
     struct PerfRecordExit exit;
     struct PerfRecordMmap2 mmap2;
+    struct ContextSwitchEvent context_switch;
 };
 
 int MapErrno(int sysErr);

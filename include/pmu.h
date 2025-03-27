@@ -149,6 +149,9 @@ struct PmuAttr {
     enum SymbolMode symbolMode;
     // This indicates whether to collect whole callchains or only top frame.
     unsigned callStack : 1;
+    // This indicates whether the blocked sample mode is enabled.
+    // In this mode, both on CPU and off CPU data is collected.
+    unsigned blockedSample : 1;
 
     // SPE related fields.
 

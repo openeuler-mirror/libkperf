@@ -65,7 +65,8 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    int PerfSpe::Read(vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool)
+    int PerfSpe::Read(vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps,
+        std::vector<PmuDataExt*> &extPool, std::vector<PmuSwitchData> &switchData)
     {
         auto findSpe = speSet.find(this->cpu);
         if (findSpe == speSet.end()) {

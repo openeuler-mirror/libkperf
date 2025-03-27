@@ -37,7 +37,8 @@ static constexpr int MAX_ATTR_SIZE = 120;
  * Right now we do not implement grouping logic, thus we ignore the
  * PERF_FORMAT_ID section for now
  */
-int KUNPENG_PMU::PerfCounter::Read(vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool)
+int KUNPENG_PMU::PerfCounter::Read(vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps,
+    std::vector<PmuDataExt*> &extPool, std::vector<PmuSwitchData> &swtichData)
 {
     struct ReadFormat perfCountValue;
 

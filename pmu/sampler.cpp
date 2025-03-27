@@ -64,6 +64,12 @@ int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupEnable, const int grou
     attr.task = 1;
     attr.sample_id_all = 1;
     attr.exclude_guest = 1;
+    if ((this->evt->blockedSample == 1) && (this->evt->name == "context-switches")) {
+        attr.exclude_kernel = 0; // for confrim the reason of entering off cpu, it need to include kernel.
+        attr.context_switch = 1;
+        attr.freq = 0;
+        attr.sample_period = 1; 
+    }
 
     // if exist event group, adapte the child events config parameters
     if (groupEnable) {
@@ -142,6 +148,23 @@ void KUNPENG_PMU::PerfSampler::UpdateCommInfo(KUNPENG_PMU::PerfEvent *event)
     }
 }
 
+void KUNPENG_PMU::PerfSampler::ParseSwitch(KUNPENG_PMU::PerfEvent *event, struct PmuSwitchData *switchCurData)
+{
+    if (switchCurData == nullptr) {
+        return;
+    }
+    bool out = (event->header.misc & PERF_RECORD_MISC_SWITCH_OUT);
+    
+    if (event->header.type == PERF_RECORD_SWITCH) {
+        KUNPENG_PMU::ContextSwitchEvent *switchEvent = (KUNPENG_PMU::ContextSwitchEvent *)event;
+        switchCurData->pid = switchEvent->sampleId.pid;
+        switchCurData->tid = switchEvent->sampleId.tid;
+        switchCurData->ts = switchEvent->sampleId.time;
+        switchCurData->cpu = switchEvent->sampleId.cpu;
+        switchCurData->swOut = !out ? 0 : 1;
+    }
+}
+
 void KUNPENG_PMU::PerfSampler::ParseBranchSampleData(struct PmuData *pmuData, PerfRawSample *sample, union PerfEvent *event, std::vector<PmuDataExt*> &extPool)
 {
     if (branchSampleFilter == KPERF_NO_BRANCH_SAMPLE) {
@@ -214,7 +237,8 @@ void KUNPENG_PMU::PerfSampler::RawSampleProcess(
     ParseBranchSampleData(current, sample, event, extPool);
 }
 
-void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool)
+void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<PerfSampleIps> &sampleIps,
+    std::vector<PmuDataExt*> &extPool, std::vector<PmuSwitchData> &switchData)
 {
     union KUNPENG_PMU::PerfEvent *event;
     while (true) {
@@ -257,6 +281,12 @@ void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<Perf
                 UpdateCommInfo(event);
                 break;
             }
+            case PERF_RECORD_SWITCH: {
+                switchData.emplace_back(PmuSwitchData{0});
+                auto& switchCurData = switchData.back();
+                ParseSwitch(event, &switchCurData);
+                break;
+            }
             default:
                 break;
         }
@@ -283,7 +313,8 @@ void KUNPENG_PMU::PerfSampler::FillComm(const size_t &start, const size_t &end, 
     }
 }
 
-int KUNPENG_PMU::PerfSampler::Read(vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool)
+int KUNPENG_PMU::PerfSampler::Read(vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps,
+    std::vector<PmuDataExt*> &extPool, std::vector<PmuSwitchData> &switchData)
 {
     // This may be a lack of space.
     if(!this->sampleMmap || !this->sampleMmap->base) {
@@ -294,7 +325,7 @@ int KUNPENG_PMU::PerfSampler::Read(vector<PmuData> &data, std::vector<PerfSample
         return err;
     }
     auto cnt = data.size();
-    this->ReadRingBuffer(data, sampleIps, extPool);
+    this->ReadRingBuffer(data, sampleIps, extPool, switchData);
     if (this->pid == -1) {
         FillComm(cnt, data.size(), data);
     }

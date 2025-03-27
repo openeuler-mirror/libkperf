@@ -43,7 +43,8 @@ public:
 
     virtual int Init(const bool groupEnable, const int groupFd, const int resetOutputFd) = 0;
 
-    virtual int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps, std::vector<PmuDataExt*> &extPool) = 0;
+    virtual int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps,
+        std::vector<PmuDataExt*> &extPool, std::vector<PmuSwitchData> &swtichData) = 0;
 
     virtual int MapPerfAttr(const bool groupEnable, const int groupFd) = 0;
 
