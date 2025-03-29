@@ -44,6 +44,10 @@ if (PYTHON)
     add_subdirectory(python)
 endif()
 
+if (GO)
+    add_subdirectory(go)
+endif()
+
 if (INCLUDE_TEST)
     add_subdirectory(test)
 endif()
