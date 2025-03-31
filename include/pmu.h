@@ -407,22 +407,20 @@ enum PmuDeviceMetric {
     PMU_DDR_READ_BW,
     // Collect ddr write bandwidth.
     PMU_DDR_WRITE_BW,
-    // Collect L3 access bandwidth.
-    PMU_L3_BW,
-    // Collect L3 hit count.
-    PMU_L3_HIT,
+    // Collect L3 access bytes.
+    PMU_L3_TRAFFIC,
+    // Collect L3 miss count.
+    PMU_L3_MISS,
     // Collect L3 total reference count, including miss and hit count.
     PMU_L3_REF,
-    // Collect L3 average latency.
+    // Collect L3 total latency.
     PMU_L3_LAT,
     // Collect pcie rx bandwidth.
-    PMU_PCIE_RX_BW,
+    PMU_PCIE_RX_MRD_BW,
+    PMU_PCIE_RX_MWR_BW,
     // Collect pcie tx bandwidth.
-    PMU_PCIE_TX_BW,
-    // Collect pcie rx latency.
-    PMU_PCIE_RX_LAT,
-    // Collect pcie tx latency.
-    PMU_PCIE_TX_LAT,
+    PMU_PCIE_TX_MRD_BW,
+    PMU_PCIE_TX_MWR_BW,
     // Collect smmu address transaction.
     PMU_SMMU_TRAN
 };
@@ -446,96 +444,21 @@ struct PmuDeviceAttr {
  */
 int PmuDeviceOpen(struct PmuDeviceAttr *attr, unsigned len);
 
-/**
- * @brief
- * Get DDR read or write bandwidth of numa node <numaId> from PmuData array.
- * @param data Data from PmuRead
- * @param len Length of data
- * @param numaId Index of numa node
- * @param isRead 0 for write bandwidth and otherwise for read bandwidth
- * @return On success, bandwidth(Bytes/s) is returned.
- * On error, -1 is returned and call Perrorno to get error.
- */
-int PmuGetDDRNumaBW(struct PmuData *data, unsigned len, unsigned numaId, unsigned isRead);
+struct PmuDeviceData {
+    enum PmuDeviceMetric metric;
+    uint64_t count;
+    union {
+        unsigned coreId;
+        unsigned numaId;
+        char *bdf;
+    };
+};
 
-/**
- * @brief
- * Get L3 bandwidth of core <coreId> from PmuData array.
- * @param data Data from PmuRead
- * @param len Length of data
- * @param coreId Index of cpu core
- * @return On success, bandwidth(Bytes/s) is returned.
- * On error, -1 is returned and call Perrorno to get error.
- */
-int PmuGetL3BW(struct PmuData *data, unsigned len, unsigned coreId);
+int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
+                    struct PmuDeviceAttr *attr, unsigned attrLen,
+                    struct PmuDeviceData **data);
 
-/**
- * @brief
- * Get L3 hit count of core <coreId> from PmuData array.
- * @param data Data from PmuRead
- * @param len Length of data
- * @param coreId Index of cpu core
- * @return On success, hit count is returned.
- * On error, -1 is returned and call Perrorno to get error.
- */
-int PmuGetL3Hit(struct PmuData *data, unsigned len, unsigned coreId);
-
-/**
- * @brief
- * Get L3 total reference of core <coreId> from PmuData array.
- * @param data Data from PmuRead
- * @param len Length of data
- * @param coreId Index of cpu core
- * @return On success, total reference is returned.
- * On error, -1 is returned and call Perrorno to get error.
- */
-int PmuGetL3Ref(struct PmuData *data, unsigned len, unsigned coreId);
-
-/**
- * @brief
- * Get L3 average latency of numa node <numaId> from PmuData array.
- * @param data Data from PmuRead
- * @param len Length of data
- * @param numaId Index of numa node
- * @return On success, latency(cycle) is returned.
- * On error, -1 is returned and call Perrorno to get error.
- */
-int PmuGetL3NumaLat(struct PmuData *data, unsigned len, unsigned numaId);
-
-/**
- * @brief
- * Get pcie rx or tx bandwidth of a specific device.
- * @param data Data from PmuRead
- * @param len Length of data
- * @param bdf bdf striing of device
- * @param rx 0 for tx bandwidth and otherwise for rx bandwidth
- * @return On success, bandwidth(Byte/s) is returned.
- * On error, -1 is returned and call Perrorno to get error.
- */
-int PmuGetPcieBW(struct PmuData *data, unsigned len, char *bdf, unsigned rx);
-
-/**
- * @brief
- * Get pcie rx or tx latency of a specific device.
- * @param data Data from PmuRead
- * @param len Length of data
- * @param bdf bdf striing of device
- * @param rx 0 for tx latency and otherwise for rx latency
- * @return On success, latency(cycle) is returned.
- * On error, -1 is returned and call Perrorno to get error.
- */
-int PmuGetPcieLat(struct PmuData *data, unsigned len, char *bdf, unsigned rx);
-
-/**
- * @brief
- * Get address transaction count of a specific device.
- * @param data Data from PmuRead
- * @param len Length of data
- * @param bdf bdf striing of device
- * @return On success, transaction count is returned.
- * On error, -1 is returned and call Perrorno to get error.
- */
-int PmuGetSmmuTransaction(struct PmuData *data, unsigned len, char *bdf);
+void DevDataFree(struct PmuDeviceData *data);
 
 /**
  * @brief
