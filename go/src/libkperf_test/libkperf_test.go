@@ -10,7 +10,7 @@ func TestCount(t *testing.T) {
 	attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, SymbolMode:kperf.ELF}
 	fd, err := kperf.PmuOpen(kperf.COUNT, attr)
 	if err != nil {
-		t.Fatalf("kperf pmuopen couting failed, expect err is nil, but is %v", err)
+		t.Fatalf("kperf pmuopen counting failed, expect err is nil, but is %v", err)
 	}
 	kperf.PmuEnable(fd)
 	time.Sleep(time.Second)
