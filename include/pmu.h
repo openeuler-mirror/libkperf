@@ -415,6 +415,10 @@ enum PmuDeviceMetric {
     PMU_L3_REF,
     // Collect L3 total latency.
     PMU_L3_LAT,
+    // Collect PA to ring bandwidth.
+    PMU_PA2RING_ALL_BW,
+    // Collect ring to pa bandwidth.
+    PMU_RING2PA_ALL_BW,
     // Collect pcie rx bandwidth.
     PMU_PCIE_RX_MRD_BW,
     PMU_PCIE_RX_MWR_BW,

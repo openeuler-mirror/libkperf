@@ -104,10 +104,6 @@ int FillUncoreFields(const char* pmuName, PmuEvt *evt)
     }
     evt->type = devType;
     int cpuMask = GetCpuMask(devName);
-    if (cpuMask == -1) {
-        return UNKNOWN_ERROR;
-    }
-
     evt->cpumask = cpuMask;
     evt->name = pmuName;
     return SUCCESS;
@@ -360,21 +356,9 @@ struct PmuEvt* GetUncoreRawEvent(const char* pmuName, int collectType)
     }
     auto fieldsValues = unCoreRawFieldsValues[(std::string)pmuName];
     auto* pmuEvtPtr = new PmuEvt {0};
-    if (fieldsValues.find("config") == fieldsValues.end()) {
-        pmuEvtPtr->config = 0;
-    } else {
-        pmuEvtPtr->config = fieldsValues.at("config");
-    }
-    if (fieldsValues.find("config1") == fieldsValues.end()) {
-        pmuEvtPtr->config1 = 0;
-    } else {
-        pmuEvtPtr->config1 = fieldsValues.at("config1");
-    }
-    if (fieldsValues.find("config2") == fieldsValues.end()) {
-        pmuEvtPtr->config2 = 0;
-    } else {
-        pmuEvtPtr->config2 = fieldsValues.at("config2");
-    }
+    pmuEvtPtr->config = fieldsValues.find("config") == fieldsValues.end() ? 0 : fieldsValues.at("config");
+    pmuEvtPtr->config1 = fieldsValues.find("config1") == fieldsValues.end() ? 0 : fieldsValues.at("config1");
+    pmuEvtPtr->config2 = fieldsValues.find("config2") == fieldsValues.end() ? 0 : fieldsValues.at("config2");
 
     pmuEvtPtr->name = pmuName;
     pmuEvtPtr->pmuType = UNCORE_RAW_TYPE;

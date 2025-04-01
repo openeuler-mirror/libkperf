@@ -14,12 +14,18 @@
  ******************************************************************************/
 
 #include <cstring>
+#include <vector>
+#include <iostream>
+#include <sstream>
+#include <fstream>
 #include <cstdlib>
 #include <unistd.h>
+#include <dirent.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <climits>
 #include "pcerrc.h"
+#include "pcerr.h"
 #include "common.h"
 
 bool IsValidIp(unsigned long ip) {
@@ -48,7 +54,43 @@ bool IsValidPath(const std::string& filePath)
     return true;
 }
 
-int RaiseNumFd(unsigned long numFd)
+bool IsDirectory(const std::string& path)
+{
+    struct stat statbuf;
+    return stat(path.c_str(), &statbuf) == 0 && S_ISDIR(statbuf.st_mode);
+}
+
+std::vector<std::string> ListDirectoryEntries(const std::string& dirPath)
+{
+    std::vector<std::string> entries;
+    DIR* dir = opendir(dirPath.c_str());
+    if (!dir) {
+        pcerr::SetCustomErr(LIBPERF_ERR_OPEN_INVALID_FILE, "Failed to open directory: " + dirPath);
+        return entries;
+    }
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+        entries.push_back(entry->d_name);
+    }
+    closedir(dir);
+    return entries;
+}
+
+std::string ReadFileContent(const std::string& filePath)
+{
+    std::ifstream file(filePath);
+    if (!file.is_open()) {
+        pcerr::SetCustomErr(LIBPERF_ERR_OPEN_INVALID_FILE, "Failed to open File: " + filePath);
+        return "";
+    }
+    std::string content;
+    std::getline(file, content);
+    file.close();
+    return content;
+}
+
+int RaiseNumFd(uint64_t numFd)
 {
     unsigned long extra = 50;
     unsigned long setNumFd = extra + numFd;
@@ -76,14 +118,25 @@ int RaiseNumFd(unsigned long numFd)
 }
 
 bool ExistPath(const std::string &filePath) {
-    struct stat st{};
-    if(stat(filePath.c_str(), &st) != 0) {
-        return false;
-    }
-    return true;
+    struct stat statbuf{};
+    return stat(filePath.c_str(), &statbuf) == 0;
 }
 
-std::string GetTraceEventDir() {
+std::vector<std::string> SplitStringByDelimiter(const std::string& str, char delimiter)
+{
+    std::vector<std::string> parts;
+    std::stringstream ss(str);
+    std::string part;
+    while (std::getline(ss, part, delimiter)) {
+        if (!part.empty()) {
+            parts.push_back(part);
+        }
+    }
+    return parts;
+}
+
+std::string GetTraceEventDir()
+{
     if (ExistPath(TRACE_EVENT_PATH)) {
         return TRACE_EVENT_PATH;
     }
