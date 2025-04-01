@@ -73,12 +73,21 @@ bash build.sh install_path=/path/to/install python=true
 python3 -m pip uninstall -y libkperf
 ```
 
+想要编译go的包
+```shell
+bash build.sh go=true
+```
+执行成功后，需要把go/src/libkperf整个目录拷贝到 $GOPATH/src/下，$GOPATH为用户项目目录
+
 #### 文档
 详细文档可以参考docs目录：
 - [详细使用文档](./docs/Details_Usage.md)
 
 Python API文档可以参考docs目录：
 - [Python API说明文档](./docs/Python_API.md)
+
+Go API文档可以参考GO_API.md:
+- [GO API说明文档](./docs/Go_API.md)
 
 #### 快速使用
 
@@ -204,6 +213,36 @@ def Counting():
     kperf.close(pd)
 
 ```
+Go 例子
+```go
+import "libkperf/kperf"
+import "fmt"
+import "time"
+
+func main() {
+  attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, SymbolMode:kperf.ELF}
+	fd, err := kperf.PmuOpen(kperf.COUNT, attr)
+	if err != nil {
+		fmt.Printf("kperf pmuopen counting failed, expect err is nil, but is %v\n", err)
+    return
+	}
+	kperf.PmuEnable(fd)
+	time.Sleep(time.Second)
+	kperf.PmuDisable(fd)
+
+	dataVo, err := kperf.PmuRead(fd)
+	if err != nil {
+		fmt.Printf("kperf pmuread failed, expect err is nil, but is %v\n", err)
+    return
+	}
+
+	for _, o := range dataVo.GoData {
+    fmt.Printf("event: %v count: %v", o.Evt, o.Count)
+	}
+	kperf.PmuDataFree(dataVo)
+	kperf.PmuClose(fd)
+}
+```
 
 
 #### 示例代码快速运行参考：
@@ -222,4 +261,11 @@ g++ -o example example.cpp -I /install_path/include -L /install_path/lib -lkperf
 运行指令参考：
 ```bash
 python example.py
+```
+
+* **针对Go示例代码:**
+可以直接跳转到 go/src/libkperf/libkperf_test目录下
+```shell
+go test -v # 全部运行
+go test -v -test.run TestCount #指定运行的用例
 ```

@@ -32,6 +32,22 @@ if pd == -1:
     print(kperf.error())
     exit(1)
 ```
+
+```go
+import "libkperf/kperf"
+import "fmt"
+
+func main() {
+    attr := kperf.PmuAttr{EvtList:[]string{"cycles", "branch-misses"}}
+    pd, err := kperf.PmuOpen(kperf.COUNT, attr)
+	if err != nil {
+		fmt.Printf("kperf pmuopen couting failed, expect err is nil, but is %v", err)
+        return
+	}
+}
+
+```
+
 通过调用```PmuOpen```初始化了采集任务，并获得了任务的标识符pd。
 然后，可以利用pd来启动采集：
 ```c++
@@ -46,6 +62,12 @@ PmuDisable(pd);
 kperf.enable(pd)
 time.sleep(1)
 kperf.disable(pd)
+```
+
+```go
+kperf.PmuEnable(pd)
+time.Sleep(time.Second)
+kperf.PmuDisable(pd)
 ```
 不论是否停止了采集，都可以通过```PmuRead```来读取采集数据：
 ```c++
@@ -62,6 +84,22 @@ for data in pmu_data.iter:
     print(f"cpu {data.cpu} count {data.count} evt {data.evt}")
 ```
 ```kperf.read```会返回采集数据链表,可以通过遍历的方式读取。
+
+```go
+// go代码示例
+dataVo, err := kperf.PmuRead(fd)
+if err != nil {
+    fmt.Printf("kperf pmuread failed, expect err is nil, but is %v\n", err)
+    return
+}
+
+for _, o := range dataVo.GoData {
+    fmt.Printf("cpu %v count %v evt %v\n", o.Cpu, o.Count, o.Evt)
+}
+```
+
+```kperf.PmuRead```会返回数据结构体PmuDataVo, PmuDataVo中有转换成GO数据的结构体列表<GoData>
+可以遍历读取
 
 如果是对系统采集，那么PmuData的长度等于core的数量乘以事件的数量，PmuData的数据类似如下：
 ```
@@ -114,6 +152,22 @@ pmu_attr = kperf.PmuAttr(
 pd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
 ```
 
+```go
+//go代码示例
+import "libkperf/kperf"
+import "fmt"
+import "time"
+
+func main() {
+    attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, SymbolMode:kperf.ELF, SampleRate: 1000}
+    pd, err := kperf.PmuOpen(kperf.SAMPLE, attr)
+	if err != nil {
+		fmt.Printf("kperf pmuopen sample failed, expect err is nil, but is %v\n", err)
+        return
+	}
+}
+```
+
 启动采集和读取数据的方式和Counting一致。
 如果是对系统采集，PmuData的数据类似如下（长度取决于数据量）：
 ```
@@ -161,6 +215,23 @@ pmu_attr = kperf.PmuAttr(
 # 需要root权限才能运行
 pd = kperf.open(kperf.PmuTaskType.SPE_SAMPLING, pmu_attr)
 ```
+
+```go
+// go代码示例
+import "libkperf/kperf"
+import "time"
+
+func main() {
+    attr := kperf.PmuAttr{MinLatency:0x40, SymbolMode: kperf.ELF, SampleRate: 1000, DataFilter: kperf.SPE_DATA_ALL, EvFilter: kperf.SPE_EVENT_RETIRED}
+    pd, err := kperf.PmuOpen(kperf.SPE, attr)
+    if err != nil {
+        fmt.Printf("kperf pmuopen spe failed, expect err is nil, but is %v\n", err)
+        return
+    }
+}
+
+```
+
 对于spe采样，不需要设置evtList，而是通过设置dataFilter和evFilter来指定需要采集的事件。dataFilter和evFilter的含义仍然可以参考[perf spe的说明文档](https://www.man7.org/linux/man-pages/man1/perf-arm-spe.1.html)。
 
 采样数据PmuData和Sampling模式差不多，差别是：
@@ -172,6 +243,7 @@ struct PmuDataExt {
     unsigned long pa;               // physical address
     unsigned long va;               // virtual address
     unsigned long event;            // event id, which is a bit map of mixed events, event bit is defined in SPE_EVENTS.
+    unsigned short lat; // latency, Number of cycles between the time when an operation is dispatched and the time when the operation is executed.
 };
 ```
 其中，物理地址pa需要在启用PA_ENABLE的情况下才能采集。
@@ -248,6 +320,23 @@ pmu_attr = kperf.PmuAttr(evtList=evtList)
 pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
 ```
 
+```go
+// go代码示例
+import "libkperf/kperf"
+import "fmt"
+import "time"
+
+func main() {
+    evtList := []string{"hisi_sccl1_ddrc0/flux_rd/"}
+    attr := kperf.PmuAttr{EvtList:evtList}
+	pd, err := kperf.PmuOpen(kperf.COUNT, attr)
+	if err != nil {
+		fmt.Printf("kperf pmuopen couting failed, expect err is nil, but is %v\n", err)
+        return
+	}
+}
+```
+
 uncore事件的格式为```<device>/<event>/```，上面代码是采集设备hisi_sccl1_ddrc0的flux_rd事件。
 
 也可以把设备索引号省略：
@@ -260,6 +349,12 @@ evtList[0] = "hisi_sccl1_ddrc/flux_rd/";
 # python代码示例
 evtList = ["hisi_sccl1_ddrc/flux_rd/"]
 ```
+
+```go
+// go代码示例
+evtList := []string{"hisi_sccl1_ddrc/flux_rd/"}
+```
+
 这里把hisi_sccl1_ddrc0改为了hisi_sccl1_ddrc，这样会采集设备hisi_sccl1_ddrc0、hisi_sccl1_ddrc1、hisi_sccl1_ddrc2...，并且采集数据PmuData是所有设备数据的总和：count = count(hisi_sccl1_ddrc0) + count(hisi_sccl1_ddrc1) + count(hisi_sccl1_ddrc2) + ...
 
 也可以通过```<device>/config=0xxx/```的方式来指定事件名：
@@ -271,6 +366,11 @@ evtList[0] = "hisi_sccl1_ddrc0/config=0x1/";
 ```python
 # python代码示例
 evtList = ["hisi_sccl1_ddrc0/config=0x1/"]
+```
+
+```go
+// go代码示例
+evtList := []string{"hisi_sccl1_ddrc0/config=0x1/"}
 ```
 
 这样效果是和指定flux_rd是一样的。
@@ -297,6 +397,24 @@ pmu_attr = kperf.PmuAttr(
     symbolMode=kperf.SymbolMode.RESOLVE_ELF # 不需要符号解析，可以不使用该参数
 )
 pd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
+```
+
+```go
+// go代码示例
+import "libkperf/kperf"
+import "fmt"
+
+
+func main() {
+    evtList := []string{"sched:sched_switch"}
+    attr := kperf.PmuAttr{EvtList:evtList, SymbolMode:kperf.ELF, SampleRate: 1000}
+	pd, err := kperf.PmuOpen(kperf.SAMPLE, attr)
+	if err != nil {
+	    fmt.Printf("kperf pmuopen sample failed, expect err is nil, but is %v\n", err)
+        return
+	}
+}
+
 ```
 
 tracepoint支持Counting和Sampling两种模式，API调用流程和两者相似。
@@ -333,6 +451,52 @@ for data in pmu_data.iter:
     print(f"next_comm={next_comm};prev_pid={prev_pid.value}")
 ```
 这里调用者需要提前了解数据的类型，并且指定数据的大小。数据的类型和大小仍然可以从/sys/kernel/tracing/下每个事件的format文件来得知。
+
+```go
+// go代码示例
+import "libkperf/kperf"
+import "time"
+import "fmt"
+import "C"
+import "unsafe"
+
+func main() {
+    attr := kperf.PmuAttr{EvtList:[]string{"sched:sched_switch"}, SymbolMode:kperf.ELF, SampleRate: 1000}
+    pd, err := kperf.PmuOpen(kperf.SAMPLE, attr)
+    if err != nil {
+        fmt.Printf("kperf pmuopen sample failed, expect err is nil, but is %v\n", err)
+        return
+    }
+    kperf.PmuEnable(pd)
+	time.Sleep(time.Second)
+	kperf.PmuDisable(pd)
+
+	dataVo, err := kperf.PmuRead(pd)
+	if err != nil {
+		fmt.Printf("kperf pmuread failed, expect err is nil, but is %v\n", err)
+        return
+	}
+    for _, v := range dataVo.GoData {
+		var cArray [15]C.char
+        nextErr := v.GetField("next_comm", unsafe.Pointer(&cArray))
+        if nextErr != nil {
+            fmt.Printf("get next_comm failed err is%v ",nextErr)
+        } else {
+            ptr := (*C.char)(unsafe.Pointer(&cArray[0]))
+            fmt.Printf("next_comm=%v;", C.GoString(ptr))
+        }
+
+        prevPid := C.int(0)
+        prevPidErr := v.GetField("prev_pid", unsafe.Pointer(&prevPid))
+        if prevPidErr != nil {
+            fmt.Printf("get prev_pid err %v\n", prevPidErr)
+        } else {
+            fmt.Printf("prev=%v\n", int(prevPid))
+        }
+	}
+}
+
+```
 
 ### 事件分组
 libkperf提供了事件分组的能力，能够让多个事件同时处于采集状态。
@@ -372,6 +536,40 @@ pd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
 for data in pmu_data.iter:
     print(f"cpu {data.cpu} count {data.count} evt {data.evt}")
 ```
+
+```go
+// go代码示例
+import "libkperf/kperf"
+import "fmt"
+import "time"
+
+func main() {
+    evtList := []string{"cycles","branch-loads","branch-load-misses","iTLB-loads","inst_retired"}
+    evtAttrList := []int{1,1,1,1,-1}
+    attr := kperf.PmuAttr{EvtList: evtList, EvtAttr: evtAttrList}
+    pd, err := kperf.PmuOpen(kperf.COUNT, attr)
+    if err != nil {
+        fmt.Printf("kperf pmuopen sample failed, expect err is nil, but is %v\n", err)
+        return
+    }
+    kperf.PmuEnable(pd)
+    time.Sleep(time.Second)
+    kperf.PmuDisable(pd)
+
+    dataVo, err := kperf.PmuRead(pd)
+    if err != nil {
+        fmt.Printf("kperf pmuread failed, expect err is nil, but is %v\n", err)
+        return
+    }
+
+    for _, o := range dataVo.GoData {
+        fmt.Printf("cpu %v count %v evt %v\n", o.Cpu, o.Count, o.Evt)
+    }
+    kperf.PmuClose(pd)
+}
+
+```
+
 上述代码把前四个事件设定为一个分组，groupId都设定为1，最后一个事件不分组，groupId设定为-1。
 事件数组attr.evtList和事件属性数组attr.evtAttr必须一一对应，即长度必须一致。
 或者attr.evtAttr也可以是空指针，那么所有事件都不分组。
@@ -501,6 +699,53 @@ pmu_attr = kperf.PmuAttr(evtList=evtList, includeNewFork=True)
     kperf.close(pd)
 ```
 
+```go
+// go代码用例
+import "libkperf/kperf"
+import "time"
+import "fmt"
+
+func main() {
+    evtList := []string{"hisi_sccl1_ddrc/flux_rd/",
+        "hisi_sccl3_ddrc/flux_rd/",
+        "hisi_sccl5_ddrc/flux_rd/",
+        "hisi_sccl7_ddrc/flux_rd/",
+        "hisi_sccl1_ddrc/flux_wr/",
+        "hisi_sccl3_ddrc/flux_wr/",
+        "hisi_sccl5_ddrc/flux_wr/",
+        "hisi_sccl7_ddrc/flux_wr/"}
+    attr := kperf.PmuAttr{EvtList: evtList}
+    pd, err := kperf.PmuOpen(kperf.COUNT, attr)
+    if err != nil {
+        fmt.Printf("kperf pmuopen sample failed, expect err is nil, but is %v\n", err)
+        return
+    }
+    kperf.PmuEnable(pd)
+
+    for i := 0; i < 60; i++ {
+        time.Sleep(time.Second)
+         dataVo, err := kperf.PmuRead(pd)
+        if err != nil {
+            fmt.Printf("kperf pmuread failed, expect err is nil, but is %v\n", err)
+        }
+
+        j := 0
+        for _, o := range dataVo.GoData {
+            bandwith := o.Count * 32 / 1024 / 1024
+            if j < 4 {
+                fmt.Printf("read bandwidth: %v M/s\n", bandwith)
+            }
+            if j >= 4 && j < 8 {
+                fmt.Printf("write bandwidth: %v M/s\n", bandwith)
+            }
+            j += 1
+        }
+    }
+    kperf.PmuDisable(pd)
+    kperf.PmuClose(pd)
+}
+```
+
 执行上述代码，输出的结果类似如下：
 ```
 read bandwidth: 17.32 M/s
@@ -557,6 +802,39 @@ pmu_trace_data = kperf.trace_read(pd)
 for data in pmu_trace_data.iter:
     print(f"funcName: {data.funcs} elapsedTime: {data.elapsedTime} ms pid: {data.pid} tid: {data.tid} cpu: {data.cpu} comm: {data.comm}")
 kperf.trace_close(pd)
+```
+
+```go
+// go代码示例
+import "libkperf/kperf"
+import "fmt"
+import "time"
+
+func main() {
+    traceAttr := kperf.PmuTraceAttr{Funcs:[]string{"read", "write"}}
+
+	taskId, err := kperf.PmuTraceOpen(kperf.TRACE_SYS_CALL, traceAttr)
+	if err != nil {
+		fmt.Printf("pmu trace open failed, expect err is nil, but is %v\n", err)
+	}
+
+	kperf.PmuTraceEnable(taskId)
+	time.Sleep(time.Second)
+	kperf.PmuTraceDisable(taskId)
+
+	traceList, err := kperf.PmuTraceRead(taskId)
+
+	if err != nil {
+		fmt.Printf("pmu trace read failed, expect err is nil, but is %v\n", err)
+        return
+	}
+
+	for _, v := range traceList.GoTraceData {
+		fmt.Printf("funcName: %v, elapsedTime: %v ms pid: %v tid: %v, cpu: %v comm: %v\n", v.FuncName, v.ElapsedTime, v.Pid, v.Tid, v.Cpu, v.Comm)
+	}
+	kperf.PmuTraceFree(traceList)
+	kperf.PmuTraceClose(taskId)
+}
 ```
 执行上述代码，输出的结果类似如下：
 ```
@@ -641,6 +919,42 @@ for data in pmu_data.iter:
     if data.ext and data.ext.branchRecords:
         for item in data.ext.branchRecords.iter:
             print(f"{hex(item.fromAddr)}->{hex(item.toAddr)} {item.cycles}")
+```
+
+```go
+// go代码示例
+import "libkperf/kperf"
+import "time"
+import "fmt"
+
+func main() {
+    pidList := []int{1} // 该pid值替换成对应需要采集应用的pid
+    attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, SymbolMode:kperf.ELF_DWARF, CallStack:true, SampleRate: 1000, UseFreq:true, BranchSampleFilter: kperf.KPERF_SAMPLE_BRANCH_ANY | kperf.KPERF_SAMPLE_BRANCH_USER, PidList: pidList}
+	fd, err := kperf.PmuOpen(kperf.SAMPLE, attr)
+	if err != nil {
+		fmt.Printf("kperf pmuopen sample failed, expect err is nil, but is %v\n", err)
+        return
+	}
+
+	kperf.PmuEnable(fd)
+	time.Sleep(time.Second)
+	kperf.PmuDisable(fd)
+
+	dataVo, err := kperf.PmuRead(fd)
+	if err != nil {
+		fmt.Printf("kperf pmuread failed, expect err is nil, but is %v\n", err)
+        return
+	}
+
+	for _, o := range dataVo.GoData {
+		for _, b := range o.BranchRecords {
+			fmt.Printf("%#x->%#x %#x\n", b.FromAddr, b.ToAddr, b.Cycles)
+		}
+	}
+	kperf.PmuDataFree(dataVo)
+	kperf.PmuClose(fd)
+}
+
 ```
 执行上述代码，输出的结果类似如下：
 ```
