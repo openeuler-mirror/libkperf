@@ -73,6 +73,11 @@ To uninstall python package:
 python3 -m pip uninstall -y libkperf
 ```
 
+TO build a Go package:
+```shell
+bash build.sh go=true
+```
+
 #### Documents
 Refer to ```docs``` directory for detailed docs:
 - [Detailed usage](./docs/Details_Usage.md)
@@ -204,6 +209,37 @@ def Counting():
     kperf.close(pd)
 ```
 
+Go example
+```go
+import "libkperf/kperf"
+import "fmt"
+import "time"
+
+func main() {
+  attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, SymbolMode:kperf.ELF}
+	fd, err := kperf.PmuOpen(kperf.COUNT, attr)
+	if err != nil {
+		fmt.Printf("kperf pmuopen counting failed, expect err is nil, but is %v\n", err)
+    return
+	}
+	kperf.PmuEnable(fd)
+	time.Sleep(time.Second)
+	kperf.PmuDisable(fd)
+
+	dataVo, err := kperf.PmuRead(fd)
+	if err != nil {
+		fmt.Printf("kperf pmuread failed, expect err is nil, but is %v\n", err)
+    return
+	}
+
+	for _, o := range dataVo.GoData {
+    fmt.Printf("event: %v count: %v", o.Evt, o.Count)
+	}
+	kperf.PmuDataFree(dataVo)
+	kperf.PmuClose(fd)
+}
+```
+
 #### Quick Run Reference for Example Code:
 
 * **For C++ Example Code:**
@@ -220,4 +256,11 @@ You can place the sample code into the main function of a Python source file, an
 Run Command Reference:
 ```bash
 python example.py
+```
+
+* **For Go example Code:**
+You can directly go to the go/src/libkperf/libkperf_test directory.
+```shell
+go test -v # 全部运行
+go test -v -test.run TestCount #指定运行的用例
 ```

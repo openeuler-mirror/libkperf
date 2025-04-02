@@ -75,8 +75,8 @@ int KUNPENG_PMU::PerfCounter::Read(vector<PmuData> &data, std::vector<PerfSample
     data.emplace_back(PmuData{0});
     auto& current = data.back();
     current.count = increCount;
-    current.countPercent = 1.0 / percent; 
-    current.cpu = static_cast<unsigned>(this->cpu);
+    current.countPercent = 1.0 / percent;
+    current.cpu = this->cpu;
     current.tid = this->pid;
     auto findProc = procMap.find(current.tid);
     if (findProc != procMap.end()) {

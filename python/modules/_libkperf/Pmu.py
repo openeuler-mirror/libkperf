@@ -70,7 +70,7 @@ class CtypesPmuAttr(ctypes.Structure):
         int* pidList;                   // pid list
         unsigned numPid;                // length of pid list
         int* cpuList;                   // cpu id list
-        unsigned numCpu;                // length of cpu id list
+        int numCpu;                // length of cpu id list
 
         struct EvtAttr *evtAttr;        // events group id info
 
@@ -871,7 +871,7 @@ class CtypesPmuData(ctypes.Structure):
         ('ts',      ctypes.c_int64),
         ('pid',     ctypes.c_int),
         ('tid',     ctypes.c_int),
-        ('cpu',     ctypes.c_uint),
+        ('cpu',     ctypes.c_int),
         ('cpuTopo', ctypes.POINTER(CtypesCpuTopology)),
         ('comm',    ctypes.c_char_p),
         ('period',  ctypes.c_int),
@@ -903,7 +903,7 @@ class CtypesPmuData(ctypes.Structure):
         self.ts = ctypes.c_int64(ts)
         self.pid = ctypes.c_int(pid)
         self.tid = ctypes.c_int(tid)
-        self.cpu = ctypes.c_uint(cpu)
+        self.cpu = ctypes.c_int(cpu)
         self.cpuTopo = cpuTopo
         self.comm = ctypes.c_char_p(comm.encode(UTF_8))
         self.period = ctypes.c_int(period)
@@ -996,7 +996,7 @@ class ImplPmuData:
 
     @cpu.setter
     def cpu(self, cpu: int) -> None:
-        self.c_pmu_data.cpu = ctypes.c_uint(cpu)
+        self.c_pmu_data.cpu = ctypes.c_int(cpu)
 
     @property
     def cpuTopo(self) -> CpuTopology:
@@ -1088,7 +1088,7 @@ class CtypesPmuTraceData(ctypes.Structure):
         double elapsedTime;             // elapsed time
         pid_t pid;                      // process id
         int tid;                        // thread id
-        unsigned cpu;                   // cpu id
+        int cpu;                   // cpu id
         const char *comm;               // process command
     };
     """
@@ -1097,7 +1097,7 @@ class CtypesPmuTraceData(ctypes.Structure):
         ('elapsedTime', ctypes.c_double),
         ('pid', ctypes.c_int),
         ('tid', ctypes.c_int),
-        ('cpu', ctypes.c_uint),
+        ('cpu', ctypes.c_int),
         ('comm', ctypes.c_char_p)
     ]
 
@@ -1115,7 +1115,7 @@ class CtypesPmuTraceData(ctypes.Structure):
         self.elapsedTime = ctypes.c_double(elapsedTime)
         self.pid = ctypes.c_int(pid)
         self.tid = ctypes.c_int(tid)
-        self.cpu = ctypes.c_uint(cpu)
+        self.cpu = ctypes.c_int(cpu)
         self.comm = ctypes.c_char_p(comm.encode(UTF_8))
 
 class ImplPmuTraceData:
@@ -1179,7 +1179,7 @@ class ImplPmuTraceData:
     
     @cpu.setter
     def cpu(self, cpu: int) -> None:
-        self.__c_pmu_trace_data.cpu = ctypes.c_uint(cpu)
+        self.__c_pmu_trace_data.cpu = ctypes.c_int(cpu)
     
     @property
     def comm(self) -> str:

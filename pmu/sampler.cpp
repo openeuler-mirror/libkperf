@@ -228,7 +228,7 @@ void KUNPENG_PMU::PerfSampler::RawSampleProcess(
             }
         }
     }
-    current->cpu = static_cast<unsigned>(sample->cpu);
+    current->cpu = sample->cpu;
     current->pid = static_cast<pid_t>(sample->pid);
     current->tid = static_cast<int>(sample->tid);
     current->period = static_cast<uint64_t>(sample->period);

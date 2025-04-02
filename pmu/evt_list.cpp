@@ -309,6 +309,7 @@ void KUNPENG_PMU::EvtList::ClearExitFd()
     for (const auto& exitPid: exitPidVet) {
         for (auto it = this->pidList.begin(); it != this->pidList.end();) {
             if (it->get()->tid == exitPid) {
+                this->unUsedPidList.push_back(it.operator*());
                 it = this->pidList.erase(it);
                 continue;
             }
