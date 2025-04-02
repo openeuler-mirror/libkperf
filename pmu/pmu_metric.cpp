@@ -38,10 +38,18 @@ using namespace pcerr;
 static const string SYS_DEVICES = "/sys/devices/";
 static const string SYS_BUS_PCI_DEVICES = "/sys/bus/pci/devices";
 static const string SYS_IOMMU_DEVICES = "/sys/class/iommu";
+static const string SYS_CPU_INFO_PATH = "/sys/devices/system/cpu/cpu";
 static vector<const char*> supportedDevicePrefixes = {"hisi", "smmuv3", "hns3", "armv8"};
+// all uncore raw pmu device name list
 static vector<string> uncoreRawDeviceList;
-static vector<tuple<string, uint16_t, uint16_t>> pciePmuBdfRang;
-static unordered_map<string, string> bdfToSmmuMap;
+// valid watch pcie bdf list
+static vector<const char*> pcieBdfList;
+// key: valid bdf value:hisi_pcieX_coreX eg: 01:02.0 <-> hisi_pcie0_core0
+static unordered_map<string, string> bdfToPcieMap;
+// valid watch smmu bdf list
+static vector<const char*> smmuBdfList;
+// key: valid smmu bdf value:smmuv3_pmcg_<phys_addr_page> eg: 04:00:0 <-> smmuv3_pmcg_148020
+static unordered_map<string, string> bdfToSmmuPmuMap;
 
 namespace KUNPENG_PMU {
     struct UncoreDeviceConfig {
@@ -319,21 +327,22 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    static int QueryBdfToSmmuMapping()
+    // build map: bdf number -> smmuv3.0x<phy_addr> eg: 04:00:0 <-> smmuv3.0x0000000148000000
+    static int QueryBdfToSmmuNameMap(unordered_map<string, string>& bdfToSmmuMap)
     {
         if (!bdfToSmmuMap.empty()) {
             return SUCCESS;
         }
         if (!ExistPath(SYS_IOMMU_DEVICES) || !IsDirectory(SYS_IOMMU_DEVICES)) {
             cerr << "Directory does not exist or is not a directory: " << SYS_IOMMU_DEVICES << endl;
-            SetCustomErr(LIBPERF_ERR_INVALID_IOSMMU_DIR, "Directory does not exist or is not a directory: " + SYS_IOMMU_DEVICES);
+            New(LIBPERF_ERR_INVALID_IOSMMU_DIR, "Directory does not exist or is not a directory: " + SYS_IOMMU_DEVICES);
             return LIBPERF_ERR_INVALID_IOSMMU_DIR;
         }
         vector<string> entries = ListDirectoryEntries(SYS_IOMMU_DEVICES);
         for (const auto& entry : entries) {
             string devicesPath = SYS_IOMMU_DEVICES + "/" + entry + "/devices";
             if (!ExistPath(devicesPath) || !IsDirectory(devicesPath)) {
-                SetCustomErr(LIBPERF_ERR_INVALID_IOSMMU_DIR, "Directory does not exist or is not a directory: " + devicesPath);
+                New(LIBPERF_ERR_INVALID_IOSMMU_DIR, "Directory does not exist or is not a directory: " + devicesPath);
                 return LIBPERF_ERR_INVALID_IOSMMU_DIR;
             }
             vector<string> bdfEntries = ListDirectoryEntries(devicesPath);
@@ -388,7 +397,7 @@ namespace KUNPENG_PMU {
         try {
             physicalBaseAddress = stoul(hexAddressStr, nullptr, 16);
         } catch (const std::invalid_argument& e) {
-            SetCustomErr(LIBPERF_ERR_INVALID_SMMU_NAME, "invalid smmu device name");
+            New(LIBPERF_ERR_INVALID_SMMU_NAME, "invalid smmu device name");
             return LIBPERF_ERR_INVALID_SMMU_NAME;
         }
         uint64_t pmuPhysicalAddress = physicalBaseAddress + PMU_OFFSET;
@@ -399,110 +408,162 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    static int FindSmmuDeviceByBdf(std::unordered_map<string, vector<string>>& classifiedDevices, const string& bdf, string& smmuPmuName)
+    void FindAllSubBdfDevice(std::string bdfPath, std::string bus, unordered_map<string, string>& pcieBdfToBus)
     {
-        auto it = bdfToSmmuMap.find(bdf);
-        if (it == bdfToSmmuMap.end()) {
-            SetCustomErr(LIBPERF_ERR_NOT_SOUUPUT_SMMU_BDF, "BDF Value " + bdf + " not found in any SMMU Directory.");
-            return LIBPERF_ERR_NOT_SOUUPUT_SMMU_BDF;
+        vector<string> entries = ListDirectoryEntries(bdfPath);
+        for (auto& entry : entries) {
+            if (entry.find("0000:") != string::npos) {
+                string bdfNumber = entry.substr(strlen("0000:"));
+                pcieBdfToBus[bdfNumber] = bus;
+                FindAllSubBdfDevice(bdfPath + "/" + entry, bus, pcieBdfToBus);
+            }
         }
-        string smmuPmuKey = "";
-        int err = ConvertSmmuToDeviceAddress(it->second, smmuPmuKey);
-        if (err != SUCCESS) {
-            return err;
+        return;
+    }
+    
+    // build map: EP bdf number -> bus
+    static int GeneratePcieBusToBdfMap(unordered_map<string, string>& pcieBdfToBus)
+    {
+        if (!ExistPath(SYS_DEVICES) || !IsDirectory(SYS_DEVICES)) {
+            New(LIBPERF_ERR_QUERY_EVENT_LIST_FAILED, "Query uncore evtlist falied!");
+            return LIBPERF_ERR_QUERY_EVENT_LIST_FAILED;
         }
-        const auto smmu = classifiedDevices.find(smmuPmuKey);
-        if (smmu == classifiedDevices.end()) {
-            SetCustomErr(LIBPERF_ERR_NOT_SOUUPUT_SMMU_BDF, "BDF Value " + bdf + " not manage in any SMMU Directory.");
-            return LIBPERF_ERR_NOT_SOUUPUT_SMMU_BDF;
+        vector<string> entries = ListDirectoryEntries(SYS_DEVICES);
+        for (const auto& entry : entries) {
+            if (entry.find("pci0000:") == 0) {
+                string bus = entry.substr(strlen("pci0000:"));
+                FindAllSubBdfDevice(SYS_DEVICES + "/" + entry, bus, pcieBdfToBus);
+            }
         }
-        smmuPmuName = smmu->second.front();
         return SUCCESS;
     }
 
-    static int QueryPcieBdfRanges()
+    // build map: hisi_pcieX_coreX -> <bus, bdfmin, bdfmax>
+    static int QueryPcieBdfRanges(unordered_map<string, std::tuple<string, int, int>>& pciePmuBdfRang)
     {
         if (!pciePmuBdfRang.empty()) {
             return SUCCESS;
         }
         if (!ExistPath(SYS_DEVICES) || !IsDirectory(SYS_DEVICES)) {
             cerr << "PCI devices directory not found: " << SYS_DEVICES << endl;
-            SetCustomErr(LIBPERF_ERR_NOT_SOUUPUT_PCIE_BDF, "PCI devices directory not found: " + SYS_DEVICES);
+            New(LIBPERF_ERR_NOT_SOUUPUT_PCIE_BDF, "PCI devices directory not found: " + SYS_DEVICES);
             return LIBPERF_ERR_NOT_SOUUPUT_PCIE_BDF;
         }
         vector<string> entries = ListDirectoryEntries(SYS_DEVICES);
         for (const auto& entry : entries) {
-            if (entry.find("pcie") != string::npos) {
-                string bdfBusPath = SYS_DEVICES + "/" + entry + "/bus";
-                string bdfMinPath = SYS_DEVICES + "/" + entry + "/bdf_min";
-                string bdfMaxPath = SYS_DEVICES + "/" + entry + "/bdf_max";
-                if (!ExistPath(bdfBusPath) || !ExistPath(bdfMinPath) || !ExistPath(bdfMaxPath)) {
-                    SetCustomErr(LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING, "pcie pmu bdfMin or bdfMax file is empty");
-                    return LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING;
-                }
-                string bdfBusStr = ReadFileContent(bdfBusPath);
-                string bdfMinStr = ReadFileContent(bdfMinPath);
-                string bdfMaxStr = ReadFileContent(bdfMaxPath);
-                if (bdfBusStr.empty() || bdfMinStr.empty() || bdfMaxStr.empty()) {
-                    SetCustomErr(LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING, "pcie pmu bdfMin or bdfMax file is empty");
-                    return LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING;
-                }
-                uint16_t bus = 0;
-                uint16_t bdfMin = 0;
-                uint16_t bdfMax = 0;
-                try {
-                        bus = stoul(bdfBusStr, nullptr, 16);
-                        bdfMin = stoul(bdfMinStr, nullptr, 16);
-                        bdfMax = stoul(bdfMaxStr, nullptr, 16);
-                } catch (const std::exception& e) {
-                    SetCustomErr(LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING, "pcie pmu bdfMin or bdfMax file is invalid");
-                    return LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING;
-                }
-                if (bus == 0) {
-                    continue; // skip the invalid pcie pmu device
-                }
-                pciePmuBdfRang.emplace_back(entry, bdfMin, bdfMax);
+            if (entry.find("pcie") == string::npos) {
+                continue;
+            }
+            string bdfBusPath = SYS_DEVICES + "/" + entry + "/bus";
+            if (!ExistPath(bdfBusPath)) {
+                New(LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING, "pcie pmu bus file is empty");
+                return LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING;
+            }
+            string bdfMinPath = SYS_DEVICES + "/" + entry + "/bdf_min";
+            string bdfMaxPath = SYS_DEVICES + "/" + entry + "/bdf_max";
 
+            string bdfBusStr = ReadFileContent(bdfBusPath);
+            int bus = 0;
+            try {
+                bus = stoul(bdfBusStr, nullptr, 16);
+            } catch (const std::exception& e) {
+                New(LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING, "pcie pmu bus file is invalid");
+                return LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING;
+            }
+            if (bus == 0) {
+                continue;
+            }
+            
+            if (!ExistPath(bdfMinPath) || !ExistPath(bdfMaxPath)) {
+                SetWarn(LIBPERF_WARN_PCIE_BIOS_NOT_NEWEST, "pcie bios possible is the newest version");
+                pciePmuBdfRang[entry] = std::make_tuple(bdfBusStr.substr(strlen("0x")), -1, -1);
+                continue;
+            }
+            string bdfMinStr = ReadFileContent(bdfMinPath);
+            string bdfMaxStr = ReadFileContent(bdfMaxPath);
+            if (bdfMinStr.empty() || bdfMaxStr.empty()) {
+                New(LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING, "pcie pmu bdfMin or bdfMax file is empty");
+                return LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING;
+            }
+            int bdfMin = 0;
+            int bdfMax = 0;
+            try {
+                bdfMin = stoul(bdfMinStr, nullptr, 16);
+                bdfMax = stoul(bdfMaxStr, nullptr, 16);
+            } catch (const std::exception& e) {
+                New(LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING, "pcie pmu bdfMin or bdfMax file is invalid");
+                return LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING;
+            }
+            pciePmuBdfRang[entry] = std::make_tuple(bdfBusStr.substr(strlen("0x")), bdfMin, bdfMax);
+        }
+        return SUCCESS;
+    }
+
+    static int QueryAllBdfList(vector<string>& bdfList)
+    {
+        if (!ExistPath(SYS_BUS_PCI_DEVICES) || !IsDirectory(SYS_BUS_PCI_DEVICES)) {
+            New(LIBPERF_ERR_OPEN_PCI_FILE_FAILD, SYS_BUS_PCI_DEVICES + " is not exist.");
+            return LIBPERF_ERR_OPEN_PCI_FILE_FAILD;
+        }
+        vector<string> entries = ListDirectoryEntries(SYS_BUS_PCI_DEVICES);
+        for (const auto& entry : entries) {
+            if (entry.size() > 5 && entry.substr(0, 5) == "0000:") {
+                bdfList.push_back(entry.substr(5));
             }
         }
         return SUCCESS;
     }
 
-    static int FindPcieDeviceByBdf(const string& bdf, string& pciePmuName)
+    static const char** PmuDevicePcieBdfList(unsigned *numBdf)
     {
-        uint16_t userBdf = 0;
-        int err = ConvertBdfStringToValue(bdf, userBdf);
-        if (err != SUCCESS) {
-            return err;
+        vector<string> bdfList;
+        if(QueryAllBdfList(bdfList) != SUCCESS) {
+            *numBdf = 0;
+            return nullptr;
         }
-        for (const auto& [deviceName, bdfMin, bdfMax] : pciePmuBdfRang) {
-            if (userBdf >= bdfMin && userBdf <= bdfMax) {
-                pciePmuName = deviceName;
-                return SUCCESS;
-            }
-        }
-        SetCustomErr(LIBPERF_ERR_NOT_SOUUPUT_PCIE_BDF, "bdf value " + bdf + " is not managed by any PCIe Device.");
-        return LIBPERF_ERR_NOT_SOUUPUT_PCIE_BDF;
-    }
 
-    static bool ValidateBdfValue(const string& bdf)
-    {
-        if (!ExistPath(SYS_BUS_PCI_DEVICES) || !IsDirectory(SYS_BUS_PCI_DEVICES)) {
-            New(LIBPERF_ERR_OPEN_PCI_FILE_FAILD, SYS_BUS_PCI_DEVICES + " is not exist.");
-            return false;
+        unordered_map<string, string> pcieBdfToBus;
+        if (GeneratePcieBusToBdfMap(pcieBdfToBus) != SUCCESS) {
+            *numBdf = 0;
+            return nullptr;
         }
-        unordered_set<string> validBdfSet;
-        vector<string> entries = ListDirectoryEntries(SYS_BUS_PCI_DEVICES);
-        for (const auto& entry : entries) {
-            if (entry.size() > 5 && entry.substr(0, 5) == "0000:") {
-                validBdfSet.insert(entry.substr(5));
+        unordered_map<string, std::tuple<string, int, int>> pciePmuToBdfRang;
+        if (QueryPcieBdfRanges(pciePmuToBdfRang) != SUCCESS) {
+            *numBdf = 0;
+            return nullptr;
+        }
+
+        for (int i = 0; i < bdfList.size(); i++) {
+            auto it = pcieBdfToBus.find(bdfList[i]);
+            if (it == pcieBdfToBus.end()) {
+                continue;
+            }
+
+            const string bus = it->second;
+            for (auto& pciePmu : pciePmuToBdfRang) {
+                string pcieBus = std::get<0>(pciePmu.second);
+                int bdfmin = std::get<1>(pciePmu.second);
+                int bdfMax = std::get<2>(pciePmu.second);
+                if (bdfmin == -1) {
+                    if (bus == pcieBus) {
+                        pcieBdfList.emplace_back(strdup(bdfList[i].c_str()));
+                        bdfToPcieMap[bdfList[i]] = pciePmu.first;
+                    }
+                } else {
+                    uint16_t bdfValue = 0;
+                    if (ConvertBdfStringToValue(bdfList[i], bdfValue) != SUCCESS) {
+                        continue;
+                    }
+                    if (bus == pcieBus && bdfValue >= bdfmin && bdfValue <= bdfMax) {
+                        pcieBdfList.emplace_back(strdup(bdfList[i].c_str()));
+                        bdfToPcieMap[bdfList[i]] = pciePmu.first;
+                    }
+                }
             }
         }
-        if (validBdfSet.find(bdf) == validBdfSet.end()) {
-            New(LIBPERF_ERR_OPEN_PCI_FILE_FAILD, SYS_BUS_PCI_DEVICES + " is not exist this bdf number.");
-            return false;
-        }
-        return true;
+
+        *numBdf = pcieBdfList.size();
+        return pcieBdfList.data();
     }
 
     static std::unordered_map<string, vector<string>> ClassifyDevicesByPrefix(const string& devicePrefix,
@@ -524,6 +585,77 @@ namespace KUNPENG_PMU {
         return classifiedDevices;
     }
 
+    static int FindSmmuToSmmuPmu(std::string& smmuName, std::string& smmuPmuName)
+    {
+        string smmuPmuKey = "";
+        int err = ConvertSmmuToDeviceAddress(smmuName, smmuPmuKey);
+        if (err != SUCCESS) {
+            return err;
+        }
+        const auto& deviceConfig = GetDeviceMtricConfig();
+        const auto& config = deviceConfig.at(PmuDeviceMetric::PMU_SMMU_TRAN);
+        err = QueryUncoreRawDevices();
+        if (err != SUCCESS) {
+            return err;
+        }
+        auto classifiedDevices = ClassifyDevicesByPrefix(config.devicePrefix, config.subDeviceName, config.splitPosition);
+        const auto smmu = classifiedDevices.find(smmuPmuKey);
+        if (smmu == classifiedDevices.end()) {
+            SetWarn(LIBPERF_WARN_INVALID_SMMU_BDF, "BDF Value not manage in any SMMU Directory.");
+            return LIBPERF_WARN_INVALID_SMMU_BDF;
+        }
+        smmuPmuName = smmu->second.front();
+        return SUCCESS;
+    }
+
+    const char** PmuDeviceSmmuBdfList(unsigned *numBdf)
+    {
+        vector<string> bdfList;
+        if(QueryAllBdfList(bdfList) != SUCCESS) {
+            *numBdf = 0;
+            return nullptr;
+        }
+        unordered_map<string, string> bdfToSmmuMap;
+        if (QueryBdfToSmmuNameMap(bdfToSmmuMap) != SUCCESS) {
+            *numBdf = 0;
+            return nullptr;
+        }
+        for (int i = 0; i < bdfList.size(); i++) {
+            const auto& smmuName = bdfToSmmuMap.find(bdfList[i]);
+            if (smmuName != bdfToSmmuMap.end()) {
+                string smmuPmuName = "";
+                if (FindSmmuToSmmuPmu(smmuName->second, smmuPmuName) == SUCCESS) {
+                    smmuBdfList.push_back(strdup(bdfList[i].c_str()));
+                    bdfToSmmuPmuMap[bdfList[i]] = smmuPmuName;
+                }
+            }
+        }
+        *numBdf = smmuBdfList.size();
+        return smmuBdfList.data();
+    }
+
+    static int FindSmmuDeviceByBdf(const string& bdf, string& smmuPmuName)
+    {
+        auto it = bdfToSmmuPmuMap.find(bdf);
+        if (it == bdfToSmmuPmuMap.end()) {
+            New(LIBPERF_ERR_NOT_SOUUPUT_SMMU_BDF, "BDF Value " + bdf + " not found in any SMMU Directory.");
+            return LIBPERF_ERR_NOT_SOUUPUT_SMMU_BDF;
+        }
+        smmuPmuName = it->second;
+        return SUCCESS;
+    }
+
+    static int FindPcieDeviceByBdf(const string& bdf, string& pciePmuName)
+    {
+        auto bdfIt = bdfToPcieMap.find(bdf);
+        if (bdfIt == bdfToPcieMap.end()) {
+            New(LIBPERF_ERR_NOT_SOUUPUT_PCIE_BDF, "bdf value " + bdf + " is not managed by any PCIe Device.");
+            return LIBPERF_ERR_NOT_SOUUPUT_PCIE_BDF;
+        }
+        pciePmuName = bdfIt->second;
+        return SUCCESS;
+    }
+
     static vector<string> GenerateEventStrings(std::unordered_map<string, vector<string>> classifiedDevices,
         const vector<string>& events, const string& extraConfig, const string& bdfParameter, const string& bdf)
     {
@@ -537,7 +669,7 @@ namespace KUNPENG_PMU {
                         return {};
                     }
                 } else {
-                    int err = FindSmmuDeviceByBdf(classifiedDevices, bdf, device);
+                    int err = FindSmmuDeviceByBdf(bdf, device);
                     if (err != SUCCESS) {
                         return {};
                     }
@@ -573,18 +705,6 @@ namespace KUNPENG_PMU {
         const auto& config = deviceConfig.at(deviceAttr.metric);
         string bdf = "";
         if (deviceAttr.bdf != nullptr) {
-            if (!ValidateBdfValue(deviceAttr.bdf)) {
-                return {};
-            }
-            if (config.bdfParameter == "bdf=") {
-                if (QueryPcieBdfRanges() != SUCCESS) {
-                    return {};
-                }
-            } else {
-                if (QueryBdfToSmmuMapping() != SUCCESS) {
-                    return {};
-                }
-            }
             bdf = deviceAttr.bdf;
         }
         int err = QueryUncoreRawDevices();
@@ -597,10 +717,10 @@ namespace KUNPENG_PMU {
 
     static int CheckDeviceMetricEnum(struct PmuDeviceAttr *attr, unsigned len)
     {
+        const auto& metricConfig = GetDeviceMtricConfig();
         for (int i = 0; i < len; ++i) {
-            const auto & metricConfig = GetDeviceMtricConfig();
             if (metricConfig.find(attr[i].metric) == metricConfig.end()) {
-                SetCustomErr(LIBPERF_ERR_INVALID_PMU_DEVICES_METRIC, "For this platform this metric " +
+                New(LIBPERF_ERR_INVALID_PMU_DEVICES_METRIC, "For this platform this metric " +
                     GetMetricString(attr[i].metric) + " is invalid value for PmuDeviceMetric!");
                 return LIBPERF_ERR_INVALID_PMU_DEVICES_METRIC;
             }
@@ -608,12 +728,51 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
+    static bool CheckPcieBdf(char* bdf)
+    {
+        unsigned numBdf = 0;
+        const char** pcieBdfList = nullptr;
+        pcieBdfList = PmuDeviceBdfList(PmuBdfType::PMU_BDF_TYPE_PCIE, &numBdf);
+        bool find = false;
+        for (int i = 0; i < numBdf; ++i) {
+            if (strcmp(pcieBdfList[i], bdf) == 0) {
+                find = true;
+            }
+        }
+        return find;
+    }
+
+    static bool CheckSmmuBdf(char* bdf)
+    {
+        unsigned numBdf = 0;
+        const char** smmuBdfList = nullptr;
+        smmuBdfList = PmuDeviceBdfList(PmuBdfType::PMU_BDF_TYPE_SMMU, &numBdf);
+        bool find = false;
+        for (int i = 0; i < numBdf; ++i) {
+            if (strcmp(smmuBdfList[i], bdf) == 0) {
+                find = true;
+            }
+        }
+        return find;
+    }
+
     static int CheckBdf(struct PmuDeviceAttr *attr, unsigned len)
     {
         for (int i = 0; i < len; ++i) {
-            if (attr[i].metric >= PMU_PCIE_RX_MRD_BW && attr[i].bdf == nullptr) {
+            if (attr[i].metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_BW && attr[i].bdf == nullptr) {
                 New(LIBPERF_ERR_INVALID_PMU_DEVICES_BDF, "When collecting pcie or smmu metric, bdf value can not is nullptr!");
                 return LIBPERF_ERR_INVALID_PMU_DEVICES_BDF;
+            }
+            if (attr[i].metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_BW && attr[i].metric <= PmuDeviceMetric::PMU_PCIE_TX_MWR_BW
+                && !CheckPcieBdf(attr[i].bdf)) {
+                New(LIBPERF_ERR_NOT_SOUUPUT_PCIE_BDF, "this bdf not support pcie metric counting."
+                    " Plese use PmuDeviceBdfList to query.");
+                return LIBPERF_ERR_NOT_SOUUPUT_PCIE_BDF;
+            }
+            if (attr[i].metric == PmuDeviceMetric::PMU_SMMU_TRAN && !CheckSmmuBdf(attr[i].bdf)) {
+                New(LIBPERF_ERR_NOT_SOUUPUT_SMMU_BDF, "this bdf not support smmu metric counting."
+                " Plese use PmuDeviceBdfList to query.");
+                return LIBPERF_ERR_NOT_SOUUPUT_SMMU_BDF;
             }
         }
         return SUCCESS;
@@ -622,12 +781,12 @@ namespace KUNPENG_PMU {
     static int CheckPmuDeviceAttr(struct PmuDeviceAttr *attr, unsigned len)
     {
         int err = CheckDeviceMetricEnum(attr, len);
-        if (!err) {
+        if (err != SUCCESS) {
             return err;
         }
 
         err = CheckBdf(attr, len);
-        if (!err) {
+        if (err != SUCCESS) {
             return err;
         }
 
@@ -888,6 +1047,17 @@ namespace KUNPENG_PMU {
 
 using namespace KUNPENG_PMU;
 
+const char** PmuDeviceBdfList(enum PmuBdfType bdfType, unsigned *numBdf)
+{
+    if (bdfType == PmuBdfType::PMU_BDF_TYPE_PCIE) {
+        return PmuDevicePcieBdfList(numBdf);
+    }
+
+    if (bdfType == PmuBdfType::PMU_BDF_TYPE_SMMU) {
+        return PmuDeviceSmmuBdfList(numBdf);
+    }
+}
+
 int PmuDeviceOpen(struct PmuDeviceAttr *attr, unsigned len)
 {
     if (CheckPmuDeviceAttr(attr, len) != SUCCESS) {
@@ -961,4 +1131,20 @@ void DevDataFree(struct PmuDeviceData *data)
     New(SUCCESS);
 }
 
+int PmuGetCpuFreq(unsigned core)
+{
+    stringstream cpuPath;
+    cpuPath << SYS_CPU_INFO_PATH << core << "/cpufreq/scaling_cur_freq";
 
+    if (!ExistPath(cpuPath.str())) {
+        return -1;
+    }
+    std::string curFreqStr = ReadFileContent(cpuPath.str());
+    int cpuFreq = 0;
+    try {
+        cpuFreq = stoi(curFreqStr);
+    } catch (std::exception& e) {
+        return -1;
+    }
+    return cpuFreq;
+}
