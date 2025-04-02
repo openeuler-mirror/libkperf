@@ -403,29 +403,48 @@ int PmuGetField(struct SampleRawData *rawData, const char *fieldName, void *valu
 struct SampleRawField *PmuGetFieldExp(struct SampleRawData *rawData, const char *fieldName);
 
 enum PmuDeviceMetric {
-    // Collect ddr read bandwidth.
+    // Pernuma metric.
+    // Collect ddr read bandwidth for each numa node.
+    // Unit: Bytes/s
     PMU_DDR_READ_BW,
-    // Collect ddr write bandwidth.
+    // Pernuma metric.
+    // Collect ddr write bandwidth for each numa node.
+    // Unit: Bytes/s
     PMU_DDR_WRITE_BW,
-    // Collect L3 access bytes.
+    // Percore metric.
+    // Collect L3 access bytes for each cpu core.
+    // Unit: Bytes
     PMU_L3_TRAFFIC,
-    // Collect L3 miss count.
+    // Percore metric.
+    // Collect L3 miss count for each cpu core.
+    // Unit: count
     PMU_L3_MISS,
+    // Percore metric.
     // Collect L3 total reference count, including miss and hit count.
+    // Unit: count
     PMU_L3_REF,
-    // Collect L3 total latency.
+    // Pernuma metric.
+    // Collect L3 total latency for each numa node.
+    // Unit: cycles
     PMU_L3_LAT,
     // Collect PA to ring bandwidth.
     PMU_PA2RING_ALL_BW,
     // Collect ring to pa bandwidth.
     PMU_RING2PA_ALL_BW,
     // Collect pcie rx bandwidth.
+    // Perpcie metric.
+    // Collect pcie rx bandwidth for pcie device.
+    // Unit: Bytes/s
     PMU_PCIE_RX_MRD_BW,
     PMU_PCIE_RX_MWR_BW,
-    // Collect pcie tx bandwidth.
+    // Perpcie metric.
+    // Collect pcie tx bandwidth for pcie device.
+    // Unit: Bytes/s
     PMU_PCIE_TX_MRD_BW,
     PMU_PCIE_TX_MWR_BW,
+    // Perpcie metric.
     // Collect smmu address transaction.
+    // Unit: count
     PMU_SMMU_TRAN
 };
 
@@ -450,14 +469,30 @@ int PmuDeviceOpen(struct PmuDeviceAttr *attr, unsigned len);
 
 struct PmuDeviceData {
     enum PmuDeviceMetric metric;
+    // The metric value. The meaning of value depends on metric type.
+    // Refer to comments of PmuDeviceMetric for detailed info.
     uint64_t count;
     union {
+        // for percore metric
         unsigned coreId;
+        // for pernuma metric
         unsigned numaId;
+        // for perpcie metric
         char *bdf;
     };
 };
 
+/**
+ * @brief
+ * Query device metrics from pmuData and metric array.
+ * @param pmuData pmuData read from PmuRead
+ * @param len length of pmuData
+ * @param attr metric array to query
+ * @param attrLen length of metric array
+ * @param data output metric data array, the length of array is the returned value
+ * @return On success, length of metric data array is returned.
+ * On fail, -1 is returned and use Perror to get error message.
+ */
 int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
                     struct PmuDeviceAttr *attr, unsigned attrLen,
                     struct PmuDeviceData **data);
