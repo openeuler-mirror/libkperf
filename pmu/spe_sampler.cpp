@@ -123,7 +123,7 @@ namespace KUNPENG_PMU {
             auto &current = data.back();
             current.pid = static_cast<pid_t>(procTopo->pid);
             current.tid = static_cast<int>(rec->tid);
-            current.cpu = static_cast<unsigned>(this->cpu);
+            current.cpu = this->cpu;
             current.ext = &extPtrs[i];
             current.ext->event = rec->event;
             current.ext->va = rec->va;

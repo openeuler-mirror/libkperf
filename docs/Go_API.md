@@ -4,10 +4,12 @@ func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error)
 初始化Pmu事件
 
 * var collecType C.enum_PmuTaskType
-    * COUNT   PMU计数模式
-    * SAMPLE  PMU采样模式
-    * SPE     SPE采样模式
+
+  * COUNT   PMU计数模式
+  * SAMPLE  PMU采样模式
+  * SPE     SPE采样模式
 * type PmuAttr struct
+
   * EvtList []string
     采集的事件列表，事件列表可以通过perf list查询
   * PidList []int
@@ -46,7 +48,7 @@ func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error)
     * SPE_EVENT_MISPREDICTED  mispredict
   * MinLatency 仅收集该latency或者更高的样本数据
   * IncludeNewFork bool
-    是否支持子线程拆分，仅在COUTING模式中支持
+    是否支持子线程拆分，仅在COUNTING模式中支持
   * BranchSampleFilter bool
     * KPERF_NO_BRANCH_SAMPLE         = 0     不采集branch sample stack数据
     * KPERF_SAMPLE_BRANCH_USER        = 1 << 0  分支目标位于用户空间
@@ -54,12 +56,12 @@ func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error)
     * KPERF_SAMPLE_BRANCH_HV          = 1 << 2  分支目标位于虚拟机管理程序中
     * KPERF_SAMPLE_BRANCH_ANY         = 1 << 3  任意分支目标
     * KPERF_SAMPLE_BRANCH_ANY_CALL    = 1 << 4  任意调用分支（包括直接调用，间接调用和远程调用）
-    * KPERF_SAMPLE_BRANCH_ANY_RETURN  = 1 << 5  任意返回分支 
+    * KPERF_SAMPLE_BRANCH_ANY_RETURN  = 1 << 5  任意返回分支
     * KPERF_SAMPLE_BRANCH_IND_CALL    = 1 << 6  间接调用分支
     * KPERF_SAMPLE_BRANCH_ABORT_TX    = 1 << 7  事物性内存中止
     * KPERF_SAMPLE_BRANCH_IN_TX       = 1 << 8  事物内存分支
     * KPERF_SAMPLE_BRANCH_NO_TX       = 1 << 9  分支不在事物性内存事物中
-    * KPERF_SAMPLE_BRANCH_COND        = 1 << 10 条件分支  
+    * KPERF_SAMPLE_BRANCH_COND        = 1 << 10 条件分支
     * KPERF_SAMPLE_BRANCH_CALL_STACK  = 1 << 11 调用栈分支
     * KPERF_SAMPLE_BRANCH_IND_JUMP    = 1 << 12 跳跃分支
     * KPERF_SAMPLE_BRANCH_CALL        = 1 << 13 调用分支
@@ -70,8 +72,7 @@ func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error)
       branchSampleMode = kperf.BranchSampleFilter.KPERF_SAMPLE_BRANCH_ANY | kperf.BranchSampleFilter.KPERF_SAMPLE_BRANCH_USER
       pmu_attr = kperf.PmuAttr(sampleRate=1000, useFreq=True, pidList=pidList, evtList=evtList, branchSampleFilter=branchSampleMode)
       仅支持SAMPLING模式, 其中KPERF_SAMPLE_BRANCH_USER， KPERF_SAMPLE_BRANCH_KERNEL， KPERF_SAMPLE_BRANCH_HV使用时必须搭配KPERF_SAMPLE_BRANCH_ANY或者KPERF_SAMPLE_BRANCH_ANY之后的值一起使用
-
-* 返回值时int,error, 如果error不等于nil，则返回的int值为对应采集任务ID
+* 返回值是int,error, 如果error不等于nil，则返回的int值为对应采集任务ID
 
 ```go
 import "libkperf/kperf"
@@ -81,7 +82,7 @@ func main() {
     attr := kperf.PmuAttr{EvtList:[]string{"cycles", "branch-misses"}}
     pd, err := kperf.PmuOpen(kperf.COUNT, attr)
 	if err != nil {
-		fmt.Printf("kperf pmuopen couting failed, expect err is nil, but is %v", err)
+		fmt.Printf("kperf pmuopen counting failed, expect err is nil, but is %v", err)
         return
 	}
 }
@@ -92,17 +93,17 @@ func main() {
 func PmuEnable(fd int) error
 该接口用于开启某个pd的采样能力
 
-返回值为error
-error != nil，则使能异常
-error == nil, 则使能正常
+* 返回值为error
+* error != nil，则使能异常
+* error == nil，则使能正常
 
 ### kperf.PmuDisable
 
 func PmuDisable(fd int) error
 
-返回值为error
-error != nil，则关闭采集异常
-error == nil, 则关闭采集正常
+* 返回值为error
+* error != nil，则关闭采集异常
+* error == nil，则关闭采集正常
 
 ```go
 kperf.PmuEnable(pd)
@@ -115,39 +116,39 @@ kperf.PmuDisable(pd)
 func PmuRead(fd int) (PmuDataVo, error)
 
 * type PmuDataVo struct
-    * GoData []PmuData
-* type PmuData struct 
-    * Evt string 	事件  
-	* Ts uint64		Pmu采样时间戳				   
-	* Pid int       进程ID				                
-	* Tid int		线程ID					  
-	* Cpu uint32	CPUID					  
-	* Comm string	运行指令名称					 
-	* Period uint64 采样间隔                      
-	* Count uint64	计数				 
-	* CountPercent float64  计数比值，使能时间/运行时间
-	* CpuTopo CpuTopolopy 
-        * CoreId 系统核ID
-        * NumaId numa ID
-        * SocketId socket ID		 
-	* Symbols []sym.Symbol	
-           * Addr uint64 地址
-           * Module string 模块名称
-           * SymbolName string 符号名
-           * MangleName string mangle后的符号名
-           * LineNum uint32 行号
-           * Offset uint64 地址偏移
-           * CodeMapEndAddr uint64 结束地址
-           * CodeMapAddr uint64 初始地址
-    * BranchRecords []BranchSampleRecord 
-           * FromAddr uint64 起始地址
-           * ToAddr   uint64 跳转地址
-           * Cycles   uint64 执行指令数
-	* SpeExt SpeDataExt                
-           * Pa uint64     物理地址
-           * Va uint64	   虚拟地址
-           * Event uint64  混合事件的比特位
-           * Lat uint16    调度操作到执行操作的周期数 
+  * GoData []PmuData
+* type PmuData struct
+  * Evt string 	事件
+  * Ts uint64		Pmu采样时间戳
+  * Pid int       进程ID
+  * Tid int		线程ID
+  * Cpu int	CPUID
+  * Comm string	运行指令名称
+  * Period uint64 采样间隔
+  * Count uint64	计数
+  * CountPercent float64  计数比值，使能时间/运行时间
+  * CpuTopo CpuTopolopy
+    * CoreId 系统核ID
+    * NumaId numa ID
+    * SocketId socket ID
+  * Symbols []sym.Symbol
+    * Addr uint64 地址
+    * Module string 模块名称
+    * SymbolName string 符号名
+    * MangleName string mangle后的符号名
+    * LineNum uint32 行号
+    * Offset uint64 地址偏移
+    * CodeMapEndAddr uint64 结束地址
+    * CodeMapAddr uint64 初始地址
+  * BranchRecords
+    * FromAddr uint64 起始地址
+    * ToAddr   uint64 跳转地址
+    * Cycles   uint64 执行指令数
+  * SpeExt SpeDataExt
+    * Pa uint64     物理地址
+    * Va uint64	   虚拟地址
+    * Event uint64  混合事件的比特位
+    * Lat uint16    调度操作到执行操作的周期数
 
 ```go
 //go 代码示例
@@ -169,19 +170,21 @@ func PmuClose(fd int) 接口用于清理该pd所有的对应数据，并移除�
 ### kperf.PmuDumpData
 
 func PmuDumpData(dataVo PmuDataVo, filePath string, dumpDwf bool) error
+
 * dataVo 由kperf.PmuRead读取返回的数据
 * filePath 数据转储的路径
 * dumpDwf 是否写入dwarf数据
 
 ### kperf.PmuEventList
 
-func PmuEventList(eventType C.enum_PmuEventType) []string 
+func PmuEventList(eventType C.enum_PmuEventType) []string
 查找所有的事件列表
+
 * eventType
-    * CORE_EVENT   获取core事件列表
-    * UNCORE_EVENT 获取uncore事件列表
-    * TRACE_EVENT  获取tracepointer事件列表
-    * ALL_EVENT    获取所有的事件列表
+  * CORE_EVENT   获取core事件列表
+  * UNCORE_EVENT 获取uncore事件列表
+  * TRACE_EVENT  获取tracepointer事件列表
+  * ALL_EVENT    获取所有的事件列表
 * 返回数据为事件列表
 
 ```go
@@ -203,6 +206,7 @@ func main() {
 ### kperf.PmuTraceOpen
 
 func PmuTraceOpen(traceType C.enum_PmuTraceType, traceAttr PmuTraceAttr) (int, error) 初始化采集系统调用函数能力
+
 * traceType C.enum_PmuTraceType
   * TRACE_SYS_CALL 采集系统调用函数事件
 * traceAttr PmuTraceAttr
@@ -211,7 +215,7 @@ func PmuTraceOpen(traceType C.enum_PmuTraceType, traceAttr PmuTraceAttr) (int, e
   * CpuList []int采集的cpu列表，默认为空，表示采集所有cpu
 * 返回值是int和error，如果error！=nil则采集初始化失败，error==nil则采集初始化成功
 
-以下是kperf.PmuTraceOpen:
+以下是kperf.PmuTraceOpen用法:
 
 ```go
 import "libkperf/kperf"
@@ -233,17 +237,17 @@ func main() {
 func PmuTraceEnable(taskId int) error
 该接口用于开启某个pd的采样能力
 
-返回值为error
-error != nil，则使能异常
-error == nil, 则使能正常
+* 返回值为error
+* error != nil，则使能异常
+* error == nil，则使能正常
 
 ### kperf.PmuTraceDisable
 
 func PmuTraceDisable(taskId int) error
 
-返回值为error
-error != nil，则关闭采集异常
-error == nil, 则关闭采集正常
+* 返回值为error
+* error != nil，则关闭采集异常
+* error == nil，则关闭采集正常
 
 ```go
 kperf.PmuTraceEnable(pd)
@@ -254,17 +258,19 @@ kperf.PmuTraceDisable(pd)
 ### kperf.PmuTraceRead
 
 func PmuTraceRead(taskId int) (PmuTraceDataVo, error)
-* taskId int kperf.PmuOpen返回的taskId
 
+* taskId int kperf.PmuOpen返回的taskId
 * type PmuTraceDataVo struct
-    * GoTraceData []PmuTraceData
-* type PmuTraceData struct 
-    * FuncName string 系统调用函数名
-    * ElapsedTime float64 耗时时间
-    * Pid int 进程id
-    * Tid int 线程id
-    * Cpu uint32 cpu号
-    * Comm string 执行指令名称
+
+  * GoTraceData []PmuTraceData
+* type PmuTraceData struct
+
+  * FuncName string 系统调用函数名
+  * ElapsedTime float64 耗时时间
+  * Pid int 进程id
+  * Tid int 线程id
+  * Cpu int cpu号
+  * Comm string 执行指令名称
 
 ```go
 traceList, err := kperf.PmuTraceRead(taskId)
@@ -301,5 +307,3 @@ func main() {
     }
 }
 ```
-
-

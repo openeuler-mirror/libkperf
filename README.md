@@ -77,7 +77,7 @@ python3 -m pip uninstall -y libkperf
 ```shell
 bash build.sh go=true
 ```
-执行成功后，需要把go/src/libkperf整个目录拷贝到 $GOPATH/src/下，$GOPATH为用户项目目录
+执行成功后，需要把go/src/libkperf整个目录拷贝到 \$GOPATH/src/下，\$GOPATH为用户项目目录
 
 #### 文档
 详细文档可以参考docs目录：

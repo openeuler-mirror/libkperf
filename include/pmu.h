@@ -245,7 +245,7 @@ struct PmuData {
     int64_t ts;                     // time stamp. unit: ns
     pid_t pid;                      // process id
     int tid;                        // thread id
-    unsigned cpu;                   // cpu id
+    int cpu;                        // cpu id
     struct CpuTopology *cpuTopo;    // cpu topology
     const char *comm;               // process command
     uint64_t period;                // sample period
@@ -260,7 +260,7 @@ struct PmuTraceData {
     double elapsedTime;             // elapsed time
     pid_t pid;                      // process id
     int tid;                        // thread id
-    unsigned cpu;                   // cpu id
+    int cpu;                   // cpu id
     const char *comm;               // process command
 };
 

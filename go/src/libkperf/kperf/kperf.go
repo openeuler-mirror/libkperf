@@ -229,7 +229,7 @@ type PmuData struct {
 	Ts uint64						   // time stamp. uint: ns
 	Pid int				               // process id
 	Tid int							   // thread id
-	Cpu uint32						   // cpu id
+	Cpu int						   // cpu id
 	Comm string						   // process command 
 	Period uint64                      // sample period
 	Count uint64					   // event count. Only available for counting
@@ -268,7 +268,7 @@ type PmuTraceData struct {
 	ElapsedTime float64    // elapsed time
 	Pid int				   // process id
 	Tid int                // thread id
-	Cpu uint32			   // cpu id
+	Cpu int			   // cpu id
 	Comm string			   // process command
 }
 
@@ -669,7 +669,7 @@ func PmuTraceRead(taskId int) (PmuTraceDataVo, error) {
 	cDataList := *(*[]C.struct_PmuTraceData)(unsafe.Pointer(&slice))
 	goTraceData := make([]PmuTraceData, int(traceLen))
 	for i, v := range cDataList {
-		goTraceData[i] = PmuTraceData{FuncName:C.GoString(v.funcs), ElapsedTime:float64(v.elapsedTime), Pid:int(v.pid), Tid: int(v.tid), Cpu: uint32(v.cpu), Comm: C.GoString(v.comm)}
+		goTraceData[i] = PmuTraceData{FuncName:C.GoString(v.funcs), ElapsedTime:float64(v.elapsedTime), Pid:int(v.pid), Tid: int(v.tid), Cpu: int(v.cpu), Comm: C.GoString(v.comm)}
 	}
 	res.GoTraceData = goTraceData
 	res.cTraceData  = cTraceData
@@ -766,7 +766,7 @@ func transferCPmuDataToGoData(cPmuData *C.struct_PmuData, dataLen int, fd int) [
 		goDatas[i].Period = uint64(dataObj.period)
 		goDatas[i].Count = uint64(dataObj.count)
 		goDatas[i].CountPercent = float64(dataObj.countPercent)
-		goDatas[i].Cpu = uint32(dataObj.cpu)
+		goDatas[i].Cpu = int(dataObj.cpu)
 		if dataObj.cpuTopo != nil {
 			goDatas[i].CpuTopo = CpuTopolopy{CoreId: int(dataObj.cpuTopo.coreId), NumaId: int(dataObj.cpuTopo.numaId), SocketId: int(dataObj.cpuTopo.socketId)}
 		}
