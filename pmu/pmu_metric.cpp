@@ -168,8 +168,8 @@ namespace KUNPENG_PMU {
         PMU_METRIC_PAIR L3_LAT = {
             PmuDeviceMetric::PMU_L3_LAT,
             {
-                "armv8_pmu",
-                "",
+                "hisi_sccl",
+                "l3c",
                 {"0x80"},
                 "",
                 "",
@@ -732,9 +732,12 @@ namespace KUNPENG_PMU {
         if (evts.size() != 2) {
             return SUCCESS;
         }
+        // Event name for total packet length.
         string packLenEvt = evts[0];
+        // Event name for total latency.
         string latEvt = evts[1];
 
+        // Sort data by bdf, and then sort by event string.
         unordered_map<string, map<string, InnerDeviceData>> devDataByBdf;
         for (auto &data : rawData) {
             string devName;
@@ -747,11 +750,13 @@ namespace KUNPENG_PMU {
         }
 
         for (auto &data : devDataByBdf) {
+            // Get events of total packet length and total latency.
             auto findLenData = data.second.find(packLenEvt);
             auto findLatData = data.second.find(latEvt);
             if (findLenData == data.second.end() || findLatData == data.second.end()) {
                 continue;
             }
+            // Compute bandwidth: (packet length)/(latency)
             int bw = 4 * findLenData->second.count / findLatData->second.count;
             PmuDeviceData outData;
             outData.metric = metric;
@@ -764,11 +769,13 @@ namespace KUNPENG_PMU {
 
     int SmmuTransAggregate(const PmuDeviceMetric metric, const vector<InnerDeviceData> &rawData, vector<PmuDeviceData> &devData)
     {
+        // Sort data by bdf.
         unordered_map<string, vector<InnerDeviceData>> devDataByBdf;
         for (auto &data : rawData) {
             devDataByBdf[data.bdf].push_back(data);
         }
 
+        // Sum all transactions from different smmu devices for each pcie device.
         for (auto &data : devDataByBdf) {
             PmuDeviceData outData;
             outData.metric = metric;
@@ -782,7 +789,6 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    typedef bool (*IsDevEventCb)(const string &devName, const string &evtName, const PmuDeviceAttr &devAttr);
     typedef uint64_t (*ComputeMetricCb)(const uint64_t rawCount);
     typedef int (*AggregateMetricCb)(const PmuDeviceMetric metric, const vector<InnerDeviceData> &rawData, vector<PmuDeviceData> &devData);
 
@@ -807,12 +813,6 @@ namespace KUNPENG_PMU {
         {PMU_SMMU_TRAN, SmmuTransAggregate},
     };
 
-    static string BDFtoHex(const char *bdf)
-    {
-        // TODO: implement
-        return "";
-    }
-
     static bool IsMetricEvent(const string &devName, const string &evtName, const PmuDeviceAttr &devAttr)
     {
         const auto& deviceConfig = GetDeviceMtricConfig();
@@ -821,25 +821,42 @@ namespace KUNPENG_PMU {
             return false;
         }
 
+        // Check device name.
         auto &devConfig = findDevConfig->second;
         if (devName.find(devConfig.devicePrefix) == string::npos ||
             devName.find(devConfig.subDeviceName) == string::npos) {
             return false;
         }
 
+        // Extract config string.
+        // For example, get '0x12' from 'config=0x12'.
         auto configStr = ExtractEvtStr("config", evtName);
         if (configStr == "") {
             return false;
         }
 
+        // For pcie events, check if event is related with specifi bdf.
         if (perpcieMetric.find(devAttr.metric) != perpcieMetric.end()) {
             auto bdfStr = ExtractEvtStr("bdf", evtName);
-            auto expect = BDFtoHex(devAttr.bdf);
-            if (bdfStr != expect) {
+            if (bdfStr.empty()) {
+                bdfStr = ExtractEvtStr("filter_stream_id", evtName);
+            }
+            if (bdfStr.empty()) {
+                return false;
+            }
+            uint16_t expectBdf;
+            int ret = ConvertBdfStringToValue(devAttr.bdf, expectBdf);
+            if (ret != SUCCESS) {
+                return false;
+            }
+            stringstream bdfValue;
+            bdfValue << "0x" << hex << expectBdf;
+            if (bdfStr != bdfValue.str()) {
                 return false;
             }
         }
 
+        // Check if there is at least one event to match.
         for (auto &evt : devConfig.events) {
             if (configStr == evt) {
                 return true;
@@ -856,9 +873,13 @@ namespace KUNPENG_PMU {
             string evt = pmuData[i].evt;
             string devName;
             string evtName;
+            // Get device name and event string.
+            // For example, 'hisi_pcie0_core0/config=0x0804, bdf=0x70/',
+            // devName is 'hisi_pcie0_core0' and evtName is 'config=0x0804, bdf=0x70'
             if (!GetDeviceName(evt, devName, evtName)){
                 continue;
             }
+            // Check if pmuData is related with current metric.
             if (!IsMetricEvent(devName, evtName, devAttr)) {
                 continue;
             }
@@ -867,6 +888,7 @@ namespace KUNPENG_PMU {
             devData.evtName = pmuData[i].evt;
             devData.metric = devAttr.metric;
             if (computeMetricMap.find(devAttr.metric) != computeMetricMap.end()) {
+                // Translate pmu count to meaningful value.
                 devData.count = computeMetricMap[devAttr.metric](pmuData[i].count);
             } else {
                 devData.count = pmuData[i].count;
@@ -918,6 +940,9 @@ int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
                     struct PmuDeviceAttr *attr, unsigned attrLen,
                     struct PmuDeviceData **data)
 {
+    // Filter pmuData by metric and generate InnerDeviceData, 
+    // which contains event name, core id, numa id and bdf.
+    // InnerDeviceData will be used to aggregate data by core id, numa id or bdf.
     MetricMap metricMap;
     for (unsigned i = 0; i < attrLen; ++i) {
         int ret = GetDevMetric(pmuData, len, attr[i], metricMap);
@@ -927,11 +952,13 @@ int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
         }
     }
 
+    // Aggregate each metric data by core id, numa id or bdf.
     vector<PmuDeviceData> devData;
     for (auto &metricData : metricMap) {
         auto findAggregate = aggregateMap.find(metricData.first);
         int ret;
         if (findAggregate == aggregateMap.end()) {
+            // No aggregation and just copy InnerDeviceData to PmuDeviceData.
             ret = DefaultAggregate(metricData.second, devData);
         }
         else {
@@ -943,8 +970,10 @@ int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
         }
     }
 
+    // Store pointer of vector and return to caller.
     auto dataPtr = devData.data();
     int retLen = devData.size();
+    // Make relationship between raw pointer and vector, for DevDataFree.
     deviceDataMap[dataPtr] = move(devData);
     *data = dataPtr;
     New(SUCCESS);
@@ -954,8 +983,7 @@ int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
 void DevDataFree(struct PmuDeviceData *data)
 {
     SetWarn(SUCCESS);
-    if (deviceDataMap.find(data) != deviceDataMap.end())
-    {
+    if (deviceDataMap.find(data) != deviceDataMap.end()) {
         deviceDataMap.erase(data);
     }
     New(SUCCESS);
