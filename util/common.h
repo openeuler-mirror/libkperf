@@ -17,6 +17,7 @@
 #define LIBKPROF_COMMON_H
 #include <linux/perf_event.h>
 #include <string>
+#include <vector>
 
 const std::string TRACE_EVENT_PATH = "/sys/kernel/tracing/events/";
 const std::string TRACE_DEBUG_EVENT_PATH = "/sys/kernel/debug/tracing/events/";
@@ -24,6 +25,11 @@ const std::string TRACE_DEBUG_EVENT_PATH = "/sys/kernel/debug/tracing/events/";
 bool IsValidIp(unsigned long ip);
 std::string GetRealPath(const std::string filePath);
 bool IsValidPath(const std::string& filePath);
+bool IsDirectory(const std::string& path);
+bool FileExists(const std::string& path);
+std::vector<std::string> ListDirectoryEntries(const std::string& dirPath);
+std::string ReadFileContent(const std::string& filePath);
+std::vector<std::string> SplitStringByDelimiter(const std::string& str, char delimiter);
 int RaiseNumFd(uint64_t numFd);
 bool ExistPath(const std::string& filePath);
 std::string GetTraceEventDir();
