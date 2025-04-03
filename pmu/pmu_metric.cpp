@@ -844,12 +844,34 @@ namespace KUNPENG_PMU {
         return 64 * rawCount;
     }
 
+    static PmuMetricMode GetMetricMode(const PmuDeviceMetric &metric)
+    {
+        switch(metric) {
+            case PMU_DDR_READ_BW:
+            case PMU_DDR_WRITE_BW:
+            case PMU_L3_LAT:
+                return PMU_METRIC_NUMA;
+            case PMU_L3_TRAFFIC:
+            case PMU_L3_MISS:
+            case PMU_L3_REF:
+                return PMU_METRIC_CORE;
+            case PMU_PCIE_RX_MRD_BW:
+            case PMU_PCIE_RX_MWR_BW:
+            case PMU_PCIE_TX_MRD_BW:
+            case PMU_PCIE_TX_MWR_BW:
+            case PMU_SMMU_TRAN:
+                return PMU_METRIC_BDF;
+        }
+        return PMU_METRIC_INVALID;
+    }
+
     int DefaultAggregate(const vector<InnerDeviceData> &rawData, vector<PmuDeviceData> &devData)
     {
         for (auto &data : rawData) {
             PmuDeviceData outData;
             outData.metric = data.metric;
             outData.count = data.count;
+            outData.mode = GetMetricMode(data.metric);
             outData.coreId = data.coreId;
             devData.push_back(outData);
         }
@@ -866,6 +888,7 @@ namespace KUNPENG_PMU {
                 PmuDeviceData outData;
                 outData.metric = data.metric;
                 outData.count = data.count;
+                outData.mode = GetMetricMode(data.metric);
                 outData.numaId = data.numaId;
                 devDataByNuma[data.numaId] = outData;
             } else {
@@ -920,6 +943,7 @@ namespace KUNPENG_PMU {
             PmuDeviceData outData;
             outData.metric = metric;
             outData.count = bw;
+            outData.mode = GetMetricMode(metric);
             outData.bdf = findLenData->second.bdf;
             devData.push_back(outData);
         }
@@ -938,6 +962,7 @@ namespace KUNPENG_PMU {
         for (auto &data : devDataByBdf) {
             PmuDeviceData outData;
             outData.metric = metric;
+            outData.mode = GetMetricMode(metric);
             outData.bdf = data.second[0].bdf;
             outData.count = 0;
             for (auto bdfData : data.second) {

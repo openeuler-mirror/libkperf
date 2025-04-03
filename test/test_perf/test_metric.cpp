@@ -63,8 +63,10 @@ TEST_F(TestMetric, GetMetricDDRBandwidth)
     ASSERT_EQ(len, 2);
     ASSERT_EQ(devData[0].count, 200 * 32);
     ASSERT_EQ(devData[0].numaId, 0);
+    ASSERT_EQ(devData[0].mode, PMU_METRIC_NUMA);
     ASSERT_EQ(devData[1].count, 400 * 32);
     ASSERT_EQ(devData[1].numaId, 1);
+    ASSERT_EQ(devData[1].mode, PMU_METRIC_NUMA);
 }
 
 TEST_F(TestMetric, GetMetricL3Latency)
@@ -85,8 +87,10 @@ TEST_F(TestMetric, GetMetricL3Latency)
     ASSERT_EQ(len, 2);
     ASSERT_EQ(devData[0].count, 200);
     ASSERT_EQ(devData[0].numaId, 0);
+    ASSERT_EQ(devData[0].mode, PMU_METRIC_NUMA);
     ASSERT_EQ(devData[1].count, 400);
     ASSERT_EQ(devData[1].numaId, 1);
+    ASSERT_EQ(devData[1].mode, PMU_METRIC_NUMA);
 }
 
 TEST_F(TestMetric, GetMetricL3LatencyAndDDR)
@@ -106,9 +110,9 @@ TEST_F(TestMetric, GetMetricL3LatencyAndDDR)
     PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(data, 4, devAttr, 2, &devData);
     ASSERT_EQ(len, 2);
-    PmuDeviceData l3Data = {.metric = PMU_L3_LAT, .count = 200, .numaId = 0};
+    PmuDeviceData l3Data = {.metric = PMU_L3_LAT, .count = 200, .mode = PMU_METRIC_NUMA, .numaId = 0};
     ASSERT_TRUE(HasDevData(devData, len, l3Data));
-    PmuDeviceData ddrData = {.metric = PMU_DDR_WRITE_BW, .count = 400 * 32, .numaId = 1};
+    PmuDeviceData ddrData = {.metric = PMU_DDR_WRITE_BW, .count = 400 * 32, .mode = PMU_METRIC_NUMA, .numaId = 1};
     ASSERT_TRUE(HasDevData(devData, len, ddrData));
 }
 
@@ -128,12 +132,16 @@ TEST_F(TestMetric, GetMetricL3Traffic)
     ASSERT_EQ(len, 4);
     ASSERT_EQ(devData[0].count, 100 * 64);
     ASSERT_EQ(devData[0].coreId, 0);
+    ASSERT_EQ(devData[0].mode, PMU_METRIC_CORE);
     ASSERT_EQ(devData[1].count, 200 * 64);
     ASSERT_EQ(devData[1].coreId, 1);
+    ASSERT_EQ(devData[1].mode, PMU_METRIC_CORE);
     ASSERT_EQ(devData[2].count, 300 * 64);
     ASSERT_EQ(devData[2].coreId, 2);
+    ASSERT_EQ(devData[2].mode, PMU_METRIC_CORE);
     ASSERT_EQ(devData[3].count, 400 * 64);
     ASSERT_EQ(devData[3].coreId, 3);
+    ASSERT_EQ(devData[3].mode, PMU_METRIC_CORE);
 }
 
 TEST_F(TestMetric, GetMetricL3LatencyAndL3Miss)
@@ -152,10 +160,10 @@ TEST_F(TestMetric, GetMetricL3LatencyAndL3Miss)
     PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(data, 4, devAttr, 2, &devData);
     ASSERT_EQ(len, 3);
-    PmuDeviceData l3Data = {.metric = PMU_L3_LAT, .count = 200, .numaId = 0};
+    PmuDeviceData l3Data = {.metric = PMU_L3_LAT, .count = 200, .mode = PMU_METRIC_NUMA, .numaId = 0};
     ASSERT_TRUE(HasDevData(devData, len, l3Data));
-    PmuDeviceData l3miss4 = {.metric = PMU_L3_MISS, .count = 50, .coreId = 4};
-    PmuDeviceData l3miss5 = {.metric = PMU_L3_MISS, .count = 60, .coreId = 5};
+    PmuDeviceData l3miss4 = {.metric = PMU_L3_MISS, .count = 50, .mode = PMU_METRIC_CORE, .coreId = 4};
+    PmuDeviceData l3miss5 = {.metric = PMU_L3_MISS, .count = 60, .mode = PMU_METRIC_CORE, .coreId = 5};
     ASSERT_TRUE(HasDevData(devData, len, l3miss4));
     ASSERT_TRUE(HasDevData(devData, len, l3miss5));
 }
@@ -177,8 +185,8 @@ TEST_F(TestMetric, GetMetricPcieBandwidth)
     PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(data, 4, devAttr, 2, &devData);
     ASSERT_EQ(len, 2);
-    PmuDeviceData pcieData1 = {.metric = PMU_PCIE_RX_MRD_BW, .count = 40, .bdf = devAttr[0].bdf};
-    PmuDeviceData pcieData2 = {.metric = PMU_PCIE_RX_MWR_BW, .count = 60, .bdf = devAttr[1].bdf};
+    PmuDeviceData pcieData1 = {.metric = PMU_PCIE_RX_MRD_BW, .count = 40, .mode = PMU_METRIC_BDF, .bdf = devAttr[0].bdf};
+    PmuDeviceData pcieData2 = {.metric = PMU_PCIE_RX_MWR_BW, .count = 60, .mode = PMU_METRIC_BDF, .bdf = devAttr[1].bdf};
     ASSERT_TRUE(HasDevData(devData, len, pcieData1));
     ASSERT_TRUE(HasDevData(devData, len, pcieData2));
 }
@@ -200,8 +208,8 @@ TEST_F(TestMetric, GetMetricSmmuTransaction)
     PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(data, 4, devAttr, 2, &devData);
     ASSERT_EQ(len, 2);
-    PmuDeviceData smmuData1 = {.metric = PMU_SMMU_TRAN, .count = 110, .bdf = devAttr[0].bdf};
-    PmuDeviceData smmuData2 = {.metric = PMU_SMMU_TRAN, .count = 50, .bdf = devAttr[1].bdf};
+    PmuDeviceData smmuData1 = {.metric = PMU_SMMU_TRAN, .count = 110, .mode = PMU_METRIC_BDF, .bdf = devAttr[0].bdf};
+    PmuDeviceData smmuData2 = {.metric = PMU_SMMU_TRAN, .count = 50, .mode = PMU_METRIC_BDF, .bdf = devAttr[1].bdf};
     ASSERT_TRUE(HasDevData(devData, len, smmuData1));
     ASSERT_TRUE(HasDevData(devData, len, smmuData2));
 }

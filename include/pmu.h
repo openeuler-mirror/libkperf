@@ -461,6 +461,13 @@ enum PmuBdfType {
     PMU_BDF_TYPE_SMMU   // smmu collect metric.
 };
 
+enum PmuMetricMode {
+    PMU_METRIC_INVALID,
+    PMU_METRIC_CORE,
+    PMU_METRIC_NUMA,
+    PMU_METRIC_BDF
+};
+
 /**
  * @brief
  * Query all available bdf list from system.
@@ -486,6 +493,8 @@ struct PmuDeviceData {
     // The metric value. The meaning of value depends on metric type.
     // Refer to comments of PmuDeviceMetric for detailed info.
     uint64_t count;
+    enum PmuMetricMode mode;
+    // Field of union depends on the above <mode>.
     union {
         // for percore metric
         unsigned coreId;
