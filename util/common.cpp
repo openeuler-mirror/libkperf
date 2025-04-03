@@ -65,7 +65,7 @@ std::vector<std::string> ListDirectoryEntries(const std::string& dirPath)
     std::vector<std::string> entries;
     DIR* dir = opendir(dirPath.c_str());
     if (!dir) {
-        pcerr::SetCustomErr(LIBPERF_ERR_OPEN_INVALID_FILE, "Failed to open directory: " + dirPath);
+        pcerr::New(LIBPERF_ERR_OPEN_INVALID_FILE, "Failed to open directory: " + dirPath);
         return entries;
     }
     struct dirent* entry;
@@ -81,13 +81,24 @@ std::string ReadFileContent(const std::string& filePath)
 {
     std::ifstream file(filePath);
     if (!file.is_open()) {
-        pcerr::SetCustomErr(LIBPERF_ERR_OPEN_INVALID_FILE, "Failed to open File: " + filePath);
+        pcerr::New(LIBPERF_ERR_OPEN_INVALID_FILE, "Failed to open File: " + filePath);
         return "";
     }
     std::string content;
     std::getline(file, content);
     file.close();
     return content;
+}
+
+int ConvertHexStrToInt(const std::string& hexStr, uint64_t& bus)
+{
+    try {
+        bus = stoul(hexStr, nullptr, 16);
+    } catch (const std::exception& e) {
+        pcerr::New(LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING, "hexStr: " + hexStr + " is invalid");
+        return LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING;
+    }
+    return SUCCESS;
 }
 
 int RaiseNumFd(uint64_t numFd)

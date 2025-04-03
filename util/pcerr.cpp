@@ -121,6 +121,7 @@ namespace pcerr {
             errList.push(msg);
             customErrMsgs.insert({code, errList});
         }
+        New(code, msg);
     }
 }  // namespace pcerr
 

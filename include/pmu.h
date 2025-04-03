@@ -456,6 +456,20 @@ struct PmuDeviceAttr {
     char *bdf;
 };
 
+enum PmuBdfType {
+    PMU_BDF_TYPE_PCIE,  // pcie collect metric.
+    PMU_BDF_TYPE_SMMU   // smmu collect metric.
+};
+
+/**
+ * @brief
+ * Query all available bdf list from system.
+ * @param bdfType type of bdf chosen by user
+ * @param numBdf length of bdf list
+ * @return bdf list
+ */
+const char** PmuDeviceBdfList(enum PmuBdfType bdfType, unsigned *numBdf);
+
 /**
  * @brief
  * A high level interface for initializing pmu events for devices,
