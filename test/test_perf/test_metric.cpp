@@ -72,7 +72,7 @@ TEST_F(TestMetric, GetCpuFreq)
 
 TEST_F(TestMetric, CollectDDRBandwidth)
 {
-    PmuDeviceAttr devAttr;
+    PmuDeviceAttr devAttr = {};
     devAttr.metric = PMU_DDR_READ_BW;
     int pd = PmuDeviceOpen(&devAttr, 1);
     ASSERT_NE(pd, -1);
@@ -98,7 +98,7 @@ TEST_F(TestMetric, CollectDDRBandwidth)
 
 TEST_F(TestMetric, CollectL3Latency)
 {
-    PmuDeviceAttr devAttr;
+    PmuDeviceAttr devAttr = {};
     devAttr.metric = PMU_L3_LAT;
     int pd = PmuDeviceOpen(&devAttr, 1);
     cout << Perror() << endl;
@@ -125,7 +125,7 @@ TEST_F(TestMetric, CollectL3Latency)
 
 TEST_F(TestMetric, CollectL3LatencyAndDDR)
 {
-    PmuDeviceAttr devAttr[2];
+    PmuDeviceAttr devAttr[2] = {};
     devAttr[0].metric = PMU_L3_LAT;
     devAttr[1].metric = PMU_DDR_WRITE_BW;
 
@@ -150,7 +150,7 @@ TEST_F(TestMetric, CollectL3LatencyAndDDR)
 
 TEST_F(TestMetric, CollectL3Traffic)
 {
-    PmuDeviceAttr devAttr;
+    PmuDeviceAttr devAttr = {};
     devAttr.metric = PMU_L3_TRAFFIC;
     int pd = PmuDeviceOpen(&devAttr, 1);
     ASSERT_NE(pd, -1);
@@ -169,7 +169,7 @@ TEST_F(TestMetric, CollectL3Traffic)
 
 TEST_F(TestMetric, CollectL3LatencyAndL3Miss)
 {
-    PmuDeviceAttr devAttr[2];
+    PmuDeviceAttr devAttr[2] = {};
     devAttr[0].metric = PMU_L3_LAT;
     devAttr[1].metric = PMU_L3_MISS;
 
@@ -197,7 +197,7 @@ TEST_F(TestMetric, CollectL3LatencyAndL3Miss)
 
 TEST_F(TestMetric, GetMetricPcieBandwidth)
 {
-    PmuDeviceAttr devAttr[2];
+    PmuDeviceAttr devAttr[2] = {};
     devAttr[0].metric = PMU_PCIE_RX_MRD_BW;
     devAttr[0].bdf="01:03.0";
     devAttr[1].metric = PMU_PCIE_RX_MWR_BW;
@@ -224,11 +224,16 @@ TEST_F(TestMetric, GetMetricPcieBandwidth)
 
 TEST_F(TestMetric, GetMetricSmmuTransaction)
 {
-    PmuDeviceAttr devAttr[2];
+    const char** bdfList = nullptr;
+    unsigned bdfLen = 0;
+    bdfList = PmuDeviceBdfList(PMU_BDF_TYPE_SMMU, &bdfLen);
+    cout << Perror() << endl;
+    ASSERT_NE(bdfList, nullptr);
+    PmuDeviceAttr devAttr[2] = {};
     devAttr[0].metric = PMU_SMMU_TRAN;
-    devAttr[0].bdf="3a:00.0";
+    devAttr[0].bdf= strdup(bdfList[0]);
     devAttr[1].metric = PMU_SMMU_TRAN;
-    devAttr[1].bdf="74:01.0";
+    devAttr[1].bdf= strdup(bdfList[1]);
 
     int pd = PmuDeviceOpen(devAttr, 2);
     cout << Perror() << endl;
@@ -247,4 +252,6 @@ TEST_F(TestMetric, GetMetricSmmuTransaction)
     PmuDeviceData smmuData2 = {.metric = PMU_SMMU_TRAN, .count = 50, .mode = PMU_METRIC_BDF, .bdf = devAttr[1].bdf};
     ASSERT_TRUE(HasDevData(devData, len, smmuData1));
     ASSERT_TRUE(HasDevData(devData, len, smmuData2));
+    delete[] devAttr[0].bdf;
+    delete[] devAttr[1].bdf;
 }
