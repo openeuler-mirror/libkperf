@@ -28,7 +28,7 @@ kperf.open(collector_type: kperf.PmuTaskType, pmu_attr: kperf.PmuAttr)
     排除对内核态数据的采集
   * symbolMode
     符号采集模式
-    NO_SYMBOL_RESOLE = 0 不支持符号采集
+    NO_SYMBOL_RESOLVE = 0 不支持符号采集
     RESOLVE_ELF = 1   仅支持ELF数据采集，解析function，不解析行号
     RESOLVE_ELF_DWARF = 2 既支持ELF数据采集，也支持行号解析
   * callStack
