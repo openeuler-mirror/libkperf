@@ -23,12 +23,14 @@ def test_get_pcie_bdf_list():
     bdf_type = kperf.PmuBdfType.PMU_BDF_TYPE_PCIE
     bdf_list = kperf.device_bdf_list(bdf_type)
     print(kperf.error())
+    print(len(bdf_list))
     assert bdf_list is not None, f"Expected non-null bdf_list, but got {bdf_list}"
 
 def test_get_smmu_bdf_list():
     bdf_type = kperf.PmuBdfType.PMU_BDF_TYPE_SMMU
     bdf_list = kperf.device_bdf_list(bdf_type)
     print(kperf.error())
+    print(len(bdf_list))
     assert bdf_list is not None, f"Expected non-null bdf_list, but got {bdf_list}"
 
 def test_get_cpu_freq():

@@ -83,6 +83,11 @@ namespace KUNPENG_PMU {
                                                     PMU_PCIE_TX_MWR_BW,
                                                     PMU_SMMU_TRAN};
 
+    static bool IsValidBdf(PmuDeviceMetric metric)
+    {
+        return perpcieMetric.find(metric) != perpcieMetric.end();
+    }
+    
     static std::string GetMetricString(PmuDeviceMetric metric)
     {
         auto it = MetricToString.find(metric);
@@ -659,7 +664,7 @@ namespace KUNPENG_PMU {
         PmuDeviceAttr& deviceAttr, const UncoreDeviceConfig& metricConfig)
     {
         vector<string> eventList;
-        if (perpcieMetric.find(deviceAttr.metric) != perpcieMetric.end()) {
+        if (IsValidBdf(deviceAttr.metric)) {
             string bdf = deviceAttr.bdf;
             for (const auto& evt : metricConfig.events) {
                 string device = "";
@@ -758,7 +763,7 @@ namespace KUNPENG_PMU {
 
     static int CheckBdf(struct PmuDeviceAttr& deviceAttr)
     {
-        if (perpcieMetric.find(deviceAttr.metric) != perpcieMetric.end() && deviceAttr.bdf == nullptr) {
+        if (IsValidBdf(deviceAttr.metric) && deviceAttr.bdf == nullptr) {
             New(LIBPERF_ERR_INVALID_PMU_DEVICES_BDF, "When collecting pcie or smmu metric, bdf value can not is nullptr!");
             return LIBPERF_ERR_INVALID_PMU_DEVICES_BDF;
         }
@@ -798,6 +803,25 @@ namespace KUNPENG_PMU {
             }
         }
         
+        return SUCCESS;
+    }
+
+    static int RemoveDupDeviceAttr(struct PmuDeviceAttr *attr, unsigned len, std::vector<PmuDeviceAttr>& deviceAttr)
+    {
+        std::unordered_set<std::string> uniqueSet;
+        for (int i = 0; i < len; ++i) {
+            std::string key = "";
+            if (IsValidBdf(attr[i].metric)) {
+                key = std::to_string(attr[i].metric) + "_" + attr[i].bdf;
+            } else {
+                key = std::to_string(attr[i].metric);
+            }
+
+            if (uniqueSet.find(key) == uniqueSet.end()) {
+                uniqueSet.insert(key);
+                deviceAttr.emplace_back(attr[i]);
+            }
+        }
         return SUCCESS;
     }
 
@@ -1021,7 +1045,7 @@ namespace KUNPENG_PMU {
         }
 
         // For pcie events, check if event is related with specifi bdf.
-        if (perpcieMetric.find(devAttr.metric) != perpcieMetric.end()) {
+        if (IsValidBdf(devAttr.metric)) {
             auto bdfStr = ExtractEvtStr("bdf", evtName);
             if (bdfStr.empty()) {
                 bdfStr = ExtractEvtStr("filter_stream_id", evtName);
@@ -1084,7 +1108,7 @@ namespace KUNPENG_PMU {
             if (pernumaMetric.find(devAttr.metric) != pernumaMetric.end()) {
                 devData.numaId = pmuData[i].cpuTopo->numaId;
             }
-            if (perpcieMetric.find(devAttr.metric) != pernumaMetric.end()) {
+            if (IsValidBdf(devAttr.metric)) {
                 devData.bdf = devAttr.bdf;
             }
             metricMap[devData.metric].push_back(devData);
@@ -1096,7 +1120,7 @@ namespace KUNPENG_PMU {
 using namespace KUNPENG_PMU;
 
 const char** PmuDeviceBdfList(enum PmuBdfType bdfType, unsigned *numBdf)
-{  
+{
     SetWarn(SUCCESS);
     int err = 0;
     if (bdfType == PmuBdfType::PMU_BDF_TYPE_PCIE) {
@@ -1127,9 +1151,14 @@ int PmuDeviceOpen(struct PmuDeviceAttr *attr, unsigned len)
         if (CheckPmuDeviceAttr(attr, len) != SUCCESS) {
             return -1;
         }
+        // Remove duplicate device attributes.
+        vector<PmuDeviceAttr> deviceAttr;
+        if (RemoveDupDeviceAttr(attr, len, deviceAttr) != SUCCESS) {
+            return -1;
+        }
         vector<string> configEvtList;
-        for (int i = 0; i < len; ++i) {
-            vector<string> temp = GenerateEventList(attr[i]);
+        for (int i = 0; i < deviceAttr.size(); ++i) {
+            vector<string> temp = GenerateEventList(deviceAttr[i]);
             if (temp.empty()) {
                 return -1;
             }
@@ -1173,7 +1202,6 @@ static int CheckPmuDeviceVar(struct PmuData *pmuData, unsigned len,
     return SUCCESS;
 }
 
-
 int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
                     struct PmuDeviceAttr *attr, unsigned attrLen,
                     struct PmuDeviceData **data)
@@ -1183,12 +1211,17 @@ int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
         if (CheckPmuDeviceVar(pmuData, len, attr, attrLen) != SUCCESS) {
             return -1;
         }
+        // Remove duplicate device attributes.
+        vector<PmuDeviceAttr> deviceAttr;
+        if (RemoveDupDeviceAttr(attr, attrLen, deviceAttr) != SUCCESS) {
+            return -1;
+        }
         // Filter pmuData by metric and generate InnerDeviceData, 
         // which contains event name, core id, numa id and bdf.
         // InnerDeviceData will be used to aggregate data by core id, numa id or bdf.
         MetricMap metricMap;
-        for (unsigned i = 0; i < attrLen; ++i) {
-            int ret = GetDevMetric(pmuData, len, attr[i], metricMap);
+        for (unsigned i = 0; i < deviceAttr.size(); ++i) {
+            int ret = GetDevMetric(pmuData, len, deviceAttr[i], metricMap);
             if (ret != SUCCESS) {
                 New(ret);
                 return -1;
@@ -1203,8 +1236,7 @@ int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
             if (findAggregate == aggregateMap.end()) {
                 // No aggregation and just copy InnerDeviceData to PmuDeviceData.
                 ret = DefaultAggregate(metricData.second, devData);
-            }
-            else {
+            } else {
                 ret = findAggregate->second(metricData.first, metricData.second, devData);
             }
             if (ret != SUCCESS) {
