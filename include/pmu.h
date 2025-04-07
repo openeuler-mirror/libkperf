@@ -427,10 +427,6 @@ enum PmuDeviceMetric {
     // Collect L3 total latency for each numa node.
     // Unit: cycles
     PMU_L3_LAT,
-    // Collect PA to ring bandwidth.
-    PMU_PA2RING_ALL_BW,
-    // Collect ring to pa bandwidth.
-    PMU_RING2PA_ALL_BW,
     // Collect pcie rx bandwidth.
     // Perpcie metric.
     // Collect pcie rx bandwidth for pcie device.
@@ -520,6 +516,10 @@ int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
                     struct PmuDeviceAttr *attr, unsigned attrLen,
                     struct PmuDeviceData **data);
 
+/**
+ * @brief Free PmuDeviceData pointer.
+ * @param data
+ */
 void DevDataFree(struct PmuDeviceData *data);
 
 /**
@@ -596,7 +596,7 @@ const char** PmuSysCallFuncList(unsigned *numFunc);
  * @return On success, core frequency(Hz) is returned.
  * On error, -1 is returned and call Perrorno to get error.
  */
-int PmuGetCpuFreq(unsigned core);
+int64_t PmuGetCpuFreq(unsigned core);
 
 #pragma GCC visibility pop
 #ifdef __cplusplus

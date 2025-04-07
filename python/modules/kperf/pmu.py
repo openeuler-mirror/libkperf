@@ -106,6 +106,94 @@ class SymbolMode:
     RESOLVE_ELF = 1        # Resolve elf only. Fields except lineNum and fileName in Symbol will be valid.
     RESOLVE_ELF_DWARF = 2  # Resolve elf and dwarf. All fields in Symbol will be valid.
 
+class PmuDeviceMetric:
+    # Pernuma metric.
+    # Collect ddr read bandwidth for each numa node.
+    # Unit: Bytes/s
+    PMU_DDR_READ_BW = 0
+    # Pernuma metric.
+    # Collect ddr write bandwidth for each numa node.
+    # Unit: Bytes/s
+    PMU_DDR_WRITE_BW = 1
+    # Percore metric.
+    # Collect L3 access bytes for each cpu core.
+    # Unit: Bytes
+    PMU_L3_TRAFFIC = 2
+    # Percore metric.
+    # Collect L3 miss count for each cpu core.
+    # Unit: count
+    PMU_L3_MISS = 3
+    # Percore metric.
+    # Collect L3 total reference count, including miss and hit count.
+    # Unit: count
+    PMU_L3_REF = 4
+    # Pernuma metric.
+    # Collect L3 total latency for each numa node.
+    # Unit: cycles
+    PMU_L3_LAT = 5
+    # Collect pcie rx bandwidth.
+    # Perpcie metric.
+    # Collect pcie rx bandwidth for pcie device.
+    # Unit: Bytes/s
+    PMU_PCIE_RX_MRD_BW = 6
+    PMU_PCIE_RX_MWR_BW = 7
+    # Perpcie metric.
+    # Collect pcie tx bandwidth for pcie device.
+    # Unit: Bytes/s
+    PMU_PCIE_TX_MRD_BW = 8
+    PMU_PCIE_TX_MWR_BW = 9
+    # Perpcie metric.
+    # Collect smmu address transaction.
+    # Unit: count
+    PMU_SMMU_TRAN = 10
+
+class PmuDeviceAttr(_libkperf.PmuDeviceAttr):
+    """
+    struct PmuDeviceAttr {
+        enum PmuDeviceMetric metric;
+
+        // Used for PMU_PCIE_XXX and PMU_SMMU_XXX to collect a specifi pcie device.
+        // The string of bdf is something like '7a:01.0'.
+        char *bdf;
+    };
+    """
+    def __init__(self, metric, bdf=None):
+        super().__init__(
+            metric=metric,
+            bdf=bdf
+        )
+
+class PmuBdfType:
+    PMU_BDF_TYPE_PCIE = 0   # pcie collect metric.
+    PMU_BDF_TYPE_SMMU = 1   # smmu collect metric.
+
+class PmuMetricMode:
+    PMU_METRIC_INVALID = 0
+    PMU_METRIC_CORE = 1
+    PMU_METRIC_NUMA = 2
+    PMU_METRIC_BDF = 3
+
+
+class PmuDeviceData(_libkperf.PmuDeviceData):
+    """
+    struct PmuDeviceData {
+        enum PmuDeviceMetric metric;
+        // The metric value. The meaning of value depends on metric type.
+        // Refer to comments of PmuDeviceMetric for detailed info.
+        uint64_t count;
+        enum PmuMetricMode mode;
+        // Field of union depends on the above <mode>.
+        union {
+            // for percore metric
+            unsigned coreId;
+            // for pernuma metric
+            unsigned numaId;
+            // for perpcie metric
+            char *bdf;
+        };
+    };
+    """
+    pass
 
 class PmuAttr(_libkperf.PmuAttr):
     """
@@ -345,6 +433,43 @@ def get_field_exp(pmu_data: _libkperf.ImplPmuData, field_name: str) -> SampleRaw
     """
     return _libkperf.PmuGetFieldExp(pmu_data.rawData.c_pmu_data_rawData, field_name)
 
+def device_bdf_list(bdf_type: PmuBdfType) -> List[str]:
+    """
+    Query all available BDF (Bus:Device.Function) list from system.
+    :param bdf_type: type of bdf chosen by user
+    :return: valid bdf list
+    """
+    return _libkperf.PmuDeviceBdfList(int(bdf_type))
+
+def device_open(device_attr: List[PmuDeviceAttr]) -> int:
+    """
+    A high level interface for initializing PMU events for devices,
+    such as L3 cache, DDRC, PCIe, and SMMU, to collect metrics like bandwidth, latency, and others.
+    This interface is an alternative option for initializing events besides PmuOpen.
+    :param device_attr: List of PmuDeviceAttr objects containing metrics to collect
+    :return: Task Id, similar with returned value of PmuOpen
+    """
+    return _libkperf.PmuDeviceOpen(device_attr)
+
+def get_device_metric(pmu_data: PmuData, device_attr: List[PmuDeviceAttr]) -> PmuDeviceData:
+    """
+    Get device performance metric data from pmu data
+    :param pmu_data: raw data collected by pmu
+    :param device_attr: list of device metric attributes to retrieve
+    :return: list of device performance metric data
+    """
+    return _libkperf.PmuGetDevMetric(pmu_data, device_attr)
+
+
+def get_cpu_freq(core: int) -> int:
+    """
+    Get cpu frequency
+    :param core: cpu core id
+    :return: cpu frequency
+    """
+    return _libkperf.PmuGetCpuFreq(core)
+
+
 def trace_open(trace_type: PmuTraceType, pmu_trace_attr: PmuTraceAttr) -> int:
     """
     int PmuTraceOpen(enum PmuTraceType traceType, struct PmuTraceAttr *traceAttr);
@@ -388,8 +513,18 @@ __all__ = [
     'PmuTraceType',
     'SpeFilter',
     'SpeEventFilter',
+    'SpeEvent',
     'SymbolMode',
     'PmuAttr',
+    'PmuDeviceMetric',
+    'PmuDeviceAttr',
+    'PmuBdfType',
+    'PmuMetricMode',
+    'PmuDeviceData',
+    'device_bdf_list',
+    'device_open',
+    'get_device_metric',
+    'get_cpu_freq',
     'CpuTopology',
     'PmuDataExt',
     'SampleRawField',

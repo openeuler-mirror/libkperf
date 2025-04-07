@@ -49,7 +49,7 @@ class EvtAttr:
     
     @property
     def group_id(self) -> int:
-        return self.c_evt_attr.group_id
+        return int(self.c_evt_attr.group_id)
     
     @group_id.setter
     def group_id(self, group_id: int) -> None:
@@ -399,6 +399,205 @@ class PmuAttr:
         pmu_attr = cls()
         pmu_attr.__c_pmu_attr = c_pmu_attr
         return pmu_attr
+
+class CtypesPmuDeviceAttr(ctypes.Structure):
+    """
+    struct PmuDeviceAttr {
+        enum PmuDeviceMetric metric;
+        char *bdf;
+    };
+    """
+    _fields_ = [
+        ('metric', ctypes.c_int),
+        ('bdf', ctypes.c_char_p)
+    ]
+    
+    def __init__(self,
+                metric: int = 0,
+                bdf: str = None,
+                *args: Any, **kw: Any) -> None:
+        super().__init__(*args, **kw)
+
+        self.metric = ctypes.c_int(metric)
+        if bdf:
+            self.bdf = ctypes.c_char_p(bdf.encode(UTF_8))
+        else:
+            self.bdf = None
+
+
+class PmuDeviceAttr:
+    __slots__ = ['__c_pmu_device_attr']
+
+    def __init__(self,
+                 metric: int = 0,
+                 bdf: str = None) -> None:
+        self.__c_pmu_device_attr = CtypesPmuDeviceAttr(
+            metric=metric,
+            bdf=bdf
+        )
+
+    @property
+    def c_pmu_device_attr(self) -> CtypesPmuDeviceAttr:
+        return self.__c_pmu_device_attr
+
+    @property
+    def metric(self) -> int:
+        return self.c_pmu_device_attr.metric
+
+    @metric.setter
+    def metric(self, metric: int) -> None:
+        self.c_pmu_device_attr.metric = ctypes.c_int(metric)
+
+    @property
+    def bdf(self) -> str:
+        if self.c_pmu_device_attr.bdf:
+            return self.c_pmu_device_attr.bdf.decode(UTF_8)
+        return None
+
+    @bdf.setter
+    def bdf(self, bdf: str) -> None:
+        if bdf:
+            self.c_pmu_device_attr.bdf = ctypes.c_char_p(bdf.encode(UTF_8))
+        else:
+            self.c_pmu_device_attr.bdf = None
+
+    @classmethod
+    def from_c_pmu_device_attr(cls, c_pmu_device_attr: CtypesPmuDeviceAttr) -> 'PmuDeviceAttr':
+        pmu_device_attr = cls()
+        pmu_device_attr.__c_pmu_device_attr = c_pmu_device_attr
+        return pmu_device_attr
+
+
+class CtypesPmuDeviceData(ctypes.Structure):
+    """
+    struct PmuDeviceData {
+        enum PmuDeviceMetric metric;
+        uint64_t count;
+        enum PmuMetricMode mode;
+        union {
+            unsigned coreId;
+            unsigned numaId;
+            char *bdf;
+        };
+    };
+    """
+    class _Union(ctypes.Union):
+        _fields_ = [
+            ('coreId', ctypes.c_uint),
+            ('numaId', ctypes.c_uint),
+            ('bdf', ctypes.c_char_p)
+        ]
+    
+    _fields_ = [
+        ('metric', ctypes.c_int),
+        ('count', ctypes.c_uint64),
+        ('mode', ctypes.c_int),
+        ('_union', _Union)
+    ]
+    
+    @property
+    def coreId(self) -> int:
+        if self.mode == 1:  # PMU_METRIC_CORE
+            return self._union.coreId
+        return 0
+    
+    @property
+    def numaId(self) -> int:
+        if self.mode == 2:  # PMU_METRIC_NUMA
+            return self._union.numaId
+        return 0
+    
+    @property
+    def bdf(self) -> str:
+        if self.mode == 3 and self._union.bdf:  # PMU_METRIC_BDF
+            return self._union.bdf.decode(UTF_8)
+        return ""
+
+
+class ImplPmuDeviceData:
+    __slots__ = ['__c_pmu_device_data']
+
+    def __init__(self,
+                 metric: int = 0,
+                 count: int = 0,
+                 mode: int = 0) -> None:
+        self.__c_pmu_device_data = CtypesPmuDeviceData()
+        self.__c_pmu_device_data.metric = ctypes.c_int(metric)
+        self.__c_pmu_device_data.count = ctypes.c_uint64(count)
+        self.__c_pmu_device_data.mode = ctypes.c_int(mode)
+    
+    @property
+    def c_pmu_device_data(self) -> CtypesPmuDeviceData:
+        return self.__c_pmu_device_data
+    
+    @property
+    def metric(self) -> int:
+        return self.c_pmu_device_data.metric
+    
+    @property
+    def count(self) -> int:
+        return self.c_pmu_device_data.count
+    
+    @property
+    def mode(self) -> int:
+        return self.c_pmu_device_data.mode
+    
+    @property
+    def coreId(self) -> int:
+        if self.mode == 1:  # PMU_METRIC_CORE
+            return self.c_pmu_device_data._union.coreId
+        return 0
+    
+    @property
+    def numaId(self) -> int:
+        if self.mode == 2:  # PMU_METRIC_NUMA
+            return self.c_pmu_device_data._union.numaId
+        return 0
+    
+    @property
+    def bdf(self) -> str:
+        if self.mode == 3 and self.c_pmu_device_data._union.bdf:  # PMU_METRIC_BDF
+            return self.c_pmu_device_data._union.bdf.decode(UTF_8)
+        return ""
+    
+    @classmethod
+    def from_c_pmu_device_data(cls, c_pmu_device_data: CtypesPmuDeviceData) -> 'ImplPmuDeviceData':
+        pmu_device_data = cls()
+        pmu_device_data.__c_pmu_device_data = c_pmu_device_data
+        return pmu_device_data
+
+
+class PmuDeviceData:
+    __slots__ = ['__pointer', '__iter', '__len']
+
+    def __init__(self, pointer: ctypes.POINTER(CtypesPmuDeviceData) = None, len: int = 0) -> None:
+        self.__pointer = pointer
+        self.__len = len
+        self.__iter = (ImplPmuDeviceData.from_c_pmu_device_data(self.__pointer[i]) for i in range(self.__len))
+    
+    def __del__(self) -> None:
+        self.free()
+    
+    def __len__(self) -> int:
+        return self.__len
+    
+    def __getitem__(self, index):
+        if index < 0 or index >= self.__len:
+            raise IndexError("index out of range")
+        return ImplPmuDeviceData.from_c_pmu_device_data(self.__pointer[index])
+    
+    @property
+    def len(self) -> int:
+        return self.__len
+    
+    @property
+    def iter(self) -> Iterator[ImplPmuDeviceData]:
+        return self.__iter
+    
+    def free(self) -> None:
+        if self.__pointer is not None:
+            DevDataFree(self.__pointer)
+            self.__pointer = None
 
 
 class CtypesPmuTraceAttr(ctypes.Structure):
@@ -1068,6 +1267,15 @@ class PmuData:
     def __del__(self) -> None:
         self.free()
 
+    def __len__(self) -> int:
+        return self.__len
+    
+    def __iter__(self):
+        return self.__iter
+    
+    def pointer(self) -> ctypes.POINTER(CtypesPmuData):
+        return self.__pointer
+    
     @property
     def len(self) -> int:
         return self.__len
@@ -1402,6 +1610,86 @@ def PmuGetFieldExp(rawData: ctypes.POINTER(CtypesSampleRawData), field_name: str
     return SampleRawField.from_sample_raw_field(pointer_field.contents)
 
 
+def PmuDeviceBdfList(bdf_type: int) -> List[str]:
+    """
+    Query all available BDF (Bus:Device.Function) list from system.
+    
+    Args:
+        bdf_type: Type of BDF chosen by user (PMU_BDF_TYPE_PCIE or PMU_BDF_TYPE_SMMU)
+        
+    Returns:
+        List of BDF strings
+    """
+    c_PmuDeviceBdfList = kperf_so.PmuDeviceBdfList
+    c_PmuDeviceBdfList.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_uint)]
+    c_PmuDeviceBdfList.restype = ctypes.POINTER(ctypes.c_char_p)
+    c_bdf_type = ctypes.c_int(bdf_type)
+    c_num_bdf = ctypes.c_uint()
+    c_bdf_list = c_PmuDeviceBdfList(c_bdf_type, ctypes.byref(c_num_bdf))
+    return [c_bdf_list[i].decode(UTF_8) for i in range(c_num_bdf.value)]
+
+
+def PmuDeviceOpen(device_attr: List[PmuDeviceAttr]) -> int:
+    """
+    int PmuDeviceOpen(struct PmuDeviceAttr *deviceAttr, int len);
+    """
+    c_PmuDeviceOpen = kperf_so.PmuDeviceOpen
+    c_PmuDeviceOpen.argtypes = [ctypes.POINTER(CtypesPmuDeviceAttr), ctypes.c_int]
+    c_PmuDeviceOpen.restype = ctypes.c_int
+    c_num_device = len(device_attr)
+    c_device_attr = (CtypesPmuDeviceAttr * c_num_device)(*[attr.c_pmu_device_attr for attr in device_attr])
+    return c_PmuDeviceOpen(c_device_attr, c_num_device)
+
+
+def PmuGetDevMetric(pmu_data: PmuData, device_attr: List[PmuDeviceAttr]) -> PmuDeviceData:
+    """
+    int PmuGetDevMetric(struct PmuData *pmuData, int pmuLen, struct PmuDeviceAttr *deviceAttr, int len,
+                        struct PmuDeviceData *devicedata);
+    """
+    c_PmuGetDevMetric = kperf_so.PmuGetDevMetric
+    c_PmuGetDevMetric.argtypes = [ctypes.POINTER(CtypesPmuData), ctypes.c_int, 
+                                 ctypes.POINTER(CtypesPmuDeviceAttr), ctypes.c_int, 
+                                 ctypes.POINTER(ctypes.POINTER(CtypesPmuDeviceData))]
+    c_PmuGetDevMetric.restype = ctypes.c_int
+    if not pmu_data or not device_attr:
+        return PmuDeviceData()
+    
+    num_device = len(device_attr)
+    c_device_attr = (CtypesPmuDeviceAttr * num_device)(*[attr.c_pmu_device_attr for attr in device_attr])
+    c_device_data = ctypes.POINTER(CtypesPmuDeviceData)()
+    
+    res = c_PmuGetDevMetric(pmu_data.pointer(), len(pmu_data), c_device_attr, num_device, ctypes.byref(c_device_data))
+    if res <= 0:
+        return PmuDeviceData()
+    
+    return PmuDeviceData(c_device_data, res)
+
+def DevDataFree(dev_data: ctypes.POINTER(CtypesPmuDeviceData)) -> None:
+    """
+    void DevDataFree(struct PmuDeviceData *devData);
+    """
+    c_DevDataFree = kperf_so.DevDataFree
+    c_DevDataFree.argtypes = [ctypes.POINTER(CtypesPmuDeviceData)]
+    c_DevDataFree.restype = None
+
+    c_DevDataFree(dev_data)
+
+def PmuGetCpuFreq(core: int) -> int:
+    """
+    Get CPU frequency of a specific CPU core.
+    
+    Args:
+        core: Index of the CPU core
+        
+    Returns:
+        On success, core frequency (Hz) is returned.
+        On error, -1 is returned.
+    """
+    c_PmuGetCpuFreq = kperf_so.PmuGetCpuFreq
+    c_PmuGetCpuFreq.argtypes = [ctypes.c_int]
+    c_PmuGetCpuFreq.restype = ctypes.c_int
+    return c_PmuGetCpuFreq(core)
+
 def PmuTraceOpen(traceType: int, pmuTraceAttr: PmuTraceAttr) -> int:
     """
     int PmuTraceOpen(enum PmuTraceType traceType, struct PmuTraceAttr *traceAttr);
@@ -1519,6 +1807,12 @@ __all__ = [
     'PmuDumpData',
     'PmuGetField',
     'PmuGetFieldExp',
+    'PmuDeviceAttr',
+    'PmuDeviceData',
+    'PmuDeviceBdfList',
+    'PmuDeviceOpen',
+    'PmuGetDevMetric',
+    'PmuGetCpuFreq',
     'CtypesPmuTraceAttr',
     'PmuTraceAttr',
     'CtypesPmuTraceData',

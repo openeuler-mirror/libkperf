@@ -60,7 +60,7 @@ Note:
 
 To build a library with debug version:
 ```shell
-bash build.sh install_path=/path/to/install buildType=debug
+bash build.sh install_path=/path/to/install build_type=debug
 ```
 
 To build a python package:
