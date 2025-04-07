@@ -51,7 +51,7 @@ func TestSample(t *testing.T) {
 		t.Logf("sample base info comm=%v, evt=%v, pid=%v, tid=%v, coreId=%v, numaId=%v, sockedId=%v", o.Comm, o.Evt, o.Pid, o.Tid, o.CpuTopo.CoreId, o.CpuTopo.NumaId, o.CpuTopo.SocketId)
 		t.Logf("sample info count=%v", o.Period)
 		for _, s := range o.Symbols {
-			t.Logf("symbol info module=%v, symbolName=%v, mangleName=%v, addr=%v, lineNum=%v fileName=%v", s.Module, s.SymbolName, s.MangleName, s.Addr, s.LineNum, s.FileName)
+			t.Logf("symbol info module=%v, symbolName=%v, mangleName=%v, addr=%#x, lineNum=%v fileName=%v", s.Module, s.SymbolName, s.MangleName, s.Addr, s.LineNum, s.FileName)
 		}
 	}
 	kperf.PmuDataFree(dataVo)
@@ -79,7 +79,7 @@ func TestSpe(t *testing.T) {
 		t.Logf("spe base info comm=%v, evt=%v, pid=%v, tid=%v, coreId=%v, numaId=%v, sockedId=%v", o.Comm, o.Evt, o.Pid, o.Tid, o.CpuTopo.CoreId, o.CpuTopo.NumaId, o.CpuTopo.SocketId)
 		t.Logf("spe ext info pa=%v, va=%v, event=%v, latency=%v", o.SpeExt.Pa, o.SpeExt.Va, o.SpeExt.Event, o.SpeExt.Lat)
 		for _, s := range o.Symbols {
-			t.Logf("symbol info module=%v, symbolName=%v, mangleName=%v, addr=%v, lineNum=%v fileName=%v", s.Module, s.SymbolName, s.MangleName, s.Addr, s.LineNum, s.FileName)
+			t.Logf("symbol info module=%v, symbolName=%v, mangleName=%v, addr=%#x, lineNum=%v fileName=%v", s.Module, s.SymbolName, s.MangleName, s.Addr, s.LineNum, s.FileName)
 		}
 	}
 	kperf.PmuDataFree(dataVo)
@@ -185,13 +185,69 @@ func TestBrbe(t *testing.T) {
 		t.Logf("sample base info comm=%v, evt=%v, pid=%v, tid=%v, coreId=%v, numaId=%v, sockedId=%v", o.Comm, o.Evt, o.Pid, o.Tid, o.CpuTopo.CoreId, o.CpuTopo.NumaId, o.CpuTopo.SocketId)
 		t.Logf("sample info count=%v", o.Period)
 		for _, s := range o.Symbols {
-			t.Logf("symbol info module=%v, symbolName=%v, mangleName=%v, addr=%v, lineNum=%v fileName=%v", s.Module, s.SymbolName, s.MangleName, s.Addr, s.LineNum, s.FileName)
+			t.Logf("symbol info module=%v, symbolName=%v, mangleName=%v, addr=%#x, lineNum=%v fileName=%v", s.Module, s.SymbolName, s.MangleName, s.Addr, s.LineNum, s.FileName)
 		}
 
 		for _, b := range o.BranchRecords {
-			t.Logf("branch record info fromAddr=%v, toAddr=%v cycles=%v", b.FromAddr, b.ToAddr, b.Cycles)
+			t.Logf("branch record info fromAddr=%#x, toAddr=%#x cycles=%v", b.FromAddr, b.ToAddr, b.Cycles)
 		}
 	}
+	kperf.PmuDataFree(dataVo)
+	kperf.PmuClose(fd)
+}
+
+func TestGetDeviceBdfList(t *testing.T) {
+	pcieBdfList, err := kperf.PmuDeviceBdfList(kperf.PMU_BDF_TYPE_PCIE)
+	if err != nil {
+		t.Fatalf("kperf GetDeviceBdfList failed, expect err is nil, but is %v", err)
+	}
+	t.Log("Get PCIE bdf list success!")
+	for _, v := range pcieBdfList {
+		t.Logf("bdf is %v", v)
+	}
+
+	smmuBdfList, err := kperf.PmuDeviceBdfList(kperf.PMU_BDF_TYPE_SMMU)
+	if err != nil {
+		t.Fatalf("kperf GetDeviceBdfList failed, expect err is nil, but is %v", err)
+	}
+	t.Log("Get SMMU bdf list success!")
+	for _, v := range smmuBdfList {
+		t.Logf("bdf is %v", v)
+	}
+}
+
+func TestGetCpuFreq(t *testing.T) {
+	coreId := uint(6)
+	freq, err := kperf.PmuGetCpuFreq(coreId)
+	if err != nil {
+		t.Fatalf("kperf PmuGetCpuFreq failed, expect err is nil, but is %v", err)
+	}
+	t.Logf("coreId %v freq is %v", coreId, freq)
+}
+
+func TestGetMetric(t *testing.T) {
+	deviceAttrs := []kperf.PmuDeviceAttr{kperf.PmuDeviceAttr{Metric: kperf.PMU_L3_LAT}}
+	fd, err := kperf.PmuDeviceOpen(deviceAttrs)
+	if err != nil {
+		t.Fatalf("kperf PmuDeviceOpen failed, expect err is nil, but is %v", err)
+	}
+	kperf.PmuEnable(fd)
+	time.Sleep(time.Second)
+	kperf.PmuDisable(fd)
+
+	dataVo, err := kperf.PmuRead(fd)
+	if err != nil {
+		t.Fatalf("kperf pmuread failed, expect err is nil, but is %v", err)
+	}
+	t.Logf("================================Get device data success================================")
+	deivceDataVo, err := kperf.PmuGetDevMetric(dataVo, deviceAttrs)
+	if err != nil {
+		t.Fatalf("kperf PmuGetDevMetric failed, expect err is nil, but is %v", err)
+	}
+	for _, v := range deivceDataVo.GoDeviceData {
+		t.Logf("get device data count=%v coreId=%v, numaId=%v bdf=%v", v.Count, v.CoreId, v.NumaId, v.Bdf)
+	}
+	kperf.DevDataFree(deivceDataVo)
 	kperf.PmuDataFree(dataVo)
 	kperf.PmuClose(fd)
 }

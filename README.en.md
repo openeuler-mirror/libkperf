@@ -1,9 +1,11 @@
 # libkperf
 
 #### Description
+
 libkperf is a lightweight performance collection library on linux, that enables developers to perform performance collection in an API fashion. libkperf provides performance data in memory and allows develops to process data directly, reducing overhead of writing and reading perf.data.
 
 #### When may I use libkperf?
+
 - Want to collect performance data of system or appliation with low overhead.
 - When Analyzing performance of a heavy workload without having a large impact on performance.
 - Do not want to manage multiple performance processes and want to parse performance data in a friendly way.
@@ -14,9 +16,11 @@ libkperf is a lightweight performance collection library on linux, that enables 
 - Want to collect bandwidth and latency of network.
 
 #### Supported CPU Architectures
+
 - Kunpeng
 
 #### Supported OS
+
 - openEuler
 - OpenCloudOS
 - TencentOS
@@ -24,82 +28,103 @@ libkperf is a lightweight performance collection library on linux, that enables 
 - CentOS
 
 #### Release Notes
+
 v1.3:
+
 - Support elapsed time collection of system calls.
 - Support branch record sampling.
 
 v1.2:
+
 - Support tracepoint.
 - Support group event collection.
 
 v1.1:
+
 - Support python API.
 
 v1.0:
+
 - Support performance counting, sampling and SPE sampling.
 - Support core and uncore events.
 - Support symbol analysis.
 
 #### Build
+
 Minimum required GCC version:
+
 - gcc-4.8.5 and glibc-2.17.
 
 Minimum required Python version:
+
 - python-3.7.
 
 To build a library with C API:
+
 ```shell
 git clone --recurse-submodules https://gitee.com/openeuler/libkperf.git
 cd libkperf
 bash build.sh install_path=/path/to/install
 ```
+
 Note:
 
 - If the compilation error message indicates that numa.h file is missing, you need to first install the corresponding numactl-devel package.
 - If you encounter a CMake error related to 'Found PythonInterp' during compilation and linking, you need to first install the required python3-devel package.
 
 To build a library with debug version:
+
 ```shell
 bash build.sh install_path=/path/to/install buildType=debug
 ```
 
 To build a python package:
+
 ```shell
 bash build.sh install_path=/path/to/install python=true
 ```
 
 To uninstall python package:
+
 ```shell
 python3 -m pip uninstall -y libkperf
 ```
 
 TO build a Go package:
+
 ```shell
 bash build.sh go=true
 ```
 
 #### Documents
+
 Refer to ```docs``` directory for detailed docs:
+
 - [Detailed usage](./docs/Details_Usage.md)
 
 Refer to ```docs``` directory for python API specification docs:
+
 - [Python API specification](./docs/Python_API.md)
 
 #### Instructions
+
 All pmu functions are accomplished by the following interfaces:
-* PmuOpen  
-	Input pid, core id and event and Open pmu device.
-* PmuEnable  
-	Start collection.
-* PmuRead  
-	Read collection data.
-* PmuDisable  
-	Stop collection.
-* PmuClose  
-	Close pmu device.
+
+* PmuOpen
+  Input pid, core id and event and Open pmu device.
+* PmuEnable
+  Start collection.
+* PmuRead
+  Read collection data.
+* PmuDisable
+  Stop collection.
+* PmuClose
+  Close pmu device.
 
 Here are some examples:
+
 * Get pmu count for a process.
+
 ```C++
 int pidList[1];
 pidList[0] = pid;
@@ -134,6 +159,7 @@ PmuClose(pd);
 ```
 
 * Sample a process
+
 ```C++
 int pidList[1];
 pidList[0] = pid;
@@ -179,6 +205,7 @@ PmuClose(pd);
 ```
 
 Python examples:
+
 ```python
 import time
 from collections import defaultdict
@@ -210,6 +237,7 @@ def Counting():
 ```
 
 Go example
+
 ```go
 import "libkperf/kperf"
 import "fmt"
@@ -243,24 +271,27 @@ func main() {
 #### Quick Run Reference for Example Code:
 
 * **For C++ Example Code:**
-You can place the sample code into the main function of a C++ source file, and include the header files related to this dynamic library (#include "symbol.h", #include "pmu.h", #include "pcerrc.h"). Then, use g++ to compile and link this dynamic library to generate an executable file that can be run.
+  You can place the sample code into the main function of a C++ source file, and include the header files related to this dynamic library (#include "symbol.h", #include "pmu.h", #include "pcerrc.h"). Then, use g++ to compile and link this dynamic library to generate an executable file that can be run.
 
 Compilation Command Reference:
+
 ```bash
 g++ -o example example.cpp -I /install_path/include -L /install_path/lib -lkperf -lsym
 ```
 
 * **For Python Example Code:**
-You can place the sample code into the main function of a Python source file, and import the packages related to this dynamic library (import kperf, import ksym). Running the Python file will then utilize the functionalities provided by these packages.
+  You can place the sample code into the main function of a Python source file, and import the packages related to this dynamic library (import kperf, import ksym). Running the Python file will then utilize the functionalities provided by these packages.
 
 Run Command Reference:
+
 ```bash
 python example.py
 ```
 
 * **For Go example Code:**
-You can directly go to the go/src/libkperf/libkperf_test directory.
+  You can directly go to the go/src/libkperf/libkperf_test directory.
+
 ```shell
-go test -v # 全部运行
-go test -v -test.run TestCount #指定运行的用例
+go test -v # run all
+go test -v -test.run TestCount #specify the test case to run
 ```

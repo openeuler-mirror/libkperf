@@ -32,6 +32,12 @@ struct SpeDataExt {
 	unsigned short lat; // latency, Number of cycles between the time when an operation is dispatched and the time when the operation is executed.
 };
 
+struct MetricDataExt {
+	unsigned numaId;
+	unsigned coreId;
+	char* bdf;
+};
+
 void SetPeriod(struct PmuAttr* attr, unsigned period) {
 	attr->period = period;
 }
@@ -92,6 +98,27 @@ struct PmuTraceData* IPmuTraceRead(int taskId, int *len) {
 	struct PmuTraceData* traceData = NULL;
 	*len = PmuTraceRead(taskId, &traceData);
 	return traceData;
+}
+
+struct PmuDeviceData* IPmuGetMetric(struct PmuData *pmuData, unsigned len,
+                    struct PmuDeviceAttr *attr, unsigned attrLen, int *metricLen) {
+	struct PmuDeviceData* deviceData = NULL;
+	*metricLen = PmuGetDevMetric(pmuData, len, attr, attrLen, &deviceData);
+	return deviceData;
+}
+
+void IPmuGetMetricDataExt(struct PmuDeviceData* deviceData, struct MetricDataExt* metricData) {
+	switch(deviceData->mode) {
+		case PMU_METRIC_CORE:
+			metricData->coreId = deviceData->coreId;
+			break;
+		case PMU_METRIC_NUMA:
+			metricData->numaId = deviceData->numaId;
+			break;
+		case PMU_METRIC_BDF:
+			metricData->bdf = deviceData->bdf;
+			break;
+	}
 }
 
 size_t GetPmuAttrSize() {
@@ -182,6 +209,63 @@ var (
 // trace type, for pmuTraceOpen
 var (
 	TRACE_SYS_CALL C.enum_PmuTraceType = C.TRACE_SYS_CALL
+)
+
+// PmuDeviceMetric
+var (
+	// Pernuma metric.
+    // Collect ddr read bandwidth for each numa node.
+    // Unit: Bytes/s
+    PMU_DDR_READ_BW C.enum_PmuDeviceMetric = C.PMU_DDR_READ_BW
+    // Pernuma metric.
+    // Collect ddr write bandwidth for each numa node.
+    // Unit: Bytes/s
+    PMU_DDR_WRITE_BW C.enum_PmuDeviceMetric = C.PMU_DDR_WRITE_BW
+    // Percore metric.
+    // Collect L3 access bytes for each cpu core.
+    // Unit: Bytes
+    PMU_L3_TRAFFIC C.enum_PmuDeviceMetric = C.PMU_L3_TRAFFIC
+    // Percore metric.
+    // Collect L3 miss count for each cpu core.
+    // Unit: count
+    PMU_L3_MISS C.enum_PmuDeviceMetric = C.PMU_L3_MISS
+    // Percore metric.
+    // Collect L3 total reference count, including miss and hit count.
+    // Unit: count
+    PMU_L3_REF C.enum_PmuDeviceMetric = C.PMU_L3_REF
+    // Pernuma metric.
+    // Collect L3 total latency for each numa node.
+    // Unit: cycles
+    PMU_L3_LAT C.enum_PmuDeviceMetric = C.PMU_L3_LAT
+    // Collect pcie rx bandwidth.
+    // Perpcie metric.
+    // Collect pcie rx bandwidth for pcie device.
+    // Unit: Bytes/s
+    PMU_PCIE_RX_MRD_BW C.enum_PmuDeviceMetric = C.PMU_PCIE_RX_MRD_BW
+    PMU_PCIE_RX_MWR_BW C.enum_PmuDeviceMetric = C.PMU_PCIE_RX_MWR_BW
+    // Perpcie metric.
+    // Collect pcie tx bandwidth for pcie device.
+    // Unit: Bytes/s
+    PMU_PCIE_TX_MRD_BW C.enum_PmuDeviceMetric = C.PMU_PCIE_TX_MRD_BW
+    PMU_PCIE_TX_MWR_BW C.enum_PmuDeviceMetric = C.PMU_PCIE_TX_MWR_BW
+    // Perpcie metric.
+    // Collect smmu address transaction.
+    // Unit: count
+    PMU_SMMU_TRAN C.enum_PmuDeviceMetric = C.PMU_SMMU_TRAN
+)
+
+// PmuBdfType
+var (
+	PMU_BDF_TYPE_PCIE C.enum_PmuBdfType = C.PMU_BDF_TYPE_PCIE // pcie collect metric.
+	PMU_BDF_TYPE_SMMU C.enum_PmuBdfType = C.PMU_BDF_TYPE_SMMU // smmu collect metric.
+)
+
+// PmuMetricMode
+var (
+	PMU_METRIC_INVALID C.enum_PmuMetricMode = C.PMU_METRIC_INVALID
+    PMU_METRIC_CORE C.enum_PmuMetricMode = C.PMU_METRIC_CORE
+    PMU_METRIC_NUMA C.enum_PmuMetricMode = C.PMU_METRIC_NUMA
+    PMU_METRIC_BDF C.enum_PmuMetricMode  = C.PMU_METRIC_BDF
 )
 	
 var fdModeMap map[int]C.enum_PmuTaskType = make(map[int]C.enum_PmuTaskType)
@@ -276,6 +360,30 @@ type PmuTraceData struct {
 type PmuTraceDataVo struct {
 	GoTraceData []PmuTraceData           // PmuTraceData list
 	cTraceData *C.struct_PmuTraceData	 // Pointer to PmuData in interface C
+}
+
+type PmuDeviceAttr struct {
+	Metric C.enum_PmuDeviceMetric
+
+	// Used for PMU_PCIE_XXX and PMU_SMMU_XXX to collect a specifi pcie device.
+    // The string of bdf is something like '7a:01.0'.
+	Bdf string
+}
+
+type PmuDeviceData struct {
+	Metric C.enum_PmuDeviceMetric
+	// The metric value. The meaning of value depends on metric type.
+    // Refer to comments of PmuDeviceMetric for detailed info.
+	Count uint64
+	Mode C.enum_PmuMetricMode  // Field of union depends on the above <mode>.
+	CoreId uint32   // for percore metric
+	NumaId uint32   // for pernuma metric
+	Bdf string      // for perpcie metric
+}
+
+type PmuDeviceDataVo struct {
+	GoDeviceData []PmuDeviceData
+	cDeviceData *C.struct_PmuDeviceData
 }
 
 // Initialize the collection target
@@ -516,6 +624,10 @@ func PmuRead(fd int) (PmuDataVo, error) {
 	if int(dataLen) == 0 {
 		return pmuDataVo, errors.New("PmuData is empty")
 	}
+	if int(dataLen) == -1 {
+		return pmuDataVo, errors.New(C.GoString(C.Perror()))
+	}
+
 	goDatas := transferCPmuDataToGoData(cDatas, int(dataLen), fd)
 	pmuDataVo.GoData = goDatas
 	pmuDataVo.cData = cDatas
@@ -660,6 +772,11 @@ func PmuTraceRead(taskId int) (PmuTraceDataVo, error) {
 	if int(traceLen) == 0 {
 		return res, errors.New("trace data list is empty")
 	}
+
+	if int(traceLen) == -1 {
+		return res, errors.New(C.GoString(C.Perror()))
+	}
+
 	ptr := unsafe.Pointer(cTraceData)
 	slice := reflect.SliceHeader {
 		Data: uintptr(ptr),
@@ -745,6 +862,111 @@ func (data PmuData) GetField(fieldName string, valuePointer unsafe.Pointer) erro
 	}
 
 	return nil
+}
+
+
+// Query all available bdf list from system.
+// param bdfType type of bdf chosen by user
+// param numBdf length of bdf list
+// return bdf list
+func PmuDeviceBdfList(bdfType C.enum_PmuBdfType) ([]string, error) {
+	numBdf := C.uint(0)
+	bdfList := C.PmuDeviceBdfList(bdfType, &numBdf)
+	if bdfList == nil {
+		return nil, errors.New(C.GoString(C.Perror()))
+	}
+	ptr := unsafe.Pointer(bdfList)
+	slice := reflect.SliceHeader{
+		Data: uintptr(ptr),
+		Len:  int(numBdf),
+		Cap:  int(numBdf),
+	}
+
+	stringList := *(*[]*C.char)(unsafe.Pointer(&slice))
+	goBdfList := make([]string, int(numBdf))
+	for i, v := range stringList {
+		goBdfList[i] = C.GoString(v)
+	}
+	return goBdfList, nil
+}
+
+// A high level interface for initializing pmu events for devices,
+// such as L3 cache, DDRC, PCIe, and SMMU, to collect metrics like bandwidth, latency, and others.
+// This interface is an alternative option for initializing events besides PmuOpen.
+// param attr Array of metrics to collect
+// param len Length of array
+// return Task Id, similar with returned value of PmuOpen
+func PmuDeviceOpen(attr []PmuDeviceAttr) (int, error) {
+	cAttr := make([]C.struct_PmuDeviceAttr, len(attr))
+	for i, v := range attr {
+		cAttr[i].metric = v.Metric
+		cAttr[i].bdf = C.CString(v.Bdf)
+	}
+	deviceTaskId := C.PmuDeviceOpen(&cAttr[0], C.uint(len(attr)))
+	if int(deviceTaskId) == -1 {
+		return -1, errors.New(C.GoString(C.Perror()))
+	}
+	return int(deviceTaskId), nil
+}
+
+// Query device metrics from pmuData and metric array.
+// param pmuData pmuData read from PmuRead
+// param len length of pmuData
+// param attr metric array to query
+// param attrLen length of metric array
+// param data output metric data array, the length of array is the returned value
+// return On success, length of metric data array is returned.
+// On fail, error is returned 
+func PmuGetDevMetric(dataVo PmuDataVo, deviceAttr []PmuDeviceAttr) (PmuDeviceDataVo, error) {
+	cAttr := make([]C.struct_PmuDeviceAttr, len(deviceAttr))
+	for i, v := range deviceAttr {
+		cAttr[i].metric = v.Metric
+		cAttr[i].bdf = C.CString(v.Bdf)
+	}
+	metricLen := C.int(0)
+	metricData := C.IPmuGetMetric(dataVo.cData, C.uint(len(dataVo.GoData)), &cAttr[0], C.uint(len(deviceAttr)), &metricLen)
+	res := PmuDeviceDataVo{}
+	if int(metricLen) == -1 {
+		return res, errors.New(C.GoString(C.Perror()))
+	}
+	
+	goDeviceList := make([]PmuDeviceData, int(metricLen))
+	ptr := unsafe.Pointer(metricData)
+	slice := reflect.SliceHeader {
+		Data: uintptr(ptr),
+		Len:  int(metricLen),
+		Cap:  int(metricLen),
+	}
+	cMetricList := *(*[]C.struct_PmuDeviceData)(unsafe.Pointer(&slice))
+	for i, v := range cMetricList {
+		goDeviceList[i].Metric = v.metric
+		goDeviceList[i].Count  = uint64(v.count)
+		goDeviceList[i].Mode   = v.mode
+		metricDataExt := C.struct_MetricDataExt{}
+		C.IPmuGetMetricDataExt(&v, &metricDataExt)
+		goDeviceList[i].CoreId = uint32(metricDataExt.coreId)
+		goDeviceList[i].NumaId = uint32(metricDataExt.numaId)
+		goDeviceList[i].Bdf = C.GoString(metricDataExt.bdf)
+	}
+	res.GoDeviceData = goDeviceList
+	res.cDeviceData = metricData
+	return res, nil
+}	
+
+func DevDataFree(devVo PmuDeviceDataVo) {
+	C.DevDataFree(devVo.cDeviceData)
+}
+
+// Get cpu frequency of cpu core
+// param core Index of core
+// return On success, core frequency(Hz) is returned
+// On error, -1 and error are returned
+func PmuGetCpuFreq(core	uint) (int64, error) {
+	freq := C.PmuGetCpuFreq(C.uint(core))
+	if freq == -1 {
+		return -1, errors.New(C.GoString(C.Perror()))
+	}
+	return int64(freq), nil
 }
 
 func transferCPmuDataToGoData(cPmuData *C.struct_PmuData, dataLen int, fd int) []PmuData {
