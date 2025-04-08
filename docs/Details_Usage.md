@@ -964,3 +964,68 @@ func main() {
 0x400824->0x400650 1
 0x400838->0x400804 1
 ```
+
+### Blocked Sample采样
+Blocked Sample是一种新增的采样模式，该模式下会同时采集进程处于on cpu和off cpu数据，通过配置blockedSample字段去进行使能，去同时采集cycles和context-switches事件，换算off cpu的period数据。
+
+说明：
+
+1、只支持SAMPLING模式采集
+
+2、只支持对进程分析，不支持对系统分析
+
+使用示例：
+```bash
+cd example
+# 运行C++用例，并分析热点
+bash run.sh all
+# 运行python用例，并分析热点
+bash run.sh all python=true
+```
+
+### Uncore事件采集能力增强
+1、支持可配置化uncore事件配置，比如如下形式进行事件配置：
+```bash
+smmuv3_pmcg_100020/transaction,filter_enable=1,filter_stream_id=0x7d/
+```
+
+2、支持采集和查询L3、DDR、SMMU、PCIE性能数据，采集如下性能数据：
+- 每个core的L3带宽、hit、miss，支持920和920高性能版
+- 每个numa的L3 latency，支持920高性能版
+- 每个numa的DDR读写带宽，支持920和920高性能版
+- 指定bdf号的smmu的地址转换次数，支持920和920高性能版
+- 指定bdf号的pcie rx、tx方向的读写带宽，支持920高性能版
+
+代码示例：
+```C++
+    // C++ 代码示例
+    PmuDeviceAttr devAttr = {};
+    devAttr.metric = PMU_L3_TRAFFIC;
+    int pd = PmuDeviceOpen(&devAttr, 1);
+
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+
+    PmuData* oriData = nullptr;
+    int oriLen = PmuRead(pd, &oriData);
+
+    PmuDeviceData *devData = nullptr;
+    auto len = PmuGetDevMetric(oriData, oriLen, &devAttr, 1, &devData);
+```
+
+```python
+    # python 代码示例
+    dev_attr = [
+        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_L3_TRAFFIC)
+    ]
+    pd = kperf.device_open(dev_attr)
+
+    kperf.enable(pd)
+    time.sleep(1)
+    kperf.disable(pd)
+    ori_data = kperf.read(pd)
+
+    
+    dev_data = kperf.get_device_metric(ori_data, dev_attr)
+```
