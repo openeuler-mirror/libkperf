@@ -322,3 +322,82 @@ kperf.sys_call_func_list(): 查找所有的系统调用函数列表
 for func_name in kperf.sys_call_func_list():
     print(f"syscall function name: {func_name}")
 ```
+
+
+### kperf.device_open
+
+kperf.device_open(dev_attr: List[PmuDeviceAttr]) 初始化采集uncore事件指标的能力
+* class PmuDeviceAttr:
+  * metic: 指定需要采集的指标
+    * PMU_DDR_READ_BW 采集每个numa的ddrc的读带宽，单位：Bytes/s
+    * PMU_DDR_WRITE_BW 采集每个numa的ddrc的写带宽，单位：Bytes/s
+    * PMU_L3_TRAFFIC 采集每个core的L3的访问字节数，单位：Bytes
+    * PMU_L3_MISS 采集每个core的L3的miss数量，单位：count
+    * PMU_L3_REF 采集每个core的L3的总访问数量，单位：count
+    * PMU_L3_LAT 采集每个numa的L3的总时延，单位：cycles
+    * PMU_PCIE_RX_MRD_BW 采集pcie设备的rx方向上的读带宽，单位：Bytes/s
+    * PMU_PCIE_RX_MWR_BW 采集pcie设备的rx方向上的写带宽，单位：Bytes/s
+    * PMU_PCIE_TX_MRD_BW 采集pcie设备的tx方向上的读带宽，单位：Bytes/s
+    * PMU_PCIE_TX_MWR_BW 采集pcie设备的tx方向上的读带宽，单位：Bytes/s
+    * PMU_SMMU_TRAN 采集指定smmu设备的地址转换次数，单位：count
+  * bdf: 指定需要采集设备的bdf号，只对pcie和smmu指标有效
+* 返回值是int类型，pd > 0表示初始化成功，pd == -1初始化失败，可通过kperf.error()查看错误信息，以下是一个kperf.device_open的示例
+
+```python
+# python代码示例
+    dev_attr = [
+        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_L3_TRAFFIC)
+    ]
+    pd = kperf.device_open(dev_attr)
+    if pd == -1:
+        print(kperf.error())
+        exit(1)
+```
+
+### kperf.get_device_metric
+
+kperf.get_device_metric(pmu_data: PmuData, device_attr: List[PmuDeviceAttr]) 对原始read接口的数据，按照device_attr中给定的指标进行数据聚合接口，返回值是PmuDeviceData
+
+* class PmuData: read接口返回的原始数据
+* clase PmuDeviceAttr: 指定需要聚合的指标参数
+* class PmuDeviceData:
+  * len: 数据长度
+  * iter: 返回iterator[ImplPmuDeviceData]
+  * free: 释放当前PmuDeviceData
+* class ImplPmuDeviceData:
+  * metric: 采集的指标
+  * count：指标的计数值
+  * mode: 指标的采集类型，按core、按numa还是按bdf号
+  * union：
+    * coreId: 数据的core编号
+    * numaId: 数据的numa编号
+    * bdf: 数据的bdf编号
+
+
+### kperf.device_bdf_list
+
+kperf.device_bdf_list(bdf_type: PmuBdfType): 查找当前系统pcie指标中有效的bdf列表和smmu指标中的有效bdf列表
+
+* calss PmuBdfType:
+  PMU_BDF_TYPE_PCIE: pice指标类型
+  PMU_BDF_TYPE_SMMU: smmu指标类型
+* 返回数据iterator[str],可通过for循环遍历该单元
+以下是kperf.device_bdf_list示例
+
+```python
+# python代码示例
+    bdf_type = kperf.PmuBdfType.PMU_BDF_TYPE_SMMU
+    bdf_list = kperf.device_bdf_list(bdf_type)
+    print(bdf_list)
+```
+
+### kperf.get_cpu_freq
+
+kperf.get_cpu_freq(core: int): 查询当前系统指定core的实时CPU频率
+* core: CPU的core编号
+* 返回值：指定core的实时频率，单位: Hz
+```python
+# python代码示例
+    core = 6
+    cpu6_freq = kperf.get_cpu_freq(core)
+```

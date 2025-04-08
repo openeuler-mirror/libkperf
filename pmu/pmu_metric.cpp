@@ -87,7 +87,7 @@ namespace KUNPENG_PMU {
     {
         return perpcieMetric.find(metric) != perpcieMetric.end();
     }
-    
+
     static std::string GetMetricString(PmuDeviceMetric metric)
     {
         auto it = MetricToString.find(metric);
@@ -1274,6 +1274,7 @@ int64_t PmuGetCpuFreq(unsigned core)
     cpuPath << SYS_CPU_INFO_PATH << core << "/cpufreq/scaling_cur_freq";
 
     if (!ExistPath(cpuPath.str())) {
+        New(LIBPERF_ERR_CPUFREQ_NOT_CONFIG, "Kernel not config cpuFreq Or core exceed cpuNums. Not exist " + cpuPath.str());
         return -1;
     }
     std::string curFreqStr = ReadFileContent(cpuPath.str());
@@ -1283,5 +1284,6 @@ int64_t PmuGetCpuFreq(unsigned core)
     } catch (std::exception& e) {
         return -1;
     }
+    New(SUCCESS);
     return cpuFreq * 1000;
 }
