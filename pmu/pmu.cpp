@@ -194,6 +194,10 @@ static int CheckCollectTypeConfig(enum PmuTaskType collectType, struct PmuAttr *
                 New(LIBPERF_ERR_NOT_SUPPORT_GROUP_EVENT, "Blocked sampling mode does not support grouped events!");
                 return LIBPERF_ERR_NOT_SUPPORT_GROUP_EVENT;
             }
+            if (attr->pidList == nullptr) {
+                New(LIBPERF_ERR_NOT_SUPPORT_SYSTEM_SAMPLE, "Blocked sampling mode does not support sample system!");
+                return LIBPERF_ERR_NOT_SUPPORT_SYSTEM_SAMPLE;
+            }
         }
     }
     if (collectType == SPE_SAMPLING && attr->evtAttr != nullptr) {

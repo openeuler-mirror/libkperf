@@ -142,9 +142,17 @@ TEST_F(TestMetric, CollectL3LatencyAndDDR)
     PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
     ASSERT_EQ(len, 8);
-    PmuDeviceData l3Data = {.metric = PMU_L3_LAT, .count = 200, .mode = PMU_METRIC_NUMA, .numaId = 0};
+    PmuDeviceData l3Data;
+    l3Data.metric = PMU_L3_LAT;
+    l3Data.count = 200;
+    l3Data.mode = PMU_METRIC_NUMA;
+    l3Data.numaId = 0;
     ASSERT_TRUE(HasDevData(devData, len, l3Data));
-    PmuDeviceData ddrData = {.metric = PMU_DDR_WRITE_BW, .count = 400 * 32, .mode = PMU_METRIC_NUMA, .numaId = 1};
+    PmuDeviceData ddrData;
+    ddrData.metric = PMU_DDR_WRITE_BW;
+    ddrData.count = 400 * 32;
+    ddrData.mode = PMU_METRIC_NUMA;
+    ddrData.numaId = 1;
     ASSERT_TRUE(HasDevData(devData, len, ddrData));
 }
 
@@ -187,10 +195,22 @@ TEST_F(TestMetric, CollectL3LatencyAndL3Miss)
     auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
     unsigned dataLen = GetCpuNums() + 4;
     ASSERT_EQ(len, dataLen);
-    PmuDeviceData l3Data = {.metric = PMU_L3_LAT, .count = 200, .mode = PMU_METRIC_NUMA, .numaId = 0};
+    PmuDeviceData l3Data;
+    l3Data.metric = PMU_L3_LAT;
+    l3Data.count = 200;
+    l3Data.mode = PMU_METRIC_NUMA;
+    l3Data.numaId = 0;
     ASSERT_TRUE(HasDevData(devData, len, l3Data));
-    PmuDeviceData l3miss4 = {.metric = PMU_L3_MISS, .count = 50, .mode = PMU_METRIC_CORE, .coreId = 4};
-    PmuDeviceData l3miss5 = {.metric = PMU_L3_MISS, .count = 60, .mode = PMU_METRIC_CORE, .coreId = 5};
+    PmuDeviceData l3miss4;
+    l3miss4.metric = PMU_L3_MISS;
+    l3miss4.count = 50;
+    l3miss4.mode = PMU_METRIC_CORE;
+    l3miss4.coreId = 4;
+    PmuDeviceData l3miss5;
+    l3miss5.metric = PMU_L3_MISS;
+    l3miss5.count = 60;
+    l3miss5.mode = PMU_METRIC_CORE;
+    l3miss5.coreId = 5;
     ASSERT_TRUE(HasDevData(devData, len, l3miss4));
     ASSERT_TRUE(HasDevData(devData, len, l3miss5));
 }
@@ -216,8 +236,16 @@ TEST_F(TestMetric, GetMetricPcieBandwidth)
     PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
     ASSERT_EQ(len, 2);
-    PmuDeviceData pcieData1 = {.metric = PMU_PCIE_RX_MRD_BW, .count = 40, .mode = PMU_METRIC_BDF, .bdf = devAttr[0].bdf};
-    PmuDeviceData pcieData2 = {.metric = PMU_PCIE_RX_MWR_BW, .count = 60, .mode = PMU_METRIC_BDF, .bdf = devAttr[1].bdf};
+    PmuDeviceData pcieData1;
+    pcieData1.metric = PMU_PCIE_RX_MRD_BW;
+    pcieData1.count = 40;
+    pcieData1.mode = PMU_METRIC_BDF;
+    pcieData1.bdf = devAttr[0].bdf;
+    PmuDeviceData pcieData2;
+    pcieData2.metric = PMU_PCIE_RX_MWR_BW;
+    pcieData2.count = 60;
+    pcieData2.mode = PMU_METRIC_BDF;
+    pcieData2.bdf = devAttr[1].bdf;
     ASSERT_TRUE(HasDevData(devData, len, pcieData1));
     ASSERT_TRUE(HasDevData(devData, len, pcieData2));
 }
@@ -248,8 +276,16 @@ TEST_F(TestMetric, GetMetricSmmuTransaction)
     PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
     ASSERT_EQ(len, 2);
-    PmuDeviceData smmuData1 = {.metric = PMU_SMMU_TRAN, .count = 110, .mode = PMU_METRIC_BDF, .bdf = devAttr[0].bdf};
-    PmuDeviceData smmuData2 = {.metric = PMU_SMMU_TRAN, .count = 50, .mode = PMU_METRIC_BDF, .bdf = devAttr[1].bdf};
+    PmuDeviceData smmuData1;
+    smmuData1.metric = PMU_SMMU_TRAN;
+    smmuData1.count = 110;
+    smmuData1.mode = PMU_METRIC_BDF;
+    smmuData1.bdf = devAttr[0].bdf;
+    PmuDeviceData smmuData2;
+    smmuData2.metric = PMU_SMMU_TRAN;
+    smmuData2.count = 50;
+    smmuData2.mode = PMU_METRIC_BDF;
+    smmuData2.bdf = devAttr[1].bdf;
     ASSERT_TRUE(HasDevData(devData, len, smmuData1));
     ASSERT_TRUE(HasDevData(devData, len, smmuData2));
     delete[] devAttr[0].bdf;
