@@ -806,7 +806,8 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    static int RemoveDupDeviceAttr(struct PmuDeviceAttr *attr, unsigned len, std::vector<PmuDeviceAttr>& deviceAttr)
+    // remove duplicate device attribute
+    static int RemoveDupDeviceAttr(struct PmuDeviceAttr *attr, unsigned len, std::vector<PmuDeviceAttr>& deviceAttr, bool l3ReDup)
     {
         std::unordered_set<std::string> uniqueSet;
         for (int i = 0; i < len; ++i) {
@@ -818,6 +819,17 @@ namespace KUNPENG_PMU {
             }
 
             if (uniqueSet.find(key) == uniqueSet.end()) {
+                // when in deviceopen remove the same PMU_L3_TRAFFIC and PMU_L3_REF,
+                // but when getDevMetric we need to keep them.
+                if (l3ReDup == true &&
+                    (attr[i].metric == PmuDeviceMetric::PMU_L3_TRAFFIC || attr[i].metric == PmuDeviceMetric::PMU_L3_REF)) {
+                    if (uniqueSet.find(std::to_string(PmuDeviceMetric::PMU_L3_TRAFFIC)) != uniqueSet.end()) {
+                        continue;
+                    }
+                    if (uniqueSet.find(std::to_string(PmuDeviceMetric::PMU_L3_REF)) != uniqueSet.end()) {
+                        continue;
+                    }
+                }
                 uniqueSet.insert(key);
                 deviceAttr.emplace_back(attr[i]);
             }
@@ -836,7 +848,7 @@ namespace KUNPENG_PMU {
         };
     };
 
-    using MetricMap = unordered_map<PmuDeviceMetric, vector<InnerDeviceData>>;
+    using MetricMap = vector<std::pair<PmuDeviceMetric, vector<InnerDeviceData>>>;
     unordered_map<PmuDeviceData*, vector<PmuDeviceData>> deviceDataMap;
 
     string ExtractEvtStr(const string fieldName, const string &evtName)
@@ -1078,6 +1090,7 @@ namespace KUNPENG_PMU {
     static int GetDevMetric(const PmuData *pmuData, const unsigned len,
                             const PmuDeviceAttr &devAttr, MetricMap &metricMap)
     {
+        std::vector<InnerDeviceData> devDataList;
         for (unsigned i = 0; i < len; ++i) {
             string evt = pmuData[i].evt;
             string devName;
@@ -1111,8 +1124,9 @@ namespace KUNPENG_PMU {
             if (IsValidBdf(devAttr.metric)) {
                 devData.bdf = devAttr.bdf;
             }
-            metricMap[devData.metric].push_back(devData);
+            devDataList.emplace_back(devData);
         }
+        metricMap.emplace_back(std::make_pair(devAttr.metric, move(devDataList)));
         return SUCCESS;
     }
 }
@@ -1153,7 +1167,7 @@ int PmuDeviceOpen(struct PmuDeviceAttr *attr, unsigned len)
         }
         // Remove duplicate device attributes.
         vector<PmuDeviceAttr> deviceAttr;
-        if (RemoveDupDeviceAttr(attr, len, deviceAttr) != SUCCESS) {
+        if (RemoveDupDeviceAttr(attr, len, deviceAttr, true) != SUCCESS) {
             return -1;
         }
         vector<string> configEvtList;
@@ -1213,7 +1227,7 @@ int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
         }
         // Remove duplicate device attributes.
         vector<PmuDeviceAttr> deviceAttr;
-        if (RemoveDupDeviceAttr(attr, attrLen, deviceAttr) != SUCCESS) {
+        if (RemoveDupDeviceAttr(attr, attrLen, deviceAttr, false) != SUCCESS) {
             return -1;
         }
         // Filter pmuData by metric and generate InnerDeviceData, 
