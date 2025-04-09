@@ -32,18 +32,6 @@ static CpuTopology GetTopo(const unsigned coreId, const unsigned numaId)
     return topo;
 }
 
-static bool HasDevData(PmuDeviceData *outData, int len, PmuDeviceData &expect)
-{
-    for (int i = 0; i < len; ++i) {
-        if (outData[i].metric == expect.metric &&
-            outData[i].coreId == expect.coreId
-            ) {
-            return true;
-        }
-    }
-    return false;
-}
-
 TEST_F(TestMetric, GetPcieBdfList)
 {
     enum PmuBdfType bdfType = PMU_BDF_TYPE_PCIE;
@@ -141,19 +129,12 @@ TEST_F(TestMetric, CollectL3LatencyAndDDR)
 
     PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
-    ASSERT_EQ(len, 8);
-    PmuDeviceData l3Data;
-    l3Data.metric = PMU_L3_LAT;
-    l3Data.count = 200;
-    l3Data.mode = PMU_METRIC_NUMA;
-    l3Data.numaId = 0;
-    ASSERT_TRUE(HasDevData(devData, len, l3Data));
-    PmuDeviceData ddrData;
-    ddrData.metric = PMU_DDR_WRITE_BW;
-    ddrData.count = 400 * 32;
-    ddrData.mode = PMU_METRIC_NUMA;
-    ddrData.numaId = 1;
-    ASSERT_TRUE(HasDevData(devData, len, ddrData));
+    unsigned numaCount = GetNumaNodeCount();
+    ASSERT_EQ(len, 2 * numaCount);
+    ASSERT_EQ(devData[0].metric, PMU_L3_LAT);
+    ASSERT_EQ(devData[0].mode, PMU_METRIC_NUMA);
+    ASSERT_EQ(devData[numaCount].metric, PMU_DDR_WRITE_BW);
+    ASSERT_EQ(devData[numaCount].mode, PMU_METRIC_NUMA);
 }
 
 TEST_F(TestMetric, CollectL3Traffic)
@@ -173,6 +154,30 @@ TEST_F(TestMetric, CollectL3Traffic)
     auto len = PmuGetDevMetric(oriData, oriLen, &devAttr, 1, &devData);
     ASSERT_EQ(len, GetCpuNums());
     ASSERT_EQ(devData[0].mode, PMU_METRIC_CORE);
+}
+
+TEST_F(TestMetric, CollectL3TrafficAndL3REF)
+{
+    PmuDeviceAttr devAttr[2] = {};
+    devAttr[0].metric = PMU_L3_TRAFFIC;
+    devAttr[1].metric = PMU_L3_REF;
+    int pd = PmuDeviceOpen(devAttr, 2);
+    ASSERT_NE(pd, -1);
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+    PmuData* oriData = nullptr;
+    int oriLen = PmuRead(pd, &oriData);
+    ASSERT_NE(oriLen, -1);
+
+    PmuDeviceData *devData = nullptr;
+    auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
+    unsigned cpuNum = GetCpuNums();
+    ASSERT_EQ(len, 2 * cpuNum);
+    ASSERT_EQ(devData[0].metric, PMU_L3_TRAFFIC);
+    ASSERT_EQ(devData[0].mode, PMU_METRIC_CORE);
+    ASSERT_EQ(devData[cpuNum].metric, PMU_L3_REF);
+    ASSERT_EQ(devData[cpuNum].mode, PMU_METRIC_CORE);
 }
 
 TEST_F(TestMetric, CollectL3LatencyAndL3Miss)
@@ -195,24 +200,11 @@ TEST_F(TestMetric, CollectL3LatencyAndL3Miss)
     auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
     unsigned dataLen = GetCpuNums() + 4;
     ASSERT_EQ(len, dataLen);
-    PmuDeviceData l3Data;
-    l3Data.metric = PMU_L3_LAT;
-    l3Data.count = 200;
-    l3Data.mode = PMU_METRIC_NUMA;
-    l3Data.numaId = 0;
-    ASSERT_TRUE(HasDevData(devData, len, l3Data));
-    PmuDeviceData l3miss4;
-    l3miss4.metric = PMU_L3_MISS;
-    l3miss4.count = 50;
-    l3miss4.mode = PMU_METRIC_CORE;
-    l3miss4.coreId = 4;
-    PmuDeviceData l3miss5;
-    l3miss5.metric = PMU_L3_MISS;
-    l3miss5.count = 60;
-    l3miss5.mode = PMU_METRIC_CORE;
-    l3miss5.coreId = 5;
-    ASSERT_TRUE(HasDevData(devData, len, l3miss4));
-    ASSERT_TRUE(HasDevData(devData, len, l3miss5));
+    unsigned numaCount = GetNumaNodeCount();
+    ASSERT_EQ(devData[0].metric, PMU_L3_LAT);
+    ASSERT_EQ(devData[0].mode, PMU_METRIC_NUMA);
+    ASSERT_EQ(devData[numaCount].metric, PMU_L3_MISS);
+    ASSERT_EQ(devData[numaCount].mode, PMU_METRIC_CORE);
 }
 
 TEST_F(TestMetric, GetMetricPcieBandwidth)
@@ -236,18 +228,12 @@ TEST_F(TestMetric, GetMetricPcieBandwidth)
     PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
     ASSERT_EQ(len, 2);
-    PmuDeviceData pcieData1;
-    pcieData1.metric = PMU_PCIE_RX_MRD_BW;
-    pcieData1.count = 40;
-    pcieData1.mode = PMU_METRIC_BDF;
-    pcieData1.bdf = devAttr[0].bdf;
-    PmuDeviceData pcieData2;
-    pcieData2.metric = PMU_PCIE_RX_MWR_BW;
-    pcieData2.count = 60;
-    pcieData2.mode = PMU_METRIC_BDF;
-    pcieData2.bdf = devAttr[1].bdf;
-    ASSERT_TRUE(HasDevData(devData, len, pcieData1));
-    ASSERT_TRUE(HasDevData(devData, len, pcieData2));
+    ASSERT_EQ(devData[0].metric, PMU_PCIE_RX_MRD_BW);
+    ASSERT_EQ(devData[0].mode, PMU_METRIC_BDF);
+    ASSERT_TRUE(strcmp(devData[0].bdf, "01:03.0") == 0);
+    ASSERT_EQ(devData[1].metric, PMU_PCIE_RX_MWR_BW);
+    ASSERT_EQ(devData[1].mode, PMU_METRIC_BDF);
+    ASSERT_TRUE(strcmp(devData[1].bdf, "01:03.0") == 0);
 }
 
 TEST_F(TestMetric, GetMetricSmmuTransaction)
@@ -259,9 +245,9 @@ TEST_F(TestMetric, GetMetricSmmuTransaction)
     ASSERT_NE(bdfList, nullptr);
     PmuDeviceAttr devAttr[2] = {};
     devAttr[0].metric = PMU_SMMU_TRAN;
-    devAttr[0].bdf= strdup(bdfList[0]);
+    devAttr[0].bdf = strdup(bdfList[0]);
     devAttr[1].metric = PMU_SMMU_TRAN;
-    devAttr[1].bdf= strdup(bdfList[1]);
+    devAttr[1].bdf = strdup(bdfList[1]);
 
     int pd = PmuDeviceOpen(devAttr, 2);
     cout << Perror() << endl;
@@ -276,18 +262,12 @@ TEST_F(TestMetric, GetMetricSmmuTransaction)
     PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
     ASSERT_EQ(len, 2);
-    PmuDeviceData smmuData1;
-    smmuData1.metric = PMU_SMMU_TRAN;
-    smmuData1.count = 110;
-    smmuData1.mode = PMU_METRIC_BDF;
-    smmuData1.bdf = devAttr[0].bdf;
-    PmuDeviceData smmuData2;
-    smmuData2.metric = PMU_SMMU_TRAN;
-    smmuData2.count = 50;
-    smmuData2.mode = PMU_METRIC_BDF;
-    smmuData2.bdf = devAttr[1].bdf;
-    ASSERT_TRUE(HasDevData(devData, len, smmuData1));
-    ASSERT_TRUE(HasDevData(devData, len, smmuData2));
+    ASSERT_EQ(devData[0].metric, PMU_SMMU_TRAN);
+    ASSERT_EQ(devData[0].mode, PMU_METRIC_BDF);
+    ASSERT_TRUE(strcmp(devData[0].bdf, devAttr[0].bdf) == 0);
+    ASSERT_EQ(devData[1].metric, PMU_SMMU_TRAN);
+    ASSERT_EQ(devData[1].mode, PMU_METRIC_BDF);
+    ASSERT_TRUE(strcmp(devData[1].bdf, devAttr[1].bdf) == 0);
     delete[] devAttr[0].bdf;
     delete[] devAttr[1].bdf;
 }

@@ -14,6 +14,8 @@
  ******************************************************************************/
 #include <thread>
 #include <unistd.h>
+#include <cstring>
+#include <dirent.h>
 #include "process_map.h"
 #include "test_common.h"
 using namespace std;
@@ -135,6 +137,26 @@ void DelayContinue(pid_t pid, int milliseconds)
 unsigned GetCpuNums()
 {
     return sysconf(_SC_NPROCESSORS_ONLN);
+}
+
+unsigned GetNumaNodeCount()
+{
+    const char* numaPath = "/sys/devices/system/node";
+    DIR *dir = opendir(numaPath);
+    if (dir == nullptr) {
+        cout << "Failed to open directory: " << numaPath << endl;
+        return -1;
+    }
+
+    unsigned numaNodeCount = 0;
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        if (entry->d_type == DT_DIR && strncmp(entry->d_name, "node", 4) == 0) {
+            ++numaNodeCount;
+        }
+    }
+    closedir(dir);
+    return numaNodeCount;
 }
 
 bool CheckDataEvt(PmuData *data, int len, std::string evt)

@@ -32,6 +32,8 @@ void DelayContinue(pid_t pid, int milliseconds);
 
 unsigned GetCpuNums();
 
+unsigned GetNumaNodeCount();
+
 // Check whether event names of all data are <evt>.
 bool CheckDataEvt(PmuData *data, int len, std::string evt);
 
