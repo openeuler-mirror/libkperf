@@ -5,6 +5,7 @@ set -x
 
 # Default values
 PYTHON=false
+GO=false
 
 # Parse user input arguments
 if [ $# -lt 1 ]; then
@@ -21,11 +22,14 @@ for arg in "$@"; do
     if [[ "$arg" == "python=true" ]]; then
         PYTHON=true
     fi
+    if [[ "$arg" == "go=true" ]]; then
+        GO=true
+    fi
 done
 
 # Build the kperf library and compile case files
 cd ../
-bash build.sh python=$PYTHON
+bash build.sh python=$PYTHON go=$GO
 cd example
 
 # Compile case files
@@ -44,6 +48,19 @@ run_case() {
     local case_file=$1
     if [[ "$PYTHON" == true ]]; then
         python3 pmu_hotspot.py 1 1 1 "$case_file"
+    elif [[ "$GO" == true ]]; then
+        export GO111MODULE=off
+        export GOPATH=$(realpath ../go)
+        if [ ! -d  ../go/src/main ]; then
+             mkdir -p ../go/src/main 
+        fi
+        cp pmu_hotspot.go ../go/src/main/
+        mv ../go/src/main/pmu_hotspot.go ../go/src/main/main.go
+        pushd ../go/src/main
+        go build main.go
+        popd
+        cp ../go/src/main/main ./pmu_hotspot_of_go
+        ./pmu_hotspot_of_go 1 1 1 ""$case_file""
     else
         ./pmu_hotspot 1 1 1 "$case_file"
     fi
