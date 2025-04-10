@@ -471,6 +471,22 @@ def get_cpu_freq(core: int) -> int:
     return _libkperf.PmuGetCpuFreq(core)
 
 
+def get_cluster_core(clusterId: int) -> List[int]:
+    """
+    Get the list of core in a cluster
+    :param cluster: cluster id
+    :return: the list of core ids in the cluster
+    """
+    return _libkperf.PmuGetClusterCore(clusterId)
+
+def get_numa_core(numaId: int) -> List[int]:
+    """
+    Get the list of core in a numa node
+    :param numaId: numa node id
+    :return: the list of core ids in the numa node
+    """
+    return _libkperf.PmuGetNumaCore(numaId)
+
 def trace_open(trace_type: PmuTraceType, pmu_trace_attr: PmuTraceAttr) -> int:
     """
     int PmuTraceOpen(enum PmuTraceType traceType, struct PmuTraceAttr *traceAttr);
@@ -526,6 +542,8 @@ __all__ = [
     'device_open',
     'get_device_metric',
     'get_cpu_freq',
+    'get_cluster_core',
+    'get_numa_core',
     'CpuTopology',
     'PmuDataExt',
     'SampleRawField',

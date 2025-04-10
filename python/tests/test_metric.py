@@ -58,6 +58,20 @@ def test_get_cpu_freq():
     print(kperf.error())
     assert cpu6_freq != -1, f"Expected non-negative cpu6_freq, but got {cpu6_freq}"
 
+def test_get_cluster_cores():
+    clusterId = 1
+    cluster_cores = kperf.get_cluster_core(clusterId)
+    print(kperf.error())
+    assert cluster_cores is not None, f"Expected non-negative cluster_cores, but got {cluster_cores}"
+    print(cluster_cores)
+
+def test_get_numa_cores():
+    numaId = 1
+    numa_cores = kperf.get_numa_core(numaId)
+    print(kperf.error())
+    assert numa_cores is not None, f"Expected non-negative numa_cores, but got {numa_cores}"
+    print(numa_cores)
+
 def test_collect_ddr_bandwidth():
     dev_attr = [
         kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_DDR_READ_BW)
