@@ -523,6 +523,24 @@ int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
 void DevDataFree(struct PmuDeviceData *data);
 
 /**
+ * @brief Get core list of a cluster.
+ * @param clusterId cluster id
+ * @param coreList core id list, malloced by this method.
+ *              NOTE! This pointer array should be freed by caller.
+ * @return length of core id list
+ */
+int PmuGetClusterCore(unsigned clusterId, unsigned **coreList);
+
+/**
+ * @brief Get core list of a numa node.
+ * @param clusterId numa id
+ * @param coreList core id list, malloced by this method.
+ *              NOTE! This pointer array should be freed by caller.
+ * @return length of core id list
+ */
+int PmuGetNumaCore(unsigned nodeId, unsigned **coreList);
+
+/**
  * @brief
  * Initialize the trace collection target.
  * On success, a trace collect task id is returned which is the unique identity for the task.
