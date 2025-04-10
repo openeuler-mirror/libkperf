@@ -34,6 +34,8 @@ unsigned GetCpuNums();
 
 unsigned GetNumaNodeCount();
 
+unsigned GetClusterCount();
+
 // Check whether event names of all data are <evt>.
 bool CheckDataEvt(PmuData *data, int len, std::string evt);
 

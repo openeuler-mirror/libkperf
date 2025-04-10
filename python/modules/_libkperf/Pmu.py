@@ -477,6 +477,7 @@ class CtypesPmuDeviceData(ctypes.Structure):
         union {
             unsigned coreId;
             unsigned numaId;
+            unsigned clusterId;
             char *bdf;
         };
     };
@@ -485,6 +486,7 @@ class CtypesPmuDeviceData(ctypes.Structure):
         _fields_ = [
             ('coreId', ctypes.c_uint),
             ('numaId', ctypes.c_uint),
+            ('clusterId', ctypes.c_uint),
             ('bdf', ctypes.c_char_p)
         ]
     
@@ -508,8 +510,14 @@ class CtypesPmuDeviceData(ctypes.Structure):
         return 0
     
     @property
+    def clusterId(self) -> int:
+        if self.mode == 3:  # PMU_METRIC_CLUSTER
+            return self._union.clusterId
+        return 0
+    
+    @property
     def bdf(self) -> str:
-        if self.mode == 3 and self._union.bdf:  # PMU_METRIC_BDF
+        if self.mode == 4 and self._union.bdf:  # PMU_METRIC_BDF
             return self._union.bdf.decode(UTF_8)
         return ""
 
@@ -555,8 +563,14 @@ class ImplPmuDeviceData:
         return 0
     
     @property
+    def clusterId(self) -> int:
+        if self.mode == 3:  # PMU_METRIC_CLUSTER
+            return self.c_pmu_device_data._union.clusterId
+        return 0
+    
+    @property
     def bdf(self) -> str:
-        if self.mode == 3 and self.c_pmu_device_data._union.bdf:  # PMU_METRIC_BDF
+        if self.mode == 4 and self.c_pmu_device_data._union.bdf:  # PMU_METRIC_BDF
             return self.c_pmu_device_data._union.bdf.decode(UTF_8)
         return ""
     

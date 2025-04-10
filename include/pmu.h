@@ -423,8 +423,8 @@ enum PmuDeviceMetric {
     // Collect L3 total reference count, including miss and hit count.
     // Unit: count
     PMU_L3_REF,
-    // Pernuma metric.
-    // Collect L3 total latency for each numa node.
+    // Percluster metric.
+    // Collect L3 total latency for each cluster node.
     // Unit: cycles
     PMU_L3_LAT,
     // Collect pcie rx bandwidth.
@@ -461,6 +461,7 @@ enum PmuMetricMode {
     PMU_METRIC_INVALID,
     PMU_METRIC_CORE,
     PMU_METRIC_NUMA,
+    PMU_METRIC_CLUSTER,
     PMU_METRIC_BDF
 };
 
@@ -496,6 +497,8 @@ struct PmuDeviceData {
         unsigned coreId;
         // for pernuma metric
         unsigned numaId;
+        // for percluster metric
+        unsigned clusterId;
         // for perpcie metric
         char *bdf;
     };

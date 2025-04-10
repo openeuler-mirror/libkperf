@@ -100,15 +100,12 @@ TEST_F(TestMetric, CollectL3Latency)
 
     PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(oriData, oriLen, &devAttr, 1, &devData);
-    ASSERT_EQ(len, 4);
-    ASSERT_EQ(devData[0].numaId, 0);
-    ASSERT_EQ(devData[0].mode, PMU_METRIC_NUMA);
-    ASSERT_EQ(devData[1].numaId, 1);
-    ASSERT_EQ(devData[1].mode, PMU_METRIC_NUMA);
-    ASSERT_EQ(devData[2].numaId, 2);
-    ASSERT_EQ(devData[2].mode, PMU_METRIC_NUMA);
-    ASSERT_EQ(devData[3].numaId, 3);
-    ASSERT_EQ(devData[3].mode, PMU_METRIC_NUMA);
+    unsigned clusterCount = GetClusterCount();
+    ASSERT_EQ(len, clusterCount);
+    ASSERT_EQ(devData[0].clusterId, 0);
+    ASSERT_EQ(devData[0].mode, PMU_METRIC_CLUSTER);
+    ASSERT_EQ(devData[clusterCount - 1].clusterId, clusterCount - 1);
+    ASSERT_EQ(devData[clusterCount - 1].mode, PMU_METRIC_CLUSTER);
 }
 
 TEST_F(TestMetric, CollectL3LatencyAndDDR)
@@ -129,12 +126,13 @@ TEST_F(TestMetric, CollectL3LatencyAndDDR)
 
     PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
+    unsigned clusterCount = GetClusterCount();
     unsigned numaCount = GetNumaNodeCount();
-    ASSERT_EQ(len, 2 * numaCount);
+    ASSERT_EQ(len, clusterCount + numaCount);
     ASSERT_EQ(devData[0].metric, PMU_L3_LAT);
-    ASSERT_EQ(devData[0].mode, PMU_METRIC_NUMA);
-    ASSERT_EQ(devData[numaCount].metric, PMU_DDR_WRITE_BW);
-    ASSERT_EQ(devData[numaCount].mode, PMU_METRIC_NUMA);
+    ASSERT_EQ(devData[0].mode, PMU_METRIC_CLUSTER);
+    ASSERT_EQ(devData[clusterCount].metric, PMU_DDR_WRITE_BW);
+    ASSERT_EQ(devData[clusterCount].mode, PMU_METRIC_NUMA);
 }
 
 TEST_F(TestMetric, CollectL3Traffic)
@@ -198,13 +196,13 @@ TEST_F(TestMetric, CollectL3LatencyAndL3Miss)
 
     PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
-    unsigned dataLen = GetCpuNums() + 4;
+    unsigned clusterCount = GetClusterCount();
+    unsigned dataLen = GetCpuNums() + clusterCount;
     ASSERT_EQ(len, dataLen);
-    unsigned numaCount = GetNumaNodeCount();
     ASSERT_EQ(devData[0].metric, PMU_L3_LAT);
-    ASSERT_EQ(devData[0].mode, PMU_METRIC_NUMA);
-    ASSERT_EQ(devData[numaCount].metric, PMU_L3_MISS);
-    ASSERT_EQ(devData[numaCount].mode, PMU_METRIC_CORE);
+    ASSERT_EQ(devData[0].mode, PMU_METRIC_CLUSTER);
+    ASSERT_EQ(devData[clusterCount].metric, PMU_L3_MISS);
+    ASSERT_EQ(devData[clusterCount].mode, PMU_METRIC_CORE);
 }
 
 TEST_F(TestMetric, GetMetricPcieBandwidth)

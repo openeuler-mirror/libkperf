@@ -16,6 +16,9 @@
 #include <unistd.h>
 #include <cstring>
 #include <dirent.h>
+#include <unordered_set>
+#include <fstream>
+#include <sstream>
 #include "process_map.h"
 #include "test_common.h"
 using namespace std;
@@ -157,6 +160,26 @@ unsigned GetNumaNodeCount()
     }
     closedir(dir);
     return numaNodeCount;
+}
+
+unsigned GetClusterCount()
+{
+    std::unordered_set<int> clusters;
+
+    int cpu_index = 0;
+    while (true) {
+        std::string cpuPath = "/sys/devices/system/cpu/cpu" + std::to_string(cpu_index) + "/topology/cluster_id";
+        std::ifstream in(cpuPath);
+        if (!in.is_open()) {
+            break;
+        }
+        int clusterId;
+        in >> clusterId;
+        clusters.insert(clusterId);
+        ++cpu_index;
+    }
+
+    return clusters.size();
 }
 
 bool CheckDataEvt(PmuData *data, int len, std::string evt)
