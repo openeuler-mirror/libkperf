@@ -1631,10 +1631,10 @@ def PmuDeviceBdfList(bdf_type: int) -> List[str]:
 
 def PmuDeviceOpen(device_attr: List[PmuDeviceAttr]) -> int:
     """
-    int PmuDeviceOpen(struct PmuDeviceAttr *deviceAttr, int len);
+    int PmuDeviceOpen(struct PmuDeviceAttr *deviceAttr, unsigned len);
     """
     c_PmuDeviceOpen = kperf_so.PmuDeviceOpen
-    c_PmuDeviceOpen.argtypes = [ctypes.POINTER(CtypesPmuDeviceAttr), ctypes.c_int]
+    c_PmuDeviceOpen.argtypes = [ctypes.POINTER(CtypesPmuDeviceAttr), ctypes.c_uint]
     c_PmuDeviceOpen.restype = ctypes.c_int
     c_num_device = len(device_attr)
     c_device_attr = (CtypesPmuDeviceAttr * c_num_device)(*[attr.c_pmu_device_attr for attr in device_attr])
@@ -1643,12 +1643,12 @@ def PmuDeviceOpen(device_attr: List[PmuDeviceAttr]) -> int:
 
 def PmuGetDevMetric(pmu_data: PmuData, device_attr: List[PmuDeviceAttr]) -> PmuDeviceData:
     """
-    int PmuGetDevMetric(struct PmuData *pmuData, int pmuLen, struct PmuDeviceAttr *deviceAttr, int len,
+    int PmuGetDevMetric(struct PmuData *pmuData, unsigned pmuLen, struct PmuDeviceAttr *deviceAttr, unsigned len,
                         struct PmuDeviceData *devicedata);
     """
     c_PmuGetDevMetric = kperf_so.PmuGetDevMetric
-    c_PmuGetDevMetric.argtypes = [ctypes.POINTER(CtypesPmuData), ctypes.c_int, 
-                                 ctypes.POINTER(CtypesPmuDeviceAttr), ctypes.c_int, 
+    c_PmuGetDevMetric.argtypes = [ctypes.POINTER(CtypesPmuData), ctypes.c_uint, 
+                                 ctypes.POINTER(CtypesPmuDeviceAttr), ctypes.c_uint, 
                                  ctypes.POINTER(ctypes.POINTER(CtypesPmuDeviceData))]
     c_PmuGetDevMetric.restype = ctypes.c_int
     if not pmu_data or not device_attr:
@@ -1686,8 +1686,8 @@ def PmuGetCpuFreq(core: int) -> int:
         On error, -1 is returned.
     """
     c_PmuGetCpuFreq = kperf_so.PmuGetCpuFreq
-    c_PmuGetCpuFreq.argtypes = [ctypes.c_int]
-    c_PmuGetCpuFreq.restype = ctypes.c_int
+    c_PmuGetCpuFreq.argtypes = [ctypes.c_uint]
+    c_PmuGetCpuFreq.restype = ctypes.c_longlong
     return c_PmuGetCpuFreq(core)
 
 def PmuTraceOpen(traceType: int, pmuTraceAttr: PmuTraceAttr) -> int:

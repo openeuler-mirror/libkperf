@@ -114,6 +114,30 @@ def test_collect_l3_traffic():
     assert dev_data[0].mode == kperf.PmuMetricMode.PMU_METRIC_CORE
     print_dev_data_details(dev_data)
 
+
+def test_collect_l3_traffic_and_l3_ref():
+    dev_attr = [
+        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_L3_TRAFFIC),
+        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_L3_REF)
+    ]
+    pd = kperf.device_open(dev_attr)
+    print(kperf.error())
+    assert pd != -1, f"Expected non-negative pd, but got {pd}"
+    kperf.enable(pd)
+    time.sleep(1)
+    kperf.disable(pd)
+    ori_data = kperf.read(pd)
+    assert len(ori_data) != -1, f"Expected non-negative ori_len, but got {len(ori_data)}"
+
+    dev_data = kperf.get_device_metric(ori_data, dev_attr)
+    assert len(dev_data) == get_cpu_nums() * 2
+    assert dev_data[0].metric == kperf.PmuDeviceMetric.PMU_L3_TRAFFIC
+    assert dev_data[0].mode == kperf.PmuMetricMode.PMU_METRIC_CORE
+    assert dev_data[get_cpu_nums()].metric == kperf.PmuDeviceMetric.PMU_L3_REF
+    assert dev_data[get_cpu_nums()].mode == kperf.PmuMetricMode.PMU_METRIC_CORE
+    print_dev_data_details(dev_data)
+
+
 def test_collect_l3_latency_and_l3_miss():
     dev_attr = [
         kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_L3_LAT),
@@ -152,9 +176,10 @@ def test_get_metric_pcie_bandwidth():
     print_dev_data_details(dev_data)
 
 def test_get_metric_smmu_transaction():
+    bdf_list = kperf.device_bdf_list(kperf.PmuBdfType.PMU_BDF_TYPE_PCIE)
     dev_attr = [
-        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_SMMU_TRAN, bdf="3a:00.0"),
-        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_SMMU_TRAN, bdf="74:01.0")
+        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_SMMU_TRAN, bdf=bdf_list[0]),
+        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_SMMU_TRAN, bdf=bdf_list[1])
     ]
     pd = kperf.device_open(dev_attr)
     print(kperf.error())
