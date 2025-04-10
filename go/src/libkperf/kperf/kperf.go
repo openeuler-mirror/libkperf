@@ -35,6 +35,7 @@ struct SpeDataExt {
 struct MetricDataExt {
 	unsigned numaId;
 	unsigned coreId;
+	unsigned clusterId;
 	char* bdf;
 };
 
@@ -118,7 +119,30 @@ void IPmuGetMetricDataExt(struct PmuDeviceData* deviceData, struct MetricDataExt
 		case PMU_METRIC_BDF:
 			metricData->bdf = deviceData->bdf;
 			break;
+		case PMU_METRIC_CLUSTER:
+			metricData->clusterId = deviceData->clusterId;
+			break;
 	}
+}
+
+unsigned* IPmuGetClusterCore(unsigned clusterId, int *coreLen) {
+	unsigned* coreList = NULL;
+	int ret = PmuGetClusterCore(clusterId, &coreList);
+	if (ret <=0) {
+		return NULL;
+	}
+	*coreLen = ret;
+	return coreList;
+}
+
+unsigned* IPmuGetNumaCore(unsigned nodeId, int* coreLen) {
+    unsigned* coreList = NULL;
+	int ret = PmuGetNumaCore(nodeId, &coreList);
+	if (ret <=0) {
+		return NULL;
+	}
+	*coreLen = ret;
+	return coreList;
 }
 
 size_t GetPmuAttrSize() {
@@ -265,6 +289,7 @@ var (
 	PMU_METRIC_INVALID C.enum_PmuMetricMode = C.PMU_METRIC_INVALID
     PMU_METRIC_CORE C.enum_PmuMetricMode = C.PMU_METRIC_CORE
     PMU_METRIC_NUMA C.enum_PmuMetricMode = C.PMU_METRIC_NUMA
+	PMU_METRIC_CLUSTER C.enum_PmuMetricMode = C.PMU_METRIC_CLUSTER
     PMU_METRIC_BDF C.enum_PmuMetricMode  = C.PMU_METRIC_BDF
 )
 	
@@ -376,9 +401,10 @@ type PmuDeviceData struct {
     // Refer to comments of PmuDeviceMetric for detailed info.
 	Count uint64
 	Mode C.enum_PmuMetricMode  // Field of union depends on the above <mode>.
-	CoreId uint32   // for percore metric
-	NumaId uint32   // for pernuma metric
-	Bdf string      // for perpcie metric
+	CoreId uint32    // for percore metric
+	NumaId uint32    // for pernuma metric
+	ClusterId uint32 // for percluster emtric
+	Bdf string       // for perpcie metric
 }
 
 type PmuDeviceDataVo struct {
@@ -946,6 +972,7 @@ func PmuGetDevMetric(dataVo PmuDataVo, deviceAttr []PmuDeviceAttr) (PmuDeviceDat
 		C.IPmuGetMetricDataExt(&v, &metricDataExt)
 		goDeviceList[i].CoreId = uint32(metricDataExt.coreId)
 		goDeviceList[i].NumaId = uint32(metricDataExt.numaId)
+		goDeviceList[i].ClusterId = uint32(metricDataExt.clusterId)
 		goDeviceList[i].Bdf = C.GoString(metricDataExt.bdf)
 	}
 	res.GoDeviceData = goDeviceList
@@ -953,8 +980,64 @@ func PmuGetDevMetric(dataVo PmuDataVo, deviceAttr []PmuDeviceAttr) (PmuDeviceDat
 	return res, nil
 }	
 
+// Free PmuDeviceData pointer.
 func DevDataFree(devVo PmuDeviceDataVo) {
 	C.DevDataFree(devVo.cDeviceData)
+}
+
+// brief Get core list of a cluster.
+// param clusterId cluster id
+// param coreList core id list, malloced by this method.
+// NOTE! This pointer array should be freed by caller.
+// return length of core id list
+func PmuGetClusterCore(clusterId uint) ([]uint, error) {
+	coreLen := C.int(0)
+	coreList := C.IPmuGetClusterCore(C.uint32_t(clusterId), &coreLen)
+	if coreList == nil {
+		return nil, errors.New(C.GoString(C.Perror()))
+	}
+	ptr := unsafe.Pointer(coreList)
+	slice := reflect.SliceHeader {
+		Data: uintptr(ptr),
+		Len:  int(coreLen),
+		Cap:  int(coreLen),
+	}
+	cCoreList := *(*[]C.uint32_t)(unsafe.Pointer(&slice))
+	defer C.free(ptr)
+	goCoreList := make([]uint, int(coreLen))
+	for i, v := range cCoreList {
+		goCoreList[i] = uint(v)
+	}
+	
+	return goCoreList, nil
+}
+
+
+// brief Get core list of a numa node.
+// param clusterId numa id
+// param coreList core id list, malloced by this method.
+// NOTE! This pointer array should be freed by caller.
+// return length of core id list
+func PmuGetNumaCore(nodeId uint) ([]uint, error) {
+	coreLen := C.int(0)
+	coreList := C.IPmuGetNumaCore(C.uint32_t(nodeId), &coreLen)
+	if coreList == nil {
+		return nil, errors.New(C.GoString(C.Perror()))
+	}
+	ptr := unsafe.Pointer(coreList)
+	slice := reflect.SliceHeader {
+		Data: uintptr(ptr),
+		Len:  int(coreLen),
+		Cap:  int(coreLen),
+	}
+	cCoreList := *(*[]C.uint32_t)(unsafe.Pointer(&slice))
+	defer C.free(ptr)
+	goCoreList := make([]uint, int(coreLen))
+	for i, v := range cCoreList {
+		goCoreList[i] = uint(v)
+	}
+	
+	return goCoreList, nil
 }
 
 // Get cpu frequency of cpu core
