@@ -1129,6 +1129,18 @@ namespace KUNPENG_PMU {
         metricMap.emplace_back(std::make_pair(devAttr.metric, move(devDataList)));
         return SUCCESS;
     }
+
+    static int HyperThreadEnabled(bool &enabled)
+    {
+        std::ifstream siblingFile("/sys/devices/system/cpu/cpu0/topology/thread_siblings_list");
+        if (!siblingFile.is_open()) {
+            return LIBPERF_ERR_KERNEL_NOT_SUPPORT;
+        }
+        std::string siblings;
+        siblingFile >> siblings;
+        enabled = siblings != "0";
+        return SUCCESS;
+    }
 }
 
 using namespace KUNPENG_PMU;
@@ -1300,4 +1312,64 @@ int64_t PmuGetCpuFreq(unsigned core)
     }
     New(SUCCESS);
     return cpuFreq * 1000;
+}
+
+int PmuGetClusterCore(unsigned clusterId, unsigned **coreList)
+{
+    try
+    {
+        bool hyperThread = false;
+        int err = HyperThreadEnabled(hyperThread);
+        if (err != SUCCESS) {
+            New(err);
+            return -1;
+        }
+
+        int coreNums = hyperThread ? 8 : 4;
+        *coreList = new unsigned[coreNums];
+        for (int i = 0; i < coreNums; ++i) {
+            (*coreList)[i] = clusterId * coreNums + i;
+        }
+        New(SUCCESS);
+        return coreNums;
+    }
+    catch (exception &ex) {
+        New(UNKNOWN_ERROR, ex.what());
+        return -1;
+    }
+}
+
+int PmuGetNumaCore(unsigned nodeId, unsigned **coreList)
+{
+    try {
+        string nodeListFile = "/sys/devices/system/node/node" + to_string(nodeId) + "/cpulist";
+        ifstream in(nodeListFile);
+        if (!in.is_open()) {
+            New(LIBPERF_ERR_KERNEL_NOT_SUPPORT);
+            return LIBPERF_ERR_KERNEL_NOT_SUPPORT;
+        }
+        std::string cpulist;
+        in >> cpulist;
+        auto split = SplitStringByDelimiter(cpulist, '-');
+        if (split.size() != 2) {
+            New(LIBPERF_ERR_KERNEL_NOT_SUPPORT);
+            return LIBPERF_ERR_KERNEL_NOT_SUPPORT;
+        }
+        auto start = stoi(split[0]);
+        auto end = stoi(split[1]);
+        int coreNums = end - start + 1;
+        if (coreNums <= 0) {
+            New(LIBPERF_ERR_KERNEL_NOT_SUPPORT);
+            return LIBPERF_ERR_KERNEL_NOT_SUPPORT;
+        }
+        *coreList = new unsigned[coreNums];
+        for (int i = 0; i < coreNums; ++i) {
+            (*coreList)[i] = start + i;
+        }
+        New(SUCCESS);
+        return coreNums;
+    } catch (exception &ex) {
+        New(UNKNOWN_ERROR, ex.what());
+        return -1;
+    }
 }
