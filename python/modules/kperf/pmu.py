@@ -171,7 +171,8 @@ class PmuMetricMode:
     PMU_METRIC_INVALID = 0
     PMU_METRIC_CORE = 1
     PMU_METRIC_NUMA = 2
-    PMU_METRIC_BDF = 3
+    PMU_METRIC_CLUSTER = 3
+    PMU_METRIC_BDF = 4
 
 
 class PmuDeviceData(_libkperf.PmuDeviceData):

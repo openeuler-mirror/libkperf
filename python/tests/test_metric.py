@@ -7,6 +7,23 @@ import os
 def get_cpu_nums():
     return os.cpu_count()
 
+def get_cluster_nums():
+    clusters = set()
+
+    cpu_index = 0
+    while True:
+        path = f"/sys/devices/system/cpu/cpu{cpu_index}/topology/cluster_id"
+        
+        if not os.path.exists(path):
+            break
+
+        with open(path, 'r') as f:
+            cluster_id = int(f.read().strip())
+            clusters.add(cluster_id)
+
+        cpu_index += 1
+
+    return len(clusters)
 def print_dev_data_details(dev_data):
     """打印设备数据的详细信息"""
     for dev_data_item in dev_data.iter:
@@ -15,6 +32,8 @@ def print_dev_data_details(dev_data):
             print(f"coreId:{dev_data_item.coreId}")
         elif dev_data_item.mode == kperf.PmuMetricMode.PMU_METRIC_NUMA:
             print(f"numaId:{dev_data_item.numaId}")
+        elif dev_data_item.mode == kperf.PmuMetricMode.PMU_METRIC_CLUSTER:
+            print(f"clusterId:{dev_data_item.clusterId}")
         elif dev_data_item.mode == kperf.PmuMetricMode.PMU_METRIC_BDF:
             print(f"bdf:{dev_data_item.bdf}")
 
@@ -73,8 +92,8 @@ def test_collect_l3_latency():
     assert len(ori_data) != -1, f"Expected non-negative ori_len, but got {len(ori_data)}"
 
     dev_data = kperf.get_device_metric(ori_data, dev_attr)
-    assert len(dev_data) == 4
-    assert dev_data[0].numaId == 0
+    assert len(dev_data) == get_cluster_nums()
+    assert dev_data[0].clusterId == 0
     print_dev_data_details(dev_data)
 
 def test_collect_l3_latency_and_ddr():
@@ -92,7 +111,7 @@ def test_collect_l3_latency_and_ddr():
     assert len(ori_data) != -1, f"Expected non-negative ori_len, but got {len(ori_data)}"
 
     dev_data = kperf.get_device_metric(ori_data, dev_attr)
-    assert len(dev_data) == 8
+    assert len(dev_data) == get_cluster_nums() + 4
     print_dev_data_details(dev_data)
 
 
@@ -153,7 +172,7 @@ def test_collect_l3_latency_and_l3_miss():
     assert len(ori_data) != -1, f"Expected non-negative ori_len, but got {len(ori_data)}"
 
     dev_data = kperf.get_device_metric(ori_data, dev_attr)
-    data_len = get_cpu_nums() + 4
+    data_len = get_cpu_nums() + get_cluster_nums()
     assert len(dev_data) == data_len
     print_dev_data_details(dev_data)
 

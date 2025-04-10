@@ -77,6 +77,7 @@ namespace KUNPENG_PMU {
 
     unordered_set<PmuDeviceMetric> percoreMetric = {PMU_L3_TRAFFIC, PMU_L3_MISS, PMU_L3_REF};
     unordered_set<PmuDeviceMetric> pernumaMetric = {PMU_DDR_READ_BW, PMU_DDR_WRITE_BW, PMU_L3_LAT};
+    unordered_set<PmuDeviceMetric> perClusterMetric = {PMU_L3_LAT};
     unordered_set<PmuDeviceMetric> perpcieMetric = {PMU_PCIE_RX_MRD_BW,
                                                     PMU_PCIE_RX_MWR_BW,
                                                     PMU_PCIE_TX_MRD_BW,
@@ -189,10 +190,10 @@ namespace KUNPENG_PMU {
             {
                 "hisi_sccl",
                 "l3c",
-                {"0x80"},
+                {"0x80", "0xb9", "0xce"},
+                "tt_core=0xff",
                 "",
-                "",
-                0
+                1
             }
         };
 
@@ -844,6 +845,7 @@ namespace KUNPENG_PMU {
         union {
             unsigned coreId;
             unsigned numaId;
+            unsigned clusterId;
             char *bdf;
         };
     };
@@ -893,8 +895,9 @@ namespace KUNPENG_PMU {
         switch(metric) {
             case PMU_DDR_READ_BW:
             case PMU_DDR_WRITE_BW:
-            case PMU_L3_LAT:
                 return PMU_METRIC_NUMA;
+            case PMU_L3_LAT:
+                return PMU_METRIC_CLUSTER;
             case PMU_L3_TRAFFIC:
             case PMU_L3_MISS:
             case PMU_L3_REF:
@@ -944,6 +947,73 @@ namespace KUNPENG_PMU {
             devData.push_back(data.second);
         }
 
+        return SUCCESS;
+    }
+
+    static int HyperThreadEnabled(bool &enabled)
+    {
+        std::ifstream siblingFile("/sys/devices/system/cpu/cpu0/topology/thread_siblings_list");
+        if (!siblingFile.is_open()) {
+            return LIBPERF_ERR_KERNEL_NOT_SUPPORT;
+        }
+        std::string siblings;
+        siblingFile >> siblings;
+        enabled = siblings != "0";
+        return SUCCESS;
+    }
+
+    int AggregateByCluster(const PmuDeviceMetric metric, const vector<InnerDeviceData> &rawData, vector<PmuDeviceData> &devData)
+    {
+        const auto& deviceConfig = GetDeviceMtricConfig();
+        const auto& findConfig = deviceConfig.find(metric);
+        if (findConfig == deviceConfig.end()) {
+            return SUCCESS;
+        }
+        auto &evts = findConfig->second.events;
+        if (evts.size() != 3) {
+            return SUCCESS;
+        }
+        // Event name for total latency.
+        string latEvt = evts[0];
+        // Event name for total access count.
+        string refEvt = evts[1];
+        // Event name for retry_alloc.
+        string retryEvt = evts[2];
+
+        // Sort data by cluster, and then sort by event string.
+        map<unsigned, unordered_map<string, InnerDeviceData>> devDataByCluster;
+        for (auto &data : rawData) {
+            string devName;
+            string evtName;
+            if (!GetDeviceName(data.evtName, devName, evtName)) {
+                continue;
+            }
+            auto evtConfig = ExtractEvtStr("config", evtName);
+            auto findData = devDataByCluster.find(data.clusterId);
+            if (findData == devDataByCluster.end()) {
+                devDataByCluster[data.clusterId][evtConfig] = data;
+            } else {
+                devDataByCluster[data.clusterId][evtConfig].count += data.count;
+            }
+        }
+
+        for (auto &data : devDataByCluster) {
+            // Get events of total latency and total access count.
+            auto findLatData = data.second.find(latEvt);
+            auto findRefData = data.second.find(refEvt);
+            auto findRetryData = data.second.find(retryEvt);
+            if (findLatData == data.second.end() || findRefData == data.second.end() || findRetryData == data.second.end()) {
+                continue;
+            }
+            // Compute avage latency: (latency)/(access count - retry_alloc)
+            int lat = findLatData->second.count / (findRefData->second.count - findRetryData->second.count);
+            PmuDeviceData outData;
+            outData.metric = metric;
+            outData.count = lat;
+            outData.mode = GetMetricMode(metric);
+            outData.clusterId = data.first;
+            devData.push_back(outData);
+        }
         return SUCCESS;
     }
 
@@ -1026,7 +1096,7 @@ namespace KUNPENG_PMU {
     unordered_map<PmuDeviceMetric, AggregateMetricCb> aggregateMap = {
         {PMU_DDR_READ_BW, AggregateByNuma},
         {PMU_DDR_WRITE_BW, AggregateByNuma},
-        {PMU_L3_LAT, AggregateByNuma},
+        {PMU_L3_LAT, AggregateByCluster},
         {PMU_PCIE_RX_MRD_BW, PcieBWAggregate},
         {PMU_PCIE_RX_MWR_BW, PcieBWAggregate},
         {PMU_PCIE_TX_MRD_BW, PcieBWAggregate},
@@ -1091,6 +1161,16 @@ namespace KUNPENG_PMU {
                             const PmuDeviceAttr &devAttr, MetricMap &metricMap)
     {
         std::vector<InnerDeviceData> devDataList;
+        unsigned clusterWidth = 0;
+        if (perClusterMetric.find(devAttr.metric) != perClusterMetric.end()) {
+            bool hyperThreadEnabled = false;
+            int err = HyperThreadEnabled(hyperThreadEnabled);
+            if (err != SUCCESS) {
+                New(err);
+                return err;
+            }
+            clusterWidth = hyperThreadEnabled ? 8 : 4;
+        }
         for (unsigned i = 0; i < len; ++i) {
             string evt = pmuData[i].evt;
             string devName;
@@ -1121,6 +1201,9 @@ namespace KUNPENG_PMU {
             if (pernumaMetric.find(devAttr.metric) != pernumaMetric.end()) {
                 devData.numaId = pmuData[i].cpuTopo->numaId;
             }
+            if (perClusterMetric.find(devAttr.metric) != perClusterMetric.end()) {
+                devData.clusterId = pmuData[i].cpuTopo->coreId / clusterWidth;
+            }
             if (IsValidBdf(devAttr.metric)) {
                 devData.bdf = devAttr.bdf;
             }
@@ -1130,17 +1213,6 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    static int HyperThreadEnabled(bool &enabled)
-    {
-        std::ifstream siblingFile("/sys/devices/system/cpu/cpu0/topology/thread_siblings_list");
-        if (!siblingFile.is_open()) {
-            return LIBPERF_ERR_KERNEL_NOT_SUPPORT;
-        }
-        std::string siblings;
-        siblingFile >> siblings;
-        enabled = siblings != "0";
-        return SUCCESS;
-    }
 }
 
 using namespace KUNPENG_PMU;
