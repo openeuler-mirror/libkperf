@@ -1704,6 +1704,44 @@ def PmuGetCpuFreq(core: int) -> int:
     c_PmuGetCpuFreq.restype = ctypes.c_longlong
     return c_PmuGetCpuFreq(core)
 
+def PmuGetClusterCore(clusterId: int) -> List[int]:
+    """
+    Get CPU core list of a specific cluster.
+    
+    int PmuGetClusterCore(unsigned clusterId, unsigned **coreList);
+    """
+    c_PmuGetClusterCore = kperf_so.PmuGetClusterCore
+    c_PmuGetClusterCore.argtypes = [ctypes.c_uint, ctypes.POINTER(ctypes.POINTER(ctypes.c_uint))]
+    c_PmuGetClusterCore.restype = ctypes.c_int
+
+    c_clusterId = ctypes.c_uint(clusterId)
+    c_core_list = ctypes.POINTER(ctypes.c_uint)()
+    c_num_core = ctypes.c_int()
+    c_num_core = c_PmuGetClusterCore(c_clusterId, ctypes.byref(c_core_list))
+    if c_num_core == -1:
+        return []
+    
+    return [c_core_list[i] for i in range(c_num_core)]
+
+def PmuGetNumaCore(numaId: int) -> List[int]:
+    """
+    Get CPU core list of a specific NUMA node.
+    
+    int PmuGetNumaCore(unsigned nodeId, unsigned **coreList);
+    """
+    c_PmuGetNumaCore = kperf_so.PmuGetNumaCore
+    c_PmuGetNumaCore.argtypes = [ctypes.c_uint, ctypes.POINTER(ctypes.POINTER(ctypes.c_uint))]
+    c_PmuGetNumaCore.restype = ctypes.c_int
+
+    c_numaId = ctypes.c_uint(numaId)
+    c_core_list = ctypes.POINTER(ctypes.c_uint)()
+    c_num_core = ctypes.c_int()
+    c_num_core = c_PmuGetNumaCore(c_numaId, ctypes.byref(c_core_list))
+    if c_num_core == -1:
+        return []
+    return [c_core_list[i] for i in range(c_num_core)]
+
+
 def PmuTraceOpen(traceType: int, pmuTraceAttr: PmuTraceAttr) -> int:
     """
     int PmuTraceOpen(enum PmuTraceType traceType, struct PmuTraceAttr *traceAttr);
@@ -1827,6 +1865,8 @@ __all__ = [
     'PmuDeviceOpen',
     'PmuGetDevMetric',
     'PmuGetCpuFreq',
+    'PmuGetClusterCore',
+    'PmuGetNumaCore',
     'CtypesPmuTraceAttr',
     'PmuTraceAttr',
     'CtypesPmuTraceData',
