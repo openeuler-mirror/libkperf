@@ -35,6 +35,8 @@
 using namespace std;
 using namespace pcerr;
 
+#define MAX_CPU_NUM sysconf(_SC_NPROCESSORS_CONF)
+
 static const string SYS_DEVICES = "/sys/devices/";
 static const string SYS_BUS_PCI_DEVICES = "/sys/bus/pci/devices";
 static const string SYS_IOMMU_DEVICES = "/sys/class/iommu";
@@ -700,7 +702,11 @@ namespace KUNPENG_PMU {
         for (const auto& [key, devices] : classifiedDevices) {
             for (const auto& evt : metricConfig.events) {
                 for (const auto& device : devices) {
-                    string eventString = device + "/config=" + evt + "/";
+                    string eventString = device + "/config=" + evt;
+                    if (!metricConfig.extraConfig.empty()) {
+                        eventString += "," + metricConfig.extraConfig;
+                    }
+                    eventString += "/";
                     eventList.push_back(eventString);
                 }
             }
@@ -1398,9 +1404,19 @@ int PmuGetClusterCore(unsigned clusterId, unsigned **coreList)
         }
 
         int coreNums = hyperThread ? 8 : 4;
-        *coreList = new unsigned[coreNums];
+        *coreList = (unsigned *)malloc(coreNums * sizeof(unsigned));
+        if (*coreList == NULL) {
+            New(COMMON_ERR_NOMEM);
+            return -1;
+        }
         for (int i = 0; i < coreNums; ++i) {
             (*coreList)[i] = clusterId * coreNums + i;
+            if ((*coreList)[i] >= MAX_CPU_NUM) {
+                free(*coreList);
+                *coreList = NULL;
+                New(LIBPERF_ERR_CLUSTER_ID_OVERSIZE, "clusterId exceed cpuNums.");
+                return -1;
+            }
         }
         New(SUCCESS);
         return coreNums;
@@ -1434,7 +1450,11 @@ int PmuGetNumaCore(unsigned nodeId, unsigned **coreList)
             New(LIBPERF_ERR_KERNEL_NOT_SUPPORT);
             return LIBPERF_ERR_KERNEL_NOT_SUPPORT;
         }
-        *coreList = new unsigned[coreNums];
+        *coreList = (unsigned *)malloc(coreNums * sizeof(unsigned));
+        if (*coreList == NULL) {
+            New(COMMON_ERR_NOMEM);
+            return -1;
+        }
         for (int i = 0; i < coreNums; ++i) {
             (*coreList)[i] = start + i;
         }

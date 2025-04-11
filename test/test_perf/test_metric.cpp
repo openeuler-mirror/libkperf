@@ -58,6 +58,49 @@ TEST_F(TestMetric, GetCpuFreq)
     ASSERT_NE(cpu6Freq, -1);
 }
 
+TEST_F(TestMetric, GetClusterIdListSuccess)
+{
+    unsigned clusterId = 3;
+    unsigned* coreList = nullptr;
+    int len = PmuGetClusterCore(clusterId, &coreList);
+    cout << Perror() << endl;
+    ASSERT_NE(len, -1);
+    for (int i = 0; i < len; ++i) {
+        cout << coreList[i] << " ";
+    }
+    cout << endl;
+    if (coreList != NULL) {
+        free(coreList);
+        coreList = NULL;
+    }
+}
+
+TEST_F(TestMetric, GetClusterIdListOverSize)
+{
+    unsigned clusterId = 33;
+    unsigned* coreList = nullptr;
+    int len = PmuGetClusterCore(clusterId, &coreList);
+    cout << Perror() << endl;
+    ASSERT_EQ(len, -1);
+}
+
+TEST_F(TestMetric, GetNumaIdList)
+{
+    unsigned numaId = 2;
+    unsigned* coreList = nullptr;
+    int len = PmuGetNumaCore(numaId, &coreList);
+    cout << Perror() << endl;
+    ASSERT_NE(len, -1);
+    for (int i = 0; i < len; ++i) {
+        cout << coreList[i] << " ";
+    }
+    cout << endl;
+    if (coreList != NULL) {
+        free(coreList);
+        coreList = NULL;
+    }
+}
+
 TEST_F(TestMetric, CollectDDRBandwidth)
 {
     PmuDeviceAttr devAttr = {};
@@ -102,6 +145,7 @@ TEST_F(TestMetric, CollectL3Latency)
     auto len = PmuGetDevMetric(oriData, oriLen, &devAttr, 1, &devData);
     unsigned clusterCount = GetClusterCount();
     ASSERT_EQ(len, clusterCount);
+    ASSERT_NE(devData[0].count, 0);
     ASSERT_EQ(devData[0].clusterId, 0);
     ASSERT_EQ(devData[0].mode, PMU_METRIC_CLUSTER);
     ASSERT_EQ(devData[clusterCount - 1].clusterId, clusterCount - 1);
@@ -129,6 +173,7 @@ TEST_F(TestMetric, CollectL3LatencyAndDDR)
     unsigned clusterCount = GetClusterCount();
     unsigned numaCount = GetNumaNodeCount();
     ASSERT_EQ(len, clusterCount + numaCount);
+    ASSERT_NE(devData[0].count, 0);
     ASSERT_EQ(devData[0].metric, PMU_L3_LAT);
     ASSERT_EQ(devData[0].mode, PMU_METRIC_CLUSTER);
     ASSERT_EQ(devData[clusterCount].metric, PMU_DDR_WRITE_BW);
@@ -199,6 +244,7 @@ TEST_F(TestMetric, CollectL3LatencyAndL3Miss)
     unsigned clusterCount = GetClusterCount();
     unsigned dataLen = GetCpuNums() + clusterCount;
     ASSERT_EQ(len, dataLen);
+    ASSERT_NE(devData[0].count, 0);
     ASSERT_EQ(devData[0].metric, PMU_L3_LAT);
     ASSERT_EQ(devData[0].mode, PMU_METRIC_CLUSTER);
     ASSERT_EQ(devData[clusterCount].metric, PMU_L3_MISS);

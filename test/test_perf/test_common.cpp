@@ -162,6 +162,18 @@ unsigned GetNumaNodeCount()
     return numaNodeCount;
 }
 
+int HyperThreadEnabled(bool &enabled)
+{
+    std::ifstream siblingFile("/sys/devices/system/cpu/cpu0/topology/thread_siblings_list");
+    if (!siblingFile.is_open()) {
+        return -1;
+    }
+    std::string siblings;
+    siblingFile >> siblings;
+    enabled = siblings != "0";
+    return 0;
+}
+
 unsigned GetClusterCount()
 {
     std::unordered_set<int> clusters;
@@ -179,7 +191,21 @@ unsigned GetClusterCount()
         ++cpu_index;
     }
 
-    return clusters.size();
+    unsigned clusterCount = clusters.size();
+    if (clusterCount == 0) {
+        bool enabled = false;
+        if (HyperThreadEnabled(enabled) == -1) {
+            std::cerr << "Failed to check hyper-threading status." << std::endl;
+            return 0;
+        }
+        if (enabled) {
+            clusterCount = GetCpuNums() / 8;
+        } else {
+            clusterCount = GetCpuNums() / 4;
+        }
+    }
+
+    return clusterCount;
 }
 
 bool CheckDataEvt(PmuData *data, int len, std::string evt)
