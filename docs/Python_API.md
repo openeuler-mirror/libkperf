@@ -401,3 +401,25 @@ kperf.get_cpu_freq(core: int): 查询当前系统指定core的实时CPU频率
     core = 6
     cpu6_freq = kperf.get_cpu_freq(core)
 ```
+
+### kperf.get_cluster_core
+
+kperf.get_cluster_core(clusterId: int): 查询指定clusterId下对应的core列表
+* clusterId: CPU的clusterId编号
+* 返回值：当前clusterId下对应的core列表,出现错误则列表为空
+```python
+# python代码示例
+    clusterId = 1
+    cluster_cores = kperf.get_cluster_core(clusterId)
+```
+
+### kperf.get_numa_core
+
+kperf.get_numa_core(numaId: int): 查询指定numaId下对应的core列表
+* numaId: CPU的numaId编号
+* 返回值：当前numaId下对应的core列表,出现错误则列表为空
+```python
+# python代码示例
+    numaId = 1
+    numa_cores = kperf.get_numa_core(numaId)
+```

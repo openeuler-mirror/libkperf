@@ -35,6 +35,9 @@
 using namespace std;
 using namespace pcerr;
 
+static unsigned maxCpuNum = 0;
+static vector<unsigned> coreArray;
+
 static const string SYS_DEVICES = "/sys/devices/";
 static const string SYS_BUS_PCI_DEVICES = "/sys/bus/pci/devices";
 static const string SYS_IOMMU_DEVICES = "/sys/class/iommu";
@@ -700,7 +703,11 @@ namespace KUNPENG_PMU {
         for (const auto& [key, devices] : classifiedDevices) {
             for (const auto& evt : metricConfig.events) {
                 for (const auto& device : devices) {
-                    string eventString = device + "/config=" + evt + "/";
+                    string eventString = device + "/config=" + evt;
+                    if (!metricConfig.extraConfig.empty()) {
+                        eventString += "," + metricConfig.extraConfig;
+                    }
+                    eventString += "/";
                     eventList.push_back(eventString);
                 }
             }
@@ -1386,22 +1393,44 @@ int64_t PmuGetCpuFreq(unsigned core)
     return cpuFreq * 1000;
 }
 
+static void InitializeCoreArray()
+{
+    if (!coreArray.empty()) {
+        return;
+    }
+    maxCpuNum = sysconf(_SC_NPROCESSORS_CONF);
+    for (unsigned i = 0; i < maxCpuNum; ++i) {
+        coreArray.emplace_back(i);
+    }
+    return;
+}
+
 int PmuGetClusterCore(unsigned clusterId, unsigned **coreList)
 {
     try
     {
+        InitializeCoreArray();
         bool hyperThread = false;
         int err = HyperThreadEnabled(hyperThread);
         if (err != SUCCESS) {
             New(err);
             return -1;
         }
-
         int coreNums = hyperThread ? 8 : 4;
-        *coreList = new unsigned[coreNums];
-        for (int i = 0; i < coreNums; ++i) {
-            (*coreList)[i] = clusterId * coreNums + i;
+        unsigned startCore = clusterId * coreNums;
+
+        if (startCore >= MAX_CPU_NUM) {
+            New(LIBPERF_ERR_CLUSTER_ID_OVERSIZE, "clusterId exceed cpuNums.");
+            return -1;
         }
+
+        if (startCore + coreNums > MAX_CPU_NUM) {
+            New(LIBPERF_ERR_CLUSTER_ID_OVERSIZE, "clusterId and coreNums exceed cpuNums.");
+            return -1;
+        }
+
+        *coreList = &coreArray[startCore];
+
         New(SUCCESS);
         return coreNums;
     }
@@ -1434,10 +1463,9 @@ int PmuGetNumaCore(unsigned nodeId, unsigned **coreList)
             New(LIBPERF_ERR_KERNEL_NOT_SUPPORT);
             return LIBPERF_ERR_KERNEL_NOT_SUPPORT;
         }
-        *coreList = new unsigned[coreNums];
-        for (int i = 0; i < coreNums; ++i) {
-            (*coreList)[i] = start + i;
-        }
+        InitializeCoreArray();
+        *coreList = &coreArray[start];
+
         New(SUCCESS);
         return coreNums;
     } catch (exception &ex) {
