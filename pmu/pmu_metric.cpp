@@ -1263,6 +1263,10 @@ using namespace KUNPENG_PMU;
 
 const char** PmuDeviceBdfList(enum PmuBdfType bdfType, unsigned *numBdf)
 {
+#ifdef IS_X86
+    New(LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86);
+    return nullptr;
+#else 
     try {
         lock_guard<mutex> lg(pmuBdfListMtx);
         SetWarn(SUCCESS);
@@ -1294,6 +1298,7 @@ const char** PmuDeviceBdfList(enum PmuBdfType bdfType, unsigned *numBdf)
         New(UNKNOWN_ERROR, ex.what());
         return nullptr;
     }
+#endif
 }
 
 static void PmuBdfListFreeSingle(vector<const char*> &bdfList)
@@ -1316,6 +1321,10 @@ void PmuDeviceBdfListFree()
 
 int PmuDeviceOpen(struct PmuDeviceAttr *attr, unsigned len)
 {
+#ifdef IS_X86
+    New(LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86);
+    return -1;
+#else
     SetWarn(SUCCESS);
     try {
         if (CheckPmuDeviceAttr(attr, len) != SUCCESS) {
@@ -1349,6 +1358,7 @@ int PmuDeviceOpen(struct PmuDeviceAttr *attr, unsigned len)
         New(UNKNOWN_ERROR, ex.what());
         return -1;
     }
+#endif
 }
 
 static int CheckPmuDeviceVar(struct PmuData *pmuData, unsigned len,
@@ -1376,6 +1386,10 @@ int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
                     struct PmuDeviceAttr *attr, unsigned attrLen,
                     struct PmuDeviceData **data)
 {
+#ifdef IS_X86
+    New(LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86);
+    return -1;
+#else 
     SetWarn(SUCCESS);
     try {
         if (CheckPmuDeviceVar(pmuData, len, attr, attrLen) != SUCCESS) {
@@ -1428,6 +1442,7 @@ int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
         New(UNKNOWN_ERROR, ex.what());
         return -1;
     }
+#endif
 }
 
 void DevDataFree(struct PmuDeviceData *data)
@@ -1474,6 +1489,10 @@ static void InitializeCoreArray()
 
 int PmuGetClusterCore(unsigned clusterId, unsigned **coreList)
 {
+#ifdef IS_X86
+    New(LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86);
+    return -1;
+#else
     try {
         lock_guard<mutex> lg(pmuCoreListMtx);
         InitializeCoreArray();
@@ -1505,6 +1524,7 @@ int PmuGetClusterCore(unsigned clusterId, unsigned **coreList)
         New(UNKNOWN_ERROR, ex.what());
         return -1;
     }
+#endif
 }
 
 int PmuGetNumaCore(unsigned nodeId, unsigned **coreList)

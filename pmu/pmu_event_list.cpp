@@ -37,7 +37,11 @@ static const string EVENT_DIR = "/events/";
 
 static std::mutex pmuEventListMtx;
 
+#ifdef IS_X86
+static vector<const char*> supportDevPrefixs = {"uncore_iio", "uncore_imc"};
+#else
 static vector<const char*> supportDevPrefixs = {"hisi", "smmuv3", "hns3", "armv8"};
+#endif
 
 static vector<const char*> uncoreEventList;
 static vector<const char*> traceEventList;
@@ -57,6 +61,12 @@ static void GetEventName(const string& devName, vector<const char*>& eventList)
             continue;
         }
         string fileName(entry->d_name);
+#ifdef IS_X86
+        // Included in x86 .scale .unit files not for events
+        if (fileName.find('.') != string::npos) {
+            continue;
+        }
+#endif
         auto eventName = devName;
         eventName += SLASH + fileName;
         eventName +=  SLASH;
@@ -182,6 +192,10 @@ const char** QueryUncoreEvent(unsigned *numEvt)
 
 const char** QueryTraceEvent(unsigned *numEvt)
 {
+#ifdef IS_X86
+    *numEvt = 0;
+    return nullptr;
+#else
     if (!traceEventList.empty()) {
         *numEvt = traceEventList.size();
         return traceEventList.data();
@@ -207,6 +221,7 @@ const char** QueryTraceEvent(unsigned *numEvt)
     closedir(dir);
     *numEvt = traceEventList.size();
     return traceEventList.data();
+#endif
 }
 
 const char** QueryAllEvent(unsigned *numEvt) {

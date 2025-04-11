@@ -174,6 +174,12 @@ static int CheckCollectTypeConfig(enum PmuTaskType collectType, struct PmuAttr *
         New(LIBPERF_ERR_INVALID_TASK_TYPE);
         return LIBPERF_ERR_INVALID_TASK_TYPE;
     }
+#ifdef IS_X86
+    if (collectType != COUNTING && collectType != SAMPLING) {
+        New(LIBPERF_ERR_INVALID_TASK_TYPE, "The x86 architecture supports only the COUTING mode and SMAPLING mode");
+        return LIBPERF_ERR_INVALID_TASK_TYPE;
+    }
+#endif
     if ((collectType == COUNTING) && attr->evtList == nullptr) {
         New(LIBPERF_ERR_INVALID_EVTLIST, "Counting mode requires a non-null event list.");
         return LIBPERF_ERR_INVALID_EVTLIST;
@@ -205,7 +211,6 @@ static int CheckCollectTypeConfig(enum PmuTaskType collectType, struct PmuAttr *
         New(LIBPERF_ERR_INVALID_GROUP_SPE);
         return LIBPERF_ERR_INVALID_GROUP_SPE;
     }
-
     return SUCCESS;
 }
 
@@ -789,10 +794,12 @@ static struct PmuEvt* GetPmuEvent(const char* pmuName, int collectType)
 
 static void PrepareCpuList(PmuAttr *attr, PmuTaskAttr *taskParam, PmuEvt* pmuEvt)
 {
-    if (pmuEvt->cpumask >= 0) {
-        taskParam->numCpu = 1;
-        taskParam->cpuList = new int[1];
-        taskParam->cpuList[0] = pmuEvt->cpumask;
+    if (!pmuEvt->cpuMaskList.empty()) {
+        taskParam->numCpu = pmuEvt->cpuMaskList.size();
+        taskParam->cpuList = new int[pmuEvt->cpuMaskList.size()];
+        for(int i = 0; i < pmuEvt->cpuMaskList.size(); i++) {
+            taskParam->cpuList[i] = pmuEvt->cpuMaskList[i];
+        }
     } else if (attr->cpuList == nullptr && attr->pidList != nullptr && pmuEvt->collectType == COUNTING) {
         // For counting with pid list for system wide, open fd with cpu -1 and specific pid.
         taskParam->numCpu = 1;
@@ -839,7 +846,11 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
     } else {
         pmuEvt = GetPmuEvent(evtName, collectType);
         if (pmuEvt == nullptr) {
+#ifdef IS_X86
+            New(LIBPERF_ERR_INVALID_EVENT, "Invalid event: " + string(evtName) + ";x86 just supports core event and raw event");
+#else
             New(LIBPERF_ERR_INVALID_EVENT, "Invalid event: " + string(evtName));
+#endif
             return nullptr;
         }
     }
@@ -953,22 +964,33 @@ int PmuDumpData(struct PmuData *pmuData, unsigned len, char *filepath, int dumpD
 }
 
 int PmuGetField(struct SampleRawData *rawData, const char *fieldName, void *value, uint32_t vSize) {
+#ifdef IS_X86
+    New(LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86);
+    return LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86;
+#else 
     if (rawData == nullptr) {
         New(LIBPERF_ERR_INVALID_FIELD_ARGS, "rawData cannot be nullptr.");
         return LIBPERF_ERR_INVALID_FIELD_ARGS;
     }
     return PointerPasser::ParsePointer(rawData->data, fieldName, value, vSize);
+#endif
 }
 
 struct SampleRawField *PmuGetFieldExp(struct SampleRawData *rawData, const char *fieldName) {
+#ifdef IS_X86
+    New(LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86);
+    return nullptr;
+#else 
     if (rawData == nullptr) {
         New(LIBPERF_ERR_INVALID_FIELD_ARGS, "rawData cannot be nullptr.");
         return nullptr;
     }
+
     SampleRawField *rt = PointerPasser::GetSampleRawField(rawData->data, fieldName);
     if (rt) {
         New(SUCCESS);
     }
     return rt;
+#endif
 }
 

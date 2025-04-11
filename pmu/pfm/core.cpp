@@ -255,6 +255,33 @@ namespace HARDWARE_EVENT {
                     KUNPENG_PMU::COMMON::BUS_CYCLES
             }
     };
+
+    PMU_PAIR REF_CYCLES = {
+            KUNPENG_PMU::COMMON::REF_CYCLES,
+            {
+                    PERF_TYPE_HARDWARE,
+                    PERF_COUNT_HW_REF_CPU_CYCLES,
+                    KUNPENG_PMU::COMMON::REF_CYCLES
+            }
+    };
+
+    PMU_PAIR BRANCHES = {
+            KUNPENG_PMU::COMMON::BRANCHES,
+            {
+                    PERF_TYPE_HARDWARE,
+                    PERF_COUNT_HW_BRANCH_INSTRUCTIONS,
+                    KUNPENG_PMU::COMMON::BRANCHES
+            }
+    };
+
+    PMU_PAIR BRANCH_INSTRUCTIONS = {
+            KUNPENG_PMU::COMMON::BRANCH_INSTRUCTIONS,
+            {
+                    PERF_TYPE_HARDWARE,
+                    PERF_COUNT_HW_BRANCH_INSTRUCTIONS,
+                    KUNPENG_PMU::COMMON::BRANCH_INSTRUCTIONS
+            }
+    };
 } // namespace hardware event
 
 namespace HW_CACHE_EVENT {
@@ -312,6 +339,26 @@ namespace HW_CACHE_EVENT {
             }
     };
 
+    
+    PMU_PAIR LLC_STORE_MISSES =  {
+            KUNPENG_PMU::COMMON::LLC_STORE_MISSES,
+            {
+                    PERF_TYPE_HW_CACHE,
+                    0x10102,
+                    KUNPENG_PMU::COMMON::LLC_STORE_MISSES
+            }
+    };
+
+    PMU_PAIR LLC_STORES =  {
+            KUNPENG_PMU::COMMON::LLC_STORES,
+            {
+                    PERF_TYPE_HW_CACHE,
+                    0x102,
+                    KUNPENG_PMU::COMMON::LLC_STORES
+            }
+    };
+
+
     PMU_PAIR BRANCH_LOAD_MISSES =  {
             KUNPENG_PMU::COMMON::BRANCH_LOAD_MISSES,
             {
@@ -363,6 +410,42 @@ namespace HW_CACHE_EVENT {
                     PERF_TYPE_HW_CACHE,
                     0x4,
                     KUNPENG_PMU::COMMON::ITLB_LOADS
+            }
+    };
+
+    PMU_PAIR NODE_LOAD_MISSES =  {
+            KUNPENG_PMU::COMMON::NODE_LOAD_MISSES,
+            {
+                    PERF_TYPE_HW_CACHE,
+                    0x10006,
+                    KUNPENG_PMU::COMMON::NODE_LOAD_MISSES
+            }
+    };
+
+    PMU_PAIR NODE_LOADS =  {
+            KUNPENG_PMU::COMMON::NODE_LOADS,
+            {
+                    PERF_TYPE_HW_CACHE,
+                    0x6,
+                    KUNPENG_PMU::COMMON::NODE_LOADS
+            }
+    };
+
+    PMU_PAIR NODE_STORE_MISSES =  {
+            KUNPENG_PMU::COMMON::NODE_STORE_MISSES,
+            {
+                    PERF_TYPE_HW_CACHE,
+                    0x10106,
+                    KUNPENG_PMU::COMMON::NODE_STORE_MISSES
+            }
+    };
+
+    PMU_PAIR NODE_STORES =  {
+            KUNPENG_PMU::COMMON::NODE_STORES,
+            {
+                    PERF_TYPE_HW_CACHE,
+                    0x106,
+                    KUNPENG_PMU::COMMON::NODE_STORES
             }
     };
 
@@ -872,12 +955,58 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_E_CORE_PMU_MA
         SOFTWARE_EVENT::TASK_CLOCK,
 };
 
+const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_X86_CORE_PMU_MAP{
+        HARDWARE_EVENT::BRANCH_MISSES,
+        HARDWARE_EVENT::CACHE_MISSES,
+        HARDWARE_EVENT::CACHE_REFERENCES,
+        HARDWARE_EVENT::CPU_CYCLES,
+        HARDWARE_EVENT::CYCLES,
+        HARDWARE_EVENT::INSTRUCTIONS,
+        HARDWARE_EVENT::BUS_CYCLES,
+        HARDWARE_EVENT::REF_CYCLES,
+        HARDWARE_EVENT::BRANCH_INSTRUCTIONS,
+        HARDWARE_EVENT::BRANCHES,
+
+        SOFTWARE_EVENT::ALIGNMENT_FAULTS,
+        SOFTWARE_EVENT::BPF_OUTPUT,
+        SOFTWARE_EVENT::CONTEXT_SWITCHES,
+        SOFTWARE_EVENT::CS,
+        SOFTWARE_EVENT::CPU_CLOCK,
+        SOFTWARE_EVENT::CPU_MIGRATIONS,
+        SOFTWARE_EVENT::MIGRATIONS,
+        SOFTWARE_EVENT::DUMMY,
+        SOFTWARE_EVENT::EMULATION_FAULTS,
+        SOFTWARE_EVENT::MAJOR_FAULTS,
+        SOFTWARE_EVENT::MINOR_FAULTS,
+        SOFTWARE_EVENT::PAGE_FAULTS,
+        SOFTWARE_EVENT::FAULTS,
+        SOFTWARE_EVENT::TASK_CLOCK,
+
+        HW_CACHE_EVENT::L1_DCACHE_LOAD_MISSES,
+        HW_CACHE_EVENT::L1_DCACHE_LOADS,
+        HW_CACHE_EVENT::L1_ICACHE_LOAD_MISSES,
+        HW_CACHE_EVENT::L1_ICACHE_LOADS,
+        HW_CACHE_EVENT::LLC_LOAD_MISSES,
+        HW_CACHE_EVENT::LLC_LOADS,
+        HW_CACHE_EVENT::LLC_STORE_MISSES,
+        HW_CACHE_EVENT::LLC_STORES,
+        HW_CACHE_EVENT::BRANCH_LOAD_MISSES,
+        HW_CACHE_EVENT::BRANCH_LOADS,
+        HW_CACHE_EVENT::DTLB_LOAD_MISSES,
+        HW_CACHE_EVENT::DTLB_LOADS,
+        HW_CACHE_EVENT::NODE_LOAD_MISSES,
+        HW_CACHE_EVENT::NODE_LOADS,
+        HW_CACHE_EVENT::NODE_STORE_MISSES,
+        HW_CACHE_EVENT::NODE_STORES,
+};
+
 const KUNPENG_PMU::CORE_EVT_MAP KUNPENG_PMU::CORE_EVENT_MAP = {
     {CHIP_TYPE::HIPA, HIP_A_CORE_PMU_MAP},
     {CHIP_TYPE::HIPB, HIP_B_CORE_PMU_MAP},
     {CHIP_TYPE::HIPC, HIP_C_CORE_PMU_MAP},
     {CHIP_TYPE::HIPF, HIP_F_CORE_PMU_MAP},
     {CHIP_TYPE::HIPE, HIP_E_CORE_PMU_MAP},
+    {CHIP_TYPE::HIPX86, HIP_X86_CORE_PMU_MAP},
 };
 
 static struct PmuEvt* ConstructPmuEvtFromCore(KUNPENG_PMU::CoreConfig config, int collectType)
@@ -888,7 +1017,6 @@ static struct PmuEvt* ConstructPmuEvtFromCore(KUNPENG_PMU::CoreConfig config, in
     pmuEvtPtr->type = config.type;
     pmuEvtPtr->pmuType = KUNPENG_PMU::CORE_TYPE;
     pmuEvtPtr->collectType = collectType;
-    pmuEvtPtr->cpumask = -1;
     return pmuEvtPtr;
 }
 
@@ -951,7 +1079,6 @@ static struct PmuEvt* ConstructPmuEvtFromKernel(const char* pmuName, int collect
     pmuEvtPtr->type = type;
     pmuEvtPtr->pmuType = KUNPENG_PMU::CORE_TYPE;
     pmuEvtPtr->collectType = collectType;
-    pmuEvtPtr->cpumask = -1;
     return pmuEvtPtr;
 }
 
@@ -981,6 +1108,13 @@ std::string GetPmuDevicePath()
     }
     struct dirent *dent;
     while (dent = readdir(dir)) {
+#ifdef IS_X86
+        // look for devices like /sys/bus/event_source/devices/cpu/events
+        if (strcmp(dent->d_name, "cpu") == 0) {
+            pmuDevice = DEVICE_PATH + dent->d_name;
+            break;
+        }
+#else
         if (!strcmp(dent->d_name, ".") || !strcmp(dent->d_name, "..") || !strcmp(dent->d_name, "cpu")) {
             continue;
         }
@@ -992,6 +1126,7 @@ std::string GetPmuDevicePath()
             pmuDevice = DEVICE_PATH + dent->d_name;
             break;
         }
+#endif
     }
     closedir(dir);
     return pmuDevice;
