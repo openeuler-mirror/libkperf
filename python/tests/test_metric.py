@@ -7,23 +7,57 @@ import os
 def get_cpu_nums():
     return os.cpu_count()
 
-def get_cluster_nums():
+def hyper_thread_enabled() -> bool:
+    """
+    检查是否启用了超线程。
+    :return: 如果启用超线程返回True，否则返回False。
+    """
+    sibling_file_path = "/sys/devices/system/cpu/cpu0/topology/thread_siblings_list"
+    try:
+        with open(sibling_file_path, "r") as sibling_file:
+            siblings = sibling_file.read().strip()
+            return siblings != "0"
+    except FileNotFoundError:
+        print("Failed to open thread_siblings_list file.")
+        return False
+
+
+def get_cluster_nums() -> int:
     clusters = set()
 
     cpu_index = 0
     while True:
-        path = f"/sys/devices/system/cpu/cpu{cpu_index}/topology/cluster_id"
-        
-        if not os.path.exists(path):
+        cluster_id_path = f"/sys/devices/system/cpu/cpu{cpu_index}/topology/cluster_id"
+        if not os.path.exists(cluster_id_path):
             break
 
-        with open(path, 'r') as f:
-            cluster_id = int(f.read().strip())
-            clusters.add(cluster_id)
+        try:
+            with open(cluster_id_path, "r") as in_file:
+                cluster_id = int(in_file.read().strip())
+                clusters.add(cluster_id)
+        except Exception as e:
+            print(f"Failed to read cluster_id for cpu{cpu_index}: {e}")
+            break
 
         cpu_index += 1
 
-    return len(clusters)
+    cluster_count = len(clusters)
+    if cluster_count == 0:
+        enabled = hyper_thread_enabled()
+        if not enabled:
+            print("Failed to check hyper-threading status.")
+            return 0
+
+        cpu_nums = get_cpu_nums()
+        if cpu_nums == 0:
+            return 0
+
+        if enabled:
+            cluster_count = cpu_nums // 8
+        else:
+            cluster_count = cpu_nums // 4
+
+    return cluster_count
 def print_dev_data_details(dev_data):
     """打印设备数据的详细信息"""
     for dev_data_item in dev_data.iter:
