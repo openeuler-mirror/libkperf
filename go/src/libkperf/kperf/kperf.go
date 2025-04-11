@@ -1003,7 +1003,6 @@ func PmuGetClusterCore(clusterId uint) ([]uint, error) {
 		Cap:  int(coreLen),
 	}
 	cCoreList := *(*[]C.uint32_t)(unsafe.Pointer(&slice))
-	defer C.free(ptr)
 	goCoreList := make([]uint, int(coreLen))
 	for i, v := range cCoreList {
 		goCoreList[i] = uint(v)
@@ -1031,7 +1030,6 @@ func PmuGetNumaCore(nodeId uint) ([]uint, error) {
 		Cap:  int(coreLen),
 	}
 	cCoreList := *(*[]C.uint32_t)(unsafe.Pointer(&slice))
-	defer C.free(ptr)
 	goCoreList := make([]uint, int(coreLen))
 	for i, v := range cCoreList {
 		goCoreList[i] = uint(v)
