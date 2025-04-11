@@ -245,9 +245,31 @@ func TestGetMetric(t *testing.T) {
 		t.Fatalf("kperf PmuGetDevMetric failed, expect err is nil, but is %v", err)
 	}
 	for _, v := range deivceDataVo.GoDeviceData {
-		t.Logf("get device data count=%v coreId=%v, numaId=%v bdf=%v", v.Count, v.CoreId, v.NumaId, v.Bdf)
+		t.Logf("get device data count=%v coreId=%v, numaId=%v bdf=%v clusterId=%v", v.Count, v.CoreId, v.NumaId, v.Bdf, v.ClusterId)
 	}
 	kperf.DevDataFree(deivceDataVo)
 	kperf.PmuDataFree(dataVo)
 	kperf.PmuClose(fd)
+}
+
+func TestPmuGetClusterCore(t *testing.T) {
+	clusterId := uint(1)
+	coreList, err := kperf.PmuGetClusterCore(clusterId)
+	if err != nil {
+		t.Fatalf("kperf PmuGetClusterCore failed, expect err is nil, but is %v", err)
+	}
+	for _, v := range coreList {
+		t.Logf("coreId has:%v", v)
+	}
+}
+
+func TestPmuGetNumaCore(t *testing.T) {
+	nodeId := uint(0)
+	coreList, err := kperf.PmuGetNumaCore(nodeId)
+	if err != nil {
+		t.Fatalf("kperf PmuGetNumaCore failed, expect err is nil, but is %v", err)
+	}
+	for _, v := range coreList {
+		t.Logf("coreId has:%v", v)
+	}
 }
