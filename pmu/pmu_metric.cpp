@@ -35,7 +35,8 @@
 using namespace std;
 using namespace pcerr;
 
-#define MAX_CPU_NUM sysconf(_SC_NPROCESSORS_CONF)
+static unsigned maxCpuNum = 0;
+static vector<unsigned> coreArray;
 
 static const string SYS_DEVICES = "/sys/devices/";
 static const string SYS_BUS_PCI_DEVICES = "/sys/bus/pci/devices";
@@ -1392,32 +1393,44 @@ int64_t PmuGetCpuFreq(unsigned core)
     return cpuFreq * 1000;
 }
 
+static void InitializeCoreArray()
+{
+    if (!coreArray.empty()) {
+        return;
+    }
+    maxCpuNum = sysconf(_SC_NPROCESSORS_CONF);
+    for (unsigned i = 0; i < maxCpuNum; ++i) {
+        coreArray.emplace_back(i);
+    }
+    return;
+}
+
 int PmuGetClusterCore(unsigned clusterId, unsigned **coreList)
 {
     try
     {
+        InitializeCoreArray();
         bool hyperThread = false;
         int err = HyperThreadEnabled(hyperThread);
         if (err != SUCCESS) {
             New(err);
             return -1;
         }
-
         int coreNums = hyperThread ? 8 : 4;
-        *coreList = (unsigned *)malloc(coreNums * sizeof(unsigned));
-        if (*coreList == NULL) {
-            New(COMMON_ERR_NOMEM);
+        unsigned startCore = clusterId * coreNums;
+
+        if (startCore >= MAX_CPU_NUM) {
+            New(LIBPERF_ERR_CLUSTER_ID_OVERSIZE, "clusterId exceed cpuNums.");
             return -1;
         }
-        for (int i = 0; i < coreNums; ++i) {
-            (*coreList)[i] = clusterId * coreNums + i;
-            if ((*coreList)[i] >= MAX_CPU_NUM) {
-                free(*coreList);
-                *coreList = NULL;
-                New(LIBPERF_ERR_CLUSTER_ID_OVERSIZE, "clusterId exceed cpuNums.");
-                return -1;
-            }
+
+        if (startCore + coreNums > MAX_CPU_NUM) {
+            New(LIBPERF_ERR_CLUSTER_ID_OVERSIZE, "clusterId and coreNums exceed cpuNums.");
+            return -1;
         }
+
+        *coreList = &coreArray[startCore];
+
         New(SUCCESS);
         return coreNums;
     }
@@ -1450,14 +1463,9 @@ int PmuGetNumaCore(unsigned nodeId, unsigned **coreList)
             New(LIBPERF_ERR_KERNEL_NOT_SUPPORT);
             return LIBPERF_ERR_KERNEL_NOT_SUPPORT;
         }
-        *coreList = (unsigned *)malloc(coreNums * sizeof(unsigned));
-        if (*coreList == NULL) {
-            New(COMMON_ERR_NOMEM);
-            return -1;
-        }
-        for (int i = 0; i < coreNums; ++i) {
-            (*coreList)[i] = start + i;
-        }
+        InitializeCoreArray();
+        *coreList = &coreArray[start];
+
         New(SUCCESS);
         return coreNums;
     } catch (exception &ex) {

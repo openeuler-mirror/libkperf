@@ -69,10 +69,6 @@ TEST_F(TestMetric, GetClusterIdListSuccess)
         cout << coreList[i] << " ";
     }
     cout << endl;
-    if (coreList != NULL) {
-        free(coreList);
-        coreList = NULL;
-    }
 }
 
 TEST_F(TestMetric, GetClusterIdListOverSize)
@@ -95,10 +91,6 @@ TEST_F(TestMetric, GetNumaIdList)
         cout << coreList[i] << " ";
     }
     cout << endl;
-    if (coreList != NULL) {
-        free(coreList);
-        coreList = NULL;
-    }
 }
 
 TEST_F(TestMetric, CollectDDRBandwidth)
