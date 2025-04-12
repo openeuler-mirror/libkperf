@@ -1226,26 +1226,35 @@ using namespace KUNPENG_PMU;
 
 const char** PmuDeviceBdfList(enum PmuBdfType bdfType, unsigned *numBdf)
 {
-    SetWarn(SUCCESS);
-    int err = 0;
-    if (bdfType == PmuBdfType::PMU_BDF_TYPE_PCIE) {
-        err = CheckDeviceMetricEnum(PmuDeviceMetric::PMU_PCIE_RX_MRD_BW);
-        if (err != SUCCESS) {
-            *numBdf = 0;
-            New(err, "For this platform not support pcie metric counting!");
-            return nullptr;
+    try {
+        SetWarn(SUCCESS);
+        int err = 0;
+        if (bdfType == PmuBdfType::PMU_BDF_TYPE_PCIE) {
+            err = CheckDeviceMetricEnum(PmuDeviceMetric::PMU_PCIE_RX_MRD_BW);
+            if (err != SUCCESS) {
+                *numBdf = 0;
+                New(err, "For this platform not support pcie metric counting!");
+                return nullptr;
+            }
+            return PmuDevicePcieBdfList(numBdf);
         }
-        return PmuDevicePcieBdfList(numBdf);
-    }
 
-    if (bdfType == PmuBdfType::PMU_BDF_TYPE_SMMU) {
-        err = CheckDeviceMetricEnum(PmuDeviceMetric::PMU_SMMU_TRAN);
-        if (err != SUCCESS) {
-            *numBdf = 0;
-            New(err, "For this platform not support smmu metric counting!");
-            return nullptr;
+        if (bdfType == PmuBdfType::PMU_BDF_TYPE_SMMU) {
+            err = CheckDeviceMetricEnum(PmuDeviceMetric::PMU_SMMU_TRAN);
+            if (err != SUCCESS) {
+                *numBdf = 0;
+                New(err, "For this platform not support smmu metric counting!");
+                return nullptr;
+            }
+            return PmuDeviceSmmuBdfList(numBdf);
         }
-        return PmuDeviceSmmuBdfList(numBdf);
+        *numBdf = 0;
+        New(LIBPERF_ERR_INVALID_PMU_BDF_TYPE, "bdfType is invalid.");
+        return nullptr;
+    } catch (exception &ex) {
+        *numBdf = 0;
+        New(UNKNOWN_ERROR, ex.what());
+        return nullptr;
     }
 }
 

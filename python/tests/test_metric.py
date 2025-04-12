@@ -58,6 +58,8 @@ def get_cluster_nums() -> int:
             cluster_count = cpu_nums // 4
 
     return cluster_count
+
+
 def print_dev_data_details(dev_data):
     """打印设备数据的详细信息"""
     for dev_data_item in dev_data.iter:

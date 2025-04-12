@@ -32,6 +32,15 @@ static CpuTopology GetTopo(const unsigned coreId, const unsigned numaId)
     return topo;
 }
 
+TEST_F(TestMetric, GetInvalidBdfList)
+{
+    enum PmuBdfType bdfType = (enum PmuBdfType)5;
+    unsigned bdfLen = 0;
+    const char** bdfList = PmuDeviceBdfList(bdfType, &bdfLen);
+    cout << Perror() << endl;
+    ASSERT_EQ(bdfList, nullptr);
+}
+
 TEST_F(TestMetric, GetPcieBdfList)
 {
     enum PmuBdfType bdfType = PMU_BDF_TYPE_PCIE;
