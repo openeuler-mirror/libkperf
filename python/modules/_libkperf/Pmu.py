@@ -1860,6 +1860,7 @@ __all__ = [
     'PmuGetField',
     'PmuGetFieldExp',
     'PmuDeviceAttr',
+    'ImplPmuDeviceData',
     'PmuDeviceData',
     'PmuDeviceBdfList',
     'PmuDeviceOpen',

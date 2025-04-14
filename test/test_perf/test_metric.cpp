@@ -32,6 +32,15 @@ static CpuTopology GetTopo(const unsigned coreId, const unsigned numaId)
     return topo;
 }
 
+TEST_F(TestMetric, GetInvalidBdfList)
+{
+    enum PmuBdfType bdfType = (enum PmuBdfType)5;
+    unsigned bdfLen = 0;
+    const char** bdfList = PmuDeviceBdfList(bdfType, &bdfLen);
+    cout << Perror() << endl;
+    ASSERT_EQ(bdfList, nullptr);
+}
+
 TEST_F(TestMetric, GetPcieBdfList)
 {
     enum PmuBdfType bdfType = PMU_BDF_TYPE_PCIE;
@@ -245,13 +254,16 @@ TEST_F(TestMetric, CollectL3LatencyAndL3Miss)
 
 TEST_F(TestMetric, GetMetricPcieBandwidth)
 {
-    PmuDeviceAttr devAttr[2] = {};
-    devAttr[0].metric = PMU_PCIE_RX_MRD_BW;
-    devAttr[0].bdf="01:03.0";
-    devAttr[1].metric = PMU_PCIE_RX_MWR_BW;
-    devAttr[1].bdf="01:03.0";
+    const char** bdfList = nullptr;
+    unsigned bdfLen = 0;
+    bdfList = PmuDeviceBdfList(PMU_BDF_TYPE_PCIE, &bdfLen);
+    PmuDeviceAttr devAttr[bdfLen] = {};
+    for (int i = 0; i < bdfLen; ++i) {
+        devAttr[i].metric = PMU_PCIE_RX_MRD_BW;
+        devAttr[i].bdf = strdup(bdfList[i]);
+    }
 
-    int pd = PmuDeviceOpen(devAttr, 2);
+    int pd = PmuDeviceOpen(devAttr, bdfLen);
     cout << Perror() << endl;
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
@@ -262,14 +274,11 @@ TEST_F(TestMetric, GetMetricPcieBandwidth)
     ASSERT_NE(oriLen, -1);
 
     PmuDeviceData *devData = nullptr;
-    auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
-    ASSERT_EQ(len, 2);
+    auto len = PmuGetDevMetric(oriData, oriLen, devAttr, bdfLen, &devData);
+    ASSERT_EQ(len, bdfLen);
     ASSERT_EQ(devData[0].metric, PMU_PCIE_RX_MRD_BW);
     ASSERT_EQ(devData[0].mode, PMU_METRIC_BDF);
-    ASSERT_TRUE(strcmp(devData[0].bdf, "01:03.0") == 0);
-    ASSERT_EQ(devData[1].metric, PMU_PCIE_RX_MWR_BW);
-    ASSERT_EQ(devData[1].mode, PMU_METRIC_BDF);
-    ASSERT_TRUE(strcmp(devData[1].bdf, "01:03.0") == 0);
+    ASSERT_TRUE(strcmp(devData[0].bdf, bdfList[0]) == 0);
 }
 
 TEST_F(TestMetric, GetMetricSmmuTransaction)

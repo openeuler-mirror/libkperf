@@ -58,6 +58,8 @@ def get_cluster_nums() -> int:
             cluster_count = cpu_nums // 4
 
     return cluster_count
+
+
 def print_dev_data_details(dev_data):
     """打印设备数据的详细信息"""
     for dev_data_item in dev_data.iter:
@@ -225,9 +227,10 @@ def test_collect_l3_latency_and_l3_miss():
     print_dev_data_details(dev_data)
 
 def test_get_metric_pcie_bandwidth():
+    bdf_list = kperf.device_bdf_list(kperf.PmuBdfType.PMU_BDF_TYPE_PCIE)
     dev_attr = [
-        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_PCIE_RX_MRD_BW, bdf="01:03.0"),
-        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_PCIE_RX_MWR_BW, bdf="01:03.0")
+        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_PCIE_RX_MRD_BW, bdf=bdf)
+        for bdf in bdf_list
     ]
     pd = kperf.device_open(dev_attr)
     print(kperf.error())
@@ -239,14 +242,14 @@ def test_get_metric_pcie_bandwidth():
     assert len(ori_data) != -1, f"Expected non-negative ori_len, but got {len(ori_data)}"
 
     dev_data = kperf.get_device_metric(ori_data, dev_attr)
-    assert len(dev_data) == 2
+    assert len(dev_data) == len(bdf_list)
     print_dev_data_details(dev_data)
 
 def test_get_metric_smmu_transaction():
-    bdf_list = kperf.device_bdf_list(kperf.PmuBdfType.PMU_BDF_TYPE_PCIE)
+    bdf_list = kperf.device_bdf_list(kperf.PmuBdfType.PMU_BDF_TYPE_SMMU)
     dev_attr = [
-        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_SMMU_TRAN, bdf=bdf_list[0]),
-        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_SMMU_TRAN, bdf=bdf_list[1])
+        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_SMMU_TRAN, bdf=bdf)
+        for bdf in bdf_list
     ]
     pd = kperf.device_open(dev_attr)
     print(kperf.error())
@@ -258,7 +261,7 @@ def test_get_metric_smmu_transaction():
     assert len(ori_data) != -1, f"Expected non-negative ori_len, but got {len(ori_data)}"
 
     dev_data = kperf.get_device_metric(ori_data, dev_attr)
-    assert len(dev_data) == 2
+    assert len(dev_data) == len(bdf_list)
     print_dev_data_details(dev_data)
 
 if __name__ == '__main__':

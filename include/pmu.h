@@ -430,12 +430,12 @@ enum PmuDeviceMetric {
     // Collect pcie rx bandwidth.
     // Perpcie metric.
     // Collect pcie rx bandwidth for pcie device.
-    // Unit: Bytes/s
+    // Unit: Bytes/ns
     PMU_PCIE_RX_MRD_BW,
     PMU_PCIE_RX_MWR_BW,
     // Perpcie metric.
     // Collect pcie tx bandwidth for pcie device.
-    // Unit: Bytes/s
+    // Unit: Bytes/ns
     PMU_PCIE_TX_MRD_BW,
     PMU_PCIE_TX_MWR_BW,
     // Perpcie metric.
@@ -529,7 +529,6 @@ void DevDataFree(struct PmuDeviceData *data);
  * @brief Get core list of a cluster.
  * @param clusterId cluster id
  * @param coreList core id list, malloced by this method.
- *              NOTE! This pointer array should be freed by caller.
  * @return length of core id list
  */
 int PmuGetClusterCore(unsigned clusterId, unsigned **coreList);
@@ -538,7 +537,6 @@ int PmuGetClusterCore(unsigned clusterId, unsigned **coreList);
  * @brief Get core list of a numa node.
  * @param clusterId numa id
  * @param coreList core id list, malloced by this method.
- *              NOTE! This pointer array should be freed by caller.
  * @return length of core id list
  */
 int PmuGetNumaCore(unsigned nodeId, unsigned **coreList);
