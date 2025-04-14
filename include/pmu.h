@@ -430,12 +430,12 @@ enum PmuDeviceMetric {
     // Collect pcie rx bandwidth.
     // Perpcie metric.
     // Collect pcie rx bandwidth for pcie device.
-    // Unit: Bytes/s
+    // Unit: Bytes/ns
     PMU_PCIE_RX_MRD_BW,
     PMU_PCIE_RX_MWR_BW,
     // Perpcie metric.
     // Collect pcie tx bandwidth for pcie device.
-    // Unit: Bytes/s
+    // Unit: Bytes/ns
     PMU_PCIE_TX_MRD_BW,
     PMU_PCIE_TX_MWR_BW,
     // Perpcie metric.
