@@ -174,6 +174,8 @@ class PmuMetricMode:
     PMU_METRIC_CLUSTER = 3
     PMU_METRIC_BDF = 4
 
+class ImplPmuDeviceData(_libkperf.ImplPmuDeviceData):
+    pass
 
 class PmuDeviceData(_libkperf.PmuDeviceData):
     """
@@ -537,6 +539,7 @@ __all__ = [
     'PmuDeviceAttr',
     'PmuBdfType',
     'PmuMetricMode',
+    'ImplPmuDeviceData',
     'PmuDeviceData',
     'device_bdf_list',
     'device_open',

@@ -538,6 +538,12 @@ namespace KUNPENG_PMU {
 
     static const char** PmuDevicePcieBdfList(unsigned *numBdf)
     {
+        // fix repeat called List continue increase
+        if (!pcieBdfList.empty()) {
+            *numBdf = pcieBdfList.size();
+            New(SUCCESS);
+            return pcieBdfList.data();
+        }
         vector<string> bdfList;
         if(QueryAllBdfList(bdfList) != SUCCESS) {
             *numBdf = 0;
@@ -615,6 +621,12 @@ namespace KUNPENG_PMU {
 
     const char** PmuDeviceSmmuBdfList(unsigned *numBdf)
     {
+        // fix repeat called List continue increase
+        if (!smmuBdfList.empty()) {
+            *numBdf = smmuBdfList.size();
+            New(SUCCESS);
+            return smmuBdfList.data();
+        }
         vector<string> bdfList;
         if(QueryAllBdfList(bdfList) != SUCCESS) {
             *numBdf = 0;
