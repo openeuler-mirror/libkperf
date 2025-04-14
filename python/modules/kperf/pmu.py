@@ -183,7 +183,7 @@ class PmuDeviceData(_libkperf.PmuDeviceData):
         enum PmuDeviceMetric metric;
         // The metric value. The meaning of value depends on metric type.
         // Refer to comments of PmuDeviceMetric for detailed info.
-        uint64_t count;
+        double count;
         enum PmuMetricMode mode;
         // Field of union depends on the above <mode>.
         union {
