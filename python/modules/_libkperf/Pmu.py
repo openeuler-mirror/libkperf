@@ -472,7 +472,7 @@ class CtypesPmuDeviceData(ctypes.Structure):
     """
     struct PmuDeviceData {
         enum PmuDeviceMetric metric;
-        uint64_t count;
+        double count;
         enum PmuMetricMode mode;
         union {
             unsigned coreId;
@@ -492,7 +492,7 @@ class CtypesPmuDeviceData(ctypes.Structure):
     
     _fields_ = [
         ('metric', ctypes.c_int),
-        ('count', ctypes.c_uint64),
+        ('count', ctypes.c_double),
         ('mode', ctypes.c_int),
         ('_union', _Union)
     ]
@@ -527,11 +527,11 @@ class ImplPmuDeviceData:
 
     def __init__(self,
                  metric: int = 0,
-                 count: int = 0,
+                 count: float = 0,
                  mode: int = 0) -> None:
         self.__c_pmu_device_data = CtypesPmuDeviceData()
         self.__c_pmu_device_data.metric = ctypes.c_int(metric)
-        self.__c_pmu_device_data.count = ctypes.c_uint64(count)
+        self.__c_pmu_device_data.count = ctypes.c_double(count)
         self.__c_pmu_device_data.mode = ctypes.c_int(mode)
     
     @property
@@ -543,7 +543,7 @@ class ImplPmuDeviceData:
         return self.c_pmu_device_data.metric
     
     @property
-    def count(self) -> int:
+    def count(self) -> float:
         return self.c_pmu_device_data.count
     
     @property
