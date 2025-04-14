@@ -399,7 +399,7 @@ type PmuDeviceData struct {
 	Metric C.enum_PmuDeviceMetric
 	// The metric value. The meaning of value depends on metric type.
     // Refer to comments of PmuDeviceMetric for detailed info.
-	Count uint64
+	Count float64
 	Mode C.enum_PmuMetricMode  // Field of union depends on the above <mode>.
 	CoreId uint32    // for percore metric
 	NumaId uint32    // for pernuma metric
@@ -966,7 +966,7 @@ func PmuGetDevMetric(dataVo PmuDataVo, deviceAttr []PmuDeviceAttr) (PmuDeviceDat
 	cMetricList := *(*[]C.struct_PmuDeviceData)(unsafe.Pointer(&slice))
 	for i, v := range cMetricList {
 		goDeviceList[i].Metric = v.metric
-		goDeviceList[i].Count  = uint64(v.count)
+		goDeviceList[i].Count  = float64(v.count)
 		goDeviceList[i].Mode   = v.mode
 		metricDataExt := C.struct_MetricDataExt{}
 		C.IPmuGetMetricDataExt(&v, &metricDataExt)
