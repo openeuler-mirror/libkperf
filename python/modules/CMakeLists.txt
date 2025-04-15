@@ -22,7 +22,7 @@ configure_file(
 )
 
 add_custom_target(${PROJECT_NAME} ALL
-    COMMAND ${PYTHON_EXECUTABLE} setup.py install --user
+    COMMAND ${PYTHON_EXECUTABLE} setup.py install
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
