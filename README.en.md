@@ -95,6 +95,7 @@ TO build a Go package:
 ```shell
 bash build.sh go=true
 ```
+After the command is executed successfully, copy go/src/libkperf to GOPATH/src. GOPATH indicates the user project directory.
 
 #### Documents
 
