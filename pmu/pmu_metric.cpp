@@ -15,6 +15,8 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <map>
+#include <set>
 #include <string>
 #include <numa.h>
 #include <unistd.h>
@@ -64,7 +66,7 @@ namespace KUNPENG_PMU {
         unsigned splitPosition;
     };
 
-    static const std::unordered_map<PmuDeviceMetric, std::string> MetricToString = {
+    static const std::map<PmuDeviceMetric, std::string> MetricToString = {
         {PmuDeviceMetric::PMU_DDR_READ_BW, "PMU_DDR_READ_BW"},
         {PmuDeviceMetric::PMU_DDR_WRITE_BW, "PMU_DDR_WRITE_BW"},
         {PmuDeviceMetric::PMU_L3_TRAFFIC, "PMU_L3_TRAFFIC"},
@@ -78,10 +80,10 @@ namespace KUNPENG_PMU {
         {PmuDeviceMetric::PMU_SMMU_TRAN, "PMU_SMMU_TRAN"}
     };
 
-    unordered_set<PmuDeviceMetric> percoreMetric = {PMU_L3_TRAFFIC, PMU_L3_MISS, PMU_L3_REF};
-    unordered_set<PmuDeviceMetric> pernumaMetric = {PMU_DDR_READ_BW, PMU_DDR_WRITE_BW, PMU_L3_LAT};
-    unordered_set<PmuDeviceMetric> perClusterMetric = {PMU_L3_LAT};
-    unordered_set<PmuDeviceMetric> perpcieMetric = {PMU_PCIE_RX_MRD_BW,
+    set<PmuDeviceMetric> percoreMetric = {PMU_L3_TRAFFIC, PMU_L3_MISS, PMU_L3_REF};
+    set<PmuDeviceMetric> pernumaMetric = {PMU_DDR_READ_BW, PMU_DDR_WRITE_BW, PMU_L3_LAT};
+    set<PmuDeviceMetric> perClusterMetric = {PMU_L3_LAT};
+    set<PmuDeviceMetric> perpcieMetric = {PMU_PCIE_RX_MRD_BW,
                                                     PMU_PCIE_RX_MWR_BW,
                                                     PMU_PCIE_TX_MRD_BW,
                                                     PMU_PCIE_TX_MWR_BW,
@@ -102,7 +104,7 @@ namespace KUNPENG_PMU {
     }
 
     using PMU_METRIC_PAIR = std::pair<PmuDeviceMetric, UncoreDeviceConfig>;
-    using UNCORE_METRIC_MAP = std::unordered_map<int, const unordered_map<PmuDeviceMetric, UncoreDeviceConfig>&>;
+    using UNCORE_METRIC_MAP = std::unordered_map<int, const map<PmuDeviceMetric, UncoreDeviceConfig>&>;
     namespace METRIC_CONFIG {
         PMU_METRIC_PAIR DDR_READ_BW_A = {
             PmuDeviceMetric::PMU_DDR_READ_BW,
@@ -261,7 +263,7 @@ namespace KUNPENG_PMU {
         };
     }
 
-    static const unordered_map<PmuDeviceMetric, UncoreDeviceConfig> HIP_A_UNCORE_METRIC_MAP {
+    static const map<PmuDeviceMetric, UncoreDeviceConfig> HIP_A_UNCORE_METRIC_MAP {
         METRIC_CONFIG::DDR_READ_BW_A,
         METRIC_CONFIG::DDR_WRITE_BW_A,
         METRIC_CONFIG::L3_TRAFFIC,
@@ -270,7 +272,7 @@ namespace KUNPENG_PMU {
         METRIC_CONFIG::SMMU_TRAN,
     };
 
-    static const unordered_map<PmuDeviceMetric, UncoreDeviceConfig> HIP_B_UNCORE_METRIC_MAP {
+    static const map<PmuDeviceMetric, UncoreDeviceConfig> HIP_B_UNCORE_METRIC_MAP {
         METRIC_CONFIG::DDR_READ_BW_B,
         METRIC_CONFIG::DDR_WRITE_BW_B,
         METRIC_CONFIG::L3_TRAFFIC,
@@ -289,7 +291,7 @@ namespace KUNPENG_PMU {
         {CHIP_TYPE::HIPB, HIP_B_UNCORE_METRIC_MAP},
     };
 
-    static const unordered_map<PmuDeviceMetric, UncoreDeviceConfig> GetDeviceMtricConfig()
+    static const map<PmuDeviceMetric, UncoreDeviceConfig> GetDeviceMtricConfig()
     {
         return UNCORE_METRIC_CONFIG_MAP.at(GetCpuType());
     }
@@ -712,7 +714,8 @@ namespace KUNPENG_PMU {
             New(SUCCESS);
             return eventList;
         }
-        for (const auto& [key, devices] : classifiedDevices) {
+        for (const auto& pair : classifiedDevices) {
+            const auto& devices = pair.second;
             for (const auto& evt : metricConfig.events) {
                 for (const auto& device : devices) {
                     string eventString = device + "/config=" + evt;
@@ -1025,7 +1028,13 @@ namespace KUNPENG_PMU {
                 continue;
             }
             // Compute avage latency: (latency)/(access count - retry_alloc)
-            double lat = (double)(findLatData->second.count) / (findRefData->second.count - findRetryData->second.count);
+            uint64_t res = findRefData->second.count - findRetryData->second.count;
+            double lat = 0.0;
+            if (res != 0) {
+                lat = (double)(findLatData->second.count) / res;
+            } else {
+                lat = -1;
+            }
             PmuDeviceData outData;
             outData.metric = metric;
             outData.count = lat;
@@ -1072,7 +1081,12 @@ namespace KUNPENG_PMU {
                 continue;
             }
             // Compute bandwidth: (packet length)/(latency)
-            double bw = (double)(4 * findLenData->second.count) / findLatData->second.count;
+            double bw = 0.0;
+            if (findLatData->second.count != 0) {
+                bw = (double)(4 * findLenData->second.count) / findLatData->second.count;
+            } else {
+                bw = -1;
+            }
             PmuDeviceData outData;
             outData.metric = metric;
             outData.count = bw;
@@ -1109,10 +1123,10 @@ namespace KUNPENG_PMU {
     typedef uint64_t (*ComputeMetricCb)(const uint64_t rawCount);
     typedef int (*AggregateMetricCb)(const PmuDeviceMetric metric, const vector<InnerDeviceData> &rawData, vector<PmuDeviceData> &devData);
 
-    unordered_map<PmuDeviceMetric, ComputeMetricCb> computeMetricMap = {{PMU_DDR_READ_BW, DDRBw},
+    map<PmuDeviceMetric, ComputeMetricCb> computeMetricMap = {{PMU_DDR_READ_BW, DDRBw},
                                                                         {PMU_DDR_WRITE_BW, DDRBw},
                                                                         {PMU_L3_TRAFFIC, L3Bw}};
-    unordered_map<PmuDeviceMetric, AggregateMetricCb> aggregateMap = {
+    map<PmuDeviceMetric, AggregateMetricCb> aggregateMap = {
         {PMU_DDR_READ_BW, AggregateByNuma},
         {PMU_DDR_WRITE_BW, AggregateByNuma},
         {PMU_L3_LAT, AggregateByCluster},

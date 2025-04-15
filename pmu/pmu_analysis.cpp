@@ -191,7 +191,8 @@ namespace KUNPENG_PMU {
                 }
             }
             for (auto &sysCallPair : sysCallPairs) {
-                auto& [enterEvts, exitEvts] = sysCallPair.second;
+                auto& enterEvts = sysCallPair.second.first;
+                auto& exitEvts = sysCallPair.second.second;
                 if (enterEvts.empty() || exitEvts.empty()) {
                     continue;
                 }

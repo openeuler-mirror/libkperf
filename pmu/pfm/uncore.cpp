@@ -251,7 +251,9 @@ static std::unordered_map<string, string> ParseEventConfig(const string &eventSt
 static bool ValidConfigValueAndGenerateFields(const std::unordered_map<string, UncoreConfigBitFiled> &supportConfigParams,
                                        const std::unordered_map<string, string> &parseParams, std::unordered_map<string, uint64_t> &fields)
 {
-    for (const auto& [key, value] : parseParams) {
+    for (const auto& pair : parseParams) {
+        const auto& key = pair.first;
+        const auto& value = pair.second;
         auto findConfig = supportConfigParams.find(key);
         if (findConfig == supportConfigParams.end()) {
             DBG_PRINT("Error: Invalid config param %s\n", key.c_str());
