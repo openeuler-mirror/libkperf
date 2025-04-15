@@ -195,7 +195,7 @@ namespace KUNPENG_PMU {
             {
                 "hisi_sccl",
                 "l3c",
-                {"0x80", "0xb9", "0xce"},
+                {"0x80", "0xb8", "0xce"},
                 "tt_core=0xff",
                 "",
                 1
