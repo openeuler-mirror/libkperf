@@ -1028,7 +1028,13 @@ namespace KUNPENG_PMU {
                 continue;
             }
             // Compute avage latency: (latency)/(access count - retry_alloc)
-            double lat = (double)(findLatData->second.count) / (findRefData->second.count - findRetryData->second.count);
+            uint64_t res = findRefData->second.count - findRetryData->second.count;
+            double lat = 0.0;
+            if (res != 0) {
+                lat = (double)(findLatData->second.count) / res;
+            } else {
+                lat = -1;
+            }
             PmuDeviceData outData;
             outData.metric = metric;
             outData.count = lat;
@@ -1075,7 +1081,12 @@ namespace KUNPENG_PMU {
                 continue;
             }
             // Compute bandwidth: (packet length)/(latency)
-            double bw = (double)(4 * findLenData->second.count) / findLatData->second.count;
+            double bw = 0.0;
+            if (findLatData->second.count != 0) {
+                bw = (double)(4 * findLenData->second.count) / findLatData->second.count;
+            } else {
+                bw = -1;
+            }
             PmuDeviceData outData;
             outData.metric = metric;
             outData.count = bw;
