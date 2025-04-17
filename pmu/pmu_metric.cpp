@@ -26,6 +26,7 @@
 #include <sstream>
 #include <cstring>
 #include <fstream>
+#include <mutex>
 #include "common.h"
 #include "uncore.h"
 #include "cpu_map.h"
@@ -39,6 +40,10 @@ using namespace pcerr;
 
 static unsigned maxCpuNum = 0;
 static vector<unsigned> coreArray;
+
+static std::mutex pmuBdfListMtx;
+static std::mutex pmuCoreListMtx;
+static std::mutex pmuDeviceDataMtx;
 
 static const string SYS_DEVICES = "/sys/devices/";
 static const string SYS_BUS_PCI_DEVICES = "/sys/bus/pci/devices";
@@ -89,7 +94,7 @@ namespace KUNPENG_PMU {
                                                     PMU_PCIE_TX_MWR_BW,
                                                     PMU_SMMU_TRAN};
 
-    static bool IsValidBdf(PmuDeviceMetric metric)
+    static bool IsBdfMetric(PmuDeviceMetric metric)
     {
         return perpcieMetric.find(metric) != perpcieMetric.end();
     }
@@ -576,7 +581,9 @@ namespace KUNPENG_PMU {
                 int bdfMax = std::get<2>(pciePmu.second);
                 if (bdfmin == -1) {
                     if (bus == pcieBus) {
-                        pcieBdfList.emplace_back(strdup(bdfList[i].c_str()));
+                        char* bdfCopy = new char[bdfList[i].size() + 1];
+                        strcpy(bdfCopy, bdfList[i].c_str());
+                        pcieBdfList.emplace_back(bdfCopy);
                         bdfToPcieMap[bdfList[i]] = pciePmu.first;
                     }
                 } else {
@@ -585,7 +592,9 @@ namespace KUNPENG_PMU {
                         continue;
                     }
                     if (bus == pcieBus && bdfValue >= bdfmin && bdfValue <= bdfMax) {
-                        pcieBdfList.emplace_back(strdup(bdfList[i].c_str()));
+                        char* bdfCopy = new char[bdfList[i].size() + 1];
+                        strcpy(bdfCopy, bdfList[i].c_str());
+                        pcieBdfList.emplace_back(bdfCopy);
                         bdfToPcieMap[bdfList[i]] = pciePmu.first;
                     }
                 }
@@ -597,6 +606,8 @@ namespace KUNPENG_PMU {
         return pcieBdfList.data();
     }
 
+    // convert smmu name to smmu pmu device name: smmu3.0x<phys_addr> -> smmuv3_pmcg_<phys_addr_page>
+    // eg: smmu3.0x0000000148000000 <-> smmuv3_pmcg_148020
     static int FindSmmuToSmmuPmu(std::string& smmuName, std::string& smmuPmuName)
     {
         string smmuPmuKey = "";
@@ -682,7 +693,7 @@ namespace KUNPENG_PMU {
         PmuDeviceAttr& deviceAttr, const UncoreDeviceConfig& metricConfig)
     {
         vector<string> eventList;
-        if (IsValidBdf(deviceAttr.metric)) {
+        if (IsBdfMetric(deviceAttr.metric)) {
             string bdf = deviceAttr.bdf;
             for (const auto& evt : metricConfig.events) {
                 string device = "";
@@ -786,19 +797,19 @@ namespace KUNPENG_PMU {
 
     static int CheckBdf(struct PmuDeviceAttr& deviceAttr)
     {
-        if (IsValidBdf(deviceAttr.metric) && deviceAttr.bdf == nullptr) {
+        if (IsBdfMetric(deviceAttr.metric) && deviceAttr.bdf == nullptr) {
             New(LIBPERF_ERR_INVALID_PMU_DEVICES_BDF, "When collecting pcie or smmu metric, bdf value can not is nullptr!");
             return LIBPERF_ERR_INVALID_PMU_DEVICES_BDF;
         }
         if (deviceAttr.metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_BW && deviceAttr.metric <= PmuDeviceMetric::PMU_PCIE_TX_MWR_BW
             && !CheckPcieBdf(deviceAttr.bdf)) {
             New(LIBPERF_ERR_NOT_SOUUPUT_PCIE_BDF, "this bdf not support pcie metric counting."
-                " Plese use PmuDeviceBdfList to query.");
+                " Please use PmuDeviceBdfList to query.");
             return LIBPERF_ERR_NOT_SOUUPUT_PCIE_BDF;
         }
         if (deviceAttr.metric == PmuDeviceMetric::PMU_SMMU_TRAN && !CheckSmmuBdf(deviceAttr.bdf)) {
             New(LIBPERF_ERR_NOT_SOUUPUT_SMMU_BDF, "this bdf not support smmu metric counting."
-            " Plese use PmuDeviceBdfList to query.");
+            " Please use PmuDeviceBdfList to query.");
             return LIBPERF_ERR_NOT_SOUUPUT_SMMU_BDF;
         }
         New(SUCCESS);
@@ -835,7 +846,7 @@ namespace KUNPENG_PMU {
         std::unordered_set<std::string> uniqueSet;
         for (int i = 0; i < len; ++i) {
             std::string key = "";
-            if (IsValidBdf(attr[i].metric)) {
+            if (IsBdfMetric(attr[i].metric)) {
                 key = std::to_string(attr[i].metric) + "_" + attr[i].bdf;
             } else {
                 key = std::to_string(attr[i].metric);
@@ -1124,8 +1135,8 @@ namespace KUNPENG_PMU {
     typedef int (*AggregateMetricCb)(const PmuDeviceMetric metric, const vector<InnerDeviceData> &rawData, vector<PmuDeviceData> &devData);
 
     map<PmuDeviceMetric, ComputeMetricCb> computeMetricMap = {{PMU_DDR_READ_BW, DDRBw},
-                                                                        {PMU_DDR_WRITE_BW, DDRBw},
-                                                                        {PMU_L3_TRAFFIC, L3Bw}};
+                                                                {PMU_DDR_WRITE_BW, DDRBw},
+                                                                {PMU_L3_TRAFFIC, L3Bw}};
     map<PmuDeviceMetric, AggregateMetricCb> aggregateMap = {
         {PMU_DDR_READ_BW, AggregateByNuma},
         {PMU_DDR_WRITE_BW, AggregateByNuma},
@@ -1160,7 +1171,7 @@ namespace KUNPENG_PMU {
         }
 
         // For pcie events, check if event is related with specifi bdf.
-        if (IsValidBdf(devAttr.metric)) {
+        if (IsBdfMetric(devAttr.metric)) {
             auto bdfStr = ExtractEvtStr("bdf", evtName);
             if (bdfStr.empty()) {
                 bdfStr = ExtractEvtStr("filter_stream_id", evtName);
@@ -1237,7 +1248,7 @@ namespace KUNPENG_PMU {
             if (perClusterMetric.find(devAttr.metric) != perClusterMetric.end()) {
                 devData.clusterId = pmuData[i].cpuTopo->coreId / clusterWidth;
             }
-            if (IsValidBdf(devAttr.metric)) {
+            if (IsBdfMetric(devAttr.metric)) {
                 devData.bdf = devAttr.bdf;
             }
             devDataList.emplace_back(devData);
@@ -1253,6 +1264,7 @@ using namespace KUNPENG_PMU;
 const char** PmuDeviceBdfList(enum PmuBdfType bdfType, unsigned *numBdf)
 {
     try {
+        lock_guard<mutex> lg(pmuBdfListMtx);
         SetWarn(SUCCESS);
         int err = 0;
         if (bdfType == PmuBdfType::PMU_BDF_TYPE_PCIE) {
@@ -1282,6 +1294,24 @@ const char** PmuDeviceBdfList(enum PmuBdfType bdfType, unsigned *numBdf)
         New(UNKNOWN_ERROR, ex.what());
         return nullptr;
     }
+}
+
+static void PmuBdfListFreeSingle(vector<const char*> &bdfList)
+{
+    for (auto& bdf : bdfList) {
+        if (bdf != NULL && bdf[0] != '\0') {
+            delete[] bdf;
+        }
+    }
+    bdfList.clear();
+}
+
+void PmuDeviceBdfListFree()
+{
+    lock_guard<mutex> lg(pmuBdfListMtx);
+    PmuBdfListFreeSingle(pcieBdfList);
+    PmuBdfListFreeSingle(smmuBdfList);
+    New(SUCCESS);
 }
 
 int PmuDeviceOpen(struct PmuDeviceAttr *attr, unsigned len)
@@ -1389,6 +1419,7 @@ int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
         auto dataPtr = devData.data();
         int retLen = devData.size();
         // Make relationship between raw pointer and vector, for DevDataFree.
+        lock_guard<mutex> lg(pmuDeviceDataMtx);
         deviceDataMap[dataPtr] = move(devData);
         *data = dataPtr;
         New(SUCCESS);
@@ -1402,6 +1433,7 @@ int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
 void DevDataFree(struct PmuDeviceData *data)
 {
     SetWarn(SUCCESS);
+    lock_guard<mutex> lg(pmuDeviceDataMtx);
     if (deviceDataMap.find(data) != deviceDataMap.end()) {
         deviceDataMap.erase(data);
     }
@@ -1442,8 +1474,8 @@ static void InitializeCoreArray()
 
 int PmuGetClusterCore(unsigned clusterId, unsigned **coreList)
 {
-    try
-    {
+    try {
+        lock_guard<mutex> lg(pmuCoreListMtx);
         InitializeCoreArray();
         bool hyperThread = false;
         int err = HyperThreadEnabled(hyperThread);
@@ -1478,6 +1510,7 @@ int PmuGetClusterCore(unsigned clusterId, unsigned **coreList)
 int PmuGetNumaCore(unsigned nodeId, unsigned **coreList)
 {
     try {
+        lock_guard<mutex> lg(pmuCoreListMtx);
         string nodeListFile = "/sys/devices/system/node/node" + to_string(nodeId) + "/cpulist";
         ifstream in(nodeListFile);
         if (!in.is_open()) {

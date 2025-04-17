@@ -436,7 +436,7 @@ def get_field_exp(pmu_data: _libkperf.ImplPmuData, field_name: str) -> SampleRaw
     """
     return _libkperf.PmuGetFieldExp(pmu_data.rawData.c_pmu_data_rawData, field_name)
 
-def device_bdf_list(bdf_type: PmuBdfType) -> List[str]:
+def device_bdf_list(bdf_type: PmuBdfType) -> Iterator[str]:
     """
     Query all available BDF (Bus:Device.Function) list from system.
     :param bdf_type: type of bdf chosen by user

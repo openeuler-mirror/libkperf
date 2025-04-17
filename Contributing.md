@@ -7,7 +7,7 @@
 
 ### 开发者相关
 - libkperf需要保持较高的兼容性，建议使用gcc 4来编译工程，请基于C++11来开发。
-- 如果要编译调试版，可以用编译命令```bash build.sh buildType=debug```. 在调试时，可以设置环境变量PERF_DEBUG=1，用于打印调试信息。
+- 如果要编译调试版，可以用编译命令```bash build.sh build_type=debug```. 在调试时，可以设置环境变量PERF_DEBUG=1，用于打印调试信息。
 - 如果要编译并运行UT用例，可以用编译命令```bash build.sh test=True```. UT用例中需要执行SPE采样，如果环境不支持SPE，那么这些用例会失败。鲲鹏上配置SPE的方法参考：https://www.hikunpeng.com/document/detail/zh/kunpengdevps/userguide/usermanual/kunpengoper_06_0010.html
 - 提交PR时，请描述问题、原因、方法，以便后续跟踪问题和特性。请在提交前通过UT用例测试。
 

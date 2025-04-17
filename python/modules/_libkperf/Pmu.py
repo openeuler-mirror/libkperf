@@ -1624,22 +1624,29 @@ def PmuGetFieldExp(rawData: ctypes.POINTER(CtypesSampleRawData), field_name: str
     return SampleRawField.from_sample_raw_field(pointer_field.contents)
 
 
-def PmuDeviceBdfList(bdf_type: int) -> List[str]:
+def PmuDeviceBdfListFree() -> None:
     """
-    Query all available BDF (Bus:Device.Function) list from system.
-    
-    Args:
-        bdf_type: Type of BDF chosen by user (PMU_BDF_TYPE_PCIE or PMU_BDF_TYPE_SMMU)
-        
-    Returns:
-        List of BDF strings
+    void PmuDeviceBdfListFree()
+    """
+    c_PmuDeviceBdfListFree = kperf_so.PmuDeviceBdfListFree
+    c_PmuDeviceBdfListFree.argtypes = []
+    c_PmuDeviceBdfListFree.restype = None
+
+    c_PmuDeviceBdfListFree()
+
+def PmuDeviceBdfList(bdf_type: int) -> Iterator[str]:
+    """
+    const char** PmuDeviceBdfList(enum PmuBdfType bdfType, unsigned *numBdf);
     """
     c_PmuDeviceBdfList = kperf_so.PmuDeviceBdfList
-    c_PmuDeviceBdfList.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_uint)]
+    c_PmuDeviceBdfList.argtypes = [ctypes.c_int]
     c_PmuDeviceBdfList.restype = ctypes.POINTER(ctypes.c_char_p)
+
     c_bdf_type = ctypes.c_int(bdf_type)
     c_num_bdf = ctypes.c_uint()
+
     c_bdf_list = c_PmuDeviceBdfList(c_bdf_type, ctypes.byref(c_num_bdf))
+
     return [c_bdf_list[i].decode(UTF_8) for i in range(c_num_bdf.value)]
 
 
@@ -1863,6 +1870,7 @@ __all__ = [
     'ImplPmuDeviceData',
     'PmuDeviceData',
     'PmuDeviceBdfList',
+    'PmuDeviceBdfListFree',
     'PmuDeviceOpen',
     'PmuGetDevMetric',
     'PmuGetCpuFreq',
