@@ -47,7 +47,7 @@ def test_collect_single_trace_data():
 
     pmu_trace_data = kperf.trace_read(pd)
     for data in pmu_trace_data.iter:
-        print(f"funcName: {data.funcs} elapsedTime: {data.elapsedTime} pid: {data.pid} tid: {data.tid} cpu: {data.cpu} comm: {data.comm}")
+        print(f"funcName: {data.funcs} startTs: {data.startTs} elapsedTime: {data.elapsedTime} pid: {data.pid} tid: {data.tid} cpu: {data.cpu} comm: {data.comm}")
     
     kperf.trace_close(pd)
 
@@ -67,7 +67,7 @@ def test_collect_all_syscall_trace_data():
 
     pmu_trace_data = kperf.trace_read(pd)
     for data in pmu_trace_data.iter:
-        print(f"funcName: {data.funcs} elapsedTime: {data.elapsedTime} pid: {data.pid} tid: {data.tid} cpu: {data.cpu} comm: {data.comm}")
+        print(f"funcName: {data.funcs} startTs: {data.startTs} elapsedTime: {data.elapsedTime} pid: {data.pid} tid: {data.tid} cpu: {data.cpu} comm: {data.comm}")
     
     kperf.trace_close(pd)
 
