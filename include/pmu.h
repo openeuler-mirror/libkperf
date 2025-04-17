@@ -405,11 +405,11 @@ struct SampleRawField *PmuGetFieldExp(struct SampleRawData *rawData, const char 
 enum PmuDeviceMetric {
     // Pernuma metric.
     // Collect ddr read bandwidth for each numa node.
-    // Unit: Bytes/s
+    // Unit: Bytes
     PMU_DDR_READ_BW,
     // Pernuma metric.
     // Collect ddr write bandwidth for each numa node.
-    // Unit: Bytes/s
+    // Unit: Bytes
     PMU_DDR_WRITE_BW,
     // Percore metric.
     // Collect L3 access bytes for each cpu core.

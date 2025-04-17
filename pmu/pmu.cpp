@@ -26,6 +26,7 @@
 #include "linked_list.h"
 #include "pcerr.h"
 #include "safe_handler.h"
+#include "pmu_metric.h"
 #include "trace_pointer_parser.h"
 #include "pmu.h"
 
@@ -772,6 +773,7 @@ void PmuClose(int pd)
     }
     try {
         KUNPENG_PMU::PmuList::GetInstance()->Close(pd);
+        PmuDeviceBdfListFree();
         New(SUCCESS);
     } catch (std::bad_alloc&) {
         New(COMMON_ERR_NOMEM);

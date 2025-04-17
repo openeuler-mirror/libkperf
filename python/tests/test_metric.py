@@ -76,17 +76,19 @@ def print_dev_data_details(dev_data):
 
 def test_get_pcie_bdf_list():
     bdf_type = kperf.PmuBdfType.PMU_BDF_TYPE_PCIE
-    bdf_list = kperf.device_bdf_list(bdf_type)
+    bdf_list_iter = kperf.device_bdf_list(bdf_type)
     print(kperf.error())
-    print(len(bdf_list))
-    assert bdf_list is not None, f"Expected non-null bdf_list, but got {bdf_list}"
+    for bdf in bdf_list_iter:
+        print(f"bdf: {bdf}")
+    assert bdf_list_iter is not None, f"Expected non-null bdf_list_iter, but got {bdf_list_iter}"
 
 def test_get_smmu_bdf_list():
     bdf_type = kperf.PmuBdfType.PMU_BDF_TYPE_SMMU
-    bdf_list = kperf.device_bdf_list(bdf_type)
+    bdf_list_iter = kperf.device_bdf_list(bdf_type)
     print(kperf.error())
-    print(len(bdf_list))
-    assert bdf_list is not None, f"Expected non-null bdf_list, but got {bdf_list}"
+    for bdf in bdf_list_iter:
+        print(f"bdf: {bdf}")
+    assert bdf_list_iter is not None, f"Expected non-null bdf_list_iter, but got {bdf_list_iter}"
 
 def test_get_cpu_freq():
     core = 6
@@ -127,6 +129,7 @@ def test_collect_ddr_bandwidth():
     assert dev_data[0].numaId == 0
     assert dev_data[0].mode == kperf.PmuMetricMode.PMU_METRIC_NUMA
     print_dev_data_details(dev_data)
+    kperf.close(pd)
 
 def test_collect_l3_latency():
     dev_attr = [
@@ -145,6 +148,7 @@ def test_collect_l3_latency():
     assert len(dev_data) == get_cluster_nums()
     assert dev_data[0].clusterId == 0
     print_dev_data_details(dev_data)
+    kperf.close(pd)
 
 def test_collect_l3_latency_and_ddr():
     dev_attr = [
@@ -163,6 +167,7 @@ def test_collect_l3_latency_and_ddr():
     dev_data = kperf.get_device_metric(ori_data, dev_attr)
     assert len(dev_data) == get_cluster_nums() + 4
     print_dev_data_details(dev_data)
+    kperf.close(pd)
 
 
 def test_collect_l3_traffic():
@@ -182,6 +187,7 @@ def test_collect_l3_traffic():
     assert len(dev_data) == get_cpu_nums()
     assert dev_data[0].mode == kperf.PmuMetricMode.PMU_METRIC_CORE
     print_dev_data_details(dev_data)
+    kperf.close(pd)
 
 
 def test_collect_l3_traffic_and_l3_ref():
@@ -205,6 +211,7 @@ def test_collect_l3_traffic_and_l3_ref():
     assert dev_data[get_cpu_nums()].metric == kperf.PmuDeviceMetric.PMU_L3_REF
     assert dev_data[get_cpu_nums()].mode == kperf.PmuMetricMode.PMU_METRIC_CORE
     print_dev_data_details(dev_data)
+    kperf.close(pd)
 
 
 def test_collect_l3_latency_and_l3_miss():
@@ -225,12 +232,13 @@ def test_collect_l3_latency_and_l3_miss():
     data_len = get_cpu_nums() + get_cluster_nums()
     assert len(dev_data) == data_len
     print_dev_data_details(dev_data)
+    kperf.close(pd)
 
 def test_get_metric_pcie_bandwidth():
-    bdf_list = kperf.device_bdf_list(kperf.PmuBdfType.PMU_BDF_TYPE_PCIE)
+    bdf_list_iter = kperf.device_bdf_list(kperf.PmuBdfType.PMU_BDF_TYPE_PCIE)
     dev_attr = [
         kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_PCIE_RX_MRD_BW, bdf=bdf)
-        for bdf in bdf_list
+        for bdf in bdf_list_iter
     ]
     pd = kperf.device_open(dev_attr)
     print(kperf.error())
@@ -242,14 +250,15 @@ def test_get_metric_pcie_bandwidth():
     assert len(ori_data) != -1, f"Expected non-negative ori_len, but got {len(ori_data)}"
 
     dev_data = kperf.get_device_metric(ori_data, dev_attr)
-    assert len(dev_data) == len(bdf_list)
+    assert len(dev_data) == len(dev_attr)
     print_dev_data_details(dev_data)
+    kperf.close(pd)
 
 def test_get_metric_smmu_transaction():
-    bdf_list = kperf.device_bdf_list(kperf.PmuBdfType.PMU_BDF_TYPE_SMMU)
+    bdf_list_iter = kperf.device_bdf_list(kperf.PmuBdfType.PMU_BDF_TYPE_SMMU)
     dev_attr = [
         kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_SMMU_TRAN, bdf=bdf)
-        for bdf in bdf_list
+        for bdf in bdf_list_iter
     ]
     pd = kperf.device_open(dev_attr)
     print(kperf.error())
@@ -261,8 +270,9 @@ def test_get_metric_smmu_transaction():
     assert len(ori_data) != -1, f"Expected non-negative ori_len, but got {len(ori_data)}"
 
     dev_data = kperf.get_device_metric(ori_data, dev_attr)
-    assert len(dev_data) == len(bdf_list)
+    assert len(dev_data) == len(dev_attr)
     print_dev_data_details(dev_data)
+    kperf.close(pd)
 
 if __name__ == '__main__':
     # 提示用户使用pytest 运行测试文件

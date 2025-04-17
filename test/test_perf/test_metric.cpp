@@ -126,6 +126,9 @@ TEST_F(TestMetric, CollectDDRBandwidth)
     ASSERT_EQ(devData[2].mode, PMU_METRIC_NUMA);
     ASSERT_EQ(devData[3].numaId, 3);
     ASSERT_EQ(devData[3].mode, PMU_METRIC_NUMA);
+    DevDataFree(devData);
+    PmuDataFree(oriData);
+    PmuClose(pd);
 }
 
 TEST_F(TestMetric, CollectL3Latency)
@@ -151,6 +154,9 @@ TEST_F(TestMetric, CollectL3Latency)
     ASSERT_EQ(devData[0].mode, PMU_METRIC_CLUSTER);
     ASSERT_EQ(devData[clusterCount - 1].clusterId, clusterCount - 1);
     ASSERT_EQ(devData[clusterCount - 1].mode, PMU_METRIC_CLUSTER);
+    DevDataFree(devData);
+    PmuDataFree(oriData);
+    PmuClose(pd);
 }
 
 TEST_F(TestMetric, CollectL3LatencyAndDDR)
@@ -179,6 +185,9 @@ TEST_F(TestMetric, CollectL3LatencyAndDDR)
     ASSERT_EQ(devData[0].mode, PMU_METRIC_CLUSTER);
     ASSERT_EQ(devData[clusterCount].metric, PMU_DDR_WRITE_BW);
     ASSERT_EQ(devData[clusterCount].mode, PMU_METRIC_NUMA);
+    DevDataFree(devData);
+    PmuDataFree(oriData);
+    PmuClose(pd);
 }
 
 TEST_F(TestMetric, CollectL3Traffic)
@@ -198,6 +207,9 @@ TEST_F(TestMetric, CollectL3Traffic)
     auto len = PmuGetDevMetric(oriData, oriLen, &devAttr, 1, &devData);
     ASSERT_EQ(len, GetCpuNums());
     ASSERT_EQ(devData[0].mode, PMU_METRIC_CORE);
+    DevDataFree(devData);
+    PmuDataFree(oriData);
+    PmuClose(pd);
 }
 
 TEST_F(TestMetric, CollectL3TrafficAndL3REF)
@@ -222,6 +234,9 @@ TEST_F(TestMetric, CollectL3TrafficAndL3REF)
     ASSERT_EQ(devData[0].mode, PMU_METRIC_CORE);
     ASSERT_EQ(devData[cpuNum].metric, PMU_L3_REF);
     ASSERT_EQ(devData[cpuNum].mode, PMU_METRIC_CORE);
+    DevDataFree(devData);
+    PmuDataFree(oriData);
+    PmuClose(pd);
 }
 
 TEST_F(TestMetric, CollectL3LatencyAndL3Miss)
@@ -250,6 +265,9 @@ TEST_F(TestMetric, CollectL3LatencyAndL3Miss)
     ASSERT_EQ(devData[0].mode, PMU_METRIC_CLUSTER);
     ASSERT_EQ(devData[clusterCount].metric, PMU_L3_MISS);
     ASSERT_EQ(devData[clusterCount].mode, PMU_METRIC_CORE);
+    DevDataFree(devData);
+    PmuDataFree(oriData);
+    PmuClose(pd);
 }
 
 TEST_F(TestMetric, GetMetricPcieBandwidth)
@@ -279,6 +297,12 @@ TEST_F(TestMetric, GetMetricPcieBandwidth)
     ASSERT_EQ(devData[0].metric, PMU_PCIE_RX_MRD_BW);
     ASSERT_EQ(devData[0].mode, PMU_METRIC_BDF);
     ASSERT_TRUE(strcmp(devData[0].bdf, bdfList[0]) == 0);
+    for (int i = 0; i < bdfLen; ++i) {
+        free(devAttr[i].bdf);
+    }
+    DevDataFree(devData);
+    PmuDataFree(oriData);
+    PmuClose(pd);
 }
 
 TEST_F(TestMetric, GetMetricSmmuTransaction)
@@ -288,13 +312,13 @@ TEST_F(TestMetric, GetMetricSmmuTransaction)
     bdfList = PmuDeviceBdfList(PMU_BDF_TYPE_SMMU, &bdfLen);
     cout << Perror() << endl;
     ASSERT_NE(bdfList, nullptr);
-    PmuDeviceAttr devAttr[2] = {};
-    devAttr[0].metric = PMU_SMMU_TRAN;
-    devAttr[0].bdf = strdup(bdfList[0]);
-    devAttr[1].metric = PMU_SMMU_TRAN;
-    devAttr[1].bdf = strdup(bdfList[1]);
+    PmuDeviceAttr devAttr[bdfLen] = {};
+    for (int i = 0; i < bdfLen; ++i) {
+        devAttr[i].metric = PMU_SMMU_TRAN;
+        devAttr[i].bdf = strdup(bdfList[i]);
+    }
 
-    int pd = PmuDeviceOpen(devAttr, 2);
+    int pd = PmuDeviceOpen(devAttr, bdfLen);
     cout << Perror() << endl;
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
@@ -305,14 +329,18 @@ TEST_F(TestMetric, GetMetricSmmuTransaction)
     ASSERT_NE(oriLen, -1);
 
     PmuDeviceData *devData = nullptr;
-    auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
-    ASSERT_EQ(len, 2);
+    auto len = PmuGetDevMetric(oriData, oriLen, devAttr, bdfLen, &devData);
+    ASSERT_EQ(len, bdfLen);
     ASSERT_EQ(devData[0].metric, PMU_SMMU_TRAN);
     ASSERT_EQ(devData[0].mode, PMU_METRIC_BDF);
     ASSERT_TRUE(strcmp(devData[0].bdf, devAttr[0].bdf) == 0);
     ASSERT_EQ(devData[1].metric, PMU_SMMU_TRAN);
     ASSERT_EQ(devData[1].mode, PMU_METRIC_BDF);
     ASSERT_TRUE(strcmp(devData[1].bdf, devAttr[1].bdf) == 0);
-    delete[] devAttr[0].bdf;
-    delete[] devAttr[1].bdf;
+    for (int i = 0; i < bdfLen; ++i) {
+        free(devAttr[i].bdf);
+    }
+    DevDataFree(devData);
+    PmuDataFree(oriData);
+    PmuClose(pd);
 }
