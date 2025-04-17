@@ -600,162 +600,230 @@ pmu_attr = kperf.PmuAttr(evtList=evtList, includeNewFork=True)
 注意，该功能是针对Counting模式，因为Sampling和SPE Sampling本身就会采集子线程的数据。
 
 ### 采集DDRC带宽
-基于uncore事件可以计算DDRC的访存带宽，不同硬件平台有不同的计算方式。
-鲲鹏芯片上的访存带宽公式可以参考openeuler kernel的tools/perf/pmu-events/arch/arm64/hisilicon/hip09/sys/uncore-ddrc.json：
-```json
-   {
-	"MetricExpr": "flux_wr * 32 / duration_time",
-	"BriefDescription": "Average bandwidth of DDRC memory write(Byte/s)",
-	"Compat": "0x00000030",
-	"MetricGroup": "DDRC",
-	"MetricName": "ddrc_bw_write",
-	"Unit": "hisi_sccl,ddrc"
-   },
-   {
-	"MetricExpr": "flux_rd * 32 / duration_time",
-	"BriefDescription": "Average bandwidth of DDRC memory read(Byte/s)",
-	"Compat": "0x00000030",
-	"MetricGroup": "DDRC",
-	"MetricName": "ddrc_bw_read",
-	"Unit": "hisi_sccl,ddrc"
-   },
-```
+鲲鹏上提供了DDRC的pmu设备，用于采集DDR的性能数据，比如带宽等。libkperf提供了API，用于获取每个numa的DDR带宽数据。
 
-根据公式，采集flux_wr和flux_rd事件，用于计算带宽：
+参考代码：
 ```c++
 // c++代码示例
-   
-    vector<char *> evts = {
-        "hisi_sccl1_ddrc/flux_rd/",
-        "hisi_sccl3_ddrc/flux_rd/",
-        "hisi_sccl5_ddrc/flux_rd/",
-        "hisi_sccl7_ddrc/flux_rd/",
-        "hisi_sccl1_ddrc/flux_wr/",
-        "hisi_sccl3_ddrc/flux_wr/",
-        "hisi_sccl5_ddrc/flux_wr/",
-        "hisi_sccl7_ddrc/flux_wr/"
-    }; // 采集hisi_scclX_ddrc设备下的flux_rd和flux_wr，具体设备名称因硬件而异，可以在/sys/devices/下查询。
-
-    PmuAttr attr = {0};
-    attr.evtList = evts.data();
-    attr.numEvt = evts.size();
-
-    int pd = PmuOpen(COUNTING, &attr);
-    if (pd == -1) {
-        cout << Perror() << "\n";
-        return;
-    }
-
-    PmuEnable(pd);
-    for (int i=0;i<60;++i) {
-        sleep(1);
-        PmuData *data = nullptr;
-        int len = PmuRead(pd, &data);
-        // 有8个uncore事件，所以data的长度等于8.
-        // 前4个是4个numa的read带宽，后4个是4个numa的write带宽。
-        for (int j=0;j<4;++j) {
-            printf("read bandwidth: %f M/s\n", (float)data[j].count*32/1024/1024);
-        }
-        for (int j=4;j<8;++j) {
-            printf("write bandwidth: %f M/s\n", (float)data[j].count*32/1024/1024);
-        }
-        PmuDataFree(data);
-    }
-    PmuDisable(pd);
-    PmuClose(pd);
+PmuDeviceAttr devAttr[2];
+// DDR读带宽
+devAttr[0].metric = PMU_DDR_READ_BW;
+// DDR写带宽
+devAttr[1].metric = PMU_DDR_WRITE_BW;
+// 初始化采集任务
+int pd = PmuDeviceOpen(devAttr, 2);
+// 开始采集
+PmuEnable(pd);
+sleep(1);
+// 读取原始信息
+PmuData *oriData = nullptr;
+int oriLen = PmuRead(pd, &oriData);
+PmuDeviceData *devData = nullptr;
+auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
+// 对于4个numa的服务器，devData的长度为8.前4个是读带宽，后4个是写带宽。
+for (int i=0;i<4;++i) {
+    // numaId表示数据对应的numa节点。
+    // count是距离上次采集的DDR总读/写包长，单位是Byte，
+    // 需要除以时间间隔得到带宽（这里的时间间隔是1秒）。
+    cout << "read bandwidth(" << devData[i].numaId << "): " << devData[i].count/1024/1024 << "M/s\n";
+}
+for (int i=4;i<8;++i) {
+    cout << "write bandwidth(" << devData[i].numaId << "): " << devData[i].count/1024/1024 << "M/s\n";
+}
+DevDataFree(devData);
+PmuDataFree(oriData);
+PmuDisable(pd);
 ```
 
 ```python
 # python代码示例
-    import kperf
-    import time
-    evtList = [ "hisi_sccl1_ddrc/flux_rd/",
-        "hisi_sccl3_ddrc/flux_rd/",
-        "hisi_sccl5_ddrc/flux_rd/",
-        "hisi_sccl7_ddrc/flux_rd/",
-        "hisi_sccl1_ddrc/flux_wr/",
-        "hisi_sccl3_ddrc/flux_wr/",
-        "hisi_sccl5_ddrc/flux_wr/",
-        "hisi_sccl7_ddrc/flux_wr/"] # 采集hisi_scclX_ddrc设备下的flux_rd和flux_wr，具体设备名称因硬件而异，可以在/sys/devices/下查询。
-    
-    pmu_attr = kperf.PmuAttr(evtList=evtList) 
-    pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
-    if pd == -1:
-        print(kperf.error())
-        exit(1)
-    kperf.enable(pd)
-    for i in range(60):
-        time.sleep(1)
-        pmu_data = kperf.read(pd)
-        j = 0
-        for data in pmu_data.iter:
-            bandwidth = data.count*32/1024/1024
-            if j < 4:
-              print(f"read bandwidth: {bandwidth} M/s\n")
-            if j >= 4 and j < 8:
-              print(f"write bandwidth: {bandwidth} M/s\n")
-            j += 1
-    kperf.disable(pd)
-    kperf.close(pd)
+dev_attr = [
+    kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_DDR_READ_BW),
+    kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_DDR_WRITE_BW)
+]
+pd = kperf.device_open(dev_attr)
+kperf.enable(pd)
+time.sleep(1)
+kperf.disable(pd)
+ori_data = kperf.read(pd)
+dev_data = kperf.get_device_metric(ori_data, dev_attr)
+for data in dev_data.iter:
+    if data.metric == kperf.PmuDeviceMetric.PMU_DDR_READ_BW:
+        print(f"read bandwidth({data.numaId}): {data.count/1024/1024} M/s")
+    if data.metric == kperf.PmuDeviceMetric.PMU_DDR_WRITE_BW:
+        print(f"write bandwidth({data.numaId}): {data.count/1024/1024} M/s")
 ```
 
 ```go
 // go代码用例
-import "libkperf/kperf"
-import "time"
-import "fmt"
-
-func main() {
-    evtList := []string{"hisi_sccl1_ddrc/flux_rd/",
-        "hisi_sccl3_ddrc/flux_rd/",
-        "hisi_sccl5_ddrc/flux_rd/",
-        "hisi_sccl7_ddrc/flux_rd/",
-        "hisi_sccl1_ddrc/flux_wr/",
-        "hisi_sccl3_ddrc/flux_wr/",
-        "hisi_sccl5_ddrc/flux_wr/",
-        "hisi_sccl7_ddrc/flux_wr/"}
-    attr := kperf.PmuAttr{EvtList: evtList}
-    pd, err := kperf.PmuOpen(kperf.COUNT, attr)
-    if err != nil {
-        fmt.Printf("kperf pmuopen sample failed, expect err is nil, but is %v\n", err)
-        return
+deviceAttrs := []kperf.PmuDeviceAttr{kperf.PmuDeviceAttr{Metric: kperf.PMU_DDR_READ_BW}, kperf.PmuDeviceAttr{Metric: kperf.PMU_DDR_WRITE_BW}}
+fd, _ := kperf.PmuDeviceOpen(deviceAttrs)
+kperf.PmuEnable(fd)
+time.Sleep(1 * time.Second)
+kperf.PmuDisable(fd)
+dataVo, _ := kperf.PmuRead(fd)
+deivceDataVo, _ := kperf.PmuGetDevMetric(dataVo, deviceAttrs)
+for _, v := range deivceDataVo.GoDeviceData {
+    if v.Metric == kperf.PMU_DDR_READ_BW {
+	    fmt.Printf("read bandwidth(%v): %v M/s\n", v.NumaId, v.Count/1024/1024)
     }
-    kperf.PmuEnable(pd)
-
-    for i := 0; i < 60; i++ {
-        time.Sleep(time.Second)
-         dataVo, err := kperf.PmuRead(pd)
-        if err != nil {
-            fmt.Printf("kperf pmuread failed, expect err is nil, but is %v\n", err)
-        }
-
-        j := 0
-        for _, o := range dataVo.GoData {
-            bandwith := o.Count * 32 / 1024 / 1024
-            if j < 4 {
-                fmt.Printf("read bandwidth: %v M/s\n", bandwith)
-            }
-            if j >= 4 && j < 8 {
-                fmt.Printf("write bandwidth: %v M/s\n", bandwith)
-            }
-            j += 1
-        }
+    if v.Metric == kperf.PMU_DDR_WRITE_BW {
+	    fmt.Printf("write bandwidth(%v): %v M/s\n", v.NumaId, v.Count/1024/1024)
     }
-    kperf.PmuDisable(pd)
-    kperf.PmuClose(pd)
 }
+kperf.DevDataFree(deivceDataVo)
+kperf.PmuDataFree(dataVo)
+kperf.PmuClose(fd)
 ```
 
 执行上述代码，输出的结果类似如下：
 ```
-read bandwidth: 17.32 M/s
-read bandwidth: 5.43 M/s
-read bandwidth: 2.83 M/s
-read bandwidth: 4.09 M/s
-write bandwidth: 4.35 M/s
-write bandwidth: 2.29 M/s
-write bandwidth: 0.84 M/s
-write bandwidth: 0.97 M/s
+read bandwidth(0): 17.32 M/s
+read bandwidth(1): 5.43 M/s
+read bandwidth(2): 2.83 M/s
+read bandwidth(3): 4.09 M/s
+write bandwidth(0): 4.35 M/s
+write bandwidth(1): 2.29 M/s
+write bandwidth(2): 0.84 M/s
+write bandwidth(3): 0.97 M/s
+```
+
+### 采集L3 cache的时延
+libkperf提供了采集L3 cache平均时延的能力，用于分析访存型应用的性能瓶颈。  
+采集是以cluster为粒度，每个cluster包含4个cpu core（如果开启了超线程则是8个），可以通过PmuGetClusterCore来获取cluster id对应的core id。
+
+参考代码：
+```c++
+// c++代码示例
+PmuDeviceAttr devAttr[1];
+// L3平均时延
+devAttr[0].metric = PMU_L3_LAT;
+// 初始化采集任务
+int pd = PmuDeviceOpen(devAttr, 1);
+// 开始采集
+PmuEnable(pd);
+sleep(1);
+PmuData *oriData = nullptr;
+int oriLen = PmuRead(pd, &oriData);
+PmuDeviceData *devData = nullptr;
+auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 1, &devData);
+// devData的长度等于cluster个数
+for (int i=0;i<len;++i) {
+    // 每个devData表示一个cluster的L3平均时延，是以cycles为单位
+    cout << "L3 latency(" << devData[i].clusterId << "): " << devData[i].count<< " cycles\n";
+}
+DevDataFree(devData);
+PmuDataFree(oriData);
+PmuDisable(pd);
+```
+
+```python
+# python代码示例
+dev_attr = [
+    kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_L3_LAT)
+]
+pd = kperf.device_open(dev_attr)
+kperf.enable(pd)
+time.sleep(1)
+kperf.disable(pd)
+ori_data = kperf.read(pd)
+dev_data = kperf.get_device_metric(ori_data, dev_attr)
+for data in dev_data.iter:
+    print(f"L3 latency({data.clusterId}): {data.count} cycles")
+```
+
+```go
+// go代码用例
+deviceAttrs := []kperf.PmuDeviceAttr{kperf.PmuDeviceAttr{Metric: kperf.PMU_L3_LAT}}
+fd, _ := kperf.PmuDeviceOpen(deviceAttrs)
+kperf.PmuEnable(fd)
+time.Sleep(1 * time.Second)
+kperf.PmuDisable(fd)
+dataVo, _ := kperf.PmuRead(fd)
+deivceDataVo, _ := kperf.PmuGetDevMetric(dataVo, deviceAttrs)
+for _, v := range deivceDataVo.GoDeviceData {
+	fmt.Printf("L3 latency(%v): %v cycles\n", v.ClusterId, v.Count)
+}
+kperf.DevDataFree(deivceDataVo)
+kperf.PmuDataFree(dataVo)
+kperf.PmuClose(fd)
+```
+
+执行上述代码，输出的结果类似如下：
+```
+L3 latency(0): 101 cycles
+L3 latency(1): 334.6 cycles
+L3 latency(2): 267.8 cycles
+L3 latency(3): 198.4 cycles
+...
+```
+
+### 采集PCIE带宽
+libkperf提供了采集PCIE带宽的能力，采集tx和rx方向的读写带宽，用于监控外部设备（nvme、gpu等）的带宽。
+并不是所有的PCIE设备都可以被采集带宽，鲲鹏的pmu设备只覆盖了一部分PCIE设备，可以通过PmuDeviceBdfList来获取当前环境可采集的PCIE设备或Root port。
+
+参考代码：
+```c++
+// c++代码示例
+PmuDeviceAttr devAttr[1];
+// 采集PCIE设备RX的读带宽
+devAttr[0].metric = PMU_PCIE_RX_MRD_BW;
+// 设置PCIE的bdf号
+devAttr[0].bdf = "16:04.0";
+// 初始化采集任务
+int pd = PmuDeviceOpen(devAttr, 1);
+// 开始采集
+PmuEnable(pd);
+sleep(1);
+PmuData *oriData = nullptr;
+int oriLen = PmuRead(pd, &oriData);
+PmuDeviceData *devData = nullptr;
+auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 1, &devData);
+// devData的长度等于pcie设备的个数
+for (int i=0;i<len;++i) {
+    // 带宽的单位是Bytes/ns
+    cout << "pcie bw(" << devData[i].bdf << "): " << devData[i].count<< " Bytes/ns\n";
+}
+DevDataFree(devData);
+PmuDataFree(oriData);
+PmuDisable(pd);
+```
+
+```python
+# python代码示例
+dev_attr = [
+    kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_PCIE_RX_MRD_BW, bdf="16:04.0")
+]
+pd = kperf.device_open(dev_attr)
+kperf.enable(pd)
+time.sleep(1)
+kperf.disable(pd)
+ori_data = kperf.read(pd)
+dev_data = kperf.get_device_metric(ori_data, dev_attr)
+for data in dev_data.iter:
+    print(f"pcie bw({data.bdf}): {data.count} Bytes/ns")
+```
+
+```go
+// go代码用例
+deviceAttrs := []kperf.PmuDeviceAttr{kperf.PmuDeviceAttr{Metric: kperf.PMU_PCIE_RX_MRD_BW, Bdf: "16:04.0"}}
+fd, _ := kperf.PmuDeviceOpen(deviceAttrs)
+kperf.PmuEnable(fd)
+time.Sleep(1 * time.Second)
+kperf.PmuDisable(fd)
+dataVo, _ := kperf.PmuRead(fd)
+deivceDataVo, _ := kperf.PmuGetDevMetric(dataVo, deviceAttrs)
+for _, v := range deivceDataVo.GoDeviceData {
+	fmt.Printf("pcie bw(%v): %v Bytes/ns\n", v.Bdf, v.Count)
+}
+kperf.DevDataFree(deivceDataVo)
+kperf.PmuDataFree(dataVo)
+kperf.PmuClose(fd)
+```
+
+执行上述代码，输出的结果类似如下：
+```
+pcie bw(16:04.0): 124122412 Bytes/ns
 ```
 
 ### 采集系统调用函数耗时信息
@@ -965,67 +1033,49 @@ func main() {
 0x400838->0x400804 1
 ```
 
-### Blocked Sample采样
+### IO和计算热点混合采样(Blocked Sample)
 Blocked Sample是一种新增的采样模式，该模式下会同时采集进程处于on cpu和off cpu数据，通过配置blockedSample字段去进行使能，去同时采集cycles和context-switches事件，换算off cpu的period数据。
 
-说明：
+详细使用方法可以参考example/pmu_hotspot.cpp
+编译命令：
+```
+g++ -g pmu_hotspot.cpp -o pmu_hotspot -I /path/to/libkperf/include -L /path/to/libkperf/lib -lkperf -lsym
+```
+
+对于例子：
+```
+thread1:
+    busy_io
+        compute
+        while
+            write
+            fsync
+thread2
+    cpu_compute
+        while
+            compute
+```
+既包含计算(compute)也包含IO(write, fsync)，如果用perf采集，只能采集到on cpu的数据：
+|overhead|Shared Object|Symbol|
+|--------|-------------|------|
+|99.94%|test_io|compute|
+|0.03%|libpthread-2.17.so|__pthread_enable_asynccancel|
+|0.00%|test_io|busy_io|
+
+使用pmu_hotspot采集：
+```
+pmu_hotspot 5 1 1 <test>
+```
+
+输出结果：
+|overhead|Shared Object|Symbol|
+|--------|-------------|------|
+|54.74%|libpthread-2.17.so|fsync|
+|27.18%|test_io|compute|
+采集到了fsync，得知该进程的IO占比大于计算占比。
+
+限制：
 
 1、只支持SAMPLING模式采集
 
 2、只支持对进程分析，不支持对系统分析
-
-使用示例：
-```bash
-cd example
-# 运行C++用例，并分析热点
-bash run.sh all
-# 运行python用例，并分析热点
-bash run.sh all python=true
-```
-
-### Uncore事件采集能力增强
-1、支持可配置化uncore事件配置，比如如下形式进行事件配置：
-```bash
-smmuv3_pmcg_100020/transaction,filter_enable=1,filter_stream_id=0x7d/
-```
-
-2、支持采集和查询L3、DDR、SMMU、PCIE性能数据，采集如下性能数据：
-- 每个core的L3带宽、hit、miss，支持920和920高性能版
-- 每个numa的L3 latency，支持920高性能版
-- 每个numa的DDR读写带宽，支持920和920高性能版
-- 指定bdf号的smmu的地址转换次数，支持920和920高性能版
-- 指定bdf号的pcie rx、tx方向的读写带宽，支持920高性能版
-
-代码示例：
-```C++
-    // C++ 代码示例
-    PmuDeviceAttr devAttr = {};
-    devAttr.metric = PMU_L3_TRAFFIC;
-    int pd = PmuDeviceOpen(&devAttr, 1);
-
-    PmuEnable(pd);
-    sleep(1);
-    PmuDisable(pd);
-
-    PmuData* oriData = nullptr;
-    int oriLen = PmuRead(pd, &oriData);
-
-    PmuDeviceData *devData = nullptr;
-    auto len = PmuGetDevMetric(oriData, oriLen, &devAttr, 1, &devData);
-```
-
-```python
-    # python 代码示例
-    dev_attr = [
-        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_L3_TRAFFIC)
-    ]
-    pd = kperf.device_open(dev_attr)
-
-    kperf.enable(pd)
-    time.sleep(1)
-    kperf.disable(pd)
-    ori_data = kperf.read(pd)
-
-    
-    dev_data = kperf.get_device_metric(ori_data, dev_attr)
-```
