@@ -127,7 +127,7 @@ func PmuRead(fd int) (PmuDataVo, error)
   * Period uint64 采样间隔
   * Count uint64	计数
   * CountPercent float64  计数比值，使能时间/运行时间
-  * CpuTopo CpuTopolopy
+  * CpuTopo CpuTopology
     * CoreId 系统核ID
     * NumaId numa ID
     * SocketId socket ID
@@ -267,6 +267,7 @@ func PmuTraceRead(taskId int) (PmuTraceDataVo, error)
 
   * FuncName string 系统调用函数名
   * ElapsedTime float64 耗时时间
+  * StartTs 开始时间戳
   * Pid int 进程id
   * Tid int 线程id
   * Cpu int cpu号
@@ -280,7 +281,7 @@ if err != nil {
 }
 
 for _, v := range traceList.GoTraceData {
-    fmt.Printf("funcName: %v, elapsedTime: %v ms pid: %v tid: %v, cpu: %v comm: %v\n", v.FuncName, v.ElapsedTime, v.Pid, v.Tid, v.Cpu, v.Comm)
+    fmt.Printf("funcName: %v, elapsedTime: %v ms startTs: %v pid: %v tid: %v, cpu: %v comm: %v\n", v.FuncName, v.ElapsedTime, v.StartTs, v.Pid, v.Tid, v.Cpu, v.Comm)
 }
 ```
 
@@ -305,5 +306,149 @@ func main() {
             fmt.Printf("func name %v\n", funcName)
         }
     }
+}
+```
+
+### kperf.PmuDeviceBdfList
+
+func PmuDeviceBdfList(bdfType C.enum_PmuBdfType) ([]string, error) 从系统中查找所有的bdf列表
+* bdfType C.enum_PmuBdfType
+  * PMU_BDF_TYPE_PCIE  PCIE设备对应的bdf
+  * PMU_BDF_TYPE_SMMU  SMMU设备对应的bdf
+```go
+import "libkperf/kperf"
+import "fmt"
+
+func main() {
+   pcieBdfList, err := kperf.PmuDeviceBdfList(kperf.PMU_BDF_TYPE_PCIE)
+   if err != nil {
+      fmt.Printf("kperf GetDeviceBdfList failed, expect err is nil, but is %v\n", err)
+   } 
+   for _, v := range pcieBdfList {
+      fmt.Printf("bdf is %v\n", v)
+   }
+}
+```
+### kperf.PmuDeviceOpen
+
+func PmuDeviceOpen(attr []PmuDeviceAttr) (int, error) 初始化采集uncore事件指标的能力
+
+* type PmuDeviceAttr struct:
+  * Metic: 指定需要采集的指标
+    * PMU_DDR_READ_BW 采集每个numa的ddrc的读带宽，单位：Bytes
+    * PMU_DDR_WRITE_BW 采集每个numa的ddrc的写带宽，单位：Bytes
+    * PMU_L3_TRAFFIC 采集每个core的L3的访问字节数，单位：Bytes
+    * PMU_L3_MISS 采集每个core的L3的miss数量，单位：count
+    * PMU_L3_REF 采集每个core的L3的总访问数量，单位：count
+    * PMU_L3_LAT 采集每个numa的L3的总时延，单位：cycles
+    * PMU_PCIE_RX_MRD_BW 采集pcie设备的rx方向上的读带宽，单位：Bytes/ns
+    * PMU_PCIE_RX_MWR_BW 采集pcie设备的rx方向上的写带宽，单位：Bytes/ns
+    * PMU_PCIE_TX_MRD_BW 采集pcie设备的tx方向上的读带宽，单位：Bytes/ns
+    * PMU_PCIE_TX_MWR_BW 采集pcie设备的tx方向上的读带宽，单位：Bytes/ns
+    * PMU_SMMU_TRAN 采集指定smmu设备的地址转换次数，单位：count
+  * Bdf: 指定需要采集设备的bdf号，只对pcie和smmu指标有效
+* 返回值是int和error，pd > 0表示初始化成功，pd == -1初始化失败，可通过kperf.error()查看错误信息，以下是一个kperf.device_open的示例
+
+```go
+import "libkperf/kperf"
+import "fmt"
+
+func main() {
+    deviceAttrs := []kperf.PmuDeviceAttr{kperf.PmuDeviceAttr{Metric: kperf.PMU_L3_LAT}}
+	fd, err := kperf.PmuDeviceOpen(deviceAttrs)
+	if err != nil {
+		fmt.Printf("kperf PmuDeviceOpen failed, expect err is nil, but is %v\n", err)
+	}
+}
+```
+
+### kperf.PmuGetDevMetric
+
+func PmuGetDevMetric(dataVo PmuDataVo, deviceAttr []PmuDeviceAttr) (PmuDeviceDataVo, error)  对原始read接口的数据，按照device_attr中给定的指标进行数据聚合接口，返回值是PmuDeviceData
+
+* type PmuDataVo struct: PmuRead接口返回的原始数据
+* []PmuDeviceAttr: 指定需要聚合的指标参数
+* typ PmuDeviceDataVo struct:
+  * GoDeviceData []PmuDeviceData
+* type PmuDeviceData struct:
+  * Metric C.enum_PmuDeviceMetric 采集的指标
+	* Count float64                 指标的计数值
+	* Mode C.enum_PmuMetricMode     指标的采集类型，按core、按numa还是按bdf号
+	* CoreId uint32                 数据的core编号
+	* NumaId uint32                 数据的numa编号
+	* ClusterId uint32              簇ID
+	* Bdf string                    数据的bdf编号
+
+### kperf.DevDataFree 
+
+func DevDataFree(devVo PmuDeviceDataVo)  清理PmuDeviceData的指针数据
+
+### kperf.PmuGetClusterCore
+
+func PmuGetClusterCore(clusterId uint) ([]uint, error) 查询指定clusterId下对应的core列表
+
+* clusterId CPU的clusterId编号
+* 返回值：当前clusterId下对应的core列表,出现错误则列表为空，且error不为空
+
+```go
+import "libkperf/kperf"
+import "fmt"
+
+func main() {
+  clusterId := uint(1)
+	coreList, err := kperf.PmuGetClusterCore(clusterId)
+	if err != nil {
+		fmt.Printf("kperf PmuGetClusterCore failed, expect err is nil, but is %v\n", err)
+    return
+	}
+	for _, v := range coreList {
+		fmt.Printf("coreId has:%v\n", v)
+	}
+}
+```
+
+### kperf.PmuGetNumaCore
+
+func PmuGetNumaCore(nodeId uint) ([]uint, error)  查询指定numaId下对应的core列表
+
+* nodeId numa对应的ID
+* 返回值为对应numaId下的cpu core列表，出现错误则列表为空，且error不为空
+
+```go
+import "libkperf/kperf"
+import "fmt"
+
+func main() {
+  nodeId := uint(0)
+	coreList, err := kperf.PmuGetNumaCore(nodeId)
+	if err != nil {
+		fmt.Printf("kperf PmuGetNumaCore failed, expect err is nil, but is %v\n", err)
+    return
+	}
+	for _, v := range coreList {
+		fmt.Printf("coreId has:%v\n", v)
+	}
+}
+```
+
+
+### kperf.PmuGetCpuFreq 
+func PmuGetCpuFreq(core	uint) (int64, error) 查询当前系统指定core的实时CPU频率
+
+* core cpu coreId
+* 返回值为int64, 时当前cpu core的实时频率，出现错误频率为-1，且error不为空
+
+```go
+import "libkperf/kperf"
+import "fmt"
+
+func main() {
+  coreId := uint(0)
+	freq, err := kperf.PmuGetCpuFreq(coreId)
+	if err != nil {
+		fmt.Printf("kperf PmuGetCpuFreq failed, expect err is nil, but is %v\n", err)
+    return
+	}
+	fmt.Printf("coreId %v freq is %v\n", coreId, freq)
 }
 ```

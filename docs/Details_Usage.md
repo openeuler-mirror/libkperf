@@ -981,6 +981,8 @@ cd example
 bash run.sh all
 # 运行python用例，并分析热点
 bash run.sh all python=true
+# 运行go用例， 并分析热点
+bash run.sh all go=true
 ```
 
 ### Uncore事件采集能力增强
@@ -1028,4 +1030,40 @@ smmuv3_pmcg_100020/transaction,filter_enable=1,filter_stream_id=0x7d/
 
     
     dev_data = kperf.get_device_metric(ori_data, dev_attr)
+```
+
+```go
+    // go代码示例
+    import "libkperf/kperf"
+    import "fmt"
+    import "time"
+
+    func main() {
+        deviceAttrs := []kperf.PmuDeviceAttr{kperf.PmuDeviceAttr{Metric: kperf.PMU_L3_TRAFFIC}}
+        fd, err := kperf.PmuDeviceOpen(deviceAttrs)
+        if err != nil {
+            fmt.Printf("kperf PmuDeviceOpen failed, expect err is nil, but is %v\n", err)
+            return
+        }
+        kperf.PmuEnable(fd)
+        time.Sleep(time.Second)
+        kperf.PmuDisable(fd)
+
+        dataVo, err := kperf.PmuRead(fd)
+        if err != nil {
+            fmt.Printf("kperf pmuread failed, expect err is nil, but is %v\n", err)
+            return
+        }
+        deivceDataVo, err := kperf.PmuGetDevMetric(dataVo, deviceAttrs)
+        if err != nil {
+            fmt.Printf("kperf PmuGetDevMetric failed, expect err is nil, but is %v\n", err)
+            return
+        }
+        for _, v := range deivceDataVo.GoDeviceData {
+            fmt.Printf("get device data count=%v coreId=%v, numaId=%v bdf=%v clusterId=%v\n", v.Count, v.CoreId, v.NumaId, v.Bdf, v.ClusterId)
+        }
+        kperf.DevDataFree(deivceDataVo)
+        kperf.PmuDataFree(dataVo)
+        kperf.PmuClose(fd)
+    } 
 ```
