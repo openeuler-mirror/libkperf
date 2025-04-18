@@ -1307,6 +1307,7 @@ class CtypesPmuTraceData(ctypes.Structure):
     """
     struct PmuTraceData {
         const char *funcs;              // system call function
+        int64_t startTs;               // start time stamp. unit: ns
         double elapsedTime;             // elapsed time
         pid_t pid;                      // process id
         int tid;                        // thread id
@@ -1316,6 +1317,7 @@ class CtypesPmuTraceData(ctypes.Structure):
     """
     _fields_ = [
         ('funcs', ctypes.c_char_p),
+        ('startTs', ctypes.c_int64),
         ('elapsedTime', ctypes.c_double),
         ('pid', ctypes.c_int),
         ('tid', ctypes.c_int),
@@ -1325,6 +1327,7 @@ class CtypesPmuTraceData(ctypes.Structure):
 
     def __init__(self,
                  funcs: str = '',
+                 startTs: int = 0,
                  elapsedTime: float = 0.0,
                  pid: int = 0,
                  tid: int = 0,
@@ -1334,6 +1337,7 @@ class CtypesPmuTraceData(ctypes.Structure):
         super().__init__(*args, **kw)
 
         self.funcs = ctypes.c_char_p(funcs.encode(UTF_8))
+        self.startTs = ctypes.c_int64(startTs)
         self.elapsedTime = ctypes.c_double(elapsedTime)
         self.pid = ctypes.c_int(pid)
         self.tid = ctypes.c_int(tid)
@@ -1344,6 +1348,7 @@ class ImplPmuTraceData:
     __slots__ = ['__c_pmu_trace_data']
     def __init__(self,
                  funcs: str = '',
+                 startTs: int = 0,
                  elapsedTime: float = 0.0,
                  pid: int = 0,
                  tid: int = 0,
@@ -1352,6 +1357,7 @@ class ImplPmuTraceData:
                  *args: Any, **kw: Any) -> None:
         self.__c_pmu_trace_data = CtypesPmuTraceData(
             funcs=funcs,
+            startTs=startTs,
             elapsedTime=elapsedTime,
             pid=pid,
             tid=tid,
@@ -1370,6 +1376,14 @@ class ImplPmuTraceData:
     @funcs.setter
     def funcs(self, funcs: str) -> None:
         self.__c_pmu_trace_data.funcs = ctypes.c_char_p(funcs.encode(UTF_8))
+
+    @property
+    def startTs(self) -> int:
+        return self.__c_pmu_trace_data.startTs
+    
+    @startTs.setter
+    def startTs(self, startTs: int) -> None:
+        self.__c_pmu_trace_data.startTs = ctypes.c_int64(startTs)
     
     @property
     def elapsedTime(self) -> float:
