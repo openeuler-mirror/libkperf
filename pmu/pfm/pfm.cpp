@@ -54,7 +54,6 @@ static struct PmuEvt* GetRawEvent(const char* pmuName, int collectType)
     pmuEvtPtr->type = PERF_TYPE_RAW;
     pmuEvtPtr->pmuType = CORE_TYPE;
     pmuEvtPtr->collectType = collectType;
-    pmuEvtPtr->cpumask = -1;
     return pmuEvtPtr;
 }
 
@@ -120,26 +119,31 @@ static bool CheckRawEvent(const char *pmuName)
 
 static int GetEventType(const char *pmuName)
 {
-    if (pmuName[0] == 'r' && CheckRawEvent(pmuName)) {
-        return RAW_TYPE;
-    }
     if (CheckEventInList(CORE_EVENT, pmuName)) {
         return CORE_TYPE;
     }
-    std::string strName(pmuName);
-    // Kernel trace point event name like 'block:block_bio_complete'
-    if (CheckEventInList(TRACE_EVENT, pmuName)) {
-        return TRACE_TYPE;
+
+    if (pmuName[0] == 'r' && CheckRawEvent(pmuName)) {
+        return RAW_TYPE;
     }
+    std::string strName(pmuName);
     // Parse uncore event name like 'hisi_sccl3_ddrc0/flux_rd/'
     if (CheckEventInList(UNCORE_EVENT, pmuName)) {
         return UNCORE_TYPE;
+    }
+#ifdef IS_X86
+    return -1;
+#else
+    // Kernel trace point event name like 'block:block_bio_complete'
+    if (CheckEventInList(TRACE_EVENT, pmuName)) {
+        return TRACE_TYPE;
     }
     // Parse uncore event raw name like 'hisi_sccl3_ddrc0/config=0x0/'
     // or smmuv3_pmcg_100020/transaction,filter_enable=1,filter_stream_id=0x7d/
     if (CheckUncoreRawEvent(pmuName)) {
         return UNCORE_RAW_TYPE;
     }
+#endif
     return -1;
 }
 
@@ -175,7 +179,6 @@ struct PmuEvt* PfmGetSpeEvent(
     evt->config = dataFilter;
     evt->config1 = eventFilter;
     evt->config2 = minLatency;
-    evt->cpumask = -1;
 
     return evt;
 }

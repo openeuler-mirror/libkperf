@@ -99,10 +99,14 @@ bool InitCpuType()
 
 CHIP_TYPE GetCpuType()
 {
+#ifdef IS_X86
+    return HIPX86;
+#else
     if (g_chipType == UNDEFINED_TYPE && !InitCpuType()) {
         return UNDEFINED_TYPE;
     }
     return g_chipType;
+#endif
 }
 
 set<int> GetOnLineCpuIds()

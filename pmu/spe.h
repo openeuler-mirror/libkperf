@@ -28,9 +28,15 @@
 #include "pmu_event.h"
 #include "symbol.h"
 
+#ifdef IS_X86
+#define MB() asm volatile("mfence":::"memory")
+#define RMB() asm volatile("lfence":::"memory")
+#define WMB() asm volatile("sfence":::"memory")
+#else
 #define MB() asm volatile("dsb sy")
 #define RMB() asm volatile("dsb ld")
 #define WMB() asm volatile("dsb st")
+#endif
 
 #define EVENT_EXCEPTION_GEN 0x1
 #define EVENT_RETIRED 0x2

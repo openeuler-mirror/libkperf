@@ -38,7 +38,7 @@ struct PmuEvt {
     int pmuType;    // if pmu is CORE/UNCORE/SPE and etc (to be implemented)
     int collectType;
     std::string name;   // string name of this pmu event
-    int cpumask;    // a representative CPU number for each socket (package) in the motherboard.
+    std::vector<int> cpuMaskList; // representative CPU number list for each socket (package) in the motherboard.
     unsigned excludeUser : 1;     // don't count user
     unsigned excludeKernel : 1;   //  don't count kernel
     unsigned callStack : 1;   //  collect complete call stack

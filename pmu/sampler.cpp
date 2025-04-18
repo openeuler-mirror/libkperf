@@ -55,7 +55,13 @@ int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupEnable, const int grou
     attr.read_format = PERF_FORMAT_ID;
     attr.exclude_kernel = this->evt->excludeKernel;
     attr.exclude_user = this->evt->excludeUser;
+#ifdef IS_X86
+    if (this->pid == -1) {
+        attr.pinned = 0;
+    }
+#else
     attr.pinned = 1;
+#endif
     attr.disabled = 1;
     attr.inherit = 1;
     attr.mmap = 1;

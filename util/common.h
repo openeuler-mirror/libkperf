@@ -19,6 +19,14 @@
 #include <string>
 #include <vector>
 
+#ifdef __x86_64__
+#define IS_X86 1
+#elif  defined(__aarch64__)
+#define IS_ARM 1
+#else
+#error "Only the x86_64 and aarch64 architecture are supported."
+#endif
+
 const std::string TRACE_EVENT_PATH = "/sys/kernel/tracing/events/";
 const std::string TRACE_DEBUG_EVENT_PATH = "/sys/kernel/debug/tracing/events/";
 
