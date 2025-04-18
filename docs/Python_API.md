@@ -295,6 +295,7 @@ pd为kperf.trace_open返回值
   * free: 释放当前PmuTraceData数据
 * class lmplPmuTraceData:
   * funcs: 系统调用函数名
+  * startTs: 耗时起始时刻
   * elapsedTime: 耗时时间
   * pid: 进程id
   * tid: 线程id

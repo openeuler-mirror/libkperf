@@ -73,11 +73,11 @@ def test_collect_single_trace_data(run_test_exe, setup_trace):
     kperf.trace_disable(pd)
 
     pmu_trace_data = kperf.trace_read(pd)
-    for data in pmu_trace_data.iter:
-        print(f"funcName: {data.funcs} elapsedTime: {data.elapsedTime} pid: {data.pid} tid: {data.tid} cpu: {data.cpu} comm: {data.comm}")
-
-    # Assert that at least one trace record is captured
     assert pmu_trace_data.iter, "No trace data was captured"
+    for data in pmu_trace_data.iter:
+        print(f"funcName: {data.funcs} startTs: {data.startTs} elapsedTime: {data.elapsedTime} pid: {data.pid} tid: {data.tid} cpu: {data.cpu} comm: {data.comm}")
+    
+    kperf.trace_close(pd)
 
 
 def test_collect_all_syscall_trace_data(setup_trace):
@@ -92,11 +92,11 @@ def test_collect_all_syscall_trace_data(setup_trace):
     kperf.trace_disable(pd)
 
     pmu_trace_data = kperf.trace_read(pd)
-    for data in pmu_trace_data.iter:
-        print(f"funcName: {data.funcs} elapsedTime: {data.elapsedTime} pid: {data.pid} tid: {data.tid} cpu: {data.cpu} comm: {data.comm}")
-
-    # Assert that at least one trace record is captured
     assert pmu_trace_data.iter, "No trace data was captured"
+    for data in pmu_trace_data.iter:
+        print(f"funcName: {data.funcs} startTs: {data.startTs} elapsedTime: {data.elapsedTime} pid: {data.pid} tid: {data.tid} cpu: {data.cpu} comm: {data.comm}")
+    
+    kperf.trace_close(pd)
 
 
 if __name__ == '__main__':
