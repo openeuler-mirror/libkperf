@@ -141,6 +141,7 @@ namespace KUNPENG_PMU {
         PmuTraceData traceDataItem = {0};
         traceDataItem.funcs = funName;
         double nsToMsUnit = 1000000.0;
+        traceDataItem.startTs = enterPmuData.ts;
         traceDataItem.elapsedTime = (double)(exitPmuData.ts - enterPmuData.ts) / nsToMsUnit; // convert to ms
         traceDataItem.pid = enterPmuData.pid;
         traceDataItem.tid = enterPmuData.tid;

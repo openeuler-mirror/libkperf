@@ -257,6 +257,7 @@ struct PmuData {
 
 struct PmuTraceData {
     const char *funcs;              // system call function
+    int64_t startTs;                // start time stamp. unit: ns
     double elapsedTime;             // elapsed time
     pid_t pid;                      // process id
     int tid;                        // thread id
