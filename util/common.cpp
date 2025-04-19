@@ -156,3 +156,10 @@ std::string GetTraceEventDir()
     }
     return "";
 }
+
+bool StartWith(const std::string& str, const std::string& prefix) {
+    if (str.size() < prefix.size()) {
+        return false;
+    }
+    return str.substr(0, prefix.size()) == prefix;
+}
