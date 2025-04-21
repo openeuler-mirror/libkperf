@@ -35,6 +35,7 @@ func printUsage() {
     fmt.Println(" process name: process path or input process number")
     fmt.Println(" example: ./pmu_hotspot_of_go 0.1 10 0 ./process")
     fmt.Println(" example: ./pmu_hotspot_of_go 1 100 1 ./process")
+	fmt.Println(" example: ./pmu_hotspot_of_go 1 100 1 <pid>")
 }
 
 var GlobalPeriod uint64 = 0
@@ -118,7 +119,7 @@ func GetPmuDataHotSpot(vo kperf.PmuDataVo) []kperf.PmuData {
 }
 
 func getPeriodPercent(period uint64) float64 {
-	return float64(period) * 100.00 / float64(GlobalPeriod)
+	return float64(period) / float64(GlobalPeriod) * 100.00
 }
 
 func printHotSpotGraph(hotspotData []kperf.PmuData) {
@@ -208,6 +209,7 @@ func blockSample(pid int, interval float64, count int, blockedSample int) {
 			return
 		}
 
+		GlobalPeriod := 0
 		hotspotData := GetPmuDataHotSpot(pmuDataVo)
 		printHotSpotGraph(hotspotData)
 		fmt.Printf(strings.Repeat("=", 50) + "Print the call stack of the hotspot function" + strings.Repeat("=", 50) + "\n")
@@ -215,6 +217,7 @@ func blockSample(pid int, interval float64, count int, blockedSample int) {
 		for _, data := range hotspotData {
 			printStack(data.Symbols, data.Period)
 		}
+		GlobalPeriod := 0
 	}
 	kperf.PmuDisable(fd)
 	kperf.PmuClose(fd)
