@@ -308,13 +308,13 @@ type PmuAttr struct {
 	CallStack bool                     // This indicates whether to collect whole callchains or only top frame
 	DataFilter C.enum_SpeFilter        // Spe Data Filter.Refer to comments of SpeFilter 
 	EvFilter C.enum_SpeEventFilter     // Spe Event filter.Refer to comments of SpeEventFilter
-	MinLatency uint64                  // Collect only smaples with latency or higher
-	IncludeNewFork bool                // enable it you can get the new child thread count, only in couting mode
-	BranchSampleFilter uint64          // if the filering mode is set, branch_sample_stack data is collected in sampling mode
-	BlockedSample bool                 // This indicates whether the blocked sample mode is enabled. In this mode, both on Cpu and off Cpu data is collectd
+	MinLatency uint64                  // Collect only samples with latency or higher
+	IncludeNewFork bool                // enable it you can get the new child thread count, only in counting mode
+	BranchSampleFilter uint64          // if the filter mode is set, branch_sample_stack data is collected in sampling mode
+	BlockedSample bool                 // This indicates whether the blocked sample mode is enabled. In this mode, both on Cpu and off Cpu data is collected
 }
 
-type CpuTopolopy struct {
+type CpuTopology struct {
 	CoreId int         // cpu core id
 	NumaId int		   // numa id
 	SocketId int       // socket id
@@ -338,12 +338,12 @@ type PmuData struct {
 	Ts uint64						   // time stamp. uint: ns
 	Pid int				               // process id
 	Tid int							   // thread id
-	Cpu int						   // cpu id
+	Cpu int						       // cpu id
 	Comm string						   // process command 
 	Period uint64                      // sample period
 	Count uint64					   // event count. Only available for counting
 	CountPercent float64               // event count Percent. when count = 0, countPercent = -1; Only available for counting
-	CpuTopo CpuTopolopy 			   // cpu topolopy
+	CpuTopo CpuTopology 			   // cpu topology
 	Symbols []sym.Symbol			   // symbol list
  	BranchRecords []BranchSampleRecord // branch record list
 	SpeExt SpeDataExt                  // SPE data
@@ -353,7 +353,7 @@ type PmuData struct {
 
 type PmuDataVo struct {
 	GoData []PmuData            // PmuData list
-	cData *C.struct_PmuData	    // Pointer to PmuData in inferface C
+	cData *C.struct_PmuData	    // Pointer to PmuData in interface C
 	fd int		                // fd
 }
 
@@ -374,10 +374,11 @@ type PmuTraceAttr struct {
 // PmuTraceData info
 type PmuTraceData struct {
 	FuncName string        // function name
+	StartTs  int64         // start timestamp. uint: us
 	ElapsedTime float64    // elapsed time
 	Pid int				   // process id
 	Tid int                // thread id
-	Cpu int			   // cpu id
+	Cpu int			   	   // cpu id
 	Comm string			   // process command
 }
 
@@ -390,7 +391,7 @@ type PmuTraceDataVo struct {
 type PmuDeviceAttr struct {
 	Metric C.enum_PmuDeviceMetric
 
-	// Used for PMU_PCIE_XXX and PMU_SMMU_XXX to collect a specifi pcie device.
+	// Used for PMU_PCIE_XXX and PMU_SMMU_XXX to collect a specific pcie device.
     // The string of bdf is something like '7a:01.0'.
 	Bdf string
 }
@@ -403,7 +404,7 @@ type PmuDeviceData struct {
 	Mode C.enum_PmuMetricMode  // Field of union depends on the above <mode>.
 	CoreId uint32    // for percore metric
 	NumaId uint32    // for pernuma metric
-	ClusterId uint32 // for percluster emtric
+	ClusterId uint32 // for percluster metric
 	Bdf string       // for perpcie metric
 }
 
@@ -548,7 +549,7 @@ func PmuEventList(eventType C.enum_PmuEventType) []string {
 // Enable counting or sampling of task <pd>.
 // On success, nil is returned.
 // On error, error is returned.
-// param pd task id
+// param fd task id
 // return error
 func PmuEnable(fd int) error {
 	rs := C.PmuEnable(C.int(fd))
@@ -561,7 +562,7 @@ func PmuEnable(fd int) error {
 // Disable counting or sampling of task <pd>.
 // On success, nil is returned.
 // On error, error is returned.
-// param pd task id
+// param fd task id
 // return err
 func PmuDisable(fd int) error {
 	rs := C.PmuDisable(C.int(fd))
@@ -613,7 +614,7 @@ func PmuDataFree(data PmuDataVo) {
 
 // Close task with id <pd>
 // After PmuClose is called, all pmu data related to the task become invalid
-// param pd task id
+// param fd task id
 func PmuClose(fd int) {
 	if fd <= 0 {
 		return
@@ -627,7 +628,7 @@ func PmuClose(fd int) {
 }
 
 // stop a sampling task in asynchronous mode
-// param pd pmu descriptor.
+// param fd pmu descriptor.
 func PmuStop(fd int) {
 	if fd <= 0 {
 		return
@@ -641,7 +642,7 @@ func PmuStop(fd int) {
 // That is to say, for COUNTING, counts of all pmu event are reset to zero in PmuRead
 // For SAMPLING and SPE_SAMPLING, samples collected are started from the last PmuEnable or PmuRead
 // On success, PmuDataVo is returned
-// param pd task id
+// param fd task id
 // return PmuDataVo and error
 func PmuRead(fd int) (PmuDataVo, error) {
 	pmuDataVo := PmuDataVo{}
@@ -762,7 +763,7 @@ func PmuTraceOpen(traceType C.enum_PmuTraceType, traceAttr PmuTraceAttr) (int, e
 // Enable trace collection of task <pd>
 // On success, nil is returned.
 // On error, -1 is returned.
-// param pd trace collect task id
+// param taskId trace collect task id
 // return error code
 func PmuTraceEnable(taskId int) error {
 	rs := C.PmuTraceEnable(C.int(taskId))
@@ -775,7 +776,7 @@ func PmuTraceEnable(taskId int) error {
 // Disable trace collection of task <pd>
 // On success, nil is returned
 // On error, error is returned
-// param pd trace collect task id
+// param taskId trace collect task id
 // return error code
 func PmuTraceDisable(taskId int) error {
 	rs := C.PmuTraceDisable(C.int(taskId))
@@ -788,7 +789,7 @@ func PmuTraceDisable(taskId int) error {
 // Collect data.
 // Pmu trace data are collected starting from the last PmuTraceEnable or PmuTraceRead
 // On success, PmuTraceDataVo is returned
-// param pd trace collect task id
+// param taskId trace collect task id
 // param PmuTraceDataVo pmu trace data
 // return PmuTraceDataVo and error
 func PmuTraceRead(taskId int) (PmuTraceDataVo, error) {
@@ -812,7 +813,7 @@ func PmuTraceRead(taskId int) (PmuTraceDataVo, error) {
 	cDataList := *(*[]C.struct_PmuTraceData)(unsafe.Pointer(&slice))
 	goTraceData := make([]PmuTraceData, int(traceLen))
 	for i, v := range cDataList {
-		goTraceData[i] = PmuTraceData{FuncName:C.GoString(v.funcs), ElapsedTime:float64(v.elapsedTime), Pid:int(v.pid), Tid: int(v.tid), Cpu: int(v.cpu), Comm: C.GoString(v.comm)}
+		goTraceData[i] = PmuTraceData{FuncName:C.GoString(v.funcs), StartTs: int64(v.startTs), ElapsedTime:float64(v.elapsedTime), Pid:int(v.pid), Tid: int(v.tid), Cpu: int(v.cpu), Comm: C.GoString(v.comm)}
 	}
 	res.GoTraceData = goTraceData
 	res.cTraceData  = cTraceData
@@ -821,7 +822,7 @@ func PmuTraceRead(taskId int) (PmuTraceDataVo, error) {
 
 // Close task with id <pd>.
 // After PmuTraceClose is called, all pmu trace data related to the task become invalid
-// param collect task id
+// param taskId task id
 func PmuTraceClose(taskId int) {
 	C.PmuTraceClose(C.int(taskId))
 }
@@ -926,7 +927,11 @@ func PmuDeviceOpen(attr []PmuDeviceAttr) (int, error) {
 	cAttr := make([]C.struct_PmuDeviceAttr, len(attr))
 	for i, v := range attr {
 		cAttr[i].metric = v.Metric
-		cAttr[i].bdf = C.CString(v.Bdf)
+		if len(v.Bdf) > 0 {
+			cAttr[i].bdf = C.CString(v.Bdf)
+		} else {
+			cAttr[i].bdf = nil
+		}
 	}
 	deviceTaskId := C.PmuDeviceOpen(&cAttr[0], C.uint(len(attr)))
 	if int(deviceTaskId) == -1 {
@@ -947,7 +952,11 @@ func PmuGetDevMetric(dataVo PmuDataVo, deviceAttr []PmuDeviceAttr) (PmuDeviceDat
 	cAttr := make([]C.struct_PmuDeviceAttr, len(deviceAttr))
 	for i, v := range deviceAttr {
 		cAttr[i].metric = v.Metric
-		cAttr[i].bdf = C.CString(v.Bdf)
+		if len(v.Bdf) > 0 {
+			cAttr[i].bdf = C.CString(v.Bdf)
+		} else {
+			cAttr[i].bdf = nil
+		}
 	}
 	metricLen := C.int(0)
 	metricData := C.IPmuGetMetric(dataVo.cData, C.uint(len(dataVo.GoData)), &cAttr[0], C.uint(len(deviceAttr)), &metricLen)
@@ -1071,7 +1080,7 @@ func transferCPmuDataToGoData(cPmuData *C.struct_PmuData, dataLen int, fd int) [
 		goDatas[i].CountPercent = float64(dataObj.countPercent)
 		goDatas[i].Cpu = int(dataObj.cpu)
 		if dataObj.cpuTopo != nil {
-			goDatas[i].CpuTopo = CpuTopolopy{CoreId: int(dataObj.cpuTopo.coreId), NumaId: int(dataObj.cpuTopo.numaId), SocketId: int(dataObj.cpuTopo.socketId)}
+			goDatas[i].CpuTopo = CpuTopology{CoreId: int(dataObj.cpuTopo.coreId), NumaId: int(dataObj.cpuTopo.numaId), SocketId: int(dataObj.cpuTopo.socketId)}
 		}
 
 		if dataObj.ext != nil {
