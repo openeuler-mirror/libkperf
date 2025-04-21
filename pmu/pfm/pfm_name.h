@@ -49,6 +49,8 @@ extern const char* BRANCH_LOAD_MISSES;
 extern const char* BRANCH_LOADS;
 extern const char* DTLB_LOAD_MISSES;
 extern const char* DTLB_LOADS;
+extern const char* DTLB_STORE_MISSES;
+extern const char* DTLB_STORES;
 extern const char* ITLB_LOAD_MISSES;
 extern const char* ITLB_LOADS;
 extern const char* NODE_LOAD_MISSES;

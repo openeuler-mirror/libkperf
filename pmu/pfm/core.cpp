@@ -395,6 +395,24 @@ namespace HW_CACHE_EVENT {
             }
     };
 
+     PMU_PAIR DTLB_STORE_MISSES = {
+            KUNPENG_PMU::COMMON::DTLB_STORE_MISSES,
+            {
+                    PERF_TYPE_HW_CACHE,
+                    0x10103,
+                    KUNPENG_PMU::COMMON::DTLB_STORE_MISSES
+            }
+    };
+
+    PMU_PAIR DTLB_STORES = {
+            KUNPENG_PMU::COMMON::DTLB_STORES,
+            {
+                    PERF_TYPE_HW_CACHE,
+                    0x103,
+                    KUNPENG_PMU::COMMON::DTLB_STORES
+            }
+    };
+
     PMU_PAIR ITLB_LOAD_MISSES = {
             KUNPENG_PMU::COMMON::ITLB_LOAD_MISSES,
             {
@@ -994,6 +1012,10 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_X86_CORE_PMU_
         HW_CACHE_EVENT::BRANCH_LOADS,
         HW_CACHE_EVENT::DTLB_LOAD_MISSES,
         HW_CACHE_EVENT::DTLB_LOADS,
+        HW_CACHE_EVENT::DTLB_STORE_MISSES,
+        HW_CACHE_EVENT::DTLB_STORES,
+        HW_CACHE_EVENT::ITLB_LOADS,
+        HW_CACHE_EVENT::ITLB_LOAD_MISSES,
         HW_CACHE_EVENT::NODE_LOAD_MISSES,
         HW_CACHE_EVENT::NODE_LOADS,
         HW_CACHE_EVENT::NODE_STORE_MISSES,
