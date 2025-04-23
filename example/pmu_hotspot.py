@@ -79,7 +79,7 @@ def get_pmu_data_hotspot(pmu_data, tmp_data):
 
 
 def get_period_percent(period):
-    return f"{(period * 100 / g_total_period):.{FLOAT_PRECISION}f}"
+    return f"{(period / g_total_period * 100.0):.{FLOAT_PRECISION}f}"
 
 
 def print_stack(stack, depth=0, period=0):
@@ -157,6 +157,7 @@ def blocked_sample(pid, interval, count, blockedSample):
         if pmu_data == -1:
             print(f"read failed, error msg: {kperf.error()}")
             return
+        g_total_period = 0
         hotspot_data = []
         get_pmu_data_hotspot(pmu_data, hotspot_data)
         print_hotspot_graph(hotspot_data)
@@ -164,6 +165,7 @@ def blocked_sample(pid, interval, count, blockedSample):
         print(f"{'@symbol':<40}{'@module':<40}{'@percent':>40}")
         for data in hotspot_data:
             print_stack(data.stack, 0, data.period)
+        g_total_period = 0
     err = kperf.disable(pd)
     if err != 0:
         print(f"disable failed, error msg: {kperf.error()}")
@@ -192,6 +194,7 @@ def print_usage():
     print(" process name: process path or input process number")
     print(" example: python3 pmu_hotspot.py 0.1 10 0 ./process")
     print(" example: python3 pmu_hotspot.py 1 100 1 ./process")
+    print(" example: python3 pmu_hotspot.py 1 100 1 <pid>")
 
 def main():
     pid = 0

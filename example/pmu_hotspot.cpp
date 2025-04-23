@@ -111,7 +111,7 @@ int GetPmuDataHotspot(PmuData* pmuData, int pmuDataLen, std::vector<PmuData>& tm
 std::string GetPeriodPercent(uint64_t period)
 {
     std::ostringstream oss;
-    oss << std::fixed << std::setprecision(FLOAT_PRECISION) << (static_cast<double>(period) * 100 / g_totalPeriod);
+    oss << std::fixed << std::setprecision(FLOAT_PRECISION) << (static_cast<double>(period) / g_totalPeriod * 100.0);
     return oss.str();
 }
 
@@ -209,6 +209,7 @@ void BlockedSample(int pid, double interval, int count, bool blockedSample)
             std::cerr << "error msg:" << Perror() << std::endl;
             return;
         }
+        g_totalPeriod = 0;
         std::vector<PmuData> hotSpotData;
         GetPmuDataHotspot(pmuData, len, hotSpotData);
         PrintHotSpotGraph(hotSpotData);
@@ -219,6 +220,7 @@ void BlockedSample(int pid, double interval, int count, bool blockedSample)
         for (int i = 0; i < hotSpotData.size(); ++i) {
             PrintStack(hotSpotData[i].stack, 0, hotSpotData[i].period);
         }
+        g_totalPeriod = 0;
         PmuDataFree(pmuData);
     }
     PmuDisable(pd);
@@ -253,6 +255,7 @@ void print_usage() {
     std::cerr << " process name: process path or input process number\n";
     std::cerr << " example: pmu_hotspot 0.1 10 0 ./process\n";
     std::cerr << " example: pmu_hotspot 1 100 1 ./process\n";
+    std::cerr << " example: pmu_hotspot 1 100 1 <pid>\n";
 }
 
 int main(int argc, char** argv)
