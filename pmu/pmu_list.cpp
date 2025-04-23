@@ -309,7 +309,7 @@ namespace KUNPENG_PMU {
             if (item.swOut) {
                 outTime = item.ts;
                 prevTid = item.tid;
-                DBG_PRINT("Switch out: tid=%d, ts=%ld\n", item.tid, item.ts);
+                DBG_PRINT("Switch out: tid=%d, ts=%llu\n", item.tid, item.ts);
             } else {
                 // if the first event is sched_in, we need to ignore it.
                 if (prevTid == -1) {
@@ -318,7 +318,7 @@ namespace KUNPENG_PMU {
                 }
                 if (prevTid == item.tid && outTime > 0) {
                     tidToOffTimeStamps[item.tid].emplace_back(item.ts - outTime);
-                    DBG_PRINT("Switch in: tid=%d, ts=%ld, offTime=%ld\n", item.tid, item.ts, item.ts - outTime);
+                    DBG_PRINT("Switch in: tid=%d, ts=%llu, offTime=%llu\n", item.tid, item.ts, item.ts - outTime);
                     outTime = 0;
                 }
             }
@@ -350,24 +350,21 @@ namespace KUNPENG_PMU {
                 TrimKernelStack(item);
                 // Before the context-switches event, there is only one cycles event, which we need to ignore. 
                 if (currentTs == 0) {
+                    currentTs = item.ts;
                     DBG_PRINT("Ignoring first cycles event for tid=%d\n", item.tid);
                     continue;
                 }
-                // only the on cpu event is cycles or cpu-clock, this compute is right.
+                // only the on cpu event is cycles, this compute is right.
                 if (csCnt < tidToOffTimeStamps[item.tid].size()) {
                     item.period = tidToOffTimeStamps[item.tid][csCnt] * curPeriod / (currentTs - prevTs);
-                    DBG_PRINT("Context switch: tid=%d, period=%ld\n", item.tid, item.period);
+                    DBG_PRINT("Context switch: ts=%llu, tid=%d, period=%llu\n", item.ts, item.tid, item.period);
                     csCnt++;
                 }
             } else {
                 // on cpu event data update.
-                if (prevTs == 0) {
-                    prevTs = item.ts;
-                } else {
-                    prevTs = currentTs;
-                    currentTs = item.ts;
-                    curPeriod = item.period;
-                }
+                prevTs = currentTs;
+                currentTs = item.ts;
+                curPeriod = item.period;
             }
         }
     }
