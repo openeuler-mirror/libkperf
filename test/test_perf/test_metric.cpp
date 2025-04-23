@@ -107,6 +107,7 @@ TEST_F(TestMetric, CollectDDRBandwidth)
     PmuDeviceAttr devAttr = {};
     devAttr.metric = PMU_DDR_READ_BW;
     int pd = PmuDeviceOpen(&devAttr, 1);
+    cout << Perror() << endl;
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
     sleep(1);
