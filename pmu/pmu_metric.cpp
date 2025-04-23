@@ -298,7 +298,11 @@ namespace KUNPENG_PMU {
 
     static const map<PmuDeviceMetric, UncoreDeviceConfig> GetDeviceMtricConfig()
     {
-        return UNCORE_METRIC_CONFIG_MAP.at(GetCpuType());
+        CHIP_TYPE chipType = GetCpuType();
+        if (UNCORE_METRIC_CONFIG_MAP.find(chipType) == UNCORE_METRIC_CONFIG_MAP.end()) {
+            return {};
+        }
+        return UNCORE_METRIC_CONFIG_MAP.at(chipType);
     }
 
     static int QueryUncoreRawDevices()
@@ -757,6 +761,10 @@ namespace KUNPENG_PMU {
     static int CheckDeviceMetricEnum(PmuDeviceMetric metric)
     {
         const auto& metricConfig = GetDeviceMtricConfig();
+        if (metricConfig.empty()) {
+            New(LIBPERF_ERR_NOT_SUPPORT_METRIC, "The current platform cpu does not support uncore metric collection.");
+            return LIBPERF_ERR_NOT_SUPPORT_METRIC;
+        }
         if (metricConfig.find(metric) == metricConfig.end()) {
             New(LIBPERF_ERR_INVALID_PMU_DEVICES_METRIC, "For this platform this metric " +
                 GetMetricString(metric) + " is invalid value for PmuDeviceMetric!");
