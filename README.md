@@ -237,7 +237,7 @@ func main() {
 	}
 
 	for _, o := range dataVo.GoData {
-    fmt.Printf("event: %v count: %v", o.Evt, o.Count)
+    fmt.Printf("event: %v count: %v\n", o.Evt, o.Count)
 	}
 	kperf.PmuDataFree(dataVo)
 	kperf.PmuClose(fd)

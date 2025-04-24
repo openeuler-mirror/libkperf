@@ -281,6 +281,19 @@ namespace KUNPENG_PMU {
         return userData;
     }
 
+    static void TrimKernelStack(PmuData &data)
+    {
+        auto stack = data.stack;
+        while (stack != nullptr && stack->symbol != nullptr) {
+            if (strcmp(stack->symbol->module, "[kernel]") == 0) {
+                stack = stack->next;
+                continue;
+            }
+            data.stack = stack;
+            break;
+        }
+    }
+
     void HandleBlockData(std::vector<PmuData>& pmuData, std::vector<PmuSwitchData>& switchData)
     {
         std::sort(switchData.begin(), switchData.end(), [](const PmuSwitchData& a, const PmuSwitchData& b) {
@@ -332,6 +345,9 @@ namespace KUNPENG_PMU {
                 DBG_PRINT("New tid encountered: tid=%d\n", currentTid);
             }
             if (strcmp(item.evt, "context-switches") == 0) {
+                // Convert stack from 'schedule[kernel] -> futex_wait[kernel] -> ...[kernel] -> lock_wait -> start_thread'
+                // to 'lock_wait -> start_thread', only keeping user stack.
+                TrimKernelStack(item);
                 // Before the context-switches event, there is only one cycles event, which we need to ignore. 
                 if (currentTs == 0) {
                     currentTs = item.ts;

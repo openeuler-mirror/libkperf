@@ -157,7 +157,7 @@ func TestSysCallTrace(t *testing.T) {
 	t.Logf("==========================pmu get trace data success==========================")
 
 	for _, v := range traceList.GoTraceData {
-		t.Logf("comm=%v, func=%v, elapsedTime=%v, pid=%v, tid=%v, cpu=%v", v.Comm, v.FuncName, v.ElapsedTime, v.Pid, v.Tid, v.Cpu)
+		t.Logf("comm=%v, func=%v, elapsedTime=%v, startTs=%v, pid=%v, tid=%v, cpu=%v", v.Comm, v.FuncName, v.ElapsedTime, v.StartTs, v.Pid, v.Tid, v.Cpu)
 	}
 
 	kperf.PmuTraceFree(traceList)

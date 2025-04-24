@@ -111,7 +111,7 @@ int GetPmuDataHotspot(PmuData* pmuData, int pmuDataLen, std::vector<PmuData>& tm
 std::string GetPeriodPercent(uint64_t period)
 {
     std::ostringstream oss;
-    oss << std::fixed << std::setprecision(FLOAT_PRECISION) << (static_cast<double>(period) / g_totalPeriod * 100);
+    oss << std::fixed << std::setprecision(FLOAT_PRECISION) << (static_cast<double>(period) / g_totalPeriod * 100.0);
     return oss.str();
 }
 

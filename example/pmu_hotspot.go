@@ -1,17 +1,18 @@
-"""
-Copyright (c) Huawei Technologies Co., Ltd. 2024. All rights reserved.
-libkperf licensed under the Mulan PSL v2.
-You can use this software according to the terms and conditions of the Mulan PSL v2.
-You may obtain a copy of Mulan PSL v2 at:
-    http://license.coscl.org.cn/MulanPSL2
-THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR
-PURPOSE.
-See the Mulan PSL v2 for more details.
-Author: Mr.Li
-Create: 2025-04-09
-Description: Analyze the original data of performance monitoring unit, and compute the hotspot data.
-"""
+/******************************************************************************
+ * Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
+ * libkperf licensed under the Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *     http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR
+ * PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ * Author: Mr.Li
+ * Create: 2025-04-09
+ * Description: Pmu data hotspot analysis module.
+ * Current capability: Analyze the original data of performance monitoring unit, and compute the hotspot data.
+ ******************************************************************************/
 package main 
 
 import "os"
@@ -209,7 +210,7 @@ func blockSample(pid int, interval float64, count int, blockedSample int) {
 			return
 		}
 
-		GlobalPeriod := 0
+		GlobalPeriod = 0
 		hotspotData := GetPmuDataHotSpot(pmuDataVo)
 		printHotSpotGraph(hotspotData)
 		fmt.Printf(strings.Repeat("=", 50) + "Print the call stack of the hotspot function" + strings.Repeat("=", 50) + "\n")
@@ -217,7 +218,7 @@ func blockSample(pid int, interval float64, count int, blockedSample int) {
 		for _, data := range hotspotData {
 			printStack(data.Symbols, data.Period)
 		}
-		GlobalPeriod := 0
+		GlobalPeriod = 0
 	}
 	kperf.PmuDisable(fd)
 	kperf.PmuClose(fd)
