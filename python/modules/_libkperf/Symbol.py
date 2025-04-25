@@ -645,7 +645,7 @@ def SymResolverRecordModuleNoDwarf(pid: int) -> None:
     c_SymResolverRecordModuleNoDwarf(c_pid)
 
 
-def StackToHash(pid: int, stackList: List[int]) -> Iterator[Stack]:
+def StackToHash(pid: int, stackList: List[int]) -> Stack:
     """
     struct Stack* StackToHash(int pid, unsigned long* stack, int nr);
     """
@@ -659,10 +659,9 @@ def StackToHash(pid: int, stackList: List[int]) -> Iterator[Stack]:
     c_nr = ctypes.c_int(stack_len)
 
     c_stack  = c_StackToHash(c_pid, c_stack_list, c_nr)
-    while c_stack:
-        stack = Stack.from_c_stack(c_stack)
-        yield stack
-        c_stack = c_stack.contents.next
+    if not c_stack:
+        return None
+    return Stack.from_c_stack(c_stack.contents)
 
 
 def SymResolverMapAddr(pid: int,  addr: int) -> Symbol:
@@ -677,8 +676,9 @@ def SymResolverMapAddr(pid: int,  addr: int) -> Symbol:
     c_addr = ctypes.c_ulong(addr)
 
     c_sym  = c_SymResolverMapAddr(c_pid, c_addr)
-
-    return Symbol.from_c_sym(c_sym)
+    if not c_sym:
+        return None
+    return Symbol.from_c_sym(c_sym.contents)
 
 
 def FreeModuleData(pid: int) -> None:
