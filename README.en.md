@@ -124,7 +124,7 @@ All pmu functions are accomplished by the following interfaces:
 
 Here are some examples:
 
-* Get pmu count for a process.
+* Get pmu count for a process
 
 ```C++
 int pidList[1];
@@ -205,8 +205,7 @@ PmuDataFree(data);
 PmuClose(pd);
 ```
 
-Python examples:
-
+* Python examples
 ```python
 import time
 from collections import defaultdict
@@ -237,8 +236,7 @@ def Counting():
     kperf.close(pd)
 ```
 
-Go example
-
+* Go example
 ```go
 import "libkperf/kperf"
 import "fmt"
@@ -290,7 +288,7 @@ python example.py
 ```
 
 * **For Go example Code:**
-  You can directly go to the go/src/libkperf/libkperf_test directory.
+  You can directly go to the go/src/libkperf_test directory.
 
 ```shell
 go test -v # run all

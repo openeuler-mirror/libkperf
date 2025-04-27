@@ -340,7 +340,7 @@ func PmuDeviceOpen(attr []PmuDeviceAttr) (int, error) 初始化采集uncore事�
     * PMU_L3_TRAFFIC 采集每个core的L3的访问字节数，单位：Bytes
     * PMU_L3_MISS 采集每个core的L3的miss数量，单位：count
     * PMU_L3_REF 采集每个core的L3的总访问数量，单位：count
-    * PMU_L3_LAT 采集每个numa的L3的总时延，单位：cycles
+    * PMU_L3_LAT 采集每个cluster的L3的总时延，单位：cycles
     * PMU_PCIE_RX_MRD_BW 采集pcie设备的rx方向上的读带宽，单位：Bytes/ns
     * PMU_PCIE_RX_MWR_BW 采集pcie设备的rx方向上的写带宽，单位：Bytes/ns
     * PMU_PCIE_TX_MRD_BW 采集pcie设备的tx方向上的读带宽，单位：Bytes/ns
@@ -395,7 +395,7 @@ import "libkperf/kperf"
 import "fmt"
 
 func main() {
-  clusterId := uint(1)
+    clusterId := uint(1)
 	coreList, err := kperf.PmuGetClusterCore(clusterId)
 	if err != nil {
 		fmt.Printf("kperf PmuGetClusterCore failed, expect err is nil, but is %v\n", err)
@@ -419,7 +419,7 @@ import "libkperf/kperf"
 import "fmt"
 
 func main() {
-  nodeId := uint(0)
+    nodeId := uint(0)
 	coreList, err := kperf.PmuGetNumaCore(nodeId)
 	if err != nil {
 		fmt.Printf("kperf PmuGetNumaCore failed, expect err is nil, but is %v\n", err)
@@ -436,14 +436,14 @@ func main() {
 func PmuGetCpuFreq(core	uint) (int64, error) 查询当前系统指定core的实时CPU频率
 
 * core cpu coreId
-* 返回值为int64, 时当前cpu core的实时频率，出现错误频率为-1，且error不为空
+* 返回值为int64, 为当前cpu core的实时频率，出现错误频率为-1，且error不为空
 
 ```go
 import "libkperf/kperf"
 import "fmt"
 
 func main() {
-  coreId := uint(0)
+    coreId := uint(0)
 	freq, err := kperf.PmuGetCpuFreq(coreId)
 	if err != nil {
 		fmt.Printf("kperf PmuGetCpuFreq failed, expect err is nil, but is %v\n", err)
