@@ -215,17 +215,20 @@ def main():
         if blockedSample not in (0, 1):
             raise ValueError("BlockedSample must be 0 or 1.")
 
+        need_kill = False
         try:
             pid = int(sys.argv[4])
         except ValueError:
             pid = start_proc(sys.argv[4])
+            need_kill = True
 
     except ValueError as e:
         print(f"Invalid argument: {e}")
         print_usage()
         sys.exit(1)
     blocked_sample(pid, interval, count, blockedSample)
-    end_proc(pid)
+    if need_kill == True:
+        end_proc(pid)
 
 if __name__ == "__main__":
     main()

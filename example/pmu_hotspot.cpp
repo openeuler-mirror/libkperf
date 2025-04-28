@@ -272,6 +272,7 @@ int main(int argc, char** argv)
     int count = 0;
     bool blockedSample = false;
     int pid = 0;
+    bool needKill = false;
     try {
         interval = std::stod(argv[1]);
         if (interval <= 0) {
@@ -289,6 +290,7 @@ int main(int argc, char** argv)
             pid = std::stoi(argv[4]);
         } catch (const std::invalid_argument&) {
             StartProc(argv[4], pid);
+            needKill = true;
         }
     } catch (const std::exception& e) {
         std::cerr << "Error parsing arguments: " << e.what() << "\n";
@@ -296,7 +298,8 @@ int main(int argc, char** argv)
         return EXIT_FAILURE;
     }
     BlockedSample(pid, interval, count, blockedSample);
-    EndProc(pid);
-    
+    if (needKill == true) {
+        EndProc(pid);
+    }
     return 0;
 }
