@@ -217,7 +217,11 @@ void BlockedSample(int pid, double interval, int count, bool blockedSample)
         std::cout << std::string(50, '=') << std::endl;
         std::cout << std::setw(40) << "@symbol" << std::setw(40) << "@module";
         std::cout << std::setw(40) << std::right << "@percent" << std::endl;
-        for (int i = 0; i < hotSpotData.size(); ++i) {
+        int stackLen = hotSpotData.size();
+        if (stackLen > 10) {
+            stackLen = 10; // Only print top 10 hotspots stack.
+        }
+        for (int i = 0; i < stackLen; ++i) {
             PrintStack(hotSpotData[i].stack, 0, hotSpotData[i].period);
         }
         g_totalPeriod = 0;

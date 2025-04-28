@@ -163,8 +163,9 @@ def blocked_sample(pid, interval, count, blockedSample):
         print_hotspot_graph(hotspot_data)
         print("=" * 50 + "Print the call stack of the hotspot function" + "=" * 50)
         print(f"{'@symbol':<40}{'@module':<40}{'@percent':>40}")
-        for data in hotspot_data:
-            print_stack(data.stack, 0, data.period)
+        stack_len = min(10, len(hotspot_data))
+        for i in range(stack_len):
+            print_stack(hotspot_data[i].stack, 0, hotspot_data[i].period)
         g_total_period = 0
     err = kperf.disable(pd)
     if err != 0:
