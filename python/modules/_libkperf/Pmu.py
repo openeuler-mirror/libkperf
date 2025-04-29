@@ -1087,7 +1087,7 @@ class CtypesPmuData(ctypes.Structure):
         ('cpu',     ctypes.c_int),
         ('cpuTopo', ctypes.POINTER(CtypesCpuTopology)),
         ('comm',    ctypes.c_char_p),
-        ('period',  ctypes.c_int),
+        ('period',  ctypes.c_uint64),
         ('count',   ctypes.c_uint64),
         ('countPercent', ctypes.c_double),
         ('ext',     ctypes.POINTER(CtypesPmuDataExt)),
@@ -1119,7 +1119,7 @@ class CtypesPmuData(ctypes.Structure):
         self.cpu = ctypes.c_int(cpu)
         self.cpuTopo = cpuTopo
         self.comm = ctypes.c_char_p(comm.encode(UTF_8))
-        self.period = ctypes.c_int(period)
+        self.period = ctypes.c_uint64(period)
         self.count = ctypes.c_uint64(count)
         self.countPercent = ctypes.c_double(countPercent)
         self.ext = ext
@@ -1233,7 +1233,7 @@ class ImplPmuData:
 
     @period.setter
     def period(self, period: int) -> None:
-        self.c_pmu_data.period = ctypes.c_int(period)
+        self.c_pmu_data.period = ctypes.c_uint64(period)
 
     @property
     def count(self) -> int:

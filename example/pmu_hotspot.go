@@ -215,8 +215,12 @@ func blockSample(pid int, interval float64, count int, blockedSample int) {
 		printHotSpotGraph(hotspotData)
 		fmt.Printf(strings.Repeat("=", 50) + "Print the call stack of the hotspot function" + strings.Repeat("=", 50) + "\n")
 		fmt.Printf("% -40s%-40s%+40s\n", "@symbol", "@module", "@percent")
-		for _, data := range hotspotData {
-			printStack(data.Symbols, data.Period)
+		stackLen := len(hotspotData)
+		if stackLen > 10 {
+			stackLen = 10
+		}
+		for i := 0; i < stackLen; i++ {
+			printStack(hotspotData[i].Symbols, hotspotData[i].Period)
 		}
 		GlobalPeriod = 0
 	}

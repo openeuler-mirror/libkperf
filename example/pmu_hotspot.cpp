@@ -217,7 +217,11 @@ void BlockedSample(int pid, double interval, int count, bool blockedSample)
         std::cout << std::string(50, '=') << std::endl;
         std::cout << std::setw(40) << "@symbol" << std::setw(40) << "@module";
         std::cout << std::setw(40) << std::right << "@percent" << std::endl;
-        for (int i = 0; i < hotSpotData.size(); ++i) {
+        int stackLen = hotSpotData.size();
+        if (stackLen > 10) {
+            stackLen = 10; // Only print top 10 hotspots stack.
+        }
+        for (int i = 0; i < stackLen; ++i) {
             PrintStack(hotSpotData[i].stack, 0, hotSpotData[i].period);
         }
         g_totalPeriod = 0;
@@ -268,6 +272,7 @@ int main(int argc, char** argv)
     int count = 0;
     bool blockedSample = false;
     int pid = 0;
+    bool needKill = false;
     try {
         interval = std::stod(argv[1]);
         if (interval <= 0) {
@@ -285,6 +290,7 @@ int main(int argc, char** argv)
             pid = std::stoi(argv[4]);
         } catch (const std::invalid_argument&) {
             StartProc(argv[4], pid);
+            needKill = true;
         }
     } catch (const std::exception& e) {
         std::cerr << "Error parsing arguments: " << e.what() << "\n";
@@ -292,7 +298,8 @@ int main(int argc, char** argv)
         return EXIT_FAILURE;
     }
     BlockedSample(pid, interval, count, blockedSample);
-    EndProc(pid);
-    
+    if (needKill) {
+        EndProc(pid);
+    }
     return 0;
 }
