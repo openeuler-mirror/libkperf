@@ -163,8 +163,9 @@ def blocked_sample(pid, interval, count, blockedSample):
         print_hotspot_graph(hotspot_data)
         print("=" * 50 + "Print the call stack of the hotspot function" + "=" * 50)
         print(f"{'@symbol':<40}{'@module':<40}{'@percent':>40}")
-        for data in hotspot_data:
-            print_stack(data.stack, 0, data.period)
+        stack_len = min(10, len(hotspot_data))
+        for i in range(stack_len):
+            print_stack(hotspot_data[i].stack, 0, hotspot_data[i].period)
         g_total_period = 0
     err = kperf.disable(pd)
     if err != 0:
@@ -214,17 +215,20 @@ def main():
         if blockedSample not in (0, 1):
             raise ValueError("BlockedSample must be 0 or 1.")
 
+        need_kill = False
         try:
             pid = int(sys.argv[4])
         except ValueError:
             pid = start_proc(sys.argv[4])
+            need_kill = True
 
     except ValueError as e:
         print(f"Invalid argument: {e}")
         print_usage()
         sys.exit(1)
     blocked_sample(pid, interval, count, blockedSample)
-    end_proc(pid)
+    if need_kill:
+        end_proc(pid)
 
 if __name__ == "__main__":
     main()
