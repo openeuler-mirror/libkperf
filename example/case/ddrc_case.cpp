@@ -17,7 +17,7 @@ void memory_read_test(std::vector<int> &array) {
 
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsed = end - start;
-        double readCnt = (array.size() * sizeof(int)) / (elapsed.count() * 1e9); // GB/s
+        double readCnt = (array.size() * sizeof(int)) / (elapsed.count() * 1024 * 1024 * 1024); // GB/s
 
         std::cout << "Data throughput: " << readCnt << " GB/s" << std::endl;
         start = end; // Reset timer

@@ -227,7 +227,7 @@ def main():
         print_usage()
         sys.exit(1)
     blocked_sample(pid, interval, count, blockedSample)
-    if need_kill == True:
+    if need_kill:
         end_proc(pid)
 
 if __name__ == "__main__":

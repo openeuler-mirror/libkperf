@@ -298,7 +298,7 @@ int main(int argc, char** argv)
         return EXIT_FAILURE;
     }
     BlockedSample(pid, interval, count, blockedSample);
-    if (needKill == true) {
+    if (needKill) {
         EndProc(pid);
     }
     return 0;
