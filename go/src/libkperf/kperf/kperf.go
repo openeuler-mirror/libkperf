@@ -413,6 +413,13 @@ type PmuDeviceDataVo struct {
 	cDeviceData *C.struct_PmuDeviceData
 }
 
+type PmuCpuFreqDetail struct {
+	CpuId int       // core id
+	MinFreq uint64  // minimum frequency of core
+	MaxFreq uint64  // maximum frequency of core
+	AvgFreq uint64  // average frequency of core
+}
+
 // Initialize the collection target
 // On success, a task id is returned which is the unique identity for the task
 // On error, -1 is returned
@@ -1057,6 +1064,54 @@ func PmuGetCpuFreq(core	uint) (int64, error) {
 		return -1, errors.New(C.GoString(C.Perror()))
 	}
 	return int64(freq), nil
+}
+
+
+// open cpu core freq sampling
+// period unit ms
+// return error or nil
+func PmuOpenCpuFreqSampling(period uint) (error) {
+	c_period := C.uint32_t(period)
+	ret := C.PmuOpenCpuFreqSampling(c_period)
+	if int(ret) == -1 {
+		return errors.New(C.GoString(C.Perror()))
+	}
+	return nil
+}
+
+// close cpu freq sampling 
+func PmuCloseCpuFreqSampling() {
+	C.PmuCloseCpuFreqSampling()
+}
+
+// get the maximum frequency,minimum frequency,and average frequency of each core
+// param cpuNum
+// return PmuCpuFreqDetail array
+func PmuReadCpuFreqDetail() ([]PmuCpuFreqDetail) {
+	cpuNum := C.uint32_t(0)
+	cpuFreqList := C.PmuReadCpuFreqDetail(&cpuNum)
+
+	if (uint32(cpuNum) == 0) {
+		return nil
+	}
+
+	ptr := unsafe.Pointer(cpuFreqList)
+	slice := reflect.SliceHeader{
+		Data: uintptr(ptr),
+		Len:  int(cpuNum),
+		Cap:  int(cpuNum),
+	}
+
+	cCpuFreqList := *(*[]C.struct_PmuCpuFreqDetail)(unsafe.Pointer(&slice))
+	goCpuFreqList := make([]PmuCpuFreqDetail, int(cpuNum))
+
+	for i, v := range cCpuFreqList {
+		goCpuFreqList[i].CpuId = int(v.cpuId)
+		goCpuFreqList[i].MinFreq = uint64(v.minFreq)
+		goCpuFreqList[i].MaxFreq = uint64(v.maxFreq)
+		goCpuFreqList[i].AvgFreq = uint64(v.avgFreq)
+	}
+	return goCpuFreqList
 }
 
 func transferCPmuDataToGoData(cPmuData *C.struct_PmuData, dataLen int, fd int) []PmuData {

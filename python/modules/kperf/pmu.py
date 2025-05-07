@@ -526,6 +526,18 @@ def sys_call_func_list() -> Iterator[str]:
     """
     return _libkperf.PmuSysCallFuncList()
 
+class CpuFreqDetail(_libkperf.PmuCpuFreqDetail):
+    pass
+
+def open_cpu_freq_sampling(period: int) -> None:
+    return _libkperf.PmuOpenCpuFreqSampling(period)
+
+def close_cpu_freq_sampling() -> None:
+    return _libkperf.PmuCloseCpuFreqSampling()
+
+def read_cpu_freq_detail() -> CpuFreqDetail:
+    return _libkperf.PmuReadCpuFreqDetail()
+
 __all__ = [
     'PmuTaskType',
     'PmuEventType',
@@ -572,4 +584,8 @@ __all__ = [
     'trace_close',
     'sys_call_func_list',
     'BranchSampleFilter',
+    'CpuFreqDetail',
+    'open_cpu_freq_sampling',
+    'close_cpu_freq_sampling',
+    'read_cpu_freq_detail',
 ]

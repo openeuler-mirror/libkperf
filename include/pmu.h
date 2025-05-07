@@ -265,6 +265,13 @@ struct PmuTraceData {
     const char *comm;               // process command
 };
 
+struct PmuCpuFreqDetail {
+    int cpuId;        // cpu core id
+    uint64_t minFreq; // minimum frequency of core
+    uint64_t maxFreq; // maximum frequency of core
+    uint64_t avgFreq; // average frequency of core
+};
+
 /**
  * @brief
  * Initialize the collection target.
@@ -617,6 +624,25 @@ const char** PmuSysCallFuncList(unsigned *numFunc);
  * On error, -1 is returned and call Perrorno to get error.
  */
 int64_t PmuGetCpuFreq(unsigned core);
+
+/**
+ * @brief get the maximum frequency,minimum frequency,and average frequency of each core
+ * @param cpuNum
+ * @return PmuCpuFreqDetail array of pointers
+ */
+struct PmuCpuFreqDetail* PmuReadCpuFreqDetail(unsigned* cpuNum);
+
+/**
+ * @brief open cpu core freq sampling
+ * @param time period unit ms
+ * @return -1 or 0
+ */
+int PmuOpenCpuFreqSampling(unsigned period);
+
+/**
+ * @brief close cpu freq sampling
+ */
+void PmuCloseCpuFreqSampling();
 
 #pragma GCC visibility pop
 #ifdef __cplusplus
