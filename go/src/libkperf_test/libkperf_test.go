@@ -273,3 +273,17 @@ func TestPmuGetNumaCore(t *testing.T) {
 		t.Logf("coreId has:%v", v)
 	}
 }
+
+func TestPmuGetCpuFreqDetail(t *testing.T) {
+	err := kperf.PmuOpenCpuFreqSampling(100)
+	if err != nil {
+		t.Fatalf("kperf PmuOpenCpuFreqSampling failed, expect err is nil, but is %v", err)
+	}
+
+    freqList := kperf.PmuReadCpuFreqDetail()
+	for _, v := range freqList {
+		t.Logf("cpuId=%v, minFreq=%d, maxFreq=%d, avgFreq=%d", v.CpuId, v.MinFreq, v.MaxFreq, v.AvgFreq)
+	}
+
+	kperf.PmuCloseCpuFreqSampling()
+}
