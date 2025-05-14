@@ -21,6 +21,6 @@ setup(
     name='libkperf',
     version='1.0',
     packages=find_packages(),
-    data_files=[('_libkperf', [libkperf_path, libsym_path])]
+    data_files=[('/_libkperf', [libkperf_path, libsym_path])]
 )
 
