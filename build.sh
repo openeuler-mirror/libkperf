@@ -35,6 +35,7 @@ creat_dir "${BUILD_DIR}"
 export CC=gcc
 export CXX=g++
 PYTHON_EXE=""
+PYTHON_WHL=false
 if [ -d "${THIRD_PARTY}/local" ];then
   echo ${THIRD_PARTY}/local "is exist"
 else
@@ -55,6 +56,9 @@ for arg in "$@"; do
             ;;
         build_type=*)
             BUILD_TYPE="${arg#*=}"
+            ;;
+        whl=*)
+            WHL="${arg#*=}"
             ;;
         python_exe=*)
             PYTHON_EXE="${arg#*=}"
@@ -100,9 +104,9 @@ build_libkperf()
     cd $BUILD_DIR
     # Remove the PYTHON_KPERF warning
     if [ -z ${PYTHON_EXE} ];then
-        cmake -DINCLUDE_TEST=${INCLUDE_TEST} -DPYTHON=${PYTHON} -DGO=${GO} -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ..
+        cmake -DINCLUDE_TEST=${INCLUDE_TEST} -DPYTHON=${PYTHON} -DPYTHON_WHL=${WHL} -DGO=${GO} -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ..
     else
-        cmake -DINCLUDE_TEST=${INCLUDE_TEST} -DPYTHON=${PYTHON} -DGO=${GO} -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DPYTHON_KPERF=${PYTHON_EXE} ..
+        cmake -DINCLUDE_TEST=${INCLUDE_TEST} -DPYTHON=${PYTHON} -DPYTHON_WHL=${WHL} -DGO=${GO} -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DPYTHON_KPERF=${PYTHON_EXE} ..
     fi
     make -j ${cpu_core_num}
     make install
