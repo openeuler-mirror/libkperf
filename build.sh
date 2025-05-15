@@ -102,12 +102,22 @@ function build_elfin() {
 build_libkperf()
 {
     cd $BUILD_DIR
-    # Remove the PYTHON_KPERF warning
-    if [ -z ${PYTHON_EXE} ];then
-        cmake -DINCLUDE_TEST=${INCLUDE_TEST} -DPYTHON=${PYTHON} -DPYTHON_WHL=${WHL} -DGO=${GO} -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ..
-    else
-        cmake -DINCLUDE_TEST=${INCLUDE_TEST} -DPYTHON=${PYTHON} -DPYTHON_WHL=${WHL} -DGO=${GO} -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DPYTHON_KPERF=${PYTHON_EXE} ..
+    # Remove the PYTHON_KPERF && PYTHON_WHL warning
+    CMAKE_ARGS=()
+    CMAKE_ARGS+=(
+        "-DINCLUDE_TEST=${INCLUDE_TEST}"
+        "-DPYTHON=${PYTHON}"
+        "-DGO=${GO}"
+        "-DCMAKE_INSTALL_PREFIX=${INSTALL_PATH}"
+        "-DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
+    )
+    if [ ! -z ${PYTHON_EXE} ];then
+         CMAKE_ARGS+=("-DPYTHON_KPERF=${PYTHON_EXE}")
     fi
+    if [ "${PYTHON}" = "true" ];then
+       CMAKE_ARGS+=("-DPYTHON_WHL=${WHL}")
+    fi
+    cmake "${CMAKE_ARGS[@]}" ..
     make -j ${cpu_core_num}
     make install
     echo "build libkperf success"
