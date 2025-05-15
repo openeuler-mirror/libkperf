@@ -16,15 +16,18 @@ project(python_libkperf)
 set(LIBKPERF_PATH ${CMAKE_BINARY_DIR}/pmu/libkperf.so)
 set(LIBSYM_PATH ${CMAKE_BINARY_DIR}/symbol/libsym.so)
 
+if(DEFINED PYTHON_WHL AND PYTHON_WHL)
+    set(BIN_TYPE "bdist_wheel")
+    set(SETUP_LIBKPERF_PATH "/_libkperf")
+else()
+    set(BIN_TYPE "install")
+    set(SETUP_LIBKPERF_PATH "_libkperf")
+endif()
+
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/setup.py.in
     ${CMAKE_CURRENT_SOURCE_DIR}/setup.py
 )
-if(DEFINED PYTHON_WHL AND PYTHON_WHL)
-    set(BIN_TYPE "bdist_wheel")
-else()
-    set(BIN_TYPE "install")
-endif()
 
 add_custom_target(${PROJECT_NAME} ALL
     COMMAND ${PYTHON_EXECUTABLE} setup.py ${BIN_TYPE}
