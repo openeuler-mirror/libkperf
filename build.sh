@@ -111,10 +111,10 @@ build_libkperf()
         "-DCMAKE_INSTALL_PREFIX=${INSTALL_PATH}"
         "-DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
     )
-    if [ !-z ${PYTHON_EXE} ];then
+    if [ ! -z ${PYTHON_EXE} ];then
          CMAKE_ARGS+=("-DPYTHON_KPERF=${PYTHON_EXE}")
     fi
-    if [ ${PYTHON} ];then
+    if [ "${PYTHON}" = "true" ];then
        CMAKE_ARGS+=("-DPYTHON_WHL=${WHL}")
     fi
     cmake "${CMAKE_ARGS[@]}" ..
