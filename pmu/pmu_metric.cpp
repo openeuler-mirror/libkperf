@@ -22,6 +22,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <linux/perf_event.h>
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 #include <cstring>
@@ -86,8 +87,9 @@ namespace KUNPENG_PMU {
     };
 
     set<PmuDeviceMetric> percoreMetric = {PMU_L3_TRAFFIC, PMU_L3_MISS, PMU_L3_REF};
-    set<PmuDeviceMetric> pernumaMetric = {PMU_DDR_READ_BW, PMU_DDR_WRITE_BW, PMU_L3_LAT};
+    set<PmuDeviceMetric> pernumaMetric = {PMU_L3_LAT};
     set<PmuDeviceMetric> perClusterMetric = {PMU_L3_LAT};
+    set<PmuDeviceMetric> perChannelMetric = {PMU_DDR_READ_BW, PMU_DDR_WRITE_BW};
     set<PmuDeviceMetric> perpcieMetric = {PMU_PCIE_RX_MRD_BW,
                                                     PMU_PCIE_RX_MWR_BW,
                                                     PMU_PCIE_TX_MRD_BW,
@@ -105,7 +107,7 @@ namespace KUNPENG_PMU {
         if (it != MetricToString.end()) {
             return it->second;
         }
-        return "<Unknown Metrix>";
+        return "<Unknown Metric>";
     }
 
     using PMU_METRIC_PAIR = std::pair<PmuDeviceMetric, UncoreDeviceConfig>;
@@ -300,7 +302,7 @@ namespace KUNPENG_PMU {
     {
         CHIP_TYPE chipType = GetCpuType();
         if (UNCORE_METRIC_CONFIG_MAP.find(chipType) == UNCORE_METRIC_CONFIG_MAP.end()) {
-            return {};
+            return {}; 
         }
         return UNCORE_METRIC_CONFIG_MAP.at(chipType);
     }
@@ -888,6 +890,11 @@ namespace KUNPENG_PMU {
             unsigned numaId;
             unsigned clusterId;
             char *bdf;
+            struct {
+                unsigned channelId;
+                unsigned ddrNumaId;
+                unsigned socketId;
+            };
         };
     };
 
@@ -936,7 +943,7 @@ namespace KUNPENG_PMU {
         switch(metric) {
             case PMU_DDR_READ_BW:
             case PMU_DDR_WRITE_BW:
-                return PMU_METRIC_NUMA;
+                return PMU_METRIC_CHANNEL;
             case PMU_L3_LAT:
                 return PMU_METRIC_CLUSTER;
             case PMU_L3_TRAFFIC:
@@ -1064,6 +1071,91 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
+    static unordered_map<int, vector<int>> DDRC_CHANNEL_MAP = {
+        {CHIP_TYPE::HIPA, {0, 1, 2, 3}},
+        {CHIP_TYPE::HIPB, {0, 2, 3, 5}}
+    };
+
+    static bool getChannelId(const char *evt, const unsigned ddrNumaId, unsigned &channelId)
+    {
+        string devName;
+        string evtName;
+        if (!GetDeviceName(evt, devName, evtName)) {
+            return false;
+        }
+        // ddrc channel index. eg: hisi_sccl3_ddrc3_1 --> 3_1
+        string ddrcStr = "ddrc";
+        size_t ddrcPos = devName.find(ddrcStr);
+        size_t channelIndex = ddrcPos + ddrcStr.length();
+        string ddrcIndexStr = devName.substr(channelIndex);
+        // find index in DDRC_CHANNEL_MAP. eg: 3_1 --> 3, corresponds to channel 2 in HIPB
+        size_t separatorPos = ddrcIndexStr.find("_");
+        int ddrcIndex = separatorPos != string::npos ? stoi(ddrcIndexStr.substr(0, separatorPos)) : stoi(ddrcIndexStr);
+
+        unsigned channelAddNum = 0;
+        if((ddrNumaId & 1) == 1) {  // channel id + 4 in sequence
+            channelAddNum = 4;
+        }
+        CHIP_TYPE chipType = GetCpuType();  //get channel index
+        if (DDRC_CHANNEL_MAP.find(chipType) == DDRC_CHANNEL_MAP.end()) {
+            return false;
+        }
+        auto ddrcChannelList = DDRC_CHANNEL_MAP[chipType];
+        auto it = find(ddrcChannelList.begin(), ddrcChannelList.end(), ddrcIndex);
+        if (it != ddrcChannelList.end()) {
+            size_t index = distance(ddrcChannelList.begin(), it);
+            channelId = index + channelAddNum;
+            return true;
+        }
+        return false;
+    }
+
+    struct channelKeyHash {
+        size_t operator()(const tuple<unsigned, unsigned, unsigned>& key) const {
+            auto socketIdHash = hash<unsigned>{}(get<0>(key));
+            auto channelIdHash = hash<unsigned>{}(get<1>(key));
+            auto ddrNumaIdHash = hash<unsigned>{}(get<2>(key));
+            return socketIdHash ^ (channelIdHash << 1) ^ (ddrNumaIdHash << 2);
+        }
+    };
+
+    int AggregateByChannel(const PmuDeviceMetric metric, const vector<InnerDeviceData> &rawData, vector<PmuDeviceData> &devData)
+    {
+        unordered_map<tuple<unsigned, unsigned, unsigned>, PmuDeviceData, channelKeyHash> devDataByChannel;  //Key: socketId, channelId, ddrNumaId
+        for (auto &data : rawData) {
+            unsigned channelId;
+            if (!getChannelId(data.evtName, data.ddrNumaId, channelId)) {
+                continue;
+            }
+            auto ddrDatakey = make_tuple(data.socketId, channelId, data.ddrNumaId);
+            auto findData = devDataByChannel.find(ddrDatakey);
+            if (findData == devDataByChannel.end()) {
+                PmuDeviceData outData;
+                outData.metric = data.metric;
+                outData.count = data.count;
+                outData.mode = GetMetricMode(data.metric);
+                outData.channelId = channelId;
+                outData.ddrNumaId = data.ddrNumaId;
+                outData.socketId = data.ddrNumaId < 2 ? 0 : 1;  // numa id 0-1 --> socket id 0; numa id 2-3 --> socket id 1
+                devDataByChannel[ddrDatakey] = outData;
+            } else {
+                findData->second.count += data.count;
+            }
+        }
+
+        vector<pair<tuple<unsigned, unsigned, unsigned>, PmuDeviceData>> sortedVec(devDataByChannel.begin(), devDataByChannel.end());
+        sort(sortedVec.begin(), sortedVec.end(), [](
+            const pair<tuple<unsigned, unsigned, unsigned>, PmuDeviceData>& a,
+            const pair<tuple<unsigned, unsigned, unsigned>, PmuDeviceData>& b) {
+            return a.first < b.first;
+        });
+        for (auto &data : sortedVec) {
+            devData.push_back(data.second);
+        }
+
+        return SUCCESS;
+    }
+
     int PcieBWAggregate(const PmuDeviceMetric metric, const vector<InnerDeviceData> &rawData, vector<PmuDeviceData> &devData)
     {
         const auto& deviceConfig = GetDeviceMtricConfig();
@@ -1146,8 +1238,8 @@ namespace KUNPENG_PMU {
                                                                 {PMU_DDR_WRITE_BW, DDRBw},
                                                                 {PMU_L3_TRAFFIC, L3Bw}};
     map<PmuDeviceMetric, AggregateMetricCb> aggregateMap = {
-        {PMU_DDR_READ_BW, AggregateByNuma},
-        {PMU_DDR_WRITE_BW, AggregateByNuma},
+        {PMU_DDR_READ_BW, AggregateByChannel},
+        {PMU_DDR_WRITE_BW, AggregateByChannel},
         {PMU_L3_LAT, AggregateByCluster},
         {PMU_PCIE_RX_MRD_BW, PcieBWAggregate},
         {PMU_PCIE_RX_MWR_BW, PcieBWAggregate},
@@ -1255,6 +1347,10 @@ namespace KUNPENG_PMU {
             }
             if (perClusterMetric.find(devAttr.metric) != perClusterMetric.end()) {
                 devData.clusterId = pmuData[i].cpuTopo->coreId / clusterWidth;
+            }
+            if (perChannelMetric.find(devAttr.metric) != pernumaMetric.end()) {
+                devData.ddrNumaId = pmuData[i].cpuTopo->numaId;
+                devData.socketId = pmuData[i].cpuTopo->socketId;
             }
             if (IsBdfMetric(devAttr.metric)) {
                 devData.bdf = devAttr.bdf;

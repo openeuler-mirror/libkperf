@@ -37,6 +37,9 @@ struct MetricDataExt {
 	unsigned coreId;
 	unsigned clusterId;
 	char* bdf;
+	unsigned channelId;
+    unsigned ddrNumaId;
+    unsigned socketId;
 };
 
 void SetPeriod(struct PmuAttr* attr, unsigned period) {
@@ -121,6 +124,11 @@ void IPmuGetMetricDataExt(struct PmuDeviceData* deviceData, struct MetricDataExt
 			break;
 		case PMU_METRIC_CLUSTER:
 			metricData->clusterId = deviceData->clusterId;
+			break;
+		case PMU_METRIC_CHANNEL:			
+			metricData->channelId = deviceData->channelId;
+			metricData->ddrNumaId = deviceData->ddrNumaId;
+			metricData->socketId = deviceData->socketId;
 			break;
 	}
 }
@@ -291,6 +299,7 @@ var (
     PMU_METRIC_NUMA C.enum_PmuMetricMode = C.PMU_METRIC_NUMA
 	PMU_METRIC_CLUSTER C.enum_PmuMetricMode = C.PMU_METRIC_CLUSTER
     PMU_METRIC_BDF C.enum_PmuMetricMode  = C.PMU_METRIC_BDF
+	PMU_METRIC_CHANNEL C.enum_PmuMetricMode  = C.PMU_METRIC_CHANNEL
 )
 	
 var fdModeMap map[int]C.enum_PmuTaskType = make(map[int]C.enum_PmuTaskType)
@@ -396,6 +405,12 @@ type PmuDeviceAttr struct {
 	Bdf string
 }
 
+type DdrDataStructure struct {
+	ChannelId uint32
+	DdrNumaId uint32
+	SocketId uint32
+}
+
 type PmuDeviceData struct {
 	Metric C.enum_PmuDeviceMetric
 	// The metric value. The meaning of value depends on metric type.
@@ -406,6 +421,7 @@ type PmuDeviceData struct {
 	NumaId uint32    // for pernuma metric
 	ClusterId uint32 // for percluster metric
 	Bdf string       // for perpcie metric
+	DdrDataStructure // for perchannel metric
 }
 
 type PmuDeviceDataVo struct {
@@ -990,6 +1006,9 @@ func PmuGetDevMetric(dataVo PmuDataVo, deviceAttr []PmuDeviceAttr) (PmuDeviceDat
 		goDeviceList[i].NumaId = uint32(metricDataExt.numaId)
 		goDeviceList[i].ClusterId = uint32(metricDataExt.clusterId)
 		goDeviceList[i].Bdf = C.GoString(metricDataExt.bdf)
+		goDeviceList[i].ChannelId = uint32(metricDataExt.channelId)
+		goDeviceList[i].DdrNumaId = uint32(metricDataExt.ddrNumaId)
+		goDeviceList[i].SocketId = uint32(metricDataExt.socketId)
 	}
 	res.GoDeviceData = goDeviceList
 	res.cDeviceData = metricData

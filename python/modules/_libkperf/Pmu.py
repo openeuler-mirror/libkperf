@@ -467,6 +467,12 @@ class PmuDeviceAttr:
         pmu_device_attr.__c_pmu_device_attr = c_pmu_device_attr
         return pmu_device_attr
 
+class DdrDataStructure(ctypes.Structure):
+    _fields_ = [
+        ('channelId', ctypes.c_uint),
+        ('ddrNumaId', ctypes.c_uint),
+        ('socketId', ctypes.c_uint)
+    ]
 
 class CtypesPmuDeviceData(ctypes.Structure):
     """
@@ -479,6 +485,11 @@ class CtypesPmuDeviceData(ctypes.Structure):
             unsigned numaId;
             unsigned clusterId;
             char *bdf;
+            struct {
+                unsigned channelId;
+                unsigned ddrNumaId;
+                unsigned socketId;
+            };
         };
     };
     """
@@ -487,7 +498,8 @@ class CtypesPmuDeviceData(ctypes.Structure):
             ('coreId', ctypes.c_uint),
             ('numaId', ctypes.c_uint),
             ('clusterId', ctypes.c_uint),
-            ('bdf', ctypes.c_char_p)
+            ('bdf', ctypes.c_char_p),
+            ('_structure', DdrDataStructure)
         ]
     
     _fields_ = [
@@ -521,6 +533,23 @@ class CtypesPmuDeviceData(ctypes.Structure):
             return self._union.bdf.decode(UTF_8)
         return ""
 
+    @property
+    def channelId(self) -> int:
+        if self.mode == 5 and self._union._structure.channelId:  # PMU_METRIC_CHANNEL
+            return self._union._structure.channelId
+        return 0
+
+    @property
+    def ddrNumaId(self) -> int:
+        if self.mode == 5 and self._union._structure.ddrNumaId:  # PMU_METRIC_CHANNEL
+            return self._union._structure.ddrNumaId
+        return 0
+
+    @property
+    def socketId(self) -> int:
+        if self.mode == 5 and self._union._structure.socketId:  # PMU_METRIC_CHANNEL
+            return self._union._structure.socketId
+        return 0
 
 class ImplPmuDeviceData:
     __slots__ = ['__c_pmu_device_data']
@@ -574,6 +603,24 @@ class ImplPmuDeviceData:
             return self.c_pmu_device_data._union.bdf.decode(UTF_8)
         return ""
     
+    @property
+    def channelId(self) -> int:
+        if self.mode == 5 and self.c_pmu_device_data._union._structure.channelId:  # PMU_METRIC_CHANNEL
+            return self.c_pmu_device_data._union._structure.channelId
+        return 0
+
+    @property
+    def ddrNumaId(self) -> int:
+        if self.mode == 5 and self.c_pmu_device_data._union._structure.ddrNumaId:  # PMU_METRIC_CHANNEL
+            return self.c_pmu_device_data._union._structure.ddrNumaId
+        return 0
+
+    @property
+    def socketId(self) -> int:
+        if self.mode == 5 and self.c_pmu_device_data._union._structure.socketId:  # PMU_METRIC_CHANNEL
+            return self.c_pmu_device_data._union._structure.socketId
+        return 0
+
     @classmethod
     def from_c_pmu_device_data(cls, c_pmu_device_data: CtypesPmuDeviceData) -> 'ImplPmuDeviceData':
         pmu_device_data = cls()

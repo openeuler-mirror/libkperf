@@ -173,6 +173,7 @@ class PmuMetricMode:
     PMU_METRIC_NUMA = 2
     PMU_METRIC_CLUSTER = 3
     PMU_METRIC_BDF = 4
+    PMU_METRIC_CHANNEL = 5
 
 class ImplPmuDeviceData(_libkperf.ImplPmuDeviceData):
     pass
@@ -193,6 +194,12 @@ class PmuDeviceData(_libkperf.PmuDeviceData):
             unsigned numaId;
             // for perpcie metric
             char *bdf;
+            // for perchannel metric of ddr
+            struct {
+                unsigned channelId;
+                unsigned ddrNumaId;
+                unsigned socketId;
+            };
         };
     };
     """
