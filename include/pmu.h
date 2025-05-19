@@ -464,7 +464,7 @@ enum PmuMetricMode {
     PMU_METRIC_NUMA,
     PMU_METRIC_CLUSTER,
     PMU_METRIC_BDF,
-    PMU_METRIC_CHANNEL,
+    PMU_METRIC_CHANNEL
 };
 
 /**

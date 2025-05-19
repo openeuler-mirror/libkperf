@@ -107,7 +107,7 @@ namespace KUNPENG_PMU {
         if (it != MetricToString.end()) {
             return it->second;
         }
-        return "<Unknown Metrix>";
+        return "<Unknown Metric>";
     }
 
     using PMU_METRIC_PAIR = std::pair<PmuDeviceMetric, UncoreDeviceConfig>;
@@ -302,7 +302,7 @@ namespace KUNPENG_PMU {
     {
         CHIP_TYPE chipType = GetCpuType();
         if (UNCORE_METRIC_CONFIG_MAP.find(chipType) == UNCORE_METRIC_CONFIG_MAP.end()) {
-            return {};
+            return {}; 
         }
         return UNCORE_METRIC_CONFIG_MAP.at(chipType);
     }
@@ -1071,18 +1071,18 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    //920B:         Ch0~3 -> ddrc0/2/3/5 TB; Ch4~7 -> ddrc0/2/3/5 TA
-    //920, 920C/E:  Ch0~3 -> ddrc0/1/2/3 TB; Ch4~7 -> ddrc0/1/2/3 TA
     static unordered_map<int, vector<int>> DDRC_CHANNEL_MAP = {
         {CHIP_TYPE::HIPA, {0, 1, 2, 3}},
         {CHIP_TYPE::HIPB, {0, 2, 3, 5}}
     };
 
-    static void getChannelId(const char *evt, const unsigned ddrNumaId, unsigned &channelId)
+    static bool getChannelId(const char *evt, const unsigned ddrNumaId, unsigned &channelId)
     {
         string devName;
         string evtName;
-        GetDeviceName(evt, devName, evtName);
+        if (!GetDeviceName(evt, devName, evtName)) {
+            return false;
+        }
         // ddrc channel index. eg: hisi_sccl3_ddrc3_1 --> 3_1
         string ddrcStr = "ddrc";
         size_t ddrcPos = devName.find(ddrcStr);
@@ -1093,34 +1093,41 @@ namespace KUNPENG_PMU {
         int ddrcIndex = separatorPos != string::npos ? stoi(ddrcIndexStr.substr(0, separatorPos)) : stoi(ddrcIndexStr);
 
         unsigned channelAddNum = 0;
-        if((ddrNumaId & 1) == 1) {  // die B, 
+        if((ddrNumaId & 1) == 1) {  // channel id + 4 in sequence
             channelAddNum = 4;
         }
         CHIP_TYPE chipType = GetCpuType();  //get channel index
+        if (DDRC_CHANNEL_MAP.find(chipType) == DDRC_CHANNEL_MAP.end()) {
+            return false;
+        }
         auto ddrcChannelList = DDRC_CHANNEL_MAP[chipType];
         auto it = find(ddrcChannelList.begin(), ddrcChannelList.end(), ddrcIndex);
         if (it != ddrcChannelList.end()) {
             size_t index = distance(ddrcChannelList.begin(), it);
             channelId = index + channelAddNum;
+            return true;
         }
+        return false;
     }
 
     struct channelKeyHash {
         size_t operator()(const tuple<unsigned, unsigned, unsigned>& key) const {
-            auto channelIdHash = hash<unsigned>{}(get<0>(key));
-            auto ddrNumaIdHash = hash<unsigned>{}(get<1>(key));
-            auto socketIdHash = hash<unsigned>{}(get<2>(key));
-            return channelIdHash ^ (ddrNumaIdHash << 1) ^ (socketIdHash << 2);
+            auto socketIdHash = hash<unsigned>{}(get<0>(key));
+            auto channelIdHash = hash<unsigned>{}(get<1>(key));
+            auto ddrNumaIdHash = hash<unsigned>{}(get<2>(key));
+            return socketIdHash ^ (channelIdHash << 1) ^ (ddrNumaIdHash << 2);
         }
     };
 
     int AggregateByChannel(const PmuDeviceMetric metric, const vector<InnerDeviceData> &rawData, vector<PmuDeviceData> &devData)
     {
-        unordered_map<tuple<unsigned, unsigned, unsigned>, PmuDeviceData, channelKeyHash> devDataByChannel;  //Key: channelId, ddrNumaId, socketId
+        unordered_map<tuple<unsigned, unsigned, unsigned>, PmuDeviceData, channelKeyHash> devDataByChannel;  //Key: socketId, channelId, ddrNumaId
         for (auto &data : rawData) {
             unsigned channelId;
-            getChannelId(data.evtName, data.ddrNumaId, channelId);
-            auto ddrDatakey = make_tuple(channelId, data.ddrNumaId, data.socketId);
+            if (!getChannelId(data.evtName, data.ddrNumaId, channelId)) {
+                continue;
+            }
+            auto ddrDatakey = make_tuple(data.socketId, channelId, data.ddrNumaId);
             auto findData = devDataByChannel.find(ddrDatakey);
             if (findData == devDataByChannel.end()) {
                 PmuDeviceData outData;
@@ -1137,7 +1144,9 @@ namespace KUNPENG_PMU {
         }
 
         vector<pair<tuple<unsigned, unsigned, unsigned>, PmuDeviceData>> sortedVec(devDataByChannel.begin(), devDataByChannel.end());
-        sort(sortedVec.begin(), sortedVec.end(), [](const auto& a, const auto& b) {
+        sort(sortedVec.begin(), sortedVec.end(), [](
+            const pair<tuple<unsigned, unsigned, unsigned>, PmuDeviceData>& a,
+            const pair<tuple<unsigned, unsigned, unsigned>, PmuDeviceData>& b) {
             return a.first < b.first;
         });
         for (auto &data : sortedVec) {
