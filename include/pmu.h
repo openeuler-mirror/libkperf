@@ -463,7 +463,8 @@ enum PmuMetricMode {
     PMU_METRIC_CORE,
     PMU_METRIC_NUMA,
     PMU_METRIC_CLUSTER,
-    PMU_METRIC_BDF
+    PMU_METRIC_BDF,
+    PMU_METRIC_CHANNEL,
 };
 
 /**
@@ -502,6 +503,12 @@ struct PmuDeviceData {
         unsigned clusterId;
         // for perpcie metric
         char *bdf;
+        // for perchannel metric of ddr
+        struct {
+            unsigned channelId;
+            unsigned ddrNumaId;
+            unsigned socketId;
+        };
     };
 };
 
