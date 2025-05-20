@@ -600,7 +600,7 @@ pmu_attr = kperf.PmuAttr(evtList=evtList, includeNewFork=True)
 注意，该功能是针对Counting模式，因为Sampling和SPE Sampling本身就会采集子线程的数据。
 
 ### 采集DDRC带宽
-鲲鹏上提供了DDRC的pmu设备，用于采集DDR的性能数据，比如带宽等。libkperf提供了API，用于获取每个numa的DDR带宽数据。
+鲲鹏上提供了DDRC的pmu设备，用于采集DDR的性能数据，比如带宽等。libkperf提供了API，用于获取每个channel的DDR带宽数据。
 
 参考代码：
 ```c++
@@ -620,15 +620,17 @@ PmuData *oriData = nullptr;
 int oriLen = PmuRead(pd, &oriData);
 PmuDeviceData *devData = nullptr;
 auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
-// 对于4个numa的服务器，devData的长度为8.前4个是读带宽，后4个是写带宽。
-for (int i=0;i<4;++i) {
-    // numaId表示数据对应的numa节点。
+// devData的长度为2 * n (总通道数)。前n个是读带宽，后n个是写带宽。
+for (int i = 0; i < len / 2; ++i) {
+    // socketId表示数据对应的socket节点。
+    // ddrNumaId表示数据对应的numa节点。
+    // channelID表示数据对应的通道ID。
     // count是距离上次采集的DDR总读/写包长，单位是Byte，
     // 需要除以时间间隔得到带宽（这里的时间间隔是1秒）。
-    cout << "read bandwidth(" << devData[i].numaId << "): " << devData[i].count/1024/1024 << "M/s\n";
+    cout << "read bandwidth(Socket: " << devData[i].socketId << " Numa: " << devData[i].ddrNumaId << " Channel: " << devData[i].channelId << "): " << devData[i].count/1024/1024 << "M/s\n";
 }
-for (int i=4;i<8;++i) {
-    cout << "write bandwidth(" << devData[i].numaId << "): " << devData[i].count/1024/1024 << "M/s\n";
+for (int i = len / 2; i < len; ++i) {
+    cout << "write bandwidth(Socket: " << devData[i].socketId << " Numa: " << devData[i].ddrNumaId << " Channel: " << devData[i].channelId << "): " << devData[i].count/1024/1024 << "M/s\n";
 }
 DevDataFree(devData);
 PmuDataFree(oriData);
@@ -649,9 +651,9 @@ ori_data = kperf.read(pd)
 dev_data = kperf.get_device_metric(ori_data, dev_attr)
 for data in dev_data.iter:
     if data.metric == kperf.PmuDeviceMetric.PMU_DDR_READ_BW:
-        print(f"read bandwidth({data.numaId}): {data.count/1024/1024} M/s")
+        print(f"read bandwidth(Socket: {data.socketId} Numa: {data.ddrNumaId} Channel: {data.channelId}): {data.count/1024/1024} M/s")
     if data.metric == kperf.PmuDeviceMetric.PMU_DDR_WRITE_BW:
-        print(f"write bandwidth({data.numaId}): {data.count/1024/1024} M/s")
+        print(f"write bandwidth(Socket: {data.socketId} Numa: {data.ddrNumaId} Channel: {data.channelId}): {data.count/1024/1024} M/s")
 ```
 
 ```go
@@ -665,10 +667,10 @@ dataVo, _ := kperf.PmuRead(fd)
 deivceDataVo, _ := kperf.PmuGetDevMetric(dataVo, deviceAttrs)
 for _, v := range deivceDataVo.GoDeviceData {
     if v.Metric == kperf.PMU_DDR_READ_BW {
-	    fmt.Printf("read bandwidth(%v): %v M/s\n", v.NumaId, v.Count/1024/1024)
+	    fmt.Printf("read bandwidth(Socket: %v Numa: %v Channel: %v): %v M/s\n", v.SocketId, v.DdrNumaId, v.ChannelId, v.Count/1024/1024)
     }
     if v.Metric == kperf.PMU_DDR_WRITE_BW {
-	    fmt.Printf("write bandwidth(%v): %v M/s\n", v.NumaId, v.Count/1024/1024)
+	    fmt.Printf("write bandwidth(Socket: %v Numa: %v Channel: %v): %v M/s\n", v.SocketId, v.DdrNumaId, v.ChannelId, v.Count/1024/1024)
     }
 }
 kperf.DevDataFree(deivceDataVo)
@@ -678,14 +680,23 @@ kperf.PmuClose(fd)
 
 执行上述代码，输出的结果类似如下：
 ```
-read bandwidth(0): 17.32 M/s
-read bandwidth(1): 5.43 M/s
-read bandwidth(2): 2.83 M/s
-read bandwidth(3): 4.09 M/s
-write bandwidth(0): 4.35 M/s
-write bandwidth(1): 2.29 M/s
-write bandwidth(2): 0.84 M/s
-write bandwidth(3): 0.97 M/s
+read bandwidth(Socket: 0 Numa: 0 Channel: 0): 6.08 M/s
+read bandwidth(Socket: 0 Numa: 0 Channel: 1): 5.66 M/s
+read bandwidth(Socket: 0 Numa: 0 Channel: 2): 6.23 M/s
+read bandwidth(Socket: 0 Numa: 0 Channel: 3): 5.30 M/s
+read bandwidth(Socket: 0 Numa: 1 Channel: 4): 4.21 M/s
+read bandwidth(Socket: 0 Numa: 1 Channel: 5): 4.06 M/s
+read bandwidth(Socket: 0 Numa: 1 Channel: 6): 3.99 M/s
+read bandwidth(Socket: 0 Numa: 1 Channel: 7): 3.89 M/s
+...
+write bandwidth(Socket: 1 Numa: 2 Channel: 1): 1.49 M/s
+write bandwidth(Socket: 1 Numa: 2 Channel: 2): 1.44 M/s
+write bandwidth(Socket: 1 Numa: 2 Channel: 3): 1.39 M/s
+write bandwidth(Socket: 1 Numa: 2 Channel: 4): 1.22 M/s
+write bandwidth(Socket: 1 Numa: 3 Channel: 4): 1.44 M/s
+write bandwidth(Socket: 1 Numa: 3 Channel: 5): 1.43 M/s
+write bandwidth(Socket: 1 Numa: 3 Channel: 6): 1.40 M/s
+write bandwidth(Socket: 1 Numa: 3 Channel: 7): 1.38 M/s
 ```
 
 ### 采集L3 cache的时延

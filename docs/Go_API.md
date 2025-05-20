@@ -370,14 +370,20 @@ func PmuGetDevMetric(dataVo PmuDataVo, deviceAttr []PmuDeviceAttr) (PmuDeviceDat
 * []PmuDeviceAttr: 指定需要聚合的指标参数
 * typ PmuDeviceDataVo struct:
   * GoDeviceData []PmuDeviceData
+* type DdrDataStructure struct {
+    ChannelId uint32             ddr数据的channel编号
+    DdrNumaId uint32             ddr数据的numa编号
+    SocketId uint32              ddr数据的socket编号
+  }
 * type PmuDeviceData struct:
   * Metric C.enum_PmuDeviceMetric 采集的指标
 	* Count float64                 指标的计数值
-	* Mode C.enum_PmuMetricMode     指标的采集类型，按core、按numa还是按bdf号
+	* Mode C.enum_PmuMetricMode     指标的采集类型，按core、按numa、按channel还是按bdf号
 	* CoreId uint32                 数据的core编号
 	* NumaId uint32                 数据的numa编号
 	* ClusterId uint32              簇ID
 	* Bdf string                    数据的bdf编号
+  * DdrDataStructure              ddr相关的统计数据
 
 ### kperf.DevDataFree 
 
