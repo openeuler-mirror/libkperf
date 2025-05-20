@@ -365,14 +365,19 @@ kperf.get_device_metric(pmu_data: PmuData, device_attr: List[PmuDeviceAttr]) 对
   * len: 数据长度
   * iter: 返回iterator[ImplPmuDeviceData]
   * free: 释放当前PmuDeviceData
+* class DdrDataStructure:
+  * channelId: ddr数据的channel编号
+  * ddrNumaId: ddr数据的numa编号
+  * socketId:  ddr数据的socket编号
 * class ImplPmuDeviceData:
   * metric: 采集的指标
   * count：指标的计数值
-  * mode: 指标的采集类型，按core、按numa还是按bdf号
+  * mode: 指标的采集类型，按core、按numa、按channel还是按bdf号
   * union：
     * coreId: 数据的core编号
     * numaId: 数据的numa编号
     * bdf: 数据的bdf编号
+    * DdrDataStructure: ddr相关的统计数据
 
 
 ### kperf.device_bdf_list
