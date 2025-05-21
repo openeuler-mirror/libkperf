@@ -90,7 +90,7 @@ int CpuFreqManager::InitCpuFreqSampling(unsigned period) {
         return -1;
     }
 
-    this->sleepPeriod = static_cast<double>(period) / 1000;
+    this->sleepPeriod = period * 1000;
     this->cpuFreqThread = std::thread([this]() {
         while (!isEnd) {
             if (!isEnable) {
@@ -109,7 +109,7 @@ int CpuFreqManager::InitCpuFreqSampling(unsigned period) {
                     this->freqListMap.insert({cpu, freqList});
                  }
             }
-            sleep(this->sleepPeriod);
+            usleep(this->sleepPeriod);
         }
     });
     hasInit = true;

@@ -25,7 +25,7 @@
 
 class CpuFreqManager {
 public:
-    CpuFreqManager(): isEnable(false), isEnd(false), sleepPeriod(0.1) {};
+    CpuFreqManager(): isEnable(false), isEnd(false), sleepPeriod(100) {};
     ~CpuFreqManager() {
         std::lock_guard<std::mutex> lock(initMutex);
         if(!hasInit) {
@@ -55,7 +55,7 @@ private:
     std::thread cpuFreqThread;
     volatile bool isEnable;
     volatile bool isEnd;
-    double sleepPeriod;
+    unsigned int sleepPeriod;
     std::map<int, std::vector<int64_t>> freqListMap;
 
     int CheckCpuFreqIsExist();
