@@ -14,6 +14,7 @@
  ******************************************************************************/
 #include <unordered_map>
 #include <queue>
+#include <mutex>
 #include "pcerrc.h"
 #include "pcerr.h"
 
@@ -64,6 +65,8 @@ namespace pcerr {
     static std::string warnMsg = "";
     static int errCode = SUCCESS;
     static std::string errMsg = "";
+    static std::mutex errMutex;
+    static std::mutex warnMutex;
 
     static std::string GetCustomMsg(int code) {
         std::string msg;
@@ -92,6 +95,7 @@ namespace pcerr {
 
     void New(int code, const std::string& msg)
     {
+        std::lock_guard<std::mutex> lock(errMutex);
         errCode = code;
         errMsg = msg;
     }
@@ -108,6 +112,7 @@ namespace pcerr {
 
     void SetWarn(int code, const std::string& msg)
     {
+        std::lock_guard<std::mutex> lock(warnMutex);
         warnCode = code;
         warnMsg = msg;
     }
