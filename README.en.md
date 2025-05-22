@@ -57,7 +57,7 @@ Minimum required GCC version:
 
 Minimum required Python version:
 
-- python-3.7.
+- python-3.6.
 
 To build a library with C API:
 
