@@ -5,7 +5,7 @@ kperf.open(collector_type: kperf.PmuTaskType, pmu_attr: kperf.PmuAttr)
 
 * class PmuTaskType
 
-  * COUTING          PMU计数模式
+  * COUNTING          PMU计数模式
   * SAMPLING         PMU采样模式
   * SPE_SAMPLING     SPE采样模式
 * class PmuAttr
@@ -51,7 +51,7 @@ kperf.open(collector_type: kperf.PmuTaskType, pmu_attr: kperf.PmuAttr)
     * SPE_EVENT_MISPREDICTED = 0x80  # mispredict
   * minLatency 仅收集该latency或者更高的样本数据
   * includeNewFork
-    是否支持子线程拆分，仅在COUTING模式中支持
+    是否支持子线程拆分，仅在COUNTING模式中支持
   * branchSampleFilter
     * KPERF_NO_BRANCH_SAMPLE         = 0     不采集branch sample stack数据
     * KPERF_SAMPLE_BRANCH_USER        = 1 << 0  分支目标位于用户空间
