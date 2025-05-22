@@ -61,7 +61,7 @@ static std::vector<int> GetCpuMask(const string &devName)
     char maskStr[1024];
     maskIn >> maskStr;
 
-    if (maskStr[0] == '0' || maskStr[0] == '-') {
+    if (maskStr[0] == '-') {
         return maskList;
     }
 
