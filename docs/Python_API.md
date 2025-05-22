@@ -5,7 +5,7 @@ kperf.open(collector_type: kperf.PmuTaskType, pmu_attr: kperf.PmuAttr)
 
 * class PmuTaskType
 
-  * COUTING          PMU计数模式
+  * COUNTING          PMU计数模式
   * SAMPLING         PMU采样模式
   * SPE_SAMPLING     SPE采样模式
 * class PmuAttr
@@ -51,7 +51,7 @@ kperf.open(collector_type: kperf.PmuTaskType, pmu_attr: kperf.PmuAttr)
     * SPE_EVENT_MISPREDICTED = 0x80  # mispredict
   * minLatency 仅收集该latency或者更高的样本数据
   * includeNewFork
-    是否支持子线程拆分，仅在COUTING模式中支持
+    是否支持子线程拆分，仅在COUNTING模式中支持
   * branchSampleFilter
     * KPERF_NO_BRANCH_SAMPLE         = 0     不采集branch sample stack数据
     * KPERF_SAMPLE_BRANCH_USER        = 1 << 0  分支目标位于用户空间
@@ -330,8 +330,8 @@ for func_name in kperf.sys_call_func_list():
 kperf.device_open(dev_attr: List[PmuDeviceAttr]) 初始化采集uncore事件指标的能力
 * class PmuDeviceAttr:
   * metic: 指定需要采集的指标
-    * PMU_DDR_READ_BW 采集每个numa的ddrc的读带宽，单位：Bytes
-    * PMU_DDR_WRITE_BW 采集每个numa的ddrc的写带宽，单位：Bytes
+    * PMU_DDR_READ_BW 采集每个channel的ddrc的读带宽，单位：Bytes
+    * PMU_DDR_WRITE_BW 采集每个channel的ddrc的写带宽，单位：Bytes
     * PMU_L3_TRAFFIC 采集每个core的L3的访问字节数，单位：Bytes
     * PMU_L3_MISS 采集每个core的L3的miss数量，单位：count
     * PMU_L3_REF 采集每个core的L3的总访问数量，单位：count

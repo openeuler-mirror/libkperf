@@ -41,7 +41,7 @@ func main() {
     attr := kperf.PmuAttr{EvtList:[]string{"cycles", "branch-misses"}}
     pd, err := kperf.PmuOpen(kperf.COUNT, attr)
 	if err != nil {
-		fmt.Printf("kperf pmuopen couting failed, expect err is nil, but is %v", err)
+		fmt.Printf("kperf pmuopen counting failed, expect err is nil, but is %v", err)
         return
 	}
 }
@@ -331,7 +331,7 @@ func main() {
     attr := kperf.PmuAttr{EvtList:evtList}
 	pd, err := kperf.PmuOpen(kperf.COUNT, attr)
 	if err != nil {
-		fmt.Printf("kperf pmuopen couting failed, expect err is nil, but is %v\n", err)
+		fmt.Printf("kperf pmuopen counting failed, expect err is nil, but is %v\n", err)
         return
 	}
 }

@@ -176,7 +176,7 @@ static int CheckCollectTypeConfig(enum PmuTaskType collectType, struct PmuAttr *
     }
 #ifdef IS_X86
     if (collectType != COUNTING && collectType != SAMPLING) {
-        New(LIBPERF_ERR_INVALID_TASK_TYPE, "The x86 architecture supports only the COUTING mode and SMAPLING mode");
+        New(LIBPERF_ERR_INVALID_TASK_TYPE, "The x86 architecture supports only the COUNTING mode and SMAPLING mode");
         return LIBPERF_ERR_INVALID_TASK_TYPE;
     }
 #endif

@@ -46,7 +46,7 @@ v1.0:
 - gcc-4.8.5 和 glibc-2.17
 
 最低依赖python版本：
-- python-3.7
+- python-3.6
 
 编译生成动态库和C的API：
 ```shell

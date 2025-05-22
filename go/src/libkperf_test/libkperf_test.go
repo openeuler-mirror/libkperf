@@ -22,7 +22,7 @@ func TestCount(t *testing.T) {
 	}
 
 	for _, o := range dataVo.GoData {
-		t.Logf("================================Get Couting data success================================")
+		t.Logf("================================Get Counting data success================================")
 		t.Logf("count base info comm=%v, evt=%v, pid=%v, tid=%v, coreId=%v, numaId=%v, sockedId=%v", o.Comm, o.Evt, o.Pid, o.Tid, o.CpuTopo.CoreId, o.CpuTopo.NumaId, o.CpuTopo.SocketId)
 		t.Logf("count info count=%v, countPercent=%v", o.Count, o.CountPercent)
 	}
