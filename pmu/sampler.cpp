@@ -31,7 +31,8 @@
 #include "process_map.h"
 #include "log.h"
 #include "sampler.h"
-#include "trace_pointer_parser.h"
+#include "pfm_event.h"
+#include "trace_point_parser.h"
 #include "common.h"
 
 using namespace std;
@@ -239,7 +240,9 @@ void KUNPENG_PMU::PerfSampler::RawSampleProcess(
     current->tid = static_cast<int>(sample->tid);
     current->period = static_cast<uint64_t>(sample->period);
     current->ts = static_cast<int64_t>(sample->time);
-    PointerPasser::ParserRawFormatData(current, sample, event, this->evt->name);
+    if (this->evt->pmuType == TRACE_TYPE) {
+        TraceParser::ParserRawFormatData(current, sample, event, this->evt->name);
+    }
     ParseBranchSampleData(current, sample, event, extPool);
 }
 
