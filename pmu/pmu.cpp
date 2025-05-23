@@ -27,7 +27,7 @@
 #include "pcerr.h"
 #include "safe_handler.h"
 #include "pmu_metric.h"
-#include "trace_pointer_parser.h"
+#include "trace_point_parser.h"
 #include "pmu.h"
 
 using namespace pcerr;
@@ -972,7 +972,7 @@ int PmuGetField(struct SampleRawData *rawData, const char *fieldName, void *valu
         New(LIBPERF_ERR_INVALID_FIELD_ARGS, "rawData cannot be nullptr.");
         return LIBPERF_ERR_INVALID_FIELD_ARGS;
     }
-    return PointerPasser::ParsePointer(rawData->data, fieldName, value, vSize);
+    return TraceParser::ParseTraceData(rawData->data, fieldName, value, vSize);
 #endif
 }
 
@@ -986,7 +986,7 @@ struct SampleRawField *PmuGetFieldExp(struct SampleRawData *rawData, const char 
         return nullptr;
     }
 
-    SampleRawField *rt = PointerPasser::GetSampleRawField(rawData->data, fieldName);
+    SampleRawField *rt = TraceParser::GetSampleRawField(rawData->data, fieldName);
     if (rt) {
         New(SUCCESS);
     }

@@ -12,8 +12,8 @@
  * Create: 2024-07-04
  * Description: Provides the capability of parsing pointer events.
  ******************************************************************************/
-#ifndef LIBKPERF_TRACE_POINTER_PARSER_H
-#define LIBKPERF_TRACE_POINTER_PARSER_H
+#ifndef LIBKPERF_TRACE_POINT_PARSER_H
+#define LIBKPERF_TRACE_POINT_PARSER_H
 
 #include <iostream>
 #include <memory>
@@ -46,7 +46,7 @@ namespace KUNPENG_PMU {
         }
     };
 
-    class PointerPasser {
+    class TraceParser {
     public:
         /**
          * @brief determine whether the event is a pointer event.
@@ -68,12 +68,12 @@ namespace KUNPENG_PMU {
         /**
          * @brief the method of parsing field.
          */
-        static int ParsePointer(char *data, const string &fieldName, void *value, uint32_t vSize);
+        static int ParseTraceData(char *data, const string &fieldName, void *value, uint32_t vSize);
 
         /**
          * @brief free the data.
          */
-        static void FreePointerData(char *data);
+        static void FreeTraceData(char *data);
 
         /**
          * @brief get the field named fieldName of this event.
@@ -89,4 +89,4 @@ namespace KUNPENG_PMU {
 }
 
 
-#endif //LIBKPERF_TRACE_POINTER_PARSER_H
+#endif //LIBKPERF_TRACE_POINT_PARSER_H

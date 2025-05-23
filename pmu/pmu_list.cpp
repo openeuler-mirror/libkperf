@@ -23,7 +23,7 @@
 #include "pcerr.h"
 #include "util_time.h"
 #include "log.h"
-#include "trace_pointer_parser.h"
+#include "trace_point_parser.h"
 #include "pmu_event_list.h"
 #include "pmu_list.h"
 #include "pfm_event.h"
@@ -457,7 +457,7 @@ namespace KUNPENG_PMU {
         EraseParentEventMap(pd);
         SymResolverDestroy();
         PmuEventListFree();
-        PointerPasser::FreeRawFieldMap();
+        TraceParser::FreeRawFieldMap();
     }
 
     int PmuList::NewPd()
@@ -757,7 +757,7 @@ namespace KUNPENG_PMU {
 
         for (auto pd: findData->second.data) {
             if (pd.rawData != nullptr) {
-                PointerPasser::FreePointerData(pd.rawData->data);
+                TraceParser::FreeTraceData(pd.rawData->data);
                 free(pd.rawData);
                 pd.rawData = nullptr;
             }
