@@ -418,7 +418,9 @@ namespace KUNPENG_PMU {
         }
         // For non-null target data list, append source list to end of target vector.
         auto& dataVec = findToData->second.data;
+        auto& ipsVec = findToData->second.sampleIps;
         dataVec.insert(dataVec.end(), findFromData->second.data.begin(), findFromData->second.data.end());
+        ipsVec.insert(ipsVec.end(), findFromData->second.sampleIps.begin(), findFromData->second.sampleIps.end());
         len = dataVec.size();
 
         if (*toData != dataVec.data()) {
@@ -625,9 +627,6 @@ namespace KUNPENG_PMU {
     void PmuList::FillStackInfo(EventData& eventData)
     {
         auto symMode = symModeList[eventData.pd];
-        if (symMode == NO_SYMBOL_RESOLVE) {
-            return;
-        }
         // Parse dwarf and elf info of each pid and get stack trace for each pmu data.
         for (size_t i = 0; i < eventData.data.size(); ++i) {
             auto& pmuData = eventData.data[i];
@@ -636,13 +635,42 @@ namespace KUNPENG_PMU {
                 SymResolverRecordModuleNoDwarf(pmuData.pid);
             } else if (symMode == RESOLVE_ELF_DWARF) {
                 SymResolverRecordModule(pmuData.pid);
+            } else if (symMode == NO_SYMBOL_RESOLVE) {
+                SymResolverRecordModule(pmuData.pid);
+                continue;
             } else {
                 continue;
             }
+
             if (pmuData.stack == nullptr) {
                 pmuData.stack = StackToHash(pmuData.pid, ipsData.ips.data(), ipsData.ips.size());
             }
         }
+    }
+
+    int PmuList::ResolvePmuDataSymbol(struct PmuData* iPmuData) 
+    {
+        if (iPmuData == nullptr) {
+            New(LIBPERF_ERR_INVALID_PMU_DATA, "ipmuData is nullptr");
+            return LIBPERF_ERR_INVALID_PMU_DATA;
+        }
+        auto userData = userDataList.find(iPmuData);
+        if (userData == userDataList.end()) {
+            New(LIBPERF_ERR_PMU_DATA_NO_FOUND, "ipmuData isn't in userDataList");
+            return LIBPERF_ERR_PMU_DATA_NO_FOUND;
+        }
+
+        auto& eventData = userDataList[iPmuData];
+        auto symMode = symModeList[eventData.pd];
+        for (size_t i = 0; i < eventData.data.size(); ++i) {
+            auto& pmuData = eventData.data[i];
+            auto& ipsData = eventData.sampleIps[i];
+            if (pmuData.stack == nullptr) {
+                pmuData.stack = StackToHash(pmuData.pid, ipsData.ips.data(), ipsData.ips.size());
+            }
+        }
+        New(SUCCESS);
+        return SUCCESS;
     }
 
     void PmuList::AggregateData(const std::vector<PmuData>& evData, std::vector<PmuData>& newEvData)
@@ -1025,9 +1053,6 @@ namespace KUNPENG_PMU {
     int PmuList::InitSymbolRecordModule(const unsigned pd, PmuTaskAttr* taskParam)
     {
         SymbolMode symMode = GetSymbolMode(pd);
-        if (symMode == NO_SYMBOL_RESOLVE) {
-            return SUCCESS;
-        }
 
         if (taskParam->pmuEvt->collectType == COUNTING) {
             return SUCCESS;
@@ -1053,7 +1078,7 @@ namespace KUNPENG_PMU {
             }
         }
 
-        if (this->symModeList[pd] == RESOLVE_ELF_DWARF) {
+        if (this->symModeList[pd] == RESOLVE_ELF_DWARF || this->symModeList[pd] == NO_SYMBOL_RESOLVE) {
             for (const auto& pid: pidList) {
                 int rt = SymResolverRecordModule(pid);
                 if (rt != SUCCESS) {
