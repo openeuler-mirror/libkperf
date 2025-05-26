@@ -334,7 +334,7 @@ func main() {
 func PmuDeviceOpen(attr []PmuDeviceAttr) (int, error) 初始化采集uncore事件指标的能力
 
 * type PmuDeviceAttr struct:
-  * Metic: 指定需要采集的指标
+  * Metric: 指定需要采集的指标
     * PMU_DDR_READ_BW 采集每个numa的ddrc的读带宽，单位：Bytes
     * PMU_DDR_WRITE_BW 采集每个numa的ddrc的写带宽，单位：Bytes
     * PMU_L3_TRAFFIC 采集每个core的L3的访问字节数，单位：Bytes
