@@ -97,10 +97,10 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
             }
             if (err != SUCCESS) {
                 hasHappenedErr = true;
-                // The SPE and SAMPLING modes are not changed.
                 if (!perfEvt->IsMainPid()) {
                     continue;
                 }
+
                 if (err == LIBPERF_ERR_INVALID_EVENT) {
                     if (branchSampleFilter != KPERF_NO_BRANCH_SAMPLE) {
                         pcerr::SetCustomErr(err, "Invalid event:" + perfEvt->GetEvtName() + ", PMU Hardware or event type doesn't support branch stack sampling");
@@ -108,6 +108,11 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
                         pcerr::SetCustomErr(err, "Invalid event:" + perfEvt->GetEvtName() + ", " + std::string{strerror(errno)});
                     }
                 }
+
+                if (err == UNKNOWN_ERROR) {
+                    pcerr::SetCustomErr(err, std::string{strerror(errno)});
+                }
+
                 return err;
             }
             fdList.insert(perfEvt->GetFd());
