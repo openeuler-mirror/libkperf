@@ -413,7 +413,7 @@ namespace KUNPENG_PMU {
         }
 
         auto findToData = userDataList.find(*toData);
-        if (findFromData == userDataList.end()) {
+        if (findToData == userDataList.end()) {
             return LIBPERF_ERR_INVALID_PMU_DATA;
         }
         // For non-null target data list, append source list to end of target vector.

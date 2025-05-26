@@ -1565,7 +1565,7 @@ int64_t PmuGetCpuFreq(unsigned core)
     cpuPath << SYS_CPU_INFO_PATH << core << "/cpufreq/scaling_cur_freq";
 
     if (!ExistPath(cpuPath.str())) {
-        New(LIBPERF_ERR_CPUFREQ_NOT_CONFIG, "Kernel not config cpuFreq Or core exceed cpuNums. Not exist " + cpuPath.str());
+        New(LIBPERF_ERR_CPUFREQ_NOT_CONFIG, "Kernel not config cpuFreq or core exceed cpuNums. Not exist " + cpuPath.str());
         return -1;
     }
     std::string curFreqStr = ReadFileContent(cpuPath.str());
