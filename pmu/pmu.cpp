@@ -769,6 +769,11 @@ int PmuRead(int pd, struct PmuData** pmuData)
     }
 }
 
+int ResolvePmuDataSymbol(struct PmuData* pmuData)
+{
+    return PmuList::GetInstance()->ResolvePmuDataSymbol(pmuData);
+}
+
 void PmuClose(int pd)
 {
     SetWarn(SUCCESS);

@@ -76,6 +76,7 @@ public:
     void StoreSplitData(unsigned pd, std::pair<unsigned, char**>& previousEventList,
                         std::unordered_map<std::string, char*>& eventSplitMap);
     bool IsAllPidExit(const unsigned pd);
+    int ResolvePmuDataSymbol(struct PmuData* iPmuData);
 
 private:
     using ProcPtr = std::shared_ptr<ProcTopology>;

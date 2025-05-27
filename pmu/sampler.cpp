@@ -217,21 +217,19 @@ void KUNPENG_PMU::PerfSampler::RawSampleProcess(
         return;
     }
     KUNPENG_PMU::PerfRawSample *sample = (KUNPENG_PMU::PerfRawSample *)event->sample.array;
-    if (symMode != NO_SYMBOL_RESOLVE) {
-        // Copy ips from ring buffer and get stack info later.
-        if (evt->callStack == 0) {
-            int i = 0;
-            while (i < sample->nr && !IsValidIp(sample->ips[i])) {
-                i++;
-            }
-            if (i < sample->nr) {
+    // Copy ips from ring buffer and get stack info later.
+    if (evt->callStack == 0) {
+        int i = 0;
+        while (i < sample->nr && !IsValidIp(sample->ips[i])) {
+            i++;
+        }
+        if (i < sample->nr) {
+            ips->ips.push_back(sample->ips[i]);
+        }
+    } else {
+        for (int i = sample->nr - 1; i >= 0; --i) {
+            if (IsValidIp(sample->ips[i])) {
                 ips->ips.push_back(sample->ips[i]);
-            }
-        } else {
-            for (int i = sample->nr - 1; i >= 0; --i) {
-                if (IsValidIp(sample->ips[i])) {
-                    ips->ips.push_back(sample->ips[i]);
-                }
             }
         }
     }

@@ -353,6 +353,14 @@ void PmuStop(int pd);
 int PmuRead(int pd, struct PmuData** pmuData);
 
 /**
+* @brief 
+* When symbol mode is SNO_SYMBOL_RESOLVE, you can use this resolve PmuData Symbol after PmuRead function
+* @param pmuData the data from PmuRead
+* @return 0 indicates resolve success, otherwise return error code
+*/
+int ResolvePmuDataSymbol(struct PmuData* pmuData);
+
+/**
  * @brief
  * Append data list <fromData> to another data list <*toData>.
  * The pointer of data list <*toData> will be refreshed after this function is called.
