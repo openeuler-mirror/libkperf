@@ -291,6 +291,8 @@ namespace KUNPENG_PMU {
         METRIC_CONFIG::SMMU_TRAN,
     };
 
+    static const map<CHIP_TYPE, double> L3_CLOCK_NS {{CHIP_TYPE::HIPB, 0.3448275862}};
+
     const UNCORE_METRIC_MAP UNCORE_METRIC_CONFIG_MAP = {
         {CHIP_TYPE::HIPA, HIP_A_UNCORE_METRIC_MAP},
         {CHIP_TYPE::HIPB, HIP_B_UNCORE_METRIC_MAP},
@@ -931,6 +933,17 @@ namespace KUNPENG_PMU {
         return 64 * rawCount;
     }
 
+    static uint64_t L3Lat(const uint64_t rawCount)
+    {
+        const CHIP_TYPE chipType = GetCpuType();
+        auto iter = L3_CLOCK_NS.find(chipType);
+        uint64_t count = rawCount;
+        if (iter != L3_CLOCK_NS.end()) {
+            count = rawCount * iter->second;
+        }
+        return count;
+    }
+
     static PmuMetricMode GetMetricMode(const PmuDeviceMetric &metric)
     {
         switch(metric) {
@@ -1144,7 +1157,8 @@ namespace KUNPENG_PMU {
 
     map<PmuDeviceMetric, ComputeMetricCb> computeMetricMap = {{PMU_DDR_READ_BW, DDRBw},
                                                                 {PMU_DDR_WRITE_BW, DDRBw},
-                                                                {PMU_L3_TRAFFIC, L3Bw}};
+                                                                {PMU_L3_TRAFFIC, L3Bw},
+                                                                {PMU_L3_LAT, L3Lat}};
     map<PmuDeviceMetric, AggregateMetricCb> aggregateMap = {
         {PMU_DDR_READ_BW, AggregateByNuma},
         {PMU_DDR_WRITE_BW, AggregateByNuma},
