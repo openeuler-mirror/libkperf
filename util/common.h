@@ -18,6 +18,7 @@
 #include <linux/perf_event.h>
 #include <string>
 #include <vector>
+#include <cstdint>
 
 #ifdef __x86_64__
 #define IS_X86 1
