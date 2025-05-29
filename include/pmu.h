@@ -354,7 +354,7 @@ int PmuRead(int pd, struct PmuData** pmuData);
 
 /**
 * @brief 
-* When symbol mode is SNO_SYMBOL_RESOLVE, you can use this resolve PmuData Symbol after PmuRead function
+* When symbol mode is NO_SYMBOL_RESOLVE, you can use this resolve PmuData Symbol after PmuRead function
 * @param pmuData the data from PmuRead
 * @return 0 indicates resolve success, otherwise return error code
 */
