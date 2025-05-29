@@ -426,7 +426,7 @@ enum PmuDeviceMetric {
     PMU_L3_REF,
     // Percluster metric.
     // Collect L3 total latency for each cluster node.
-    // Unit: cycles
+    // Unit: ns 
     PMU_L3_LAT,
     // Collect pcie rx bandwidth.
     // Perpcie metric.
