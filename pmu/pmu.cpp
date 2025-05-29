@@ -830,6 +830,24 @@ static void PrepareCpuList(PmuAttr *attr, PmuTaskAttr *taskParam, PmuEvt* pmuEvt
     }
 }
 
+static bool PerfEventSupported(__u64 type, __u64 config)
+{
+    perf_event_attr attr{};
+    memset(&attr, 0, sizeof(attr));
+    attr.size = sizeof(struct perf_event_attr);
+    attr.type = type;
+    attr.config = config;
+    attr.disabled = 1;
+    attr.inherit = 1;
+    attr.read_format = PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING | PERF_FORMAT_ID;
+    int fd = KUNPENG_PMU::PerfEventOpen(&attr, -1, 0, -1, 0);
+    if (fd < 0) {
+        return false;
+    }
+    close(fd);
+    return true;
+}
+
 static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *attr, const char* evtName, const int group_id)
 {
     unique_ptr<PmuTaskAttr, void (*)(PmuTaskAttr*)> taskParam(CreateNode<struct PmuTaskAttr>(), PmuTaskAttrFree);
@@ -851,11 +869,26 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
     } else {
         pmuEvt = GetPmuEvent(evtName, collectType);
         if (pmuEvt == nullptr) {
+            if (Perrorno() != SUCCESS) {
+                return nullptr;
+            }
 #ifdef IS_X86
             New(LIBPERF_ERR_INVALID_EVENT, "Invalid event: " + string(evtName) + ";x86 just supports core event and raw event");
 #else
             New(LIBPERF_ERR_INVALID_EVENT, "Invalid event: " + string(evtName));
 #endif
+            return nullptr;
+        }
+
+        if (!PerfEventSupported(pmuEvt->type, pmuEvt->config)) {
+            int err = MapErrno(errno);
+            if (err == LIBPERF_ERR_NO_PERMISSION) {
+                New(LIBPERF_ERR_NO_PERMISSION, "Current user does not have the permission to collect the event.Swtich to the root user and run the 'echo -1 > /proc/sys/kernel/perf_event_paranoid'");
+            } else if(err == UNKNOWN_ERROR) {
+                New(UNKNOWN_ERROR, std::string{strerror(errno)});
+            } else {
+                New(err);
+            }
             return nullptr;
         }
     }

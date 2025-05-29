@@ -101,24 +101,6 @@ static void GetTraceSubFolder(const std::string& traceFolder, const string& devN
     closedir(dir);
 }
 
-static bool PerfEventSupported(__u64 type, __u64 config)
-{
-    perf_event_attr attr{};
-    memset(&attr, 0, sizeof(attr));
-    attr.size = sizeof(struct perf_event_attr);
-    attr.type = type;
-    attr.config = config;
-    attr.disabled = 1;
-    attr.inherit = 1;
-    attr.read_format = PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING | PERF_FORMAT_ID;
-    int fd = KUNPENG_PMU::PerfEventOpen(&attr, -1, 0, -1, 0);
-    if (fd < 0) {
-        return false;
-    }
-    close(fd);
-    return true;
-}
-
 const char** QueryCoreEvent(unsigned *numEvt)
 {
     if (!coreEventList.empty()) {
@@ -128,9 +110,6 @@ const char** QueryCoreEvent(unsigned *numEvt)
     auto coreEventMap = KUNPENG_PMU::CORE_EVENT_MAP.at(GetCpuType());
     for (auto& pair : coreEventMap) {
         auto eventName = pair.first;
-        if (!PerfEventSupported(pair.second.type, pair.second.config)) {
-            continue;
-        }
         char* eventNameCopy = new char[eventName.length() + 1];
         strcpy(eventNameCopy, eventName.c_str());
         coreEventList.emplace_back(eventNameCopy);
@@ -203,6 +182,11 @@ const char** QueryTraceEvent(unsigned *numEvt)
     struct dirent *entry;
     const string &traceFolder = GetTraceEventDir();
     if (traceFolder.empty()) {
+        if (errno == EACCES) {
+            New(LIBPERF_ERR_NO_PERMISSION, "no permission to access '/sys/kernel/tracing/events/' or '/sys/kernel/debug/tracing/events/'");
+        } else {
+            New(LIBPERF_ERR_INVALID_EVENT, "can't find '/sys/kernel/tracing/events/' or '/sys/kernel/debug/tracing/events/'");
+        }
         return traceEventList.data();
     }
     DIR *dir = opendir(traceFolder.c_str());
@@ -282,7 +266,6 @@ const char** PmuEventList(enum PmuEventType eventType, unsigned *numEvt)
         New(LIBPERF_ERR_QUERY_EVENT_LIST_FAILED, "Query event failed.");
         return nullptr;
     }
-    New(SUCCESS);
     return eventList;
 }
 
