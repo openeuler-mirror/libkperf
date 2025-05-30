@@ -728,6 +728,31 @@ func PmuDumpData(dataVo PmuDataVo, filePath string, dumpDwf bool) error {
 	}
 	return nil
 }
+ 
+// When symbol mode is SNO_SYMBOL_RESOLVE, you can use this resolve PmuData Symbol after PmuRead function
+// param PmuDataVo the data from PmuRead
+// return nil indicates resolve success, otherwise return error code
+func ResolvePmuDataSymbol(dataVo PmuDataVo) error {
+	err := C.ResolvePmuDataSymbol(dataVo.cData)
+	if int(err) != 0 {
+		return errors.New(C.GoString(C.Perror()))
+	}
+	dataLen := len(dataVo.GoData)
+	ptr := unsafe.Pointer(dataVo.cData)
+	slice := reflect.SliceHeader {
+		Data: uintptr(ptr),
+		Len: dataLen,
+		Cap: dataLen,
+	}
+	cPmuDatas := *(*[]C.struct_PmuData)(unsafe.Pointer(&slice))
+	for i := 0; i < dataLen; i++ {
+		dataObj := cPmuDatas[i]
+		if dataObj.stack != nil {
+			dataVo.GoData[i].appendSymbols(dataObj)
+		}
+	}
+	return nil
+}
 
 // Initialize the trace collection target
 // On success, a trace collect task id is returned which is the unique identity for the task
