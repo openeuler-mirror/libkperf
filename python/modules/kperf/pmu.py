@@ -383,6 +383,14 @@ def read(pd: int) -> PmuData:
     """
     return _libkperf.PmuRead(pd)
 
+def resolvePmuDataSymbol(pmuData: PmuData) -> PmuData:
+    """
+    when kperf symbol mode is NO_SYMBOL_RESOLVE during PmuRead(), this function can be used to resolve stack symbols
+    :param: pmuData
+    :return: pmu data
+    """
+    return _libkperf.ResolvePmuDataSymbol(pmuData.pointer())
+
 
 def stop(pd: int) -> None:
     """
@@ -588,4 +596,5 @@ __all__ = [
     'open_cpu_freq_sampling',
     'close_cpu_freq_sampling',
     'read_cpu_freq_detail',
+    'resolvePmuDataSymbol'
 ]
