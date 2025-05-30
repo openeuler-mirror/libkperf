@@ -1619,6 +1619,15 @@ def PmuRead(pd: int) -> PmuData:
     c_data_len = c_PmuRead(c_pd, ctypes.byref(c_data_pointer))
     return PmuData(c_data_pointer, c_data_len)
 
+def ResolvePmuDataSymbol(pmuData: ctypes.POINTER(CtypesPmuData)) -> int:
+    """
+    int ResolvePmuDataSymbol(struct PmuData* pmuData);
+    """
+    c_ResolvePmuDataSymbol = kperf_so.ResolvePmuDataSymbol
+    c_ResolvePmuDataSymbol.argtypes = [ctypes.POINTER(CtypesPmuData)]
+    c_ResolvePmuDataSymbol.restype = ctypes.c_int
+
+    return c_ResolvePmuDataSymbol(pmuData)
 
 def PmuAppendData(fromData: ctypes.POINTER(CtypesPmuData),
                   toData: ctypes.POINTER(ctypes.POINTER(CtypesPmuData))) -> int:
@@ -2086,4 +2095,5 @@ __all__ = [
     'PmuReadCpuFreqDetail',
     'PmuCloseCpuFreqSampling',
     'PmuCpuFreqDetail',
+    'ResolvePmuDataSymbol'
 ]
