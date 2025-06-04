@@ -38,6 +38,7 @@
 
 using namespace std;
 using namespace pcerr;
+using IdxMap = unordered_map<int, map<int, int>>;
 
 static unsigned maxCpuNum = 0;
 static vector<unsigned> coreArray;
@@ -1071,10 +1072,33 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    static unordered_map<int, vector<int>> DDRC_CHANNEL_MAP = {
-        {CHIP_TYPE::HIPA, {0, 1, 2, 3}},
-        {CHIP_TYPE::HIPB, {0, 2, 3, 5}}
+    static IdxMap DDRC_CHANNEL_MAP_HIPA = {
+        {1, {{0, 0}, {1, 1}, {2, 2}, {3, 3}}},
+        {3, {{0, 4}, {1, 5}, {2, 6}, {3, 7}}},
+        {5, {{0, 0}, {1, 1}, {2, 2}, {3, 3}}},
+        {7, {{0, 4}, {1, 5}, {2, 6}, {3, 7}}},
     };
+    static IdxMap DDRC_CHANNEL_MAP_HIPB = {
+        {3, {{0, 0}, {2, 1}, {3, 2}, {5, 3}}},
+        {1, {{0, 4}, {2, 5}, {3, 6}, {5, 7}}},
+        {11, {{0, 0}, {2, 1}, {3, 2}, {5, 3}}},
+        {9, {{0, 4}, {2, 5}, {3, 6}, {5, 7}}},
+    };
+
+    static unordered_map<int, IdxMap> DDRC_CHANNEL_MAP = {
+        {HIPA, DDRC_CHANNEL_MAP_HIPA},
+        {HIPB, DDRC_CHANNEL_MAP_HIPB},
+    };
+
+    static int ParseDDRIdx(const string &devName, const string prefix)
+    {
+        size_t ddrcPos = devName.find(prefix);
+        size_t channelIndex = ddrcPos + prefix.length();
+        string ddrcIndexStr = devName.substr(channelIndex);
+        size_t separatorPos = ddrcIndexStr.find("_");
+        int ddrcIndex = separatorPos != string::npos ? stoi(ddrcIndexStr.substr(0, separatorPos)) : stoi(ddrcIndexStr);
+        return ddrcIndex;
+    }
 
     static bool getChannelId(const char *evt, const unsigned ddrNumaId, unsigned &channelId)
     {
@@ -1084,28 +1108,22 @@ namespace KUNPENG_PMU {
             return false;
         }
         // ddrc channel index. eg: hisi_sccl3_ddrc3_1 --> 3_1
-        string ddrcStr = "ddrc";
-        size_t ddrcPos = devName.find(ddrcStr);
-        size_t channelIndex = ddrcPos + ddrcStr.length();
-        string ddrcIndexStr = devName.substr(channelIndex);
-        // find index in DDRC_CHANNEL_MAP. eg: 3_1 --> 3, corresponds to channel 2 in HIPB
-        size_t separatorPos = ddrcIndexStr.find("_");
-        int ddrcIndex = separatorPos != string::npos ? stoi(ddrcIndexStr.substr(0, separatorPos)) : stoi(ddrcIndexStr);
+        int ddrcIndex = ParseDDRIdx(devName, "ddrc");
+        int scclIndex = ParseDDRIdx(devName, "sccl");
 
-        unsigned channelAddNum = 0;
-        if((ddrNumaId & 1) == 1) {  // channel id + 4 in sequence
-            channelAddNum = 4;
-        }
         CHIP_TYPE chipType = GetCpuType();  //get channel index
         if (DDRC_CHANNEL_MAP.find(chipType) == DDRC_CHANNEL_MAP.end()) {
             return false;
         }
-        auto ddrcChannelList = DDRC_CHANNEL_MAP[chipType];
-        auto it = find(ddrcChannelList.begin(), ddrcChannelList.end(), ddrcIndex);
-        if (it != ddrcChannelList.end()) {
-            size_t index = distance(ddrcChannelList.begin(), it);
-            channelId = index + channelAddNum;
-            return true;
+
+        auto &ddrcChannelList = DDRC_CHANNEL_MAP[chipType];
+        auto ddrIdxMap = ddrcChannelList.find(scclIndex);
+        if (ddrIdxMap != ddrcChannelList.end()) {
+            auto channelIdx = ddrIdxMap->second.find(ddrcIndex);
+            if (channelIdx != ddrIdxMap->second.end()) {
+                channelId = channelIdx->second;
+                return true;
+            }
         }
         return false;
     }
@@ -1136,7 +1154,7 @@ namespace KUNPENG_PMU {
                 outData.mode = GetMetricMode(data.metric);
                 outData.channelId = channelId;
                 outData.ddrNumaId = data.ddrNumaId;
-                outData.socketId = data.ddrNumaId < 2 ? 0 : 1;  // numa id 0-1 --> socket id 0; numa id 2-3 --> socket id 1
+                outData.socketId = data.socketId;
                 devDataByChannel[ddrDatakey] = outData;
             } else {
                 findData->second.count += data.count;
