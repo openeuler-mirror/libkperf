@@ -438,7 +438,8 @@ func main() {
 ```
 
 
-### kperf.PmuGetCpuFreq 
+### kperf.PmuGetCpuFreq
+
 func PmuGetCpuFreq(core	uint) (int64, error) 查询当前系统指定core的实时CPU频率
 
 * core cpu coreId
@@ -456,5 +457,81 @@ func main() {
     return
 	}
 	fmt.Printf("coreId %v freq is %v\n", coreId, freq)
+}
+```
+
+### kperf.PmuOpenCpuFreqSampling
+
+func PmuOpenCpuFreqSampling(period uint) (error) 开启cpu频率采集
+
+### kperf.PmuCloseCpuFreqSampling
+
+func PmuCloseCpuFreqSampling() 关闭cpu频率采集
+
+### kperf.PmuReadCpuFreqDetail
+
+func PmuReadCpuFreqDetail() ([]PmuCpuFreqDetail) 读取开启频率采集到读取时间内的cpu最大频率、最小频率以及平均频率
+```go
+import "libkperf/kperf"
+import "fmt"
+
+func main() {
+    err := kperf.PmuOpenCpuFreqSampling(100)
+    if err != nil {
+		  fmt.Printf("kperf PmuOpenCpuFreqSampling failed, expect err is nil, but is %v", err)
+	  }
+
+    freqList := kperf.PmuReadCpuFreqDetail()
+  	for _, v := range freqList {
+	  	fmt.Printf("cpuId=%v, minFreq=%d, maxFreq=%d, avgFreq=%d", v.CpuId, v.MinFreq, v.MaxFreq, v.AvgFreq)
+	  }
+
+	  kperf.PmuCloseCpuFreqSampling()
+}
+```
+
+### kperf.ResolvePmuDataSymbol
+
+func ResolvePmuDataSymbol(dataVo PmuDataVo) error 当SymbolMode不设置或者设置为0时，可通过该接口解析PmuRead返回的PmuData数据中的符号
+```go
+import "libkperf/kperf"
+import "fmt"
+
+func main() {
+    attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, CallStack:true, SampleRate: 1000, UseFreq:true}
+    fd, err := kperf.PmuOpen(kperf.SAMPLE, attr)
+    if err != nil {
+      fmt.Printf("kperf pmuopen sample failed, expect err is nil, but is %v", err)
+      return
+    }
+
+    kperf.PmuEnable(fd)
+    time.Sleep(time.Second)
+    kperf.PmuDisable(fd)
+
+    dataVo, err := kperf.PmuRead(fd)
+    if err != nil {
+      fmt.Printf("kperf pmuread failed, expect err is nil, but is %v", err)
+      return
+    }
+
+    for _, o := range dataVo.GoData {
+      if len(o.Symbols) != 0 {
+        fmt.Printf("expect symbol data is empty, but is not")
+      }
+    }
+
+    parseErr := kperf.ResolvePmuDataSymbol(dataVo)
+    if parseErr != nil {
+      fmt.Printf("kperf ResolvePmuDataSymbol failed, expect err is nil, but is %v", parseErr)
+    }
+
+    for _, o := range dataVo.GoData {
+      if len(o.Symbols) == 0 {
+        fmt.Printf("expect symbol data is not empty, but is empty")
+      }
+    }
+    kperf.PmuDataFree(dataVo)
+    kperf.PmuClose(fd)
 }
 ```

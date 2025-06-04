@@ -429,3 +429,54 @@ kperf.get_numa_core(numaId: int): 查询指定numaId下对应的core列表
     numaId = 1
     numa_cores = kperf.get_numa_core(numaId)
 ```
+
+### kperf.open_cpu_freq_sampling
+
+def open_cpu_freq_sampling(period: int) 开启cpu频率采集
+
+### kperf.close_cpu_freq_sampling
+
+def close_cpu_freq_sampling() 关闭cpu频率采集
+
+### kperf.read_cpu_freq_detail
+
+def read_cpu_freq_detail() -> CpuFreqDetail 读取开启频率采集到读取时间内的cpu最大频率、最小频率以及平均频率
+```python
+#python代码示例
+err = kperf.open_cpu_freq_sampling(100)
+if err != 0:
+   print(f"error number: {kperf.errorno()} error message: {kperf.error()}")
+   exit(1)
+dataList = kperf.read_cpu_freq_detail()
+for item in dataList.iter:
+   print(f"cpuId={item.cpuId} minFreq={item.minFreq} maxFreq={item.maxFreq} avgFreq={item.avgFreq}")
+
+kperf.close_cpu_freq_sampling()
+```
+
+### kperf.resolvePmuDataSymbol
+
+def resolvePmuDataSymbol(pmuData: PmuData) -> int: 当SymbolMode不设置或者设置为0时，可通过该接口解析read返回的PmuData数据中的符号
+```python
+#python代码示例
+event_name = "cycles"
+pmu_attr = kperf.PmuAttr(
+          evtList=[event_name],
+          sampleRate=1000,
+          callStack=True,
+          useFreq=True,
+)
+fd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
+if fd == -1:
+  print(f"error number: {kperf.errorno()} error message: {kperf.error()}")
+  exit(1)
+kperf.enable(fd)
+time.sleep(1)
+kperf.disable(fd)
+pmu_data = kperf.read(fd)
+err = kperf.resolvePmuDataSymbol(pmu_data)
+if err != 0:
+  print(f"error number: {kperf.errorno()} error message: {kperf.error()}")
+  exit(1)
+kperf.close(fd)
+```
