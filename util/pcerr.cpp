@@ -14,6 +14,7 @@
  ******************************************************************************/
 #include <unordered_map>
 #include <queue>
+#include <mutex>
 #include "pcerrc.h"
 #include "pcerr.h"
 
@@ -53,6 +54,7 @@ namespace pcerr {
             {LIBPERF_ERR_BRANCH_JUST_SUPPORT_SAMPLING, "branch filter just support sampling mode"},
             {LIBPERF_ERR_RESET_FD, "failed to reset fd output"},
             {LIBPERF_ERR_SET_FD_RDONLY_NONBLOCK, "failed to set fd readonly and nonbolock"},
+            {LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86, "the current interface does not support x86"},
     };
     static std::unordered_map<int, std::string> warnMsgs = {
             {LIBPERF_WARN_CTXID_LOST, "Some SPE context packets are not found in the traces."},
@@ -63,6 +65,8 @@ namespace pcerr {
     static std::string warnMsg = "";
     static int errCode = SUCCESS;
     static std::string errMsg = "";
+    static std::mutex errMutex;
+    static std::mutex warnMutex;
 
     static std::string GetCustomMsg(int code) {
         std::string msg;
@@ -91,6 +95,7 @@ namespace pcerr {
 
     void New(int code, const std::string& msg)
     {
+        std::lock_guard<std::mutex> lock(errMutex);
         errCode = code;
         errMsg = msg;
     }
@@ -107,6 +112,7 @@ namespace pcerr {
 
     void SetWarn(int code, const std::string& msg)
     {
+        std::lock_guard<std::mutex> lock(warnMutex);
         warnCode = code;
         warnMsg = msg;
     }

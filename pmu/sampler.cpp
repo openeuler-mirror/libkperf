@@ -31,7 +31,8 @@
 #include "process_map.h"
 #include "log.h"
 #include "sampler.h"
-#include "trace_pointer_parser.h"
+#include "pfm_event.h"
+#include "trace_point_parser.h"
 #include "common.h"
 
 using namespace std;
@@ -55,7 +56,13 @@ int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupEnable, const int grou
     attr.read_format = PERF_FORMAT_ID;
     attr.exclude_kernel = this->evt->excludeKernel;
     attr.exclude_user = this->evt->excludeUser;
+#ifdef IS_X86
+    if (this->pid == -1) {
+        attr.pinned = 0;
+    }
+#else
     attr.pinned = 1;
+#endif
     attr.disabled = 1;
     attr.inherit = 1;
     attr.mmap = 1;
@@ -210,21 +217,19 @@ void KUNPENG_PMU::PerfSampler::RawSampleProcess(
         return;
     }
     KUNPENG_PMU::PerfRawSample *sample = (KUNPENG_PMU::PerfRawSample *)event->sample.array;
-    if (symMode != NO_SYMBOL_RESOLVE) {
-        // Copy ips from ring buffer and get stack info later.
-        if (evt->callStack == 0) {
-            int i = 0;
-            while (i < sample->nr && !IsValidIp(sample->ips[i])) {
-                i++;
-            }
-            if (i < sample->nr) {
+    // Copy ips from ring buffer and get stack info later.
+    if (evt->callStack == 0) {
+        int i = 0;
+        while (i < sample->nr && !IsValidIp(sample->ips[i])) {
+            i++;
+        }
+        if (i < sample->nr) {
+            ips->ips.push_back(sample->ips[i]);
+        }
+    } else {
+        for (int i = sample->nr - 1; i >= 0; --i) {
+            if (IsValidIp(sample->ips[i])) {
                 ips->ips.push_back(sample->ips[i]);
-            }
-        } else {
-            for (int i = sample->nr - 1; i >= 0; --i) {
-                if (IsValidIp(sample->ips[i])) {
-                    ips->ips.push_back(sample->ips[i]);
-                }
             }
         }
     }
@@ -233,7 +238,9 @@ void KUNPENG_PMU::PerfSampler::RawSampleProcess(
     current->tid = static_cast<int>(sample->tid);
     current->period = static_cast<uint64_t>(sample->period);
     current->ts = static_cast<int64_t>(sample->time);
-    PointerPasser::ParserRawFormatData(current, sample, event, this->evt->name);
+    if (this->evt->pmuType == TRACE_TYPE) {
+        TraceParser::ParserRawFormatData(current, sample, event, this->evt->name);
+    }
     ParseBranchSampleData(current, sample, event, extPool);
 }
 

@@ -29,6 +29,11 @@ static vector<const char*> SysCallFuncList;
 
 const char** PmuSysCallFuncList(unsigned *numFuncs)
 {
+#ifdef IS_X86
+    New(LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86);
+    *numFuncs = 0;
+    return nullptr;
+#else 
     lock_guard<mutex> lg(SysCallListMtx);
     SetWarn(SUCCESS);
     try {
@@ -57,6 +62,7 @@ const char** PmuSysCallFuncList(unsigned *numFuncs)
     New(SUCCESS);
     *numFuncs = SysCallFuncList.size();
     return SysCallFuncList.data();
+#endif
 }
 
 void PmuSysCallFuncListFree()
@@ -172,6 +178,10 @@ static char **GeneratePmuAttrEvtList(const char **sysCallFuncs, const unsigned n
 
 int PmuTraceOpen(enum PmuTraceType traceType, struct PmuTraceAttr *traceAttr)
 {
+#ifdef IS_X86
+    New(LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86);
+    return -1;
+#else 
     SetWarn(SUCCESS);
     auto err = CheckTraceAttr(traceType, traceAttr);
     if (err != SUCCESS) {
@@ -199,6 +209,7 @@ int PmuTraceOpen(enum PmuTraceType traceType, struct PmuTraceAttr *traceAttr)
     }
 
     return pd;
+#endif
 }
 
 int PmuTraceEnable(int pd)
@@ -213,6 +224,10 @@ int PmuTraceDisable(int pd)
 
 int PmuTraceRead(int pd, struct PmuTraceData **pmuTraceData)
 {
+#ifdef IS_X86
+    New(LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86);
+    return -1;
+#else 
     PmuData *pmuData = nullptr;
     unsigned len = PmuRead(pd, &pmuData);
     if (len == -1) {
@@ -246,6 +261,7 @@ int PmuTraceRead(int pd, struct PmuTraceData **pmuTraceData)
         New(UNKNOWN_ERROR, ex.what());
         return -1;
     }
+#endif
 }
 
 void PmuTraceClose(int pd)

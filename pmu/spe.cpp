@@ -359,12 +359,22 @@ void Spe::CoreDummyData(struct SpeCoreContext *context, struct ContextSwitchData
         uint64_t off = dataTail % mpage->data_size;
         struct perf_event_header *header = (struct perf_event_header *)(ringBuf + off);
 
-        if (header->type == PERF_RECORD_MMAP && symbolMode != NO_SYMBOL_RESOLVE) {
+        if (header->type == PERF_RECORD_MMAP) {
             struct PerfRecordMmap *sample = (struct PerfRecordMmap *)header;
-            if (symbolMode == RESOLVE_ELF_DWARF) {
-                SymResolverUpdateModule(sample->tid, sample->filename, sample->addr);
+            if (symbolMode == RESOLVE_ELF_DWARF || symbolMode == NO_SYMBOL_RESOLVE) {
+                int ret = SymResolverUpdateModule(sample->tid, sample->filename, sample->addr);
+                if (ret != SUCCESS) {
+                    // if the module fails to be updated, a warning is recorded to overwrite the failure error code.
+                    SetWarn(ret, Perror());
+                    New(SUCCESS);
+                }
             } else if (symbolMode == RESOLVE_ELF) {
-                SymResolverUpdateModuleNoDwarf(sample->tid, sample->filename, sample->addr);
+                int ret = SymResolverUpdateModuleNoDwarf(sample->tid, sample->filename, sample->addr);
+                 if (ret != SUCCESS) {
+                    // if the module fails to be updated, a warning is recorded to overwrite the failure error code.
+                    SetWarn(ret, Perror());
+                    New(SUCCESS);
+                }
             }
             dataTail += header->size;
             continue;

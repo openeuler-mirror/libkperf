@@ -113,10 +113,17 @@ __u64 KUNPENG_PMU::ReadOnce(__u64 *head)
                     : "memory");
             break;
         case HEAD_SIZE::HEAD_SIZE_EIGHT:
+#ifdef IS_X86
+            asm volatile("mov %0, %1"
+                    : "=r"(*(__u64 __attribute__((__may_alias__)) *)pointerUnion.charHead)
+                    : "Q"(*head)
+                    : "memory");
+#else
             asm volatile("ldar %0, %1"
                     : "=r"(*(__u64 __attribute__((__may_alias__)) *)pointerUnion.charHead)
                     : "Q"(*head)
                     : "memory");
+#endif
             break;
         default:
             break;

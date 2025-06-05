@@ -173,6 +173,7 @@ class PmuMetricMode:
     PMU_METRIC_NUMA = 2
     PMU_METRIC_CLUSTER = 3
     PMU_METRIC_BDF = 4
+    PMU_METRIC_CHANNEL = 5
 
 class ImplPmuDeviceData(_libkperf.ImplPmuDeviceData):
     pass
@@ -193,6 +194,12 @@ class PmuDeviceData(_libkperf.PmuDeviceData):
             unsigned numaId;
             // for perpcie metric
             char *bdf;
+            // for perchannel metric of ddr
+            struct {
+                unsigned channelId;
+                unsigned ddrNumaId;
+                unsigned socketId;
+            };
         };
     };
     """
@@ -383,6 +390,14 @@ def read(pd: int) -> PmuData:
     """
     return _libkperf.PmuRead(pd)
 
+def resolvePmuDataSymbol(pmuData: PmuData) -> int:
+    """
+    when kperf symbol mode is NO_SYMBOL_RESOLVE during PmuRead(), this function can be used to resolve stack symbols
+    :param: pmuData
+    :return: pmu data
+    """
+    return _libkperf.ResolvePmuDataSymbol(pmuData.pointer())
+
 
 def stop(pd: int) -> None:
     """
@@ -526,6 +541,18 @@ def sys_call_func_list() -> Iterator[str]:
     """
     return _libkperf.PmuSysCallFuncList()
 
+class CpuFreqDetail(_libkperf.PmuCpuFreqDetail):
+    pass
+
+def open_cpu_freq_sampling(period: int) -> None:
+    return _libkperf.PmuOpenCpuFreqSampling(period)
+
+def close_cpu_freq_sampling() -> None:
+    return _libkperf.PmuCloseCpuFreqSampling()
+
+def read_cpu_freq_detail() -> CpuFreqDetail:
+    return _libkperf.PmuReadCpuFreqDetail()
+
 __all__ = [
     'PmuTaskType',
     'PmuEventType',
@@ -572,4 +599,9 @@ __all__ = [
     'trace_close',
     'sys_call_func_list',
     'BranchSampleFilter',
+    'CpuFreqDetail',
+    'open_cpu_freq_sampling',
+    'close_cpu_freq_sampling',
+    'read_cpu_freq_detail',
+    'resolvePmuDataSymbol'
 ]

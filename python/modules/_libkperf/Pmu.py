@@ -467,6 +467,12 @@ class PmuDeviceAttr:
         pmu_device_attr.__c_pmu_device_attr = c_pmu_device_attr
         return pmu_device_attr
 
+class DdrDataStructure(ctypes.Structure):
+    _fields_ = [
+        ('channelId', ctypes.c_uint),
+        ('ddrNumaId', ctypes.c_uint),
+        ('socketId', ctypes.c_uint)
+    ]
 
 class CtypesPmuDeviceData(ctypes.Structure):
     """
@@ -479,6 +485,11 @@ class CtypesPmuDeviceData(ctypes.Structure):
             unsigned numaId;
             unsigned clusterId;
             char *bdf;
+            struct {
+                unsigned channelId;
+                unsigned ddrNumaId;
+                unsigned socketId;
+            };
         };
     };
     """
@@ -487,7 +498,8 @@ class CtypesPmuDeviceData(ctypes.Structure):
             ('coreId', ctypes.c_uint),
             ('numaId', ctypes.c_uint),
             ('clusterId', ctypes.c_uint),
-            ('bdf', ctypes.c_char_p)
+            ('bdf', ctypes.c_char_p),
+            ('_structure', DdrDataStructure)
         ]
     
     _fields_ = [
@@ -521,6 +533,23 @@ class CtypesPmuDeviceData(ctypes.Structure):
             return self._union.bdf.decode(UTF_8)
         return ""
 
+    @property
+    def channelId(self) -> int:
+        if self.mode == 5 and self._union._structure.channelId:  # PMU_METRIC_CHANNEL
+            return self._union._structure.channelId
+        return 0
+
+    @property
+    def ddrNumaId(self) -> int:
+        if self.mode == 5 and self._union._structure.ddrNumaId:  # PMU_METRIC_CHANNEL
+            return self._union._structure.ddrNumaId
+        return 0
+
+    @property
+    def socketId(self) -> int:
+        if self.mode == 5 and self._union._structure.socketId:  # PMU_METRIC_CHANNEL
+            return self._union._structure.socketId
+        return 0
 
 class ImplPmuDeviceData:
     __slots__ = ['__c_pmu_device_data']
@@ -574,6 +603,24 @@ class ImplPmuDeviceData:
             return self.c_pmu_device_data._union.bdf.decode(UTF_8)
         return ""
     
+    @property
+    def channelId(self) -> int:
+        if self.mode == 5 and self.c_pmu_device_data._union._structure.channelId:  # PMU_METRIC_CHANNEL
+            return self.c_pmu_device_data._union._structure.channelId
+        return 0
+
+    @property
+    def ddrNumaId(self) -> int:
+        if self.mode == 5 and self.c_pmu_device_data._union._structure.ddrNumaId:  # PMU_METRIC_CHANNEL
+            return self.c_pmu_device_data._union._structure.ddrNumaId
+        return 0
+
+    @property
+    def socketId(self) -> int:
+        if self.mode == 5 and self.c_pmu_device_data._union._structure.socketId:  # PMU_METRIC_CHANNEL
+            return self.c_pmu_device_data._union._structure.socketId
+        return 0
+
     @classmethod
     def from_c_pmu_device_data(cls, c_pmu_device_data: CtypesPmuDeviceData) -> 'ImplPmuDeviceData':
         pmu_device_data = cls()
@@ -1572,6 +1619,15 @@ def PmuRead(pd: int) -> PmuData:
     c_data_len = c_PmuRead(c_pd, ctypes.byref(c_data_pointer))
     return PmuData(c_data_pointer, c_data_len)
 
+def ResolvePmuDataSymbol(pmuData: ctypes.POINTER(CtypesPmuData)) -> int:
+    """
+    int ResolvePmuDataSymbol(struct PmuData* pmuData);
+    """
+    c_ResolvePmuDataSymbol = kperf_so.ResolvePmuDataSymbol
+    c_ResolvePmuDataSymbol.argtypes = [ctypes.POINTER(CtypesPmuData)]
+    c_ResolvePmuDataSymbol.restype = ctypes.c_int
+
+    return c_ResolvePmuDataSymbol(pmuData)
 
 def PmuAppendData(fromData: ctypes.POINTER(CtypesPmuData),
                   toData: ctypes.POINTER(ctypes.POINTER(CtypesPmuData))) -> int:
@@ -1857,6 +1913,138 @@ def PmuSysCallFuncListFree() -> None:
 
     c_PmuSysCallFuncListFree()
 
+class CtypesPmuCpuFreqDetail(ctypes.Structure):
+    """
+    struct PmuCpuFreqDetail {
+    int cpuId;        // cpu core id
+    uint64_t minFreq; // minimum frequency of core
+    uint64_t maxFreq; // maximum frequency of core
+    uint64_t avgFreq; // average frequency of core
+    }
+    """
+    _fields_ = [
+        ('cpuId',   ctypes.c_int),
+        ('minFreq', ctypes.c_uint64),
+        ('maxFreq', ctypes.c_uint64),
+        ('avgFreq', ctypes.c_uint64),
+    ]
+
+    def __init__(self,
+                 cpuId: int = 0,
+                 minFreq: int = 0,
+                 maxFreq: int = 0,
+                 avgFreq: int = 0,
+                 *args:Any, **kw: Any) -> None:
+        super().__init__(*args, **kw)
+        self.cpuId = ctypes.c_int(cpuId)
+        self.minFreq = ctypes.c_uint64(minFreq)
+        self.maxFreq = ctypes.c_uint64(maxFreq)
+        self.avgFreq = ctypes.c_uint64(avgFreq)
+
+
+class ImplPmuCpuFreqDetail:
+    __slots__ = ['__c_pmu_cpu_freq_detail']
+    def __init__(self,
+                 cpuId: int = 0,
+                 minFreq: int = 0,
+                 maxFreq: int = 0,
+                 avgFreq: int = 0,
+                 *args:Any, **kw: Any) -> None:
+        self.__c_pmu_cpu_freq_detail = CtypesPmuCpuFreqDetail(
+            cpuId=cpuId,
+            minFreq=minFreq,
+            maxFreq=maxFreq,
+            avgFreq=avgFreq
+        )
+    
+    @property
+    def c_pmu_cpu_freq_detail(self) -> CtypesPmuCpuFreqDetail:
+        return self.__c_pmu_cpu_freq_detail
+    
+    @property
+    def cpuId(self) -> int:
+        return self.__c_pmu_cpu_freq_detail.cpuId
+    
+    @cpuId.setter
+    def cpuId(self, cpuId: int) -> None:
+        self.__c_pmu_cpu_freq_detail.cpuId = ctypes.c_int(cpuId)
+    
+    @property
+    def minFreq(self) -> int:
+        return self.__c_pmu_cpu_freq_detail.minFreq
+    
+    @minFreq.setter
+    def minFreq(self, minFreq: int) -> None:
+        self.__c_pmu_cpu_freq_detail.minFreq = ctypes.c_uint64(minFreq)
+    
+    @property
+    def maxFreq(self) -> int:
+        return self.__c_pmu_cpu_freq_detail.maxFreq
+    
+    @maxFreq.setter
+    def maxFreq(self, maxFreq: int) -> None:
+        self.__c_pmu_cpu_freq_detail.maxFreq = ctypes.c_uint64(maxFreq)
+    
+    @property
+    def avgFreq(self) -> int:
+        return self.__c_pmu_cpu_freq_detail.avgFreq
+    
+    @avgFreq.setter
+    def avgFreq(self, avgFreq: int) -> None:
+        self.__c_pmu_cpu_freq_detail.avgFreq = ctypes.c_uint64(avgFreq)
+    
+    @classmethod
+    def from_c_pmu_cpu_freq_detail(cls, c_pmu_cpu_freq_detail: CtypesPmuCpuFreqDetail) -> 'ImplPmuCpuFreqDetail':
+        freq_detail = cls()
+        freq_detail.__c_pmu_cpu_freq_detail = c_pmu_cpu_freq_detail
+        return freq_detail
+
+
+class PmuCpuFreqDetail:
+    __slots__ = ['__pointer', '__iter', '__len']
+
+    def __init__(self, pointer: ctypes.POINTER(CtypesPmuCpuFreqDetail) = None, len: int = 0) -> None:
+        self.__pointer = pointer
+        self.__len = len
+        self.__iter = (ImplPmuCpuFreqDetail.from_c_pmu_cpu_freq_detail(self.__pointer[i]) for i in range(self.__len))
+    
+    @property
+    def len(self) -> int:
+        return self.__len
+
+    @property
+    def iter(self) -> Iterator[ImplPmuCpuFreqDetail]:
+        return self.__iter
+
+
+def PmuReadCpuFreqDetail() -> PmuCpuFreqDetail:
+    """
+    struct PmuCpuFreqDetail* PmuReadCpuFreqDetail(unsigned* cpuNum);
+    """
+    c_PmuGetCpuFreqDetail = kperf_so.PmuReadCpuFreqDetail
+    c_PmuGetCpuFreqDetail.argtypes = []
+    c_PmuGetCpuFreqDetail.restype  = ctypes.POINTER(CtypesPmuCpuFreqDetail)
+    c_cpu_len = ctypes.c_uint(0)
+    c_freq_detail_pointer = c_PmuGetCpuFreqDetail(ctypes.byref(c_cpu_len))
+
+    return PmuCpuFreqDetail(c_freq_detail_pointer, c_cpu_len.value)
+
+def PmuOpenCpuFreqSampling(period: int) -> None:
+    """
+    int PmuOpenCpuFreqSampling(unsigned period);
+    """
+    c_PmuOpenCpuFreqSampling = kperf_so.PmuOpenCpuFreqSampling
+
+    c_period = ctypes.c_uint(period)
+    return c_PmuOpenCpuFreqSampling(c_period)
+
+def PmuCloseCpuFreqSampling() -> None:
+    """
+    void PmuCloseCpuFreqSampling();
+    """
+    c_PmuCloseCpuFreqSampling = kperf_so.PmuCloseCpuFreqSampling
+    c_PmuCloseCpuFreqSampling()
+
 
 __all__ = [
     'CtypesEvtAttr',
@@ -1903,4 +2091,9 @@ __all__ = [
     'PmuTraceDataFree',
     'PmuSysCallFuncList',
     'PmuSysCallFuncListFree',
+    'PmuOpenCpuFreqSampling',
+    'PmuReadCpuFreqDetail',
+    'PmuCloseCpuFreqSampling',
+    'PmuCpuFreqDetail',
+    'ResolvePmuDataSymbol'
 ]

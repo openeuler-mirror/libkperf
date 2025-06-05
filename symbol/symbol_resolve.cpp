@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <fstream>
 #include <climits>
+#include <set>
 #include "name_resolve.h"
 #include "pcerr.h"
 #include "symbol_resolve.h"
@@ -70,16 +71,15 @@ namespace {
         flag = false;
     }
 
-    static inline bool CheckIfFile(std::string mapline)
+    static inline bool CheckIfFile(const std::string& mapline)
     {
-        return (!((mapline.find(HUGEPAGE) != std::string::npos) || (mapline.find(DEV_ZERO) != std::string::npos) ||
-                  (mapline.find(ANON) != std::string::npos) || (mapline.find(STACK) != std::string::npos) ||
-                  (mapline.find(SOCKET) != std::string::npos) || (mapline.find(VSYSCALL) != std::string::npos) ||
-                  (mapline.find(HEAP) != std::string::npos) || (mapline.find(VDSO) != std::string::npos) ||
-                  (mapline.find(SYSV) != std::string::npos) || (mapline.find(VVAR) != std::string::npos)) &&
-                (mapline.find(R_XP) != std::string::npos))
-               ? true
-               : false;
+        const std::vector<std::string> patterns = {HUGEPAGE, DEV_ZERO, ANON, STACK, SOCKET, VSYSCALL, HEAP ,VDSO, SYSV, VVAR};
+        for (const auto& pattern :patterns) {
+            if (mapline.find(pattern) != std::string::npos) {
+                return false;
+            }
+        }
+        return  mapline.find(R_XP) != std::string::npos;
     }
 
     static inline char* InitChar(int len)
@@ -398,7 +398,7 @@ bool MyElf::IsExecFile()
 
 void MyElf::Emplace(unsigned long addr, const ELF_SYM& elfSym)
 {
-    this->symTab.insert({addr, elfSym});
+    this->symTab.emplace(addr, elfSym);
 }
 
 ELF_SYM* MyElf::FindSymbol(unsigned long addr)
@@ -548,15 +548,11 @@ int SymbolResolve::RecordModule(int pid, RecordModuleType recordModuleType)
         moduleSafeHandler.releaseLock(pid);
         return 0;
     }
-    char mapFile[MAP_LEN];
-    if (snprintf(mapFile, MAP_LEN, "/proc/%d/maps", pid) < 0) {
-        moduleSafeHandler.releaseLock(pid);
-        return LIBSYM_ERR_SNPRINF_OPERATE_FAILED;
-    }
+    std::string mapFile = "/proc/" + std::to_string(pid) + "/maps";
     std::ifstream file(mapFile);
     if (!file.is_open()) {
         pcerr::New(LIBSYM_ERR_OPEN_FILE_FAILED,
-                   "libsym can't open file named " + std::string{mapFile} + " because of " + std::string{strerror(errno)});
+                   "libsym can't open file named " + mapFile + " because of " + std::string{strerror(errno)});
         moduleSafeHandler.releaseLock(pid);
         return LIBSYM_ERR_OPEN_FILE_FAILED;
     }
@@ -588,15 +584,11 @@ int SymbolResolve::UpdateModule(int pid, RecordModuleType recordModuleType)
         return SUCCESS;
     }
     // Get memory maps of pid.
-    char mapFile[MAP_LEN];
-    if (snprintf(mapFile, MAP_LEN, "/proc/%d/maps", pid) < 0) {
-        moduleSafeHandler.releaseLock(pid);
-        return LIBSYM_ERR_SNPRINF_OPERATE_FAILED;
-    }
+    std::string mapFile = "/proc/" + std::to_string(pid) + "/maps";
     std::ifstream file(mapFile);
     if (!file.is_open()) {
         pcerr::New(LIBSYM_ERR_OPEN_FILE_FAILED,
-                   "libsym can't open file named " + std::string{mapFile} + " because of " + std::string{strerror(errno)});
+                   "libsym can't open file named " + mapFile + " because of " + std::string{strerror(errno)});
         moduleSafeHandler.releaseLock(pid);
         return LIBSYM_ERR_OPEN_FILE_FAILED;
     }
@@ -618,8 +610,8 @@ int SymbolResolve::UpdateModule(int pid, RecordModuleType recordModuleType)
             this->RecordDwarf(item->moduleName.c_str());
         }
     }
-    for (auto mod : diffModVec) {
-        oldModVec.push_back(mod);
+    for (auto& mod : diffModVec) {
+        oldModVec.emplace_back(mod);
     }
     pcerr::New(SUCCESS);
     moduleSafeHandler.releaseLock(pid);
@@ -1176,11 +1168,13 @@ std::vector<std::shared_ptr<ModuleMap>> SymbolResolve::FindDiffMaps(
         const std::vector<std::shared_ptr<ModuleMap>>& newMaps) const
 {
     std::vector<std::shared_ptr<ModuleMap>> diffMaps;
+    std::set<unsigned long> oldStarts;
+    for (const auto& oldMod : oldMaps) {
+        oldStarts.insert(oldMod->start);
+    }
     for (auto newMod : newMaps) {
-        for (auto oldMod : oldMaps) {
-            if (newMod->start != oldMod->start) {
-                diffMaps.push_back(newMod);
-            }
+        if (oldStarts.find(newMod->start) ==  oldStarts.end()) {
+            diffMaps.emplace_back(newMod);
         }
     }
 

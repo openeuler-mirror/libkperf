@@ -37,6 +37,9 @@ struct MetricDataExt {
 	unsigned coreId;
 	unsigned clusterId;
 	char* bdf;
+	unsigned channelId;
+    unsigned ddrNumaId;
+    unsigned socketId;
 };
 
 void SetPeriod(struct PmuAttr* attr, unsigned period) {
@@ -121,6 +124,11 @@ void IPmuGetMetricDataExt(struct PmuDeviceData* deviceData, struct MetricDataExt
 			break;
 		case PMU_METRIC_CLUSTER:
 			metricData->clusterId = deviceData->clusterId;
+			break;
+		case PMU_METRIC_CHANNEL:			
+			metricData->channelId = deviceData->channelId;
+			metricData->ddrNumaId = deviceData->ddrNumaId;
+			metricData->socketId = deviceData->socketId;
 			break;
 	}
 }
@@ -291,6 +299,7 @@ var (
     PMU_METRIC_NUMA C.enum_PmuMetricMode = C.PMU_METRIC_NUMA
 	PMU_METRIC_CLUSTER C.enum_PmuMetricMode = C.PMU_METRIC_CLUSTER
     PMU_METRIC_BDF C.enum_PmuMetricMode  = C.PMU_METRIC_BDF
+	PMU_METRIC_CHANNEL C.enum_PmuMetricMode  = C.PMU_METRIC_CHANNEL
 )
 	
 var fdModeMap map[int]C.enum_PmuTaskType = make(map[int]C.enum_PmuTaskType)
@@ -396,6 +405,12 @@ type PmuDeviceAttr struct {
 	Bdf string
 }
 
+type DdrDataStructure struct {
+	ChannelId uint32
+	DdrNumaId uint32
+	SocketId uint32
+}
+
 type PmuDeviceData struct {
 	Metric C.enum_PmuDeviceMetric
 	// The metric value. The meaning of value depends on metric type.
@@ -406,11 +421,19 @@ type PmuDeviceData struct {
 	NumaId uint32    // for pernuma metric
 	ClusterId uint32 // for percluster metric
 	Bdf string       // for perpcie metric
+	DdrDataStructure // for perchannel metric
 }
 
 type PmuDeviceDataVo struct {
 	GoDeviceData []PmuDeviceData
 	cDeviceData *C.struct_PmuDeviceData
+}
+
+type PmuCpuFreqDetail struct {
+	CpuId int       // core id
+	MinFreq uint64  // minimum frequency of core
+	MaxFreq uint64  // maximum frequency of core
+	AvgFreq uint64  // average frequency of core
 }
 
 // Initialize the collection target
@@ -705,6 +728,31 @@ func PmuDumpData(dataVo PmuDataVo, filePath string, dumpDwf bool) error {
 	}
 	return nil
 }
+ 
+// When symbol mode is SNO_SYMBOL_RESOLVE, you can use this resolve PmuData Symbol after PmuRead function
+// param PmuDataVo the data from PmuRead
+// return nil indicates resolve success, otherwise return error code
+func ResolvePmuDataSymbol(dataVo PmuDataVo) error {
+	err := C.ResolvePmuDataSymbol(dataVo.cData)
+	if int(err) != 0 {
+		return errors.New(C.GoString(C.Perror()))
+	}
+	dataLen := len(dataVo.GoData)
+	ptr := unsafe.Pointer(dataVo.cData)
+	slice := reflect.SliceHeader {
+		Data: uintptr(ptr),
+		Len: dataLen,
+		Cap: dataLen,
+	}
+	cPmuDatas := *(*[]C.struct_PmuData)(unsafe.Pointer(&slice))
+	for i := 0; i < dataLen; i++ {
+		dataObj := cPmuDatas[i]
+		if dataObj.stack != nil {
+			dataVo.GoData[i].appendSymbols(dataObj)
+		}
+	}
+	return nil
+}
 
 // Initialize the trace collection target
 // On success, a trace collect task id is returned which is the unique identity for the task
@@ -983,6 +1031,9 @@ func PmuGetDevMetric(dataVo PmuDataVo, deviceAttr []PmuDeviceAttr) (PmuDeviceDat
 		goDeviceList[i].NumaId = uint32(metricDataExt.numaId)
 		goDeviceList[i].ClusterId = uint32(metricDataExt.clusterId)
 		goDeviceList[i].Bdf = C.GoString(metricDataExt.bdf)
+		goDeviceList[i].ChannelId = uint32(metricDataExt.channelId)
+		goDeviceList[i].DdrNumaId = uint32(metricDataExt.ddrNumaId)
+		goDeviceList[i].SocketId = uint32(metricDataExt.socketId)
 	}
 	res.GoDeviceData = goDeviceList
 	res.cDeviceData = metricData
@@ -1057,6 +1108,54 @@ func PmuGetCpuFreq(core	uint) (int64, error) {
 		return -1, errors.New(C.GoString(C.Perror()))
 	}
 	return int64(freq), nil
+}
+
+
+// open cpu core freq sampling
+// period unit ms
+// return error or nil
+func PmuOpenCpuFreqSampling(period uint) (error) {
+	c_period := C.uint32_t(period)
+	ret := C.PmuOpenCpuFreqSampling(c_period)
+	if int(ret) == -1 {
+		return errors.New(C.GoString(C.Perror()))
+	}
+	return nil
+}
+
+// close cpu freq sampling 
+func PmuCloseCpuFreqSampling() {
+	C.PmuCloseCpuFreqSampling()
+}
+
+// get the maximum frequency,minimum frequency,and average frequency of each core
+// param cpuNum
+// return PmuCpuFreqDetail array
+func PmuReadCpuFreqDetail() ([]PmuCpuFreqDetail) {
+	cpuNum := C.uint32_t(0)
+	cpuFreqList := C.PmuReadCpuFreqDetail(&cpuNum)
+
+	if (uint32(cpuNum) == 0) {
+		return nil
+	}
+
+	ptr := unsafe.Pointer(cpuFreqList)
+	slice := reflect.SliceHeader{
+		Data: uintptr(ptr),
+		Len:  int(cpuNum),
+		Cap:  int(cpuNum),
+	}
+
+	cCpuFreqList := *(*[]C.struct_PmuCpuFreqDetail)(unsafe.Pointer(&slice))
+	goCpuFreqList := make([]PmuCpuFreqDetail, int(cpuNum))
+
+	for i, v := range cCpuFreqList {
+		goCpuFreqList[i].CpuId = int(v.cpuId)
+		goCpuFreqList[i].MinFreq = uint64(v.minFreq)
+		goCpuFreqList[i].MaxFreq = uint64(v.maxFreq)
+		goCpuFreqList[i].AvgFreq = uint64(v.avgFreq)
+	}
+	return goCpuFreqList
 }
 
 func transferCPmuDataToGoData(cPmuData *C.struct_PmuData, dataLen int, fd int) []PmuData {

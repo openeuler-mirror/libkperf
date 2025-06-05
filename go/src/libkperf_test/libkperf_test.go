@@ -273,3 +273,53 @@ func TestPmuGetNumaCore(t *testing.T) {
 		t.Logf("coreId has:%v", v)
 	}
 }
+
+func TestPmuGetCpuFreqDetail(t *testing.T) {
+	err := kperf.PmuOpenCpuFreqSampling(100)
+	if err != nil {
+		t.Fatalf("kperf PmuOpenCpuFreqSampling failed, expect err is nil, but is %v", err)
+	}
+
+    freqList := kperf.PmuReadCpuFreqDetail()
+	for _, v := range freqList {
+		t.Logf("cpuId=%v, minFreq=%d, maxFreq=%d, avgFreq=%d", v.CpuId, v.MinFreq, v.MaxFreq, v.AvgFreq)
+	}
+
+	kperf.PmuCloseCpuFreqSampling()
+}
+
+func TestResolvePmuDataSymbol(t *testing.T) {
+	attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, CallStack:true, SampleRate: 1000, UseFreq:true}
+	fd, err := kperf.PmuOpen(kperf.SAMPLE, attr)
+	if err != nil {
+		t.Fatalf("kperf pmuopen sample failed, expect err is nil, but is %v", err)
+	}
+
+	kperf.PmuEnable(fd)
+	time.Sleep(time.Second)
+	kperf.PmuDisable(fd)
+
+	dataVo, err := kperf.PmuRead(fd)
+	if err != nil {
+		t.Fatalf("kperf pmuread failed, expect err is nil, but is %v", err)
+	}
+
+	for _, o := range dataVo.GoData {
+		if len(o.Symbols) != 0 {
+			t.Fatalf("expect symbol data is empty, but is not")
+		}
+	}
+
+	parseErr := kperf.ResolvePmuDataSymbol(dataVo)
+	if parseErr != nil {
+		t.Fatalf("kperf ResolvePmuDataSymbol failed, expect err is nil, but is %v", parseErr)
+	}
+
+	for _, o := range dataVo.GoData {
+		if len(o.Symbols) == 0 {
+			t.Fatalf("expect symbol data is not empty, but is empty")
+		}
+	}
+	kperf.PmuDataFree(dataVo)
+	kperf.PmuClose(fd)
+}

@@ -13,7 +13,7 @@
  * Description: Provides the capability of parsing pointer events.
  ******************************************************************************/
 
-#include "trace_pointer_parser.h"
+#include "trace_point_parser.h"
 
 using namespace KUNPENG_PMU;
 using namespace pcerr;
@@ -41,7 +41,7 @@ static std::string GetFormatRealPath(const std::string &evtName) {
     return GetRealPath(formatPath);
 }
 
-bool PointerPasser::IsNeedFormat(std::ifstream &file, const std::string &evtName) {
+bool TraceParser::IsNeedFormat(std::ifstream &file, const std::string &evtName) {
     std::string realPath;
     if (formatMap.find(evtName) != formatMap.end()) {
         realPath = formatMap.at(evtName);
@@ -90,7 +90,7 @@ void ParseFormatFile(ifstream &file, const std::string &evtName) {
     efMap.insert({evtName, fnMap});
 }
 
-void PointerPasser::ParserRawFormatData(struct PmuData *pd, KUNPENG_PMU::PerfRawSample *sample,
+void TraceParser::ParserRawFormatData(struct PmuData *pd, KUNPENG_PMU::PerfRawSample *sample,
                                                             union KUNPENG_PMU::PerfEvent *event,
                                                             const std::string &evtName) {
     ifstream file;
@@ -171,7 +171,7 @@ int CheckFieldArgs(char *data, const string &fieldName, T *value, uint32_t vSize
 }
 
 template<typename T>
-int PointerPasser::ParseField(char *data, const std::string &fieldName, T *value, uint32_t vSize) {
+int TraceParser::ParseField(char *data, const std::string &fieldName, T *value, uint32_t vSize) {
     int rt = CheckFieldArgs(data, fieldName, value, vSize);
     if (rt != SUCCESS) {
         return rt;
@@ -201,12 +201,12 @@ int PointerPasser::ParseField(char *data, const std::string &fieldName, T *value
     return SUCCESS;
 }
 
-int PointerPasser::ParsePointer(char *data, const std::string &fieldName, void *value,
+int TraceParser::ParseTraceData(char *data, const std::string &fieldName, void *value,
                                                     uint32_t vSize) {
     return ParseField(data, fieldName, value, vSize);
 }
 
-void PointerPasser::FreePointerData(char *data) {
+void TraceParser::FreeTraceData(char *data) {
     if (data == nullptr) {
         return;
     }
@@ -217,7 +217,7 @@ void PointerPasser::FreePointerData(char *data) {
     data = nullptr;
 }
 
-SampleRawField *PointerPasser::GetSampleRawField(char *data, const std::string &fieldName) {
+SampleRawField *TraceParser::GetSampleRawField(char *data, const std::string &fieldName) {
     int ret = CheckFieldArgs(data, fieldName);
     if (ret != SUCCESS) {
         return nullptr;
@@ -238,7 +238,7 @@ SampleRawField *PointerPasser::GetSampleRawField(char *data, const std::string &
     return fsrMap.at(field);
 }
 
-void PointerPasser::FreeRawFieldMap() {
+void TraceParser::FreeRawFieldMap() {
     for (auto it = fsrMap.begin(); it != fsrMap.end(); ++it) {
         if (!it->second) {
             continue;

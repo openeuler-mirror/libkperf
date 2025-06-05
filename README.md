@@ -105,8 +105,7 @@ Go API文档可以参考GO_API.md:
 
 以下是一些示例： 
 
-- 获取进程的pmu计数。 
-
+- 获取进程的pmu计数
 ```C++
 int pidList[1];
 pidList[0] = pid;
@@ -181,7 +180,7 @@ PmuDataFree(data);
 PmuClose(pd);
 ```
 
-Python 例子:
+- Python 例子
 ```python
 import time
 from collections import defaultdict
@@ -213,7 +212,8 @@ def Counting():
     kperf.close(pd)
 
 ```
-Go 例子
+
+- Go 例子
 ```go
 import "libkperf/kperf"
 import "fmt"
@@ -264,7 +264,7 @@ python example.py
 ```
 
 * **针对Go示例代码:**
-可以直接跳转到 go/src/libkperf/libkperf_test目录下
+可以直接跳转到 go/src/libkperf_test目录下
 ```shell
 go test -v # 全部运行
 go test -v -test.run TestCount #指定运行的用例

@@ -27,7 +27,7 @@
 #include "pcerr.h"
 #include "safe_handler.h"
 #include "pmu_metric.h"
-#include "trace_pointer_parser.h"
+#include "trace_point_parser.h"
 #include "pmu.h"
 
 using namespace pcerr;
@@ -174,6 +174,12 @@ static int CheckCollectTypeConfig(enum PmuTaskType collectType, struct PmuAttr *
         New(LIBPERF_ERR_INVALID_TASK_TYPE);
         return LIBPERF_ERR_INVALID_TASK_TYPE;
     }
+#ifdef IS_X86
+    if (collectType != COUNTING && collectType != SAMPLING) {
+        New(LIBPERF_ERR_INVALID_TASK_TYPE, "The x86 architecture supports only the COUNTING mode and SMAPLING mode");
+        return LIBPERF_ERR_INVALID_TASK_TYPE;
+    }
+#endif
     if ((collectType == COUNTING) && attr->evtList == nullptr) {
         New(LIBPERF_ERR_INVALID_EVTLIST, "Counting mode requires a non-null event list.");
         return LIBPERF_ERR_INVALID_EVTLIST;
@@ -205,7 +211,6 @@ static int CheckCollectTypeConfig(enum PmuTaskType collectType, struct PmuAttr *
         New(LIBPERF_ERR_INVALID_GROUP_SPE);
         return LIBPERF_ERR_INVALID_GROUP_SPE;
     }
-
     return SUCCESS;
 }
 
@@ -764,6 +769,11 @@ int PmuRead(int pd, struct PmuData** pmuData)
     }
 }
 
+int ResolvePmuDataSymbol(struct PmuData* pmuData)
+{
+    return PmuList::GetInstance()->ResolvePmuDataSymbol(pmuData);
+}
+
 void PmuClose(int pd)
 {
     SetWarn(SUCCESS);
@@ -789,10 +799,12 @@ static struct PmuEvt* GetPmuEvent(const char* pmuName, int collectType)
 
 static void PrepareCpuList(PmuAttr *attr, PmuTaskAttr *taskParam, PmuEvt* pmuEvt)
 {
-    if (pmuEvt->cpumask >= 0) {
-        taskParam->numCpu = 1;
-        taskParam->cpuList = new int[1];
-        taskParam->cpuList[0] = pmuEvt->cpumask;
+    if (!pmuEvt->cpuMaskList.empty()) {
+        taskParam->numCpu = pmuEvt->cpuMaskList.size();
+        taskParam->cpuList = new int[pmuEvt->cpuMaskList.size()];
+        for(int i = 0; i < pmuEvt->cpuMaskList.size(); i++) {
+            taskParam->cpuList[i] = pmuEvt->cpuMaskList[i];
+        }
     } else if (attr->cpuList == nullptr && attr->pidList != nullptr && pmuEvt->collectType == COUNTING) {
         // For counting with pid list for system wide, open fd with cpu -1 and specific pid.
         taskParam->numCpu = 1;
@@ -818,6 +830,24 @@ static void PrepareCpuList(PmuAttr *attr, PmuTaskAttr *taskParam, PmuEvt* pmuEvt
     }
 }
 
+static bool PerfEventSupported(__u64 type, __u64 config)
+{
+    perf_event_attr attr{};
+    memset(&attr, 0, sizeof(attr));
+    attr.size = sizeof(struct perf_event_attr);
+    attr.type = type;
+    attr.config = config;
+    attr.disabled = 1;
+    attr.inherit = 1;
+    attr.read_format = PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING | PERF_FORMAT_ID;
+    int fd = KUNPENG_PMU::PerfEventOpen(&attr, -1, 0, -1, 0);
+    if (fd < 0) {
+        return false;
+    }
+    close(fd);
+    return true;
+}
+
 static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *attr, const char* evtName, const int group_id)
 {
     unique_ptr<PmuTaskAttr, void (*)(PmuTaskAttr*)> taskParam(CreateNode<struct PmuTaskAttr>(), PmuTaskAttrFree);
@@ -839,7 +869,26 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
     } else {
         pmuEvt = GetPmuEvent(evtName, collectType);
         if (pmuEvt == nullptr) {
+            if (Perrorno() != SUCCESS) {
+                return nullptr;
+            }
+#ifdef IS_X86
+            New(LIBPERF_ERR_INVALID_EVENT, "Invalid event: " + string(evtName) + ";x86 just supports core event and raw event");
+#else
             New(LIBPERF_ERR_INVALID_EVENT, "Invalid event: " + string(evtName));
+#endif
+            return nullptr;
+        }
+
+        if (!PerfEventSupported(pmuEvt->type, pmuEvt->config)) {
+            int err = MapErrno(errno);
+            if (err == LIBPERF_ERR_NO_PERMISSION) {
+                New(LIBPERF_ERR_NO_PERMISSION, "Current user does not have the permission to collect the event.Swtich to the root user and run the 'echo -1 > /proc/sys/kernel/perf_event_paranoid'");
+            } else if(err == UNKNOWN_ERROR) {
+                New(UNKNOWN_ERROR, std::string{strerror(errno)});
+            } else {
+                New(err);
+            }
             return nullptr;
         }
     }
@@ -953,22 +1002,33 @@ int PmuDumpData(struct PmuData *pmuData, unsigned len, char *filepath, int dumpD
 }
 
 int PmuGetField(struct SampleRawData *rawData, const char *fieldName, void *value, uint32_t vSize) {
+#ifdef IS_X86
+    New(LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86);
+    return LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86;
+#else 
     if (rawData == nullptr) {
         New(LIBPERF_ERR_INVALID_FIELD_ARGS, "rawData cannot be nullptr.");
         return LIBPERF_ERR_INVALID_FIELD_ARGS;
     }
-    return PointerPasser::ParsePointer(rawData->data, fieldName, value, vSize);
+    return TraceParser::ParseTraceData(rawData->data, fieldName, value, vSize);
+#endif
 }
 
 struct SampleRawField *PmuGetFieldExp(struct SampleRawData *rawData, const char *fieldName) {
+#ifdef IS_X86
+    New(LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86);
+    return nullptr;
+#else 
     if (rawData == nullptr) {
         New(LIBPERF_ERR_INVALID_FIELD_ARGS, "rawData cannot be nullptr.");
         return nullptr;
     }
-    SampleRawField *rt = PointerPasser::GetSampleRawField(rawData->data, fieldName);
+
+    SampleRawField *rt = TraceParser::GetSampleRawField(rawData->data, fieldName);
     if (rt) {
         New(SUCCESS);
     }
     return rt;
+#endif
 }
 
