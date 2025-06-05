@@ -65,7 +65,7 @@ namespace KUNPENG_PMU {
         std::thread dummyThread;
         std::thread consumeThread;
 
-        std::atomic<bool> dummyFlag;
+        volatile std::atomic<bool> dummyFlag;
 
         std::vector<std::shared_ptr<EvtList>>& evtLists;
         std::vector<pid_t> ppids;

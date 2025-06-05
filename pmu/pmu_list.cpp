@@ -444,6 +444,7 @@ namespace KUNPENG_PMU {
 
     void PmuList::Close(const int pd)
     {
+        EraseDummyEvent(pd);
         auto evtList = GetEvtList(pd);
         for (auto item: evtList) {
             item->Close();
@@ -455,7 +456,6 @@ namespace KUNPENG_PMU {
         EraseDataEvtGroupList(pd);
         RemoveEpollFd(pd);
         EraseSpeCpu(pd);
-        EraseDummyEvent(pd);
         EraseParentEventMap(pd);
         SymResolverDestroy();
         PmuEventListFree();
