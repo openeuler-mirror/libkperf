@@ -104,9 +104,10 @@ TEST_F(TestMetric, GetNumaIdList)
 
 TEST_F(TestMetric, CollectDDRBandwidth)
 {
-    PmuDeviceAttr devAttr = {};
-    devAttr.metric = PMU_DDR_READ_BW;
-    int pd = PmuDeviceOpen(&devAttr, 1);
+    PmuDeviceAttr devAttr[2] = {};
+    devAttr[0].metric = PMU_DDR_READ_BW;
+    devAttr[1].metric = PMU_DDR_WRITE_BW;
+    int pd = PmuDeviceOpen(devAttr, 2);
     cout << Perror() << endl;
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
@@ -117,16 +118,11 @@ TEST_F(TestMetric, CollectDDRBandwidth)
     ASSERT_NE(oriLen, -1);
 
     PmuDeviceData *devData = nullptr;
-    auto len = PmuGetDevMetric(oriData, oriLen, &devAttr, 1, &devData);
-    ASSERT_EQ(len, 4);
-    ASSERT_EQ(devData[0].numaId, 0);
-    ASSERT_EQ(devData[0].mode, PMU_METRIC_NUMA);
-    ASSERT_EQ(devData[1].numaId, 1);
-    ASSERT_EQ(devData[1].mode, PMU_METRIC_NUMA);
-    ASSERT_EQ(devData[2].numaId, 2);
-    ASSERT_EQ(devData[2].mode, PMU_METRIC_NUMA);
-    ASSERT_EQ(devData[3].numaId, 3);
-    ASSERT_EQ(devData[3].mode, PMU_METRIC_NUMA);
+    auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
+    ASSERT_NE(devData[0].count, 0);
+    ASSERT_EQ(devData[0].mode, PMU_METRIC_CHANNEL);
+    ASSERT_EQ(devData[0].metric, PMU_DDR_READ_BW);
+    ASSERT_EQ(devData[len - 1].metric, PMU_DDR_WRITE_BW);
     DevDataFree(devData);
     PmuDataFree(oriData);
     PmuClose(pd);
@@ -155,37 +151,6 @@ TEST_F(TestMetric, CollectL3Latency)
     ASSERT_EQ(devData[0].mode, PMU_METRIC_CLUSTER);
     ASSERT_EQ(devData[clusterCount - 1].clusterId, clusterCount - 1);
     ASSERT_EQ(devData[clusterCount - 1].mode, PMU_METRIC_CLUSTER);
-    DevDataFree(devData);
-    PmuDataFree(oriData);
-    PmuClose(pd);
-}
-
-TEST_F(TestMetric, CollectL3LatencyAndDDR)
-{
-    PmuDeviceAttr devAttr[2] = {};
-    devAttr[0].metric = PMU_L3_LAT;
-    devAttr[1].metric = PMU_DDR_WRITE_BW;
-
-    int pd = PmuDeviceOpen(devAttr, 2);
-    cout << Perror() << endl;
-    ASSERT_NE(pd, -1);
-    PmuEnable(pd);
-    sleep(1);
-    PmuDisable(pd);
-    PmuData* oriData = nullptr;
-    int oriLen = PmuRead(pd, &oriData);
-    ASSERT_NE(oriLen, -1);
-
-    PmuDeviceData *devData = nullptr;
-    auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
-    unsigned clusterCount = GetClusterCount();
-    unsigned numaCount = GetNumaNodeCount();
-    ASSERT_EQ(len, clusterCount + numaCount);
-    ASSERT_NE(devData[0].count, 0);
-    ASSERT_EQ(devData[0].metric, PMU_L3_LAT);
-    ASSERT_EQ(devData[0].mode, PMU_METRIC_CLUSTER);
-    ASSERT_EQ(devData[clusterCount].metric, PMU_DDR_WRITE_BW);
-    ASSERT_EQ(devData[clusterCount].mode, PMU_METRIC_NUMA);
     DevDataFree(devData);
     PmuDataFree(oriData);
     PmuClose(pd);

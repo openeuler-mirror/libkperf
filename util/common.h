@@ -18,6 +18,15 @@
 #include <linux/perf_event.h>
 #include <string>
 #include <vector>
+#include <cstdint>
+
+#ifdef __x86_64__
+#define IS_X86 1
+#elif  defined(__aarch64__)
+#define IS_ARM 1
+#else
+#error "Only the x86_64 and aarch64 architecture are supported."
+#endif
 
 const std::string TRACE_EVENT_PATH = "/sys/kernel/tracing/events/";
 const std::string TRACE_DEBUG_EVENT_PATH = "/sys/kernel/debug/tracing/events/";
@@ -33,5 +42,6 @@ std::vector<std::string> SplitStringByDelimiter(const std::string& str, char del
 int RaiseNumFd(uint64_t numFd);
 bool ExistPath(const std::string& filePath);
 std::string GetTraceEventDir();
+bool StartWith(const std::string& str, const std::string& prefix);
 
 #endif  // LIBKPROF_COMMON_H

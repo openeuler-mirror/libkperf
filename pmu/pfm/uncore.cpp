@@ -44,23 +44,53 @@ static int GetDeviceType(const string &devName)
     return stoi(typeStr);
 }
 
-static int GetCpuMask(const string &devName)
+static std::vector<int> GetCpuMask(const string &devName)
 {
+    std::vector<int> maskList;
     string maskPath = "/sys/devices/" + devName + "/cpumask";
     std::string realPath = GetRealPath(maskPath);
     if (!IsValidPath(realPath)) {
-        return -1;
+        return maskList;
     }
     ifstream maskIn(realPath);
     if (!maskIn.is_open()) {
-        return -1;
+        return maskList;
     }
     // Cpumask is a comma-separated list of integers,
     // but now make it simple for ddrc event.
-    string maskStr;
+    char maskStr[1024];
     maskIn >> maskStr;
 
-    return stoi(maskStr);
+    if (maskStr[0] == '-') {
+        return maskList;
+    }
+
+    char *tokStr = strtok(maskStr, ",");
+    while (tokStr != nullptr) {
+        if (strstr(tokStr, "-") != nullptr) {
+            int minCpu, maxCpu;
+            if (sscanf(tokStr, "%d-%d", &minCpu, &maxCpu) != 2) {
+                continue;
+            }
+            for (int i = minCpu; i <= maxCpu; i++) {
+                maskList.push_back(i);
+            }
+        } else {
+            int aloneNumber;
+            if (sscanf(tokStr, "%d", &aloneNumber) == 1) {
+                maskList.push_back(aloneNumber);
+            }
+        }
+        tokStr = strtok(nullptr, ",");
+    }
+    return maskList;
+}
+
+static int64_t TransferStrToHex(const std::string& str) {
+    int64_t intData;
+    std::istringstream iss(str);
+    iss >> std::hex >> intData;
+    return intData;
 }
 
 static int64_t GetUncoreEventConfig(const char* pmuName)
@@ -85,10 +115,25 @@ static int64_t GetUncoreEventConfig(const char* pmuName)
     if (findEq == string::npos) {
         return -1;
     }
+    
+#ifdef IS_X86
+    auto umaskEq = configStr.find("umask");
+    if (umaskEq != string::npos) {
+        auto CommaEq = configStr.find(",");
+        if (CommaEq == string::npos) {
+            return -1;
+        }
+        auto lowStr = configStr.substr(findEq + 1, CommaEq - findEq);
+        int64_t low = TransferStrToHex(lowStr);
+        auto highStr = configStr.substr(umaskEq + 6, configStr.size() - umaskEq - 6);
+        int64_t high = TransferStrToHex(highStr);
+        config = (high << 8) + low;
+        return config;
+    }
+#endif
     auto subStr = configStr.substr(findEq + 1, configStr.size() - findEq);
     std::istringstream iss(subStr);
     iss >> std::hex >> config;
-
     return config;
 }
 
@@ -103,8 +148,8 @@ int FillUncoreFields(const char* pmuName, PmuEvt *evt)
         return UNKNOWN_ERROR;
     }
     evt->type = devType;
-    int cpuMask = GetCpuMask(devName);
-    evt->cpumask = cpuMask;
+    std::vector<int> cpuMaskList = GetCpuMask(devName);
+    evt->cpuMaskList = cpuMaskList;
     evt->name = pmuName;
     return SUCCESS;
 }

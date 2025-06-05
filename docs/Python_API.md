@@ -330,8 +330,8 @@ for func_name in kperf.sys_call_func_list():
 kperf.device_open(dev_attr: List[PmuDeviceAttr]) 初始化采集uncore事件指标的能力
 * class PmuDeviceAttr:
   * metric: 指定需要采集的指标
-    * PMU_DDR_READ_BW 采集每个numa的ddrc的读带宽，单位：Bytes
-    * PMU_DDR_WRITE_BW 采集每个numa的ddrc的写带宽，单位：Bytes
+    * PMU_DDR_READ_BW 采集每个channel的ddrc的读带宽，单位：Bytes
+    * PMU_DDR_WRITE_BW 采集每个channel的ddrc的写带宽，单位：Bytes
     * PMU_L3_TRAFFIC 采集每个core的L3的访问字节数，单位：Bytes
     * PMU_L3_MISS 采集每个core的L3的miss数量，单位：count
     * PMU_L3_REF 采集每个core的L3的总访问数量，单位：count
@@ -365,14 +365,19 @@ kperf.get_device_metric(pmu_data: PmuData, device_attr: List[PmuDeviceAttr]) 对
   * len: 数据长度
   * iter: 返回iterator[ImplPmuDeviceData]
   * free: 释放当前PmuDeviceData
+* class DdrDataStructure:
+  * channelId: ddr数据的channel编号
+  * ddrNumaId: ddr数据的numa编号
+  * socketId:  ddr数据的socket编号
 * class ImplPmuDeviceData:
   * metric: 采集的指标
   * count：指标的计数值
-  * mode: 指标的采集类型，按core、按numa还是按bdf号
+  * mode: 指标的采集类型，按core、按numa、按channel还是按bdf号
   * union：
     * coreId: 数据的core编号
     * numaId: 数据的numa编号
     * bdf: 数据的bdf编号
+    * DdrDataStructure: ddr相关的统计数据
 
 
 ### kperf.device_bdf_list
@@ -423,4 +428,55 @@ kperf.get_numa_core(numaId: int): 查询指定numaId下对应的core列表
 # python代码示例
     numaId = 1
     numa_cores = kperf.get_numa_core(numaId)
+```
+
+### kperf.open_cpu_freq_sampling
+
+def open_cpu_freq_sampling(period: int) 开启cpu频率采集
+
+### kperf.close_cpu_freq_sampling
+
+def close_cpu_freq_sampling() 关闭cpu频率采集
+
+### kperf.read_cpu_freq_detail
+
+def read_cpu_freq_detail() -> CpuFreqDetail 读取开启频率采集到读取时间内的cpu最大频率、最小频率以及平均频率
+```python
+#python代码示例
+err = kperf.open_cpu_freq_sampling(100)
+if err != 0:
+   print(f"error number: {kperf.errorno()} error message: {kperf.error()}")
+   exit(1)
+dataList = kperf.read_cpu_freq_detail()
+for item in dataList.iter:
+   print(f"cpuId={item.cpuId} minFreq={item.minFreq} maxFreq={item.maxFreq} avgFreq={item.avgFreq}")
+
+kperf.close_cpu_freq_sampling()
+```
+
+### kperf.resolvePmuDataSymbol
+
+def resolvePmuDataSymbol(pmuData: PmuData) -> int: 当SymbolMode不设置或者设置为0时，可通过该接口解析read返回的PmuData数据中的符号
+```python
+#python代码示例
+event_name = "cycles"
+pmu_attr = kperf.PmuAttr(
+          evtList=[event_name],
+          sampleRate=1000,
+          callStack=True,
+          useFreq=True,
+)
+fd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
+if fd == -1:
+  print(f"error number: {kperf.errorno()} error message: {kperf.error()}")
+  exit(1)
+kperf.enable(fd)
+time.sleep(1)
+kperf.disable(fd)
+pmu_data = kperf.read(fd)
+err = kperf.resolvePmuDataSymbol(pmu_data)
+if err != 0:
+  print(f"error number: {kperf.errorno()} error message: {kperf.error()}")
+  exit(1)
+kperf.close(fd)
 ```

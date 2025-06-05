@@ -17,6 +17,7 @@
 #include "util_time.h"
 #include "process_map.h"
 #include "common.h"
+#include "cpu_map.h"
 #include "test_common.h"
 
 using namespace std;
@@ -669,4 +670,20 @@ TEST_F(TestAPI, TestBrBeBadMode) {
     pd = PmuOpen(COUNTING, &attr);
     ASSERT_EQ(pd, -1);
     ASSERT_EQ(Perrorno(), LIBPERF_ERR_BRANCH_JUST_SUPPORT_SAMPLING);
+}
+
+TEST_F(TestAPI, TestCpuFreqSampling) {
+    int ret = PmuOpenCpuFreqSampling(100);
+    ASSERT_NE(ret, -1);
+    PmuCloseCpuFreqSampling();
+
+    unsigned cpuNum = 0;
+    PmuCpuFreqDetail* pDetail1 = PmuReadCpuFreqDetail(&cpuNum);
+    ASSERT_EQ(cpuNum, MAX_CPU_NUM);
+    ret = PmuOpenCpuFreqSampling(100);
+    ASSERT_NE(ret, -1);
+    sleep(2);
+    PmuCpuFreqDetail* pDetail2 = PmuReadCpuFreqDetail(&cpuNum);
+    ASSERT_EQ(cpuNum, MAX_CPU_NUM);
+    PmuCloseCpuFreqSampling();
 }

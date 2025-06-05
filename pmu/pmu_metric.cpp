@@ -22,6 +22,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <linux/perf_event.h>
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 #include <cstring>
@@ -37,6 +38,7 @@
 
 using namespace std;
 using namespace pcerr;
+using IdxMap = unordered_map<int, map<int, int>>;
 
 static unsigned maxCpuNum = 0;
 static vector<unsigned> coreArray;
@@ -86,8 +88,9 @@ namespace KUNPENG_PMU {
     };
 
     set<PmuDeviceMetric> percoreMetric = {PMU_L3_TRAFFIC, PMU_L3_MISS, PMU_L3_REF};
-    set<PmuDeviceMetric> pernumaMetric = {PMU_DDR_READ_BW, PMU_DDR_WRITE_BW, PMU_L3_LAT};
+    set<PmuDeviceMetric> pernumaMetric = {PMU_L3_LAT};
     set<PmuDeviceMetric> perClusterMetric = {PMU_L3_LAT};
+    set<PmuDeviceMetric> perChannelMetric = {PMU_DDR_READ_BW, PMU_DDR_WRITE_BW};
     set<PmuDeviceMetric> perpcieMetric = {PMU_PCIE_RX_MRD_BW,
                                                     PMU_PCIE_RX_MWR_BW,
                                                     PMU_PCIE_TX_MRD_BW,
@@ -105,7 +108,7 @@ namespace KUNPENG_PMU {
         if (it != MetricToString.end()) {
             return it->second;
         }
-        return "<Unknown Metrix>";
+        return "<Unknown Metric>";
     }
 
     using PMU_METRIC_PAIR = std::pair<PmuDeviceMetric, UncoreDeviceConfig>;
@@ -890,6 +893,11 @@ namespace KUNPENG_PMU {
             unsigned numaId;
             unsigned clusterId;
             char *bdf;
+            struct {
+                unsigned channelId;
+                unsigned ddrNumaId;
+                unsigned socketId;
+            };
         };
     };
 
@@ -949,7 +957,7 @@ namespace KUNPENG_PMU {
         switch(metric) {
             case PMU_DDR_READ_BW:
             case PMU_DDR_WRITE_BW:
-                return PMU_METRIC_NUMA;
+                return PMU_METRIC_CHANNEL;
             case PMU_L3_LAT:
                 return PMU_METRIC_CLUSTER;
             case PMU_L3_TRAFFIC:
@@ -1077,6 +1085,108 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
+    static IdxMap DDRC_CHANNEL_MAP_HIPA = {
+        {1, {{0, 0}, {1, 1}, {2, 2}, {3, 3}}},
+        {3, {{0, 4}, {1, 5}, {2, 6}, {3, 7}}},
+        {5, {{0, 0}, {1, 1}, {2, 2}, {3, 3}}},
+        {7, {{0, 4}, {1, 5}, {2, 6}, {3, 7}}},
+    };
+    static IdxMap DDRC_CHANNEL_MAP_HIPB = {
+        {3, {{0, 0}, {2, 1}, {3, 2}, {5, 3}}},
+        {1, {{0, 4}, {2, 5}, {3, 6}, {5, 7}}},
+        {11, {{0, 0}, {2, 1}, {3, 2}, {5, 3}}},
+        {9, {{0, 4}, {2, 5}, {3, 6}, {5, 7}}},
+    };
+
+    static unordered_map<int, IdxMap> DDRC_CHANNEL_MAP = {
+        {HIPA, DDRC_CHANNEL_MAP_HIPA},
+        {HIPB, DDRC_CHANNEL_MAP_HIPB},
+    };
+
+    static int ParseDDRIdx(const string &devName, const string prefix)
+    {
+        size_t ddrcPos = devName.find(prefix);
+        size_t channelIndex = ddrcPos + prefix.length();
+        string ddrcIndexStr = devName.substr(channelIndex);
+        size_t separatorPos = ddrcIndexStr.find("_");
+        int ddrcIndex = separatorPos != string::npos ? stoi(ddrcIndexStr.substr(0, separatorPos)) : stoi(ddrcIndexStr);
+        return ddrcIndex;
+    }
+
+    static bool getChannelId(const char *evt, const unsigned ddrNumaId, unsigned &channelId)
+    {
+        string devName;
+        string evtName;
+        if (!GetDeviceName(evt, devName, evtName)) {
+            return false;
+        }
+        // ddrc channel index. eg: hisi_sccl3_ddrc3_1 --> 3_1
+        int ddrcIndex = ParseDDRIdx(devName, "ddrc");
+        int scclIndex = ParseDDRIdx(devName, "sccl");
+
+        CHIP_TYPE chipType = GetCpuType();  //get channel index
+        if (DDRC_CHANNEL_MAP.find(chipType) == DDRC_CHANNEL_MAP.end()) {
+            return false;
+        }
+
+        auto &ddrcChannelList = DDRC_CHANNEL_MAP[chipType];
+        auto ddrIdxMap = ddrcChannelList.find(scclIndex);
+        if (ddrIdxMap != ddrcChannelList.end()) {
+            auto channelIdx = ddrIdxMap->second.find(ddrcIndex);
+            if (channelIdx != ddrIdxMap->second.end()) {
+                channelId = channelIdx->second;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    struct channelKeyHash {
+        size_t operator()(const tuple<unsigned, unsigned, unsigned>& key) const {
+            auto socketIdHash = hash<unsigned>{}(get<0>(key));
+            auto channelIdHash = hash<unsigned>{}(get<1>(key));
+            auto ddrNumaIdHash = hash<unsigned>{}(get<2>(key));
+            return socketIdHash ^ (channelIdHash << 1) ^ (ddrNumaIdHash << 2);
+        }
+    };
+
+    int AggregateByChannel(const PmuDeviceMetric metric, const vector<InnerDeviceData> &rawData, vector<PmuDeviceData> &devData)
+    {
+        unordered_map<tuple<unsigned, unsigned, unsigned>, PmuDeviceData, channelKeyHash> devDataByChannel;  //Key: socketId, channelId, ddrNumaId
+        for (auto &data : rawData) {
+            unsigned channelId;
+            if (!getChannelId(data.evtName, data.ddrNumaId, channelId)) {
+                continue;
+            }
+            auto ddrDatakey = make_tuple(data.socketId, channelId, data.ddrNumaId);
+            auto findData = devDataByChannel.find(ddrDatakey);
+            if (findData == devDataByChannel.end()) {
+                PmuDeviceData outData;
+                outData.metric = data.metric;
+                outData.count = data.count;
+                outData.mode = GetMetricMode(data.metric);
+                outData.channelId = channelId;
+                outData.ddrNumaId = data.ddrNumaId;
+                outData.socketId = data.socketId;
+                devDataByChannel[ddrDatakey] = outData;
+            } else {
+                findData->second.count += data.count;
+            }
+        }
+
+        vector<pair<tuple<unsigned, unsigned, unsigned>, PmuDeviceData>> sortedVec(devDataByChannel.begin(), devDataByChannel.end());
+        sort(sortedVec.begin(), sortedVec.end(), [](
+            const pair<tuple<unsigned, unsigned, unsigned>, PmuDeviceData>& a,
+            const pair<tuple<unsigned, unsigned, unsigned>, PmuDeviceData>& b) {
+            return a.first < b.first;
+        });
+        for (auto &data : sortedVec) {
+            devData.push_back(data.second);
+        }
+
+        return SUCCESS;
+    }
+
     int PcieBWAggregate(const PmuDeviceMetric metric, const vector<InnerDeviceData> &rawData, vector<PmuDeviceData> &devData)
     {
         const auto& deviceConfig = GetDeviceMtricConfig();
@@ -1160,8 +1270,8 @@ namespace KUNPENG_PMU {
                                                                 {PMU_L3_TRAFFIC, L3Bw},
                                                                 {PMU_L3_LAT, L3Lat}};
     map<PmuDeviceMetric, AggregateMetricCb> aggregateMap = {
-        {PMU_DDR_READ_BW, AggregateByNuma},
-        {PMU_DDR_WRITE_BW, AggregateByNuma},
+        {PMU_DDR_READ_BW, AggregateByChannel},
+        {PMU_DDR_WRITE_BW, AggregateByChannel},
         {PMU_L3_LAT, AggregateByCluster},
         {PMU_PCIE_RX_MRD_BW, PcieBWAggregate},
         {PMU_PCIE_RX_MWR_BW, PcieBWAggregate},
@@ -1270,6 +1380,10 @@ namespace KUNPENG_PMU {
             if (perClusterMetric.find(devAttr.metric) != perClusterMetric.end()) {
                 devData.clusterId = pmuData[i].cpuTopo->coreId / clusterWidth;
             }
+            if (perChannelMetric.find(devAttr.metric) != pernumaMetric.end()) {
+                devData.ddrNumaId = pmuData[i].cpuTopo->numaId;
+                devData.socketId = pmuData[i].cpuTopo->socketId;
+            }
             if (IsBdfMetric(devAttr.metric)) {
                 devData.bdf = devAttr.bdf;
             }
@@ -1285,6 +1399,10 @@ using namespace KUNPENG_PMU;
 
 const char** PmuDeviceBdfList(enum PmuBdfType bdfType, unsigned *numBdf)
 {
+#ifdef IS_X86
+    New(LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86);
+    return nullptr;
+#else 
     try {
         lock_guard<mutex> lg(pmuBdfListMtx);
         SetWarn(SUCCESS);
@@ -1316,6 +1434,7 @@ const char** PmuDeviceBdfList(enum PmuBdfType bdfType, unsigned *numBdf)
         New(UNKNOWN_ERROR, ex.what());
         return nullptr;
     }
+#endif
 }
 
 static void PmuBdfListFreeSingle(vector<const char*> &bdfList)
@@ -1338,6 +1457,10 @@ void PmuDeviceBdfListFree()
 
 int PmuDeviceOpen(struct PmuDeviceAttr *attr, unsigned len)
 {
+#ifdef IS_X86
+    New(LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86);
+    return -1;
+#else
     SetWarn(SUCCESS);
     try {
         if (CheckPmuDeviceAttr(attr, len) != SUCCESS) {
@@ -1371,6 +1494,7 @@ int PmuDeviceOpen(struct PmuDeviceAttr *attr, unsigned len)
         New(UNKNOWN_ERROR, ex.what());
         return -1;
     }
+#endif
 }
 
 static int CheckPmuDeviceVar(struct PmuData *pmuData, unsigned len,
@@ -1398,6 +1522,10 @@ int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
                     struct PmuDeviceAttr *attr, unsigned attrLen,
                     struct PmuDeviceData **data)
 {
+#ifdef IS_X86
+    New(LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86);
+    return -1;
+#else 
     SetWarn(SUCCESS);
     try {
         if (CheckPmuDeviceVar(pmuData, len, attr, attrLen) != SUCCESS) {
@@ -1450,6 +1578,7 @@ int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
         New(UNKNOWN_ERROR, ex.what());
         return -1;
     }
+#endif
 }
 
 void DevDataFree(struct PmuDeviceData *data)
@@ -1468,7 +1597,7 @@ int64_t PmuGetCpuFreq(unsigned core)
     cpuPath << SYS_CPU_INFO_PATH << core << "/cpufreq/scaling_cur_freq";
 
     if (!ExistPath(cpuPath.str())) {
-        New(LIBPERF_ERR_CPUFREQ_NOT_CONFIG, "Kernel not config cpuFreq Or core exceed cpuNums. Not exist " + cpuPath.str());
+        New(LIBPERF_ERR_CPUFREQ_NOT_CONFIG, "Kernel not config cpuFreq or core exceed cpuNums. Not exist " + cpuPath.str());
         return -1;
     }
     std::string curFreqStr = ReadFileContent(cpuPath.str());
@@ -1496,6 +1625,10 @@ static void InitializeCoreArray()
 
 int PmuGetClusterCore(unsigned clusterId, unsigned **coreList)
 {
+#ifdef IS_X86
+    New(LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86);
+    return -1;
+#else
     try {
         lock_guard<mutex> lg(pmuCoreListMtx);
         InitializeCoreArray();
@@ -1527,6 +1660,7 @@ int PmuGetClusterCore(unsigned clusterId, unsigned **coreList)
         New(UNKNOWN_ERROR, ex.what());
         return -1;
     }
+#endif
 }
 
 int PmuGetNumaCore(unsigned nodeId, unsigned **coreList)

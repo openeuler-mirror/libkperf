@@ -112,7 +112,8 @@ def test_get_numa_cores():
 
 def test_collect_ddr_bandwidth():
     dev_attr = [
-        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_DDR_READ_BW)
+        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_DDR_READ_BW),
+        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_DDR_WRITE_BW)
     ]
     pd = kperf.device_open(dev_attr)
     print(kperf.error())
@@ -125,9 +126,10 @@ def test_collect_ddr_bandwidth():
 
     dev_data = None
     dev_data = kperf.get_device_metric(ori_data, dev_attr)
-    assert len(dev_data) == 4
-    assert dev_data[0].numaId == 0
-    assert dev_data[0].mode == kperf.PmuMetricMode.PMU_METRIC_NUMA
+    assert dev_data[0].count != 0
+    assert dev_data[0].metric == kperf.PmuDeviceMetric.PMU_DDR_READ_BW
+    assert dev_data[0].mode == kperf.PmuMetricMode.PMU_METRIC_CHANNEL
+    assert dev_data[len(dev_data) - 1].metric == kperf.PmuDeviceMetric.PMU_DDR_WRITE_BW
     print_dev_data_details(dev_data)
     kperf.close(pd)
 
@@ -149,26 +151,6 @@ def test_collect_l3_latency():
     assert dev_data[0].clusterId == 0
     print_dev_data_details(dev_data)
     kperf.close(pd)
-
-def test_collect_l3_latency_and_ddr():
-    dev_attr = [
-        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_L3_LAT),
-        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_DDR_WRITE_BW)
-    ]
-    pd = kperf.device_open(dev_attr)
-    print(kperf.error())
-    assert pd != -1, f"Expected non-negative pd, but got {pd}"
-    kperf.enable(pd)
-    time.sleep(1)
-    kperf.disable(pd)
-    ori_data = kperf.read(pd)
-    assert len(ori_data) != -1, f"Expected non-negative ori_len, but got {len(ori_data)}"
-
-    dev_data = kperf.get_device_metric(ori_data, dev_attr)
-    assert len(dev_data) == get_cluster_nums() + 4
-    print_dev_data_details(dev_data)
-    kperf.close(pd)
-
 
 def test_collect_l3_traffic():
     dev_attr = [

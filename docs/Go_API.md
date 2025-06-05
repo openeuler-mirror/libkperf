@@ -335,12 +335,12 @@ func PmuDeviceOpen(attr []PmuDeviceAttr) (int, error) 初始化采集uncore事�
 
 * type PmuDeviceAttr struct:
   * Metric: 指定需要采集的指标
-    * PMU_DDR_READ_BW 采集每个numa的ddrc的读带宽，单位：Bytes
-    * PMU_DDR_WRITE_BW 采集每个numa的ddrc的写带宽，单位：Bytes
+    * PMU_DDR_READ_BW 采集每个channel的ddrc的读带宽，单位：Bytes
+    * PMU_DDR_WRITE_BW 采集每个channel的ddrc的写带宽，单位：Bytes
     * PMU_L3_TRAFFIC 采集每个core的L3的访问字节数，单位：Bytes
     * PMU_L3_MISS 采集每个core的L3的miss数量，单位：count
     * PMU_L3_REF 采集每个core的L3的总访问数量，单位：count
-    * PMU_L3_LAT 采集每个numa的L3的总时延，单位：cycles
+    * PMU_L3_LAT 采集每个cluster的L3的总时延，单位：cycles
     * PMU_PCIE_RX_MRD_BW 采集pcie设备的rx方向上的读带宽，单位：Bytes/ns
     * PMU_PCIE_RX_MWR_BW 采集pcie设备的rx方向上的写带宽，单位：Bytes/ns
     * PMU_PCIE_TX_MRD_BW 采集pcie设备的tx方向上的读带宽，单位：Bytes/ns
@@ -370,14 +370,20 @@ func PmuGetDevMetric(dataVo PmuDataVo, deviceAttr []PmuDeviceAttr) (PmuDeviceDat
 * []PmuDeviceAttr: 指定需要聚合的指标参数
 * typ PmuDeviceDataVo struct:
   * GoDeviceData []PmuDeviceData
+* type DdrDataStructure struct {
+    ChannelId uint32             ddr数据的channel编号
+    DdrNumaId uint32             ddr数据的numa编号
+    SocketId uint32              ddr数据的socket编号
+  }
 * type PmuDeviceData struct:
   * Metric C.enum_PmuDeviceMetric 采集的指标
 	* Count float64                 指标的计数值
-	* Mode C.enum_PmuMetricMode     指标的采集类型，按core、按numa还是按bdf号
+	* Mode C.enum_PmuMetricMode     指标的采集类型，按core、按numa、按channel还是按bdf号
 	* CoreId uint32                 数据的core编号
 	* NumaId uint32                 数据的numa编号
 	* ClusterId uint32              簇ID
 	* Bdf string                    数据的bdf编号
+  * DdrDataStructure              ddr相关的统计数据
 
 ### kperf.DevDataFree 
 
@@ -395,7 +401,7 @@ import "libkperf/kperf"
 import "fmt"
 
 func main() {
-  clusterId := uint(1)
+    clusterId := uint(1)
 	coreList, err := kperf.PmuGetClusterCore(clusterId)
 	if err != nil {
 		fmt.Printf("kperf PmuGetClusterCore failed, expect err is nil, but is %v\n", err)
@@ -419,7 +425,7 @@ import "libkperf/kperf"
 import "fmt"
 
 func main() {
-  nodeId := uint(0)
+    nodeId := uint(0)
 	coreList, err := kperf.PmuGetNumaCore(nodeId)
 	if err != nil {
 		fmt.Printf("kperf PmuGetNumaCore failed, expect err is nil, but is %v\n", err)
@@ -432,23 +438,100 @@ func main() {
 ```
 
 
-### kperf.PmuGetCpuFreq 
+### kperf.PmuGetCpuFreq
+
 func PmuGetCpuFreq(core	uint) (int64, error) 查询当前系统指定core的实时CPU频率
 
 * core cpu coreId
-* 返回值为int64, 时当前cpu core的实时频率，出现错误频率为-1，且error不为空
+* 返回值为int64, 为当前cpu core的实时频率，出现错误频率为-1，且error不为空
 
 ```go
 import "libkperf/kperf"
 import "fmt"
 
 func main() {
-  coreId := uint(0)
+    coreId := uint(0)
 	freq, err := kperf.PmuGetCpuFreq(coreId)
 	if err != nil {
 		fmt.Printf("kperf PmuGetCpuFreq failed, expect err is nil, but is %v\n", err)
     return
 	}
 	fmt.Printf("coreId %v freq is %v\n", coreId, freq)
+}
+```
+
+### kperf.PmuOpenCpuFreqSampling
+
+func PmuOpenCpuFreqSampling(period uint) (error) 开启cpu频率采集
+
+### kperf.PmuCloseCpuFreqSampling
+
+func PmuCloseCpuFreqSampling() 关闭cpu频率采集
+
+### kperf.PmuReadCpuFreqDetail
+
+func PmuReadCpuFreqDetail() ([]PmuCpuFreqDetail) 读取开启频率采集到读取时间内的cpu最大频率、最小频率以及平均频率
+```go
+import "libkperf/kperf"
+import "fmt"
+
+func main() {
+    err := kperf.PmuOpenCpuFreqSampling(100)
+    if err != nil {
+		  fmt.Printf("kperf PmuOpenCpuFreqSampling failed, expect err is nil, but is %v", err)
+	  }
+
+    freqList := kperf.PmuReadCpuFreqDetail()
+  	for _, v := range freqList {
+	  	fmt.Printf("cpuId=%v, minFreq=%d, maxFreq=%d, avgFreq=%d", v.CpuId, v.MinFreq, v.MaxFreq, v.AvgFreq)
+	  }
+
+	  kperf.PmuCloseCpuFreqSampling()
+}
+```
+
+### kperf.ResolvePmuDataSymbol
+
+func ResolvePmuDataSymbol(dataVo PmuDataVo) error 当SymbolMode不设置或者设置为0时，可通过该接口解析PmuRead返回的PmuData数据中的符号
+```go
+import "libkperf/kperf"
+import "fmt"
+
+func main() {
+    attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, CallStack:true, SampleRate: 1000, UseFreq:true}
+    fd, err := kperf.PmuOpen(kperf.SAMPLE, attr)
+    if err != nil {
+      fmt.Printf("kperf pmuopen sample failed, expect err is nil, but is %v", err)
+      return
+    }
+
+    kperf.PmuEnable(fd)
+    time.Sleep(time.Second)
+    kperf.PmuDisable(fd)
+
+    dataVo, err := kperf.PmuRead(fd)
+    if err != nil {
+      fmt.Printf("kperf pmuread failed, expect err is nil, but is %v", err)
+      return
+    }
+
+    for _, o := range dataVo.GoData {
+      if len(o.Symbols) != 0 {
+        fmt.Printf("expect symbol data is empty, but is not")
+      }
+    }
+
+    parseErr := kperf.ResolvePmuDataSymbol(dataVo)
+    if parseErr != nil {
+      fmt.Printf("kperf ResolvePmuDataSymbol failed, expect err is nil, but is %v", parseErr)
+    }
+
+    for _, o := range dataVo.GoData {
+      if len(o.Symbols) == 0 {
+        fmt.Printf("expect symbol data is not empty, but is empty")
+      }
+    }
+    kperf.PmuDataFree(dataVo)
+    kperf.PmuClose(fd)
 }
 ```

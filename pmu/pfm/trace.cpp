@@ -58,6 +58,5 @@ struct PmuEvt* GetKernelTraceEvent(const char* pmuName, int collectType)
     pmuEvtPtr->type = PERF_TYPE_TRACEPOINT;
     pmuEvtPtr->pmuType = TRACE_TYPE;
     pmuEvtPtr->collectType = collectType;
-    pmuEvtPtr->cpumask = -1;
     return pmuEvtPtr;
 }
