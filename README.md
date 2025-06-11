@@ -107,77 +107,101 @@ Go API文档可以参考GO_API.md:
 
 - 获取进程的pmu计数
 ```C++
-int pidList[1];
-pidList[0] = pid;
-char *evtList[1];
-evtList[0] = "cycles";
-// 初始化事件列表，指定需要计数的事件cycles。
-PmuAttr attr = {0};
-attr.evtList = evtList;
-attr.numEvt = 1;
-attr.pidList = pidList;
-attr.numPid = 1;
-// 调用PmuOpen，返回pd。pd表示该任务的id。
-int pd = PmuOpen(COUNTING, &attr);
-// 开始采集。
-PmuEnable(pd);
-// 采集1秒。
-sleep(1);
-// 停止采集。
-PmuDisable(pd);
-PmuData *data = NULL;
-// 读取PmuData，它是一个数组，长度是len。
-int len = PmuRead(pd, &data);
-for (int i = 0; i < len; ++i) {
-	  PmuData *d = &data[i];
-	  ...
+#include <iostream>
+#include "symbol.h"
+#include "pmu.h"
+#include "pcerrc.h"
+
+int main() {
+    int pidList[1];
+    pidList[0] = getpid();
+    char *evtList[1];
+    evtList[0] = "cycles";
+    // 初始化事件列表，指定需要计数的事件cycles。
+    PmuAttr attr = {0};
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+    attr.pidList = pidList;
+    attr.numPid = 1;
+    // 调用PmuOpen，返回pd。pd表示该任务的id。
+    int pd = PmuOpen(COUNTING, &attr);
+    // 开始采集。
+    PmuEnable(pd);
+    // 采集1秒。
+    sleep(1);
+    // 停止采集。
+    PmuDisable(pd);
+    PmuData *data = NULL;
+    // 读取PmuData，它是一个数组，长度是len。
+    int len = PmuRead(pd, &data);
+    for (int i = 0; i < len; ++i) {
+        PmuData *d = &data[i];
+        std::cout << "evt=" << d->evt << "count=" << d->count << std::endl;
+    }
+    // 释放PmuData。
+    PmuDataFree(data);
+    // 类似fd，当任务结束时调用PmuClose释放资源。
+    PmuClose(pd);
 }
-// 释放PmuData。
-PmuDataFree(data);
-// 类似fd，当任务结束时调用PmuClose释放资源。
-PmuClose(pd);
 ```
 
 - 对进程进行采样
 ```C++
-int pidList[1];
-pidList[0] = pid;
-char *evtList[1];
-evtList[0] = "cycles";
-// 初始化事件列表，指定需要计数的事件cycles。
-PmuAttr attr = {0};
-attr.evtList = evtList;
-attr.numEvt = 1;
-attr.pidList = pidList;
-attr.numPid = 1;
-// 调用PmuOpen，返回pd。pd表示该任务的id。
-int pd = PmuOpen(SAMPLING, &attr);
-// 开始采集。
-PmuEnable(pd);
-// 采集1秒。
-sleep(1);
-// 停止采集。
-PmuDisable(pd);
-PmuData *data = NULL;
-// 读取PmuData，它是一个数组，长度是len。
-int len = PmuRead(pd, &data);
-for (int i = 0; i < len; ++i) {
-    // 获取数组的一个元素。
-	  PmuData *d = &data[i];
-    // 获取调用栈对象，它是一个链表。
-    Stack *stack = d->stack;
-    while (stack) {
-        // 获取符号对象。
-        if (stack->symbol) {
-            ...
+#include <iostream>
+
+#include "symbol.h"
+#include "pmu.h"
+#include "pcerrc.h"
+
+int main() {
+    int pid = getpid();
+    int pidList[1];
+    pidList[0] = pid;
+    char *evtList[1];
+    evtList[0] = "cycles";
+    // 初始化事件列表，指定需要计数的事件cycles。
+    PmuAttr attr = {0};
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+    attr.pidList = pidList;
+    attr.numPid = 1;
+    attr.symbolMode = RESOLVE_ELF_DWARF;
+    attr.callStack = 1;
+    attr.freq = 200;
+    attr.useFreq = 1;
+    // 调用PmuOpen，返回pd。pd表示该任务的id。
+    int pd = PmuOpen(SAMPLING, &attr);
+    // 开始采集。
+    PmuEnable(pd);
+    // 采集1秒。
+    sleep(1);
+    // 停止采集。
+    PmuDisable(pd);
+    PmuData *data = NULL;
+    // 读取PmuData，它是一个数组，长度是len。
+    int len = PmuRead(pd, &data);
+    for (int i = 0; i < len; ++i) {
+        // 获取数组的一个元素。
+        PmuData *d = &data[i];
+        // 获取调用栈对象，它是一个链表。
+        Stack *stack = d->stack;
+        while (stack) {
+            // 获取符号对象。
+            if (stack->symbol) {
+                Symbol *data = stack->symbol;
+                std::cout << std::hex << data->addr << " " << data->symbolName << "+0x" << data->offset << " "
+                          << data->codeMapAddr << " (" << data->module << ")"
+                          << " (" << std::dec << data->fileName << ":" << data->lineNum << ")" << std::endl;
+
+            }
+            stack = stack->next;
         }
-        stack = stack->next;
     }
+    // 释放PmuData。
+    PmuDataFree(data);
+    // 类似fd，当任务结束时调用PmuClose释放资源。
+    PmuClose(pd);
 }
-// 释放PmuData。
-PmuDataFree(data);
-// 类似fd，当任务结束时调用PmuClose释放资源。
-PmuClose(pd);
 ```
 
 - Python 例子

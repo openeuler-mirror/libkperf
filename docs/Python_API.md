@@ -82,8 +82,10 @@ kperf.open(collector_type: kperf.PmuTaskType, pmu_attr: kperf.PmuAttr)
 
 ```python
 # python代码示例
-import time
 import kperf
+import ksym
+import time
+
 evtList = ["cycles", "branch-misses"]
 pmu_attr = kperf.PmuAttr(evtList=evtList)
 pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
@@ -196,6 +198,7 @@ get_field(pmu_data: ImplPmuData, field_name: str, value: c_void_p)
 
 ```python
 import kperf
+import ksym
 import time
 from ctypes import *
 
@@ -272,8 +275,9 @@ kperf.trace_open(trace_type: kperf.PmuTraceType, pmu_trace_attr: kperf.PmuTraceA
 
 ```python
 # python代码示例
-import time
 import kperf
+import time
+
 funcs = ["read", "write"]
 pmu_trace_attr = kperf.PmuTraceAttr(funcs=funcs)
 pd = kperf.trace_open(kperf.PmuTraceType.TRACE_SYS_CALL, pmu_trace_attr)
@@ -346,6 +350,8 @@ kperf.device_open(dev_attr: List[PmuDeviceAttr]) 初始化采集uncore事件指�
 
 ```python
 # python代码示例
+import kperf
+import time
     dev_attr = [
         kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_L3_TRAFFIC)
     ]
@@ -443,6 +449,9 @@ def close_cpu_freq_sampling() 关闭cpu频率采集
 def read_cpu_freq_detail() -> CpuFreqDetail 读取开启频率采集到读取时间内的cpu最大频率、最小频率以及平均频率
 ```python
 #python代码示例
+import kperf
+import time
+
 err = kperf.open_cpu_freq_sampling(100)
 if err != 0:
    print(f"error number: {kperf.errorno()} error message: {kperf.error()}")
@@ -459,6 +468,9 @@ kperf.close_cpu_freq_sampling()
 def resolvePmuDataSymbol(pmuData: PmuData) -> int: 当SymbolMode不设置或者设置为0时，可通过该接口解析read返回的PmuData数据中的符号
 ```python
 #python代码示例
+import kperf
+import time
+
 event_name = "cycles"
 pmu_attr = kperf.PmuAttr(
           evtList=[event_name],
