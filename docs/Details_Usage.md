@@ -1072,7 +1072,7 @@ PmuTraceDisable(pd);
 PmuTraceData *data = nullptr;
 int len = PmuTraceRead(pd, &data);
 for(int i = 0; i < len; ++i) {
-    printf("funcName: %s, elapsedTime: %f ms pid: %d tid: %d cpu: %d comm: %s", data[i].funcs, data[i].elapsedTime, data[i].pid, data[i].tid, data[i].cpu, data[i].comm);
+    printf("funcName: %s, elapsedTime: %f ms pid: %d tid: %d cpu: %d comm: %s\n", data[i].funcs, data[i].elapsedTime, data[i].pid, data[i].tid, data[i].cpu, data[i].comm);
 }
 PmuTraceClose(pd);
 ```
