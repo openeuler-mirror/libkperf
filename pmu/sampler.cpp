@@ -217,6 +217,7 @@ void KUNPENG_PMU::PerfSampler::RawSampleProcess(
         return;
     }
     KUNPENG_PMU::PerfRawSample *sample = (KUNPENG_PMU::PerfRawSample *)event->sample.array;
+    ips->ips.reserve(ips->ips.size() + sample->nr);
     // Copy ips from ring buffer and get stack info later.
     if (evt->callStack == 0) {
         int i = 0;
@@ -224,12 +225,12 @@ void KUNPENG_PMU::PerfSampler::RawSampleProcess(
             i++;
         }
         if (i < sample->nr) {
-            ips->ips.push_back(sample->ips[i]);
+            ips->ips.emplace_back(sample->ips[i]);
         }
     } else {
         for (int i = sample->nr - 1; i >= 0; --i) {
             if (IsValidIp(sample->ips[i])) {
-                ips->ips.push_back(sample->ips[i]);
+                ips->ips.emplace_back(sample->ips[i]);
             }
         }
     }
@@ -264,7 +265,7 @@ void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<Perf
                 break;
             }
             case PERF_RECORD_MMAP: {
-                if (symMode == RESOLVE_ELF_DWARF) {
+                if (symMode == RESOLVE_ELF_DWARF || symMode == NO_SYMBOL_RESOLVE) {
                     SymResolverUpdateModule(event->mmap.tid, event->mmap.filename, event->mmap.addr);
                 } else if (symMode == RESOLVE_ELF) {
                     SymResolverUpdateModuleNoDwarf(event->mmap.tid, event->mmap.filename, event->mmap.addr);
@@ -272,7 +273,7 @@ void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<Perf
                 break;
             }
             case PERF_RECORD_MMAP2: {
-                if (symMode == RESOLVE_ELF_DWARF) {
+                if (symMode == RESOLVE_ELF_DWARF || symMode == NO_SYMBOL_RESOLVE) {
                     SymResolverUpdateModule(event->mmap2.tid, event->mmap2.filename, event->mmap2.addr);
                 } else if (symMode == RESOLVE_ELF) {
                     SymResolverUpdateModuleNoDwarf(event->mmap2.tid, event->mmap2.filename, event->mmap2.addr);

@@ -294,7 +294,31 @@ namespace KUNPENG_PMU {
         }
     }
 
-    void HandleBlockData(std::vector<PmuData>& pmuData, std::vector<PmuSwitchData>& switchData)
+
+    void SortTwoVector(std::vector<PmuData>& pmuData, std::vector<PerfSampleIps>& sampleIps)
+    {
+        std::vector<std::pair<PmuData, PerfSampleIps>> combined;
+        combined.reserve(pmuData.size());
+        for (size_t i = 0; i < pmuData.size(); ++i) {
+            combined.emplace_back(std::make_pair(std::move(pmuData[i]), std::move(sampleIps[i])));
+        }
+
+        std::sort(combined.begin(), combined.end(),
+                [](std::pair<PmuData, PerfSampleIps>& a, std::pair<PmuData, PerfSampleIps>& b) {
+            if (a.first.tid == b.first.tid) {
+                return a.first.ts < b.first.ts;
+            }
+            return a.first.tid < b.first.tid;
+        });
+
+        for (size_t i = 0; i < pmuData.size(); ++i) {
+            pmuData[i] = std::move(combined[i].first);
+            sampleIps[i] = std::move(combined[i].second);
+        }
+    }
+
+    void HandleBlockData(std::vector<PmuData>& pmuData, std::vector<PerfSampleIps>& sampleIps,
+                                 SymbolMode symMode,std::vector<PmuSwitchData>& switchData)
     {
         std::sort(switchData.begin(), switchData.end(), [](const PmuSwitchData& a, const PmuSwitchData& b) {
             if (a.tid == b.tid) {
@@ -305,7 +329,7 @@ namespace KUNPENG_PMU {
         std::unordered_map<int, std::vector<int64_t>> tidToOffTimeStamps;
         int64_t outTime = 0;
         int prevTid = -1;
-        for (const auto& item: switchData) {
+        for (const auto& item : switchData) {
             if (item.swOut) {
                 outTime = item.ts;
                 prevTid = item.tid;
@@ -323,19 +347,13 @@ namespace KUNPENG_PMU {
                 }
             }
         }
-
-        std::sort(pmuData.begin(), pmuData.end(), [](const PmuData& a, const PmuData& b) {
-            if (a.tid == b.tid) {
-                return a.ts < b.ts;
-            }
-            return a.tid < b.tid;
-        });
+        SortTwoVector(pmuData, sampleIps);
         int csCnt = 0;
         int64_t prevTs = 0;
         int64_t currentTs = 0;
         int64_t curPeriod = 0;
         int currentTid = -1;
-        for (auto& item: pmuData) {
+        for (auto& item : pmuData) {
             if (currentTid != item.tid) {
                 currentTid = item.tid;
                 csCnt = 0;
@@ -347,7 +365,9 @@ namespace KUNPENG_PMU {
             if (strcmp(item.evt, "context-switches") == 0) {
                 // Convert stack from 'schedule[kernel] -> futex_wait[kernel] -> ...[kernel] -> lock_wait -> start_thread'
                 // to 'lock_wait -> start_thread', only keeping user stack.
-                TrimKernelStack(item);
+                if (symMode != NO_SYMBOL_RESOLVE) {
+                      TrimKernelStack(item);
+                }
                 // Before the context-switches event, there is only one cycles event, which we need to ignore. 
                 if (currentTs == 0) {
                     currentTs = item.ts;
@@ -667,12 +687,20 @@ namespace KUNPENG_PMU {
         }
 
         auto& eventData = userDataList[iPmuData];
-        auto symMode = symModeList[eventData.pd];
         for (size_t i = 0; i < eventData.data.size(); ++i) {
             auto& pmuData = eventData.data[i];
             auto& ipsData = eventData.sampleIps[i];
             if (pmuData.stack == nullptr) {
                 pmuData.stack = StackToHash(pmuData.pid, ipsData.ips.data(), ipsData.ips.size());
+            }
+        }
+        if (GetBlockedSampleState(eventData.pd) == 1) {
+            for (auto& item : eventData.data) {
+                if (strcmp(item.evt, "context-switches") == 0) {
+                    // Convert stack from 'schedule[kernel] -> futex_wait[kernel] -> ...[kernel] -> lock_wait -> start_thread'
+                    // to 'lock_wait -> start_thread', only keeping user stack.
+                    TrimKernelStack(item);
+                }
             }
         }
         New(SUCCESS);
@@ -760,7 +788,8 @@ namespace KUNPENG_PMU {
         } else {
             FillStackInfo(evData);
             if (GetBlockedSampleState(pd) == 1) {
-                HandleBlockData(evData.data, evData.switchData);
+                auto symMode = symModeList[evData.pd];
+                HandleBlockData(evData.data, evData.sampleIps, symMode, evData.switchData);
             }
             auto inserted = userDataList.emplace(pData, move(evData));
             dataList.erase(pd);
