@@ -290,6 +290,8 @@ python example.py
 * **针对Go示例代码:**
 可以直接跳转到 go/src/libkperf_test目录下
 ```shell
+export GO111MODULE=off
+export LD_LIBRARY_PATH=../libkperf/lib:$LD_LIBRARY_PATH
 go test -v # 全部运行
 go test -v -test.run TestCount #指定运行的用例
 ```
