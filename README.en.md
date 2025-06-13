@@ -315,6 +315,8 @@ python example.py
   You can directly go to the go/src/libkperf_test directory.
 
 ```shell
+export GO111MODULE=off
+export LD_LIBRARY_PATH=../libkperf/lib:$LD_LIBRARY_PATH
 go test -v # run all
 go test -v -test.run TestCount #specify the test case to run
 ```
