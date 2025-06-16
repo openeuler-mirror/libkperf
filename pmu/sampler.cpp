@@ -229,8 +229,9 @@ void KUNPENG_PMU::PerfSampler::RawSampleProcess(
         }
     } else {
         for (int i = sample->nr - 1; i >= 0; --i) {
-            if (IsValidIp(sample->ips[i])) {
-                ips->ips.emplace_back(sample->ips[i]);
+            const auto& ip = sample->ips[i];
+            if (IsValidIp(ip)) {
+                ips->ips.emplace_back(ip);
             }
         }
     }

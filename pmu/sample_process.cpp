@@ -22,33 +22,6 @@
 #define PAGE_SIZE (sysconf(_SC_PAGESIZE))
 #define MB() asm volatile("dmb ish" ::: "memory")
 static constexpr int MAX_DATA_SIZE = 8192;
-#ifdef IS_X86
-#define PerfRingbufferSmpStoreRelease(p, v)                                                       \
-    ({                                                                                            \
-        union {                                                                                   \
-            typeof(*p) val;                                                                       \
-            char charHead[1];                                                                     \
-        } pointerUnion = {.val = (v)};                                                            \
-        asm volatile("mov %1, %0" : "=Q"(*p) : "r"(*(__u64 *)pointerUnion.charHead) : "memory"); \
-    })
-#else 
-#define PerfRingbufferSmpStoreRelease(p, v)                                                       \
-    ({                                                                                            \
-        union {                                                                                   \
-            typeof(*p) val;                                                                       \
-            char charHead[1];                                                                     \
-        } pointerUnion = {.val = (v)};                                                            \
-        asm volatile("stlr %1, %0" : "=Q"(*p) : "r"(*(__u64 *)pointerUnion.charHead) : "memory"); \
-    })
-#endif
-
-void KUNPENG_PMU::PerfMmapConsume(PerfMmap &map)
-{
-     
-    __u64 prev = map.prev;
-    struct perf_event_mmap_page *base = (struct perf_event_mmap_page *)map.base;
-    PerfRingbufferSmpStoreRelease(&base->data_tail, prev);
-}
 
 void KUNPENG_PMU::PerfMmapReadDone(PerfMmap &map)
 {

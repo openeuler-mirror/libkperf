@@ -31,7 +31,12 @@
 const std::string TRACE_EVENT_PATH = "/sys/kernel/tracing/events/";
 const std::string TRACE_DEBUG_EVENT_PATH = "/sys/kernel/debug/tracing/events/";
 
-bool IsValidIp(unsigned long ip);
+inline bool IsValidIp(unsigned long ip)
+{
+    return (ip != PERF_CONTEXT_HV && ip != PERF_CONTEXT_KERNEL && ip != PERF_CONTEXT_USER
+        && ip != PERF_CONTEXT_GUEST && ip != PERF_CONTEXT_GUEST_KERNEL
+        && ip != PERF_CONTEXT_GUEST_USER && ip != PERF_CONTEXT_MAX);
+}
 std::string GetRealPath(const std::string filePath);
 bool IsValidPath(const std::string& filePath);
 bool IsDirectory(const std::string& path);
