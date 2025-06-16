@@ -17,7 +17,8 @@ package sym
 
 /*
 #cgo CFLAGS: -I ../include
-#cgo LDFLAGS: -L ../lib -lsym
+#cgo !static LDFLAGS: -L ../lib -lsym
+#cgo static LDFLAGS: -L ../static_lib -lsym -lstdc++ -lelf++ -ldwarf++
 
 #include "symbol.h"
 #include "pcerrc.h"

@@ -295,3 +295,8 @@ export LD_LIBRARY_PATH=../libkperf/lib:$LD_LIBRARY_PATH
 go test -v # 全部运行
 go test -v -test.run TestCount #指定运行的用例
 ```
+
+* **GO静态模式编译:**
+```shell
+go build -tags="static"
+```
