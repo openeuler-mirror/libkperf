@@ -17,6 +17,7 @@
 #define PMU_SAMPLE_PROCESS_H
 #include <memory>
 #include "pmu_event.h"
+#include "common.h"
 
 #ifdef IS_X86
 #define PerfRingbufferSmpStoreRelease(p, v)                                                       \
