@@ -15,6 +15,7 @@
  ******************************************************************************/
 #include <memory>
 #include <algorithm>
+#include <numeric>
 #include <sys/resource.h>
 #include "linked_list.h"
 #include "cpu_map.h"
@@ -297,24 +298,27 @@ namespace KUNPENG_PMU {
 
     void SortTwoVector(std::vector<PmuData>& pmuData, std::vector<PerfSampleIps>& sampleIps)
     {
-        std::vector<std::pair<PmuData, PerfSampleIps>> combined;
-        combined.reserve(pmuData.size());
-        for (size_t i = 0; i < pmuData.size(); ++i) {
-            combined.emplace_back(std::make_pair(std::move(pmuData[i]), std::move(sampleIps[i])));
-        }
-
-        std::sort(combined.begin(), combined.end(),
-                [](std::pair<PmuData, PerfSampleIps>& a, std::pair<PmuData, PerfSampleIps>& b) {
-            if (a.first.tid == b.first.tid) {
-                return a.first.ts < b.first.ts;
+        std::vector<size_t> indices(pmuData.size());
+        std::iota(indices.begin(), indices.end(), 0);
+        std::stable_sort(indices.begin(), indices.end(), [&pmuData](size_t a, size_t b){
+            if (pmuData[a].tid == pmuData[b].tid) {
+                return pmuData[a].ts < pmuData[b].ts;
             }
-            return a.first.tid < b.first.tid;
+            return pmuData[a].tid < pmuData[b].tid;
         });
 
-        for (size_t i = 0; i < pmuData.size(); ++i) {
-            pmuData[i] = std::move(combined[i].first);
-            sampleIps[i] = std::move(combined[i].second);
+        std::vector<PmuData> sortedPmuData;
+        std::vector<PerfSampleIps> sortedSampleIps;
+        size_t size = pmuData.size();
+        sortedPmuData.reserve(size);
+        sortedSampleIps.reserve(size);
+
+        for (size_t i = 0; i < size; ++i) {
+            sortedPmuData.emplace_back(std::move(pmuData[indices[i]]));
+            sortedSampleIps.emplace_back(std::move(sampleIps[indices[i]]));
         }
+        pmuData = std::move(sortedPmuData);
+        sampleIps = std::move(sortedSampleIps);
     }
 
     void HandleBlockData(std::vector<PmuData>& pmuData, std::vector<PerfSampleIps>& sampleIps,

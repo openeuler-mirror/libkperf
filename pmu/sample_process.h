@@ -18,12 +18,37 @@
 #include <memory>
 #include "pmu_event.h"
 
+#ifdef IS_X86
+#define PerfRingbufferSmpStoreRelease(p, v)                                                       \
+    ({                                                                                            \
+        union {                                                                                   \
+            typeof(*p) val;                                                                       \
+            char charHead[1];                                                                     \
+        } pointerUnion = {.val = (v)};                                                            \
+        asm volatile("mov %1, %0" : "=Q"(*p) : "r"(*(__u64 *)pointerUnion.charHead) : "memory"); \
+    })
+#else
+#define PerfRingbufferSmpStoreRelease(p, v)                                                       \
+    ({                                                                                            \
+        union {                                                                                   \
+            typeof(*p) val;                                                                       \
+            char charHead[1];                                                                     \
+        } pointerUnion = {.val = (v)};                                                            \
+        asm volatile("stlr %1, %0" : "=Q"(*p) : "r"(*(__u64 *)pointerUnion.charHead) : "memory"); \
+    })
+#endif
+
 namespace KUNPENG_PMU {
 
     int MmapInit(PerfMmap& sampleMmap);
     union PerfEvent* ReadEvent(PerfMmap& map);
     int RingbufferReadInit(PerfMmap& map);
-    void PerfMmapConsume(PerfMmap& map);
+    inline void PerfMmapConsume(PerfMmap& map)
+    {
+        __u64 prev = map.prev;
+        struct perf_event_mmap_page *base = (struct perf_event_mmap_page *)map.base;
+        PerfRingbufferSmpStoreRelease(&base->data_tail, prev);
+    }
     void PerfMmapReadDone(PerfMmap& map);
 
 }  // namespace KUNPENG_PMU
