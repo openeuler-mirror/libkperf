@@ -1659,14 +1659,14 @@ def PmuDumpData(pmuData: PmuData, filepath: str, dumpDwf: int) -> None:
     int PmuDumpData(struct PmuData *pmuData, unsigned len, char *filepath, int dumpDwf);
     """
     c_PmuDumpData = kperf_so.PmuDumpData
-    c_PmuDumpData.argtypes = [ctypes.POINTER(CtypesPmuData), ctypes.c_uint, ctypes.c_char_p, ctypes]
+    c_PmuDumpData.argtypes = [ctypes.POINTER(CtypesPmuData), ctypes.c_uint, ctypes.c_char_p, ctypes.c_int]
     c_PmuDumpData.restype = ctypes.c_int
 
     c_len = ctypes.c_uint(pmuData.len)
     c_filepath = ctypes.c_char_p(filepath.encode(UTF_8))
     c_dumpDwf = ctypes.c_int(dumpDwf)
 
-    c_PmuDumpData(pmuData.pointer, c_len, c_filepath, c_dumpDwf)
+    c_PmuDumpData(pmuData.pointer(), c_len, c_filepath, c_dumpDwf)
 
 
 def PmuGetField(rawData: ctypes.POINTER(CtypesSampleRawData), field_name: str, value: ctypes.c_void_p,
