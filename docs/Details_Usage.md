@@ -657,56 +657,60 @@ libkperf提供了事件分组的能力，能够让多个事件同时处于采集
 perf stat -e "{cycles,branch-loads,branch-load-misses,iTLB-loads}",inst_retired
 ```
 
-对于libkperf，可以通过设置PmuAttr的evtAttr字段来设定哪些事件放在一个group内。
-比如，可以这样调用：
+如果对多个相关联的事件采集，可以把关联的事件放到一个事件组。比如，计算bad speculation需要用到事件inst_retired，inst_spec和cycles，计算retiring需要用到事件inst_retired和cycles。那么perf应该这样使用：
+```
+perf stat -e "{inst_retired,inst_spec,cycles}","{inst_spec,cycles}"
+```
+用libkperf可以这样实现：
 ```c++
-// c++代码示例
-#include <iostream>
-#include "symbol.h"
-#include "pmu.h"
-#include "pcerrc.h"
-
-unsigned numEvt = 5;
-char *evtList[numEvt] = {"cycles","branch-loads","branch-load-misses","iTLB-loads","inst_retired"};
-// 前四个事件是一个分组
-struct EvtAttr groupId[numEvt] = {1,1,1,1,-1};
+// 指定5个事件，因为inst_retired和cycles会重复出现在多个指标中，所以需要重复指定事件。
+char *evtList[5] = {"inst_retired", "inst_spec", "cycles", "inst_retired", "cycles"};
+// 指定事件分组编号，前三个事件为一组，后两个事件为一组。
+EvtAttr groupId[5] = {1,1,1,2,2};
 PmuAttr attr = {0};
 attr.evtList = evtList;
-attr.numEvt = numEvt;
+attr.numEvt = 5;
 attr.evtAttr = groupId;
-
 int pd = PmuOpen(COUNTING, &attr);
-if ( pd == -1) {
-   printf("kperf pmuopen counting failed, expect err is nil, but is %s\n", Perror());
-}
 PmuEnable(pd);
 sleep(1);
 PmuDisable(pd);
-PmuData* data = nullptr;
+PmuData *data = nullptr;
 int len = PmuRead(pd, &data);
-for (int i = 0; i < len; i++) {
-    printf("evt=%s, count=%d evt=%d\n", data[i].evt, data[i].count, data[i].evt);
+// 根据分组来聚合数据
+map<int, map<string, uint64_t>> evtMap;
+for (int i=0;i<len;++i) {
+    evtMap[data[i].groupId][data[i].evt] += data[i].count;
 }
-PmuClose(pd);
+// 获取第一个分组的数据，计算bad speculation。
+cout << "bad spec: " << (double)(evtMap[1]["inst_spec"] - evtMap[1]["inst_retired"])/evtMap[1]["cycles"] << "\n";
+// 获取第二个分组的数据，计算retiring。
+cout << "retiring: " << (double)evtMap[2]["inst_retired"]/(6*evtMap[2]["cycles"]) << "\n";
 ```
 
 ```python
 # python代码示例
 import kperf
 import time
+from collections import defaultdict
 
-evtList = ["cycles","branch-loads","branch-load-misses","iTLB-loads","inst_retired"]
-# 前四个事件是一个分组
-evtAttrList = [1,1,1,1,-1]
+evtList = ["inst_retired", "inst_spec", "cycles", "inst_retired", "cycles"]
+# 指定事件分组编号，前三个事件为一组，后两个事件为一组。
+evtAttrList = [1,1,1,2,2]
 pmu_attr = kperf.PmuAttr(evtList=evtList, evtAttr = evtAttrList)
 pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
 kperf.enable(pd)
 time.sleep(1)
 kperf.disable(pd)
 pmu_data = kperf.read(pd)
-pd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
+evtMap = defaultdict(lambda: defaultdict(int))
 for data in pmu_data.iter:
-    print(f"cpu {data.cpu} count {data.count} evt {data.evt}")
+    evtMap[data.groupId][data.evt] += data.count
+
+bad_spec = (evtMap[1]["inst_spec"]-evtMap[1]["inst_retired"])/evtMap[1]["cycles"]
+retiring = evtMap[2]["inst_retired"]/(6*evtMap[2]["cycles"])
+print(f"bad spec: {bad_spec}")
+print(f"retiring: {retiring}")
 kperf.close(pd)
 ```
 
@@ -717,8 +721,8 @@ import "fmt"
 import "time"
 
 func main() {
-    evtList := []string{"cycles","branch-loads","branch-load-misses","iTLB-loads","inst_retired"}
-    evtAttrList := []int{1,1,1,1,-1}
+    evtList := []string{"inst_retired", "inst_spec", "cycles", "inst_retired", "cycles"}
+    evtAttrList := []int{1,1,1,2,2}
     attr := kperf.PmuAttr{EvtList: evtList, EvtAttr: evtAttrList}
     pd, err := kperf.PmuOpen(kperf.COUNT, attr)
     if err != nil {
@@ -735,11 +739,36 @@ func main() {
         return
     }
 
-    for _, o := range dataVo.GoData {
-        fmt.Printf("cpu %v count %v evt %v\n", o.Cpu, o.Count, o.Evt)
+    evtMap := make(map[int]map[string]uint64)
+	for _, data := range dataVo.GoData {
+		groupId := data.GroupId
+		evt := data.Evt
+		if _, ok := evtMap[groupId]; !ok {
+			evtMap[groupId] = make(map[string]uint64)
+		}
+		evtMap[groupId][evt] += data.Count
+	}
+
+	if group1, ok1 := evtMap[1]; ok1 {
+		if instSpec, ok2 := group1["inst_spec"]; ok2 {
+			if instRetired, ok3 := group1["inst_retired"]; ok3 {
+				if cycles, ok4 := group1["cycles"]; ok4 && cycles != 0 {
+					fmt.Printf("bad spec: %f\n", float64(instSpec-instRetired)/float64(cycles))
+				}
+			}
+		}
+	}
+	if group2, ok1 := evtMap[2]; ok1 {
+        if instRetired, ok2 := group2["inst_retired"]; ok2 {
+            if cycles, ok3 := group2["cycles"]; ok3 && cycles != 0 {
+                fmt.Printf("retiring: %f\n", float64(instRetired)/float64(6*cycles))
+            }
+        }
     }
+
     kperf.PmuClose(pd)
 }
+```
 
 ```
 

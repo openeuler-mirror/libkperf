@@ -150,7 +150,7 @@ namespace KUNPENG_PMU {
             }
             fdNum += CalRequireFd(cpuTopoList.size(), procTopoList.size(), taskParam->pmuEvt->collectType);
             std::shared_ptr<EvtList> evtList =
-                    std::make_shared<EvtList>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt, pmuTaskAttrHead->group_id);
+                    std::make_shared<EvtList>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt, pmuTaskAttrHead->groupId);
             needBytesNum += PredictRequiredMemory(taskParam->pmuEvt->collectType, cpuTopoList.size(), procTopoList.size());
             evtList->SetBranchSampleFilter(GetBranchSampleFilter(pd));
             InsertEvtList(pd, evtList);

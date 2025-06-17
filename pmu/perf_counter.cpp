@@ -137,6 +137,7 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int grou
             this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, 0);
         }
     }
+    this->groupFd = groupFd;
     DBG_PRINT("type: %d cpu: %d config: %llx config1: %llx config2: %llx myfd: %d groupfd: %d\n",
         attr.type, cpu, attr.config, attr.config1, attr.config2, this->fd, groupFd);
     if (__glibc_unlikely(this->fd < 0)) {
@@ -150,6 +151,11 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int grou
  */
 int KUNPENG_PMU::PerfCounter::Enable()
 {
+    if (groupFd != -1) {
+        // Only group leader should use ioctl to enable, disable or reset,
+        // otherwise each event in the group will be collected for different durations.
+        return SUCCESS;
+    }
     int err = PerfEvt::Enable();
     if (err != SUCCESS) {
         return err;
@@ -158,4 +164,20 @@ int KUNPENG_PMU::PerfCounter::Enable()
     this->enabled = 0;
     this->running = 0;
     return SUCCESS;
+}
+
+int KUNPENG_PMU::PerfCounter::Disable()
+{
+    if (groupFd != -1) {
+        return SUCCESS;
+    }
+    return PerfEvt::Disable();
+}
+
+int KUNPENG_PMU::PerfCounter::Reset()
+{
+    if (groupFd != -1) {
+        return SUCCESS;
+    }
+    return PerfEvt::Reset();
 }
