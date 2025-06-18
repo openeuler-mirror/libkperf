@@ -346,6 +346,8 @@ func PmuDeviceOpen(attr []PmuDeviceAttr) (int, error) 初始化采集uncore事�
     * PMU_PCIE_TX_MRD_BW 采集pcie设备的tx方向上的读带宽，单位：Bytes/ns
     * PMU_PCIE_TX_MWR_BW 采集pcie设备的tx方向上的读带宽，单位：Bytes/ns
     * PMU_SMMU_TRAN 采集指定smmu设备的地址转换次数，单位：count
+    * PMU_HHA_CROSS_NUMA 采集每个numa的跨numa访问HHA的操作比例
+    * PMU_HHA_CROSS_SOCKET 采集每个numa的跨socket访问HHA的操作比例
   * Bdf: 指定需要采集设备的bdf号，只对pcie和smmu指标有效
 * 返回值是int和error，pd > 0表示初始化成功，pd == -1初始化失败，可通过kperf.error()查看错误信息，以下是一个kperf.device_open的示例
 

@@ -107,12 +107,12 @@ class SymbolMode:
     RESOLVE_ELF_DWARF = 2  # Resolve elf and dwarf. All fields in Symbol will be valid.
 
 class PmuDeviceMetric:
-    # Pernuma metric.
-    # Collect ddr read bandwidth for each numa node.
+    # Perchannel metric.
+    # Collect ddr read bandwidth for each channel.
     # Unit: Bytes/s
     PMU_DDR_READ_BW = 0
-    # Pernuma metric.
-    # Collect ddr write bandwidth for each numa node.
+    # Perchannel metric.
+    # Collect ddr write bandwidth for each channel.
     # Unit: Bytes/s
     PMU_DDR_WRITE_BW = 1
     # Percore metric.
@@ -127,8 +127,8 @@ class PmuDeviceMetric:
     # Collect L3 total reference count, including miss and hit count.
     # Unit: count
     PMU_L3_REF = 4
-    # Pernuma metric.
-    # Collect L3 total latency for each numa node.
+    # Percluster metric.
+    # Collect L3 total latency for each cluster node.
     # Unit: cycles
     PMU_L3_LAT = 5
     # Collect pcie rx bandwidth.
@@ -146,6 +146,12 @@ class PmuDeviceMetric:
     # Collect smmu address transaction.
     # Unit: count
     PMU_SMMU_TRAN = 10
+    # Pernuma metric.
+    # Collect rate of cross-numa operations received by HHA.
+    PMU_HHA_CROSS_NUMA = 11
+    # Pernuma metric.
+    # Collect rate of cross-socket operations received by HHA.
+    PMU_HHA_CROSS_SOCKET = 12
 
 class PmuDeviceAttr(_libkperf.PmuDeviceAttr):
     """

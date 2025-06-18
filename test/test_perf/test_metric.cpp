@@ -310,3 +310,28 @@ TEST_F(TestMetric, GetMetricSmmuTransaction)
     PmuDataFree(oriData);
     PmuClose(pd);
 }
+
+TEST_F(TestMetric, GetMetricHHACross)
+{
+    PmuDeviceAttr devAttr[2] = {};
+    devAttr[0].metric = PMU_HHA_CROSS_NUMA;
+    devAttr[1].metric = PMU_HHA_CROSS_SOCKET;
+    int pd = PmuDeviceOpen(devAttr, 2);
+    ASSERT_NE(pd, -1);
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+    PmuData* oriData = nullptr;
+    int oriLen = PmuRead(pd, &oriData);
+    ASSERT_NE(oriLen, -1);
+
+    PmuDeviceData *devData = nullptr;
+    auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
+    ASSERT_EQ(devData[0].metric, PMU_HHA_CROSS_NUMA);
+    ASSERT_EQ(devData[0].mode, PMU_METRIC_NUMA);
+    ASSERT_EQ(devData[len - 1].metric, PMU_HHA_CROSS_SOCKET);
+    ASSERT_EQ(devData[len - 1].mode, PMU_METRIC_NUMA);
+    DevDataFree(devData);
+    PmuDataFree(oriData);
+    PmuClose(pd);
+}

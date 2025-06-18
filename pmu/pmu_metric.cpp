@@ -84,11 +84,13 @@ namespace KUNPENG_PMU {
         {PmuDeviceMetric::PMU_PCIE_RX_MWR_BW, "PMU_PCIE_RX_MWR_BW"},
         {PmuDeviceMetric::PMU_PCIE_TX_MRD_BW, "PMU_PCIE_TX_MRD_BW"},
         {PmuDeviceMetric::PMU_PCIE_TX_MWR_BW, "PMU_PCIE_TX_MWR_BW"},
-        {PmuDeviceMetric::PMU_SMMU_TRAN, "PMU_SMMU_TRAN"}
+        {PmuDeviceMetric::PMU_SMMU_TRAN, "PMU_SMMU_TRAN"},
+        {PmuDeviceMetric::PMU_HHA_CROSS_NUMA, "PMU_HHA_CROSS_NUMA"},
+        {PmuDeviceMetric::PMU_HHA_CROSS_SOCKET, "PMU_HHA_CROSS_SOCKET"},
     };
 
     set<PmuDeviceMetric> percoreMetric = {PMU_L3_TRAFFIC, PMU_L3_MISS, PMU_L3_REF};
-    set<PmuDeviceMetric> pernumaMetric = {PMU_L3_LAT};
+    set<PmuDeviceMetric> pernumaMetric = {PMU_HHA_CROSS_NUMA, PMU_HHA_CROSS_SOCKET};
     set<PmuDeviceMetric> perClusterMetric = {PMU_L3_LAT};
     set<PmuDeviceMetric> perChannelMetric = {PMU_DDR_READ_BW, PMU_DDR_WRITE_BW};
     set<PmuDeviceMetric> perpcieMetric = {PMU_PCIE_RX_MRD_BW,
@@ -269,6 +271,30 @@ namespace KUNPENG_PMU {
                 2
             }
         };
+
+        PMU_METRIC_PAIR HHA_CROSS_NUMA = {
+            PmuDeviceMetric::PMU_HHA_CROSS_NUMA,
+            {
+                "hisi_sccl",
+                "hha",
+                {"0x0", "0x02"},
+                "",
+                "",
+                0
+            }
+        };
+
+        PMU_METRIC_PAIR HHA_CROSS_SOCKET = {
+            PmuDeviceMetric::PMU_HHA_CROSS_SOCKET,
+            {
+                "hisi_sccl",
+                "hha",
+                {"0x0", "0x01"},
+                "",
+                "",
+                0
+            }
+        };
     }
 
     static const map<PmuDeviceMetric, UncoreDeviceConfig> HIP_A_UNCORE_METRIC_MAP {
@@ -278,6 +304,8 @@ namespace KUNPENG_PMU {
         METRIC_CONFIG::L3_MISS,
         METRIC_CONFIG::L3_REF,
         METRIC_CONFIG::SMMU_TRAN,
+        METRIC_CONFIG::HHA_CROSS_NUMA,
+        METRIC_CONFIG::HHA_CROSS_SOCKET,
     };
 
     static const map<PmuDeviceMetric, UncoreDeviceConfig> HIP_B_UNCORE_METRIC_MAP {
@@ -292,6 +320,8 @@ namespace KUNPENG_PMU {
         METRIC_CONFIG::PCIE_TX_MRD_BW,
         METRIC_CONFIG::PCIE_TX_MWR_BW,
         METRIC_CONFIG::SMMU_TRAN,
+        METRIC_CONFIG::HHA_CROSS_NUMA,
+        METRIC_CONFIG::HHA_CROSS_SOCKET,
     };
 
     const UNCORE_METRIC_MAP UNCORE_METRIC_CONFIG_MAP = {
@@ -852,7 +882,7 @@ namespace KUNPENG_PMU {
     }
 
     // remove duplicate device attribute
-    static int RemoveDupDeviceAttr(struct PmuDeviceAttr *attr, unsigned len, std::vector<PmuDeviceAttr>& deviceAttr, bool l3ReDup)
+    static int RemoveDupDeviceAttr(struct PmuDeviceAttr *attr, unsigned len, std::vector<PmuDeviceAttr>& deviceAttr)
     {
         std::unordered_set<std::string> uniqueSet;
         for (int i = 0; i < len; ++i) {
@@ -864,17 +894,6 @@ namespace KUNPENG_PMU {
             }
 
             if (uniqueSet.find(key) == uniqueSet.end()) {
-                // when in deviceopen remove the same PMU_L3_TRAFFIC and PMU_L3_REF,
-                // but when getDevMetric we need to keep them.
-                if (l3ReDup == true &&
-                    (attr[i].metric == PmuDeviceMetric::PMU_L3_TRAFFIC || attr[i].metric == PmuDeviceMetric::PMU_L3_REF)) {
-                    if (uniqueSet.find(std::to_string(PmuDeviceMetric::PMU_L3_TRAFFIC)) != uniqueSet.end()) {
-                        continue;
-                    }
-                    if (uniqueSet.find(std::to_string(PmuDeviceMetric::PMU_L3_REF)) != uniqueSet.end()) {
-                        continue;
-                    }
-                }
                 uniqueSet.insert(key);
                 deviceAttr.emplace_back(attr[i]);
             }
@@ -957,6 +976,9 @@ namespace KUNPENG_PMU {
             case PMU_PCIE_TX_MWR_BW:
             case PMU_SMMU_TRAN:
                 return PMU_METRIC_BDF;
+            case PMU_HHA_CROSS_NUMA:
+            case PMU_HHA_CROSS_SOCKET:
+                return PMU_METRIC_NUMA;
         }
         return PMU_METRIC_INVALID;
     }
@@ -977,25 +999,57 @@ namespace KUNPENG_PMU {
 
     int AggregateByNuma(const PmuDeviceMetric metric, const vector<InnerDeviceData> &rawData, vector<PmuDeviceData> &devData)
     {
-        map<unsigned, PmuDeviceData> devDataByNuma;
+        const auto& deviceConfig = GetDeviceMtricConfig();
+        const auto& findConfig = deviceConfig.find(metric);
+        if (findConfig == deviceConfig.end()) {
+            return SUCCESS;
+        }
+        auto &evts = findConfig->second.events;
+        if (evts.size() != 2) {
+            return SUCCESS;
+        }
+        // Event name for total access count.
+        string totalEvt = evts[0];
+        // Event name for cross-numa/cross-socket count.
+        string crossEvt = evts[1];
+        // Sort data by numa, and then sort by event string.
+        map<unsigned, unordered_map<string, InnerDeviceData>> devDataByNuma;
         for (auto &data : rawData) {
+            string devName;
+            string evtName;
+            if (!GetDeviceName(data.evtName, devName, evtName)) {
+                continue;
+            }
+            auto evtConfig = ExtractEvtStr("config", evtName);
             auto findData = devDataByNuma.find(data.numaId);
             if (findData == devDataByNuma.end()) {
-                PmuDeviceData outData;
-                outData.metric = data.metric;
-                outData.count = data.count;
-                outData.mode = GetMetricMode(data.metric);
-                outData.numaId = data.numaId;
-                devDataByNuma[data.numaId] = outData;
+                devDataByNuma[data.numaId][evtConfig] = data;
             } else {
-                findData->second.count += data.count;
+                devDataByNuma[data.numaId][evtConfig].count += data.count;
             }
         }
 
         for (auto &data : devDataByNuma) {
-            devData.push_back(data.second);
+            // Get events of cross-numa/cross-socket access count and total access count.
+            auto findcrossData = data.second.find(crossEvt);
+            auto findtotalData = data.second.find(totalEvt);
+            if (findcrossData == data.second.end() || findtotalData == data.second.end()) {
+                continue;
+            }
+            // Compute ratio: cross access count / total access count
+            double ratio = 0.0;
+            if (findtotalData->second.count != 0) {
+                ratio = (double)(findcrossData->second.count) / findtotalData->second.count;
+            } else {
+                ratio = -1;
+            }
+            PmuDeviceData outData;
+            outData.metric = metric;
+            outData.count = ratio;
+            outData.mode = GetMetricMode(metric);
+            outData.numaId = data.first;
+            devData.push_back(outData);
         }
-
         return SUCCESS;
     }
 
@@ -1264,6 +1318,8 @@ namespace KUNPENG_PMU {
         {PMU_PCIE_TX_MRD_BW, PcieBWAggregate},
         {PMU_PCIE_TX_MWR_BW, PcieBWAggregate},
         {PMU_SMMU_TRAN, SmmuTransAggregate},
+        {PMU_HHA_CROSS_NUMA, AggregateByNuma},
+        {PMU_HHA_CROSS_SOCKET, AggregateByNuma},
     };
 
     static bool IsMetricEvent(const string &devName, const string &evtName, const PmuDeviceAttr &devAttr)
@@ -1366,7 +1422,7 @@ namespace KUNPENG_PMU {
             if (perClusterMetric.find(devAttr.metric) != perClusterMetric.end()) {
                 devData.clusterId = pmuData[i].cpuTopo->coreId / clusterWidth;
             }
-            if (perChannelMetric.find(devAttr.metric) != pernumaMetric.end()) {
+            if (perChannelMetric.find(devAttr.metric) != perChannelMetric.end()) {
                 devData.ddrNumaId = pmuData[i].cpuTopo->numaId;
                 devData.socketId = pmuData[i].cpuTopo->socketId;
             }
@@ -1454,7 +1510,7 @@ int PmuDeviceOpen(struct PmuDeviceAttr *attr, unsigned len)
         }
         // Remove duplicate device attributes.
         vector<PmuDeviceAttr> deviceAttr;
-        if (RemoveDupDeviceAttr(attr, len, deviceAttr, true) != SUCCESS) {
+        if (RemoveDupDeviceAttr(attr, len, deviceAttr) != SUCCESS) {
             return -1;
         }
         vector<string> configEvtList;
@@ -1466,8 +1522,17 @@ int PmuDeviceOpen(struct PmuDeviceAttr *attr, unsigned len)
             configEvtList.insert(configEvtList.end(), temp.begin(), temp.end());
         }
 
-        vector<char*> evts;
+        //remove the same event of PMU_L3_TRAFFIC and PMU_L3_REF, PMU_HHA_CROSS_NUMA and PMU_HHA_CROSS_SOCKET
+        unordered_set<string> tmpEvents;
+        vector<string> filteredEvtList;
         for (auto& evt : configEvtList) {
+            if (tmpEvents.find(evt) == tmpEvents.end()) {
+                tmpEvents.insert(evt);
+                filteredEvtList.push_back(evt);
+            }
+        }
+        vector<char*> evts;
+        for (auto& evt : filteredEvtList) {
             evts.push_back(const_cast<char*>(evt.c_str()));
         }
 
@@ -1519,7 +1584,7 @@ int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
         }
         // Remove duplicate device attributes.
         vector<PmuDeviceAttr> deviceAttr;
-        if (RemoveDupDeviceAttr(attr, attrLen, deviceAttr, false) != SUCCESS) {
+        if (RemoveDupDeviceAttr(attr, attrLen, deviceAttr) != SUCCESS) {
             return -1;
         }
         // Filter pmuData by metric and generate InnerDeviceData, 
