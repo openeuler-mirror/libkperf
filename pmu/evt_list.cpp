@@ -169,6 +169,7 @@ void KUNPENG_PMU::EvtList::FillFields(
     for (auto i = start; i < end; ++i) {
         data[i].cpuTopo = cpuTopo;
         data[i].evt = this->pmuEvt->name.c_str();
+        data[i].groupId = this->groupId;
         if (data[i].comm == nullptr) {
             data[i].comm = procTopo->comm;
         }

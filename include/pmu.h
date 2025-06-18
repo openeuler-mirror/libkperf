@@ -93,7 +93,7 @@ enum BranchSampleFilter {
 };
 
 struct EvtAttr {
-    int group_id; 
+    int groupId;
 };
 
 struct PmuAttr {
@@ -246,6 +246,7 @@ struct PmuData {
     pid_t pid;                      // process id
     int tid;                        // thread id
     int cpu;                        // cpu id
+    int groupId;                    // id for group event
     struct CpuTopology *cpuTopo;    // cpu topology
     const char *comm;               // process command
     uint64_t period;                // sample period

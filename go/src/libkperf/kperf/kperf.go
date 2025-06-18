@@ -349,6 +349,7 @@ type PmuData struct {
 	Pid int				               // process id
 	Tid int							   // thread id
 	Cpu int						       // cpu id
+	GroupId int						   // id for group event
 	Comm string						   // process command 
 	Period uint64                      // sample period
 	Count uint64					   // event count. Only available for counting
@@ -1179,6 +1180,7 @@ func transferCPmuDataToGoData(cPmuData *C.struct_PmuData, dataLen int, fd int) [
 		goDatas[i].Count = uint64(dataObj.count)
 		goDatas[i].CountPercent = float64(dataObj.countPercent)
 		goDatas[i].Cpu = int(dataObj.cpu)
+		goDatas[i].GroupId = int(dataObj.groupId)
 		if dataObj.cpuTopo != nil {
 			goDatas[i].CpuTopo = CpuTopology{CoreId: int(dataObj.cpuTopo.coreId), NumaId: int(dataObj.cpuTopo.numaId), SocketId: int(dataObj.cpuTopo.socketId)}
 		}

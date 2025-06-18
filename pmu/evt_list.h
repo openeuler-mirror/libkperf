@@ -54,8 +54,8 @@ public:
     using ProcPtr = std::shared_ptr<ProcTopology>;
     using CpuPtr = std::shared_ptr<CpuTopology>;
     EvtList(const SymbolMode &symbolMode, std::vector<CpuPtr> &cpuList, std::vector<ProcPtr> &pidList,
-            std::shared_ptr<PmuEvt> pmuEvt, const int group_id)
-        : symMode(symbolMode), cpuList(cpuList), pidList(pidList), pmuEvt(pmuEvt), group_id(group_id)
+            std::shared_ptr<PmuEvt> pmuEvt, const int groupId)
+        : symMode(symbolMode), cpuList(cpuList), pidList(pidList), pmuEvt(pmuEvt), groupId(groupId)
     {
         this->numCpu = this->cpuList.size();
         this->numPid = this->pidList.size();
@@ -99,7 +99,7 @@ public:
 
     int GetGroupId() const
     {
-        return group_id;
+        return groupId;
     }
 
     int GetBlockedSample() const
@@ -121,7 +121,7 @@ private:
     std::vector<ProcPtr> pidList;
     std::vector<ProcPtr> unUsedPidList;
     std::shared_ptr<PmuEvt> pmuEvt;
-    int group_id; // event group id
+    int groupId; // event group id
     std::vector<std::vector<std::shared_ptr<PerfEvt>>> xyCounterArray;
     std::shared_ptr<PerfEvt> MapPmuAttr(int cpu, int pid, PmuEvt* pmuEvent);
     unsigned int numCpu = 0;

@@ -28,32 +28,32 @@ class SampleRateUnion(ctypes.Union):
 class CtypesEvtAttr(ctypes.Structure):
     """
     struct EvtAttr {
-        int group_id;
+        int groupId;
     };
     """
-    _fields_ = [('group_id', ctypes.c_int)]
+    _fields_ = [('groupId', ctypes.c_int)]
 
-    def __init__(self, group_id: int=0, *args: Any, **kw: Any) -> None:
+    def __init__(self, groupId: int=0, *args: Any, **kw: Any) -> None:
         super().__init__(*args, **kw)
-        self.group_id = ctypes.c_int(group_id)
+        self.groupId = ctypes.c_int(groupId)
 
 class EvtAttr:
     __slots__ = ['__c_evt_attr']
 
-    def __init__(self, group_id: int=0) -> None:
-        self.__c_evt_attr = CtypesEvtAttr(group_id)
+    def __init__(self, groupId: int=0) -> None:
+        self.__c_evt_attr = CtypesEvtAttr(groupId)
 
     @property
     def c_evt_attr(self) -> CtypesEvtAttr:
         return self.__c_evt_attr
     
     @property
-    def group_id(self) -> int:
-        return int(self.c_evt_attr.group_id)
+    def groupId(self) -> int:
+        return int(self.c_evt_attr.groupId)
     
-    @group_id.setter
-    def group_id(self, group_id: int) -> None:
-        self.c_evt_attr.group_id = ctypes.c_int(group_id)
+    @groupId.setter
+    def groupId(self, groupId: int) -> None:
+        self.c_evt_attr.groupId = ctypes.c_int(groupId)
 
     @classmethod
     def from_c_evt_attr(cls, c_evt_attr: CtypesEvtAttr) -> 'EvtAttr':
@@ -1115,7 +1115,8 @@ class CtypesPmuData(ctypes.Structure):
         int64_t ts;                     // time stamp. unit: ns
         pid_t pid;                      // process id
         int tid;                        // thread id
-        unsigned cpu;                   // cpu id
+        int cpu;                        // cpu id
+        int groupId;                    // id for group event
         struct CpuTopology *cpuTopo;    // cpu topology
         const char *comm;               // process command
         uint64_t period;                     // number of Samples
@@ -1132,6 +1133,7 @@ class CtypesPmuData(ctypes.Structure):
         ('pid',     ctypes.c_int),
         ('tid',     ctypes.c_int),
         ('cpu',     ctypes.c_int),
+        ('groupId', ctypes.c_int),
         ('cpuTopo', ctypes.POINTER(CtypesCpuTopology)),
         ('comm',    ctypes.c_char_p),
         ('period',  ctypes.c_uint64),
@@ -1148,6 +1150,7 @@ class CtypesPmuData(ctypes.Structure):
                  pid: int=0,
                  tid: int=0,
                  cpu: int=0,
+                 groupId: int=0,
                  cpuTopo: CtypesCpuTopology=None,
                  comm: str='',
                  period: int=0,
@@ -1164,6 +1167,7 @@ class CtypesPmuData(ctypes.Structure):
         self.pid = ctypes.c_int(pid)
         self.tid = ctypes.c_int(tid)
         self.cpu = ctypes.c_int(cpu)
+        self.groupId = ctypes.c_int(groupId)
         self.cpuTopo = cpuTopo
         self.comm = ctypes.c_char_p(comm.encode(UTF_8))
         self.period = ctypes.c_uint64(period)
@@ -1183,6 +1187,7 @@ class ImplPmuData:
                  pid: int=0,
                  tid: int=0,
                  cpu: int=0,
+                 groupId: int=0,
                  cpuTopo: CpuTopology=None,
                  comm: str='',
                  period: int=0,
@@ -1197,6 +1202,7 @@ class ImplPmuData:
             pid=pid,
             tid=tid,
             cpu=cpu,
+            groupId=groupId,
             cpuTopo=cpuTopo.c_cpu_topo if cpuTopo else None,
             comm=comm,
             period=period,
@@ -1257,6 +1263,14 @@ class ImplPmuData:
     @cpu.setter
     def cpu(self, cpu: int) -> None:
         self.c_pmu_data.cpu = ctypes.c_int(cpu)
+
+    @property
+    def groupId(self) -> int:
+        return self.c_pmu_data.groupId
+
+    @groupId.setter
+    def groupId(self, groupId: int) -> None:
+        self.c_pmu_data.groupId = ctypes.c_int(groupId)
 
     @property
     def cpuTopo(self) -> CpuTopology:

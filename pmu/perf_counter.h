@@ -40,12 +40,15 @@ namespace KUNPENG_PMU {
             std::vector<PmuDataExt*> &extPool, std::vector<PmuSwitchData> &swtichData) override;
         int MapPerfAttr(const bool groupEnable, const int groupFd) override;
         int Enable() override;
+        int Disable() override;
+        int Reset() override;
 
     private:
 	// Accumulated pmu count, time enabled and time running.
 	__u64 count = 0;
 	__u64 enabled = 0;
 	__u64 running = 0;
+    int groupFd = 0;
     };
 }  // namespace KUNPENG_PMU
 #endif
