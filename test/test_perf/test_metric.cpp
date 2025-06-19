@@ -37,7 +37,7 @@ TEST_F(TestMetric, GetInvalidBdfList)
     enum PmuBdfType bdfType = (enum PmuBdfType)5;
     unsigned bdfLen = 0;
     const char** bdfList = PmuDeviceBdfList(bdfType, &bdfLen);
-    cout << Perror() << endl;
+    ASSERT_EQ(Perrorno(), SUCCESS);
     ASSERT_EQ(bdfList, nullptr);
 }
 
@@ -46,7 +46,7 @@ TEST_F(TestMetric, GetPcieBdfList)
     enum PmuBdfType bdfType = PMU_BDF_TYPE_PCIE;
     unsigned bdfLen = 0;
     const char** bdfList = PmuDeviceBdfList(bdfType, &bdfLen);
-    cout << Perror() << endl;
+    ASSERT_EQ(Perrorno(), SUCCESS);
     ASSERT_NE(bdfList, nullptr);
 }
 
@@ -55,7 +55,7 @@ TEST_F(TestMetric, GetSmmuBdfList)
     enum PmuBdfType bdfType = PMU_BDF_TYPE_SMMU;
     unsigned bdfLen = 0;
     const char** bdfList = PmuDeviceBdfList(bdfType, &bdfLen);
-    cout << Perror() << endl;
+    ASSERT_EQ(Perrorno(), SUCCESS);
     ASSERT_NE(bdfList, nullptr);
 }
 
@@ -63,7 +63,7 @@ TEST_F(TestMetric, GetCpuFreq)
 {
     unsigned core = 6;
     int64_t cpu6Freq = PmuGetCpuFreq(core);
-    cout << Perror() << endl;
+    ASSERT_EQ(Perrorno(), SUCCESS);
     ASSERT_NE(cpu6Freq, -1);
 }
 
@@ -72,12 +72,8 @@ TEST_F(TestMetric, GetClusterIdListSuccess)
     unsigned clusterId = 3;
     unsigned* coreList = nullptr;
     int len = PmuGetClusterCore(clusterId, &coreList);
-    cout << Perror() << endl;
+    ASSERT_EQ(Perrorno(), SUCCESS);
     ASSERT_NE(len, -1);
-    for (int i = 0; i < len; ++i) {
-        cout << coreList[i] << " ";
-    }
-    cout << endl;
 }
 
 TEST_F(TestMetric, GetClusterIdListOverSize)
@@ -85,7 +81,7 @@ TEST_F(TestMetric, GetClusterIdListOverSize)
     unsigned clusterId = 33;
     unsigned* coreList = nullptr;
     int len = PmuGetClusterCore(clusterId, &coreList);
-    cout << Perror() << endl;
+    ASSERT_EQ(Perrorno(), SUCCESS);
     ASSERT_EQ(len, -1);
 }
 
@@ -94,12 +90,8 @@ TEST_F(TestMetric, GetNumaIdList)
     unsigned numaId = 2;
     unsigned* coreList = nullptr;
     int len = PmuGetNumaCore(numaId, &coreList);
-    cout << Perror() << endl;
+    ASSERT_EQ(Perrorno(), SUCCESS);
     ASSERT_NE(len, -1);
-    for (int i = 0; i < len; ++i) {
-        cout << coreList[i] << " ";
-    }
-    cout << endl;
 }
 
 TEST_F(TestMetric, CollectDDRBandwidth)
@@ -108,7 +100,6 @@ TEST_F(TestMetric, CollectDDRBandwidth)
     devAttr[0].metric = PMU_DDR_READ_BW;
     devAttr[1].metric = PMU_DDR_WRITE_BW;
     int pd = PmuDeviceOpen(devAttr, 2);
-    cout << Perror() << endl;
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
     sleep(1);
@@ -133,7 +124,6 @@ TEST_F(TestMetric, CollectL3Latency)
     PmuDeviceAttr devAttr = {};
     devAttr.metric = PMU_L3_LAT;
     int pd = PmuDeviceOpen(&devAttr, 1);
-    cout << Perror() << endl;
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
     sleep(1);
@@ -212,7 +202,6 @@ TEST_F(TestMetric, CollectL3LatencyAndL3Miss)
     devAttr[1].metric = PMU_L3_MISS;
 
     int pd = PmuDeviceOpen(devAttr, 2);
-    cout << Perror() << endl;
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
     sleep(1);
@@ -248,7 +237,6 @@ TEST_F(TestMetric, GetMetricPcieBandwidth)
     }
 
     int pd = PmuDeviceOpen(devAttr, bdfLen);
-    cout << Perror() << endl;
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
     sleep(1);
@@ -276,7 +264,6 @@ TEST_F(TestMetric, GetMetricSmmuTransaction)
     const char** bdfList = nullptr;
     unsigned bdfLen = 0;
     bdfList = PmuDeviceBdfList(PMU_BDF_TYPE_SMMU, &bdfLen);
-    cout << Perror() << endl;
     ASSERT_NE(bdfList, nullptr);
     PmuDeviceAttr devAttr[bdfLen] = {};
     for (int i = 0; i < bdfLen; ++i) {
@@ -285,7 +272,6 @@ TEST_F(TestMetric, GetMetricSmmuTransaction)
     }
 
     int pd = PmuDeviceOpen(devAttr, bdfLen);
-    cout << Perror() << endl;
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
     sleep(1);

@@ -1722,21 +1722,21 @@ int PmuGetNumaCore(unsigned nodeId, unsigned **coreList)
         ifstream in(nodeListFile);
         if (!in.is_open()) {
             New(LIBPERF_ERR_KERNEL_NOT_SUPPORT);
-            return LIBPERF_ERR_KERNEL_NOT_SUPPORT;
+            return -1;
         }
         std::string cpulist;
         in >> cpulist;
         auto split = SplitStringByDelimiter(cpulist, '-');
         if (split.size() != 2) {
             New(LIBPERF_ERR_KERNEL_NOT_SUPPORT);
-            return LIBPERF_ERR_KERNEL_NOT_SUPPORT;
+            return -1;
         }
         auto start = stoi(split[0]);
         auto end = stoi(split[1]);
         int coreNums = end - start + 1;
         if (coreNums <= 0) {
             New(LIBPERF_ERR_KERNEL_NOT_SUPPORT);
-            return LIBPERF_ERR_KERNEL_NOT_SUPPORT;
+            return -1;
         }
         InitializeCoreArray();
         *coreList = &coreArray[start];

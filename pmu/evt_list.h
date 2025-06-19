@@ -49,6 +49,7 @@ enum class UncoreState {
     OnlyOther = 0b01,
 };
 
+struct EventGroupInfo;
 class EvtList {
 public:
     using ProcPtr = std::shared_ptr<ProcTopology>;
@@ -71,6 +72,8 @@ public:
     int Reset();
     int Read(std::vector<PmuData>& pmuData, std::vector<PerfSampleIps>& sampleIps, std::vector<PmuDataExt*>& extPool, 
              std::vector<PmuSwitchData>& switchData);
+
+    void SetGroupInfo(const EventGroupInfo &grpInfo);
 
     void SetTimeStamp(const int64_t& timestamp)
     {
@@ -134,6 +137,8 @@ private:
     int prevStat;
     int evtStat;
     std::mutex mutex;
+    // Fixme: decouple group event with normal event, use different classes to implement Read and Init.
+    std::unique_ptr<EventGroupInfo> groupInfo = nullptr;
 };
 
 struct EventGroupInfo {
