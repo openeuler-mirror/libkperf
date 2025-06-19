@@ -1072,6 +1072,102 @@ kperf.PmuClose(fd)
 pcie bw(16:04.0): 124122412 Bytes/ns
 ```
 
+### 采集跨numa/跨socket访问HHA比例
+libkperf提供了采集跨numa/跨socket访问HHA的操作比例的能力，用于分析访存型应用的性能瓶颈，采集以numa为粒度。
+
+参考代码：
+```c++
+// c++代码示例
+#include <iostream>
+#include "symbol.h"
+#include "pmu.h"
+
+PmuDeviceAttr devAttr[2];
+// 采集跨numa访问HHA的操作比例
+devAttr[0].metric = PMU_HHA_CROSS_NUMA;
+// 采集跨socket访问HHA的操作比例
+devAttr[1].metric = PMU_HHA_CROSS_SOCKET;
+// 初始化采集任务
+int pd = PmuDeviceOpen(devAttr, 2);
+// 开始采集
+PmuEnable(pd);
+sleep(1);
+PmuData *oriData = nullptr;
+int oriLen = PmuRead(pd, &oriData);
+PmuDeviceData *devData = nullptr;
+auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
+// devData的长度等于设备numa的个数
+for (int i = 0; i < len / 2; ++i) {
+    cout << "HHA cross-numa operations ratio (Numa: " << devData[i].numaId << "): " << devData[i].count<< "\n";
+}
+for (int i = len / 2; i < len; ++i) {
+    cout << "HHA cross-socket operations ratio (Numa: " << devData[i].numaId << "): " << devData[i].count<< "\n";
+}
+DevDataFree(devData);
+PmuDataFree(oriData);
+PmuDisable(pd);
+```
+
+```python
+# python代码示例
+import kperf
+import time
+
+dev_attr = [
+    kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_HHA_CROSS_NUMA),
+    kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_HHA_CROSS_SOCKET)
+]
+pd = kperf.device_open(dev_attr)
+kperf.enable(pd)
+time.sleep(1)
+kperf.disable(pd)
+ori_data = kperf.read(pd)
+dev_data = kperf.get_device_metric(ori_data, dev_attr)
+for data in dev_data.iter:
+    if data.metric == kperf.PmuDeviceMetric.PMU_HHA_CROSS_NUMA:
+        print(f"HHA cross-numa operations ratio (Numa: {data.numaId}): {data.count}")
+    if data.metric == kperf.PmuDeviceMetric.PMU_HHA_CROSS_SOCKET:
+        print(f"HHA cross-socket operations ratio (Numa: {data.numaId}): {data.count}")
+```
+
+```go
+// go代码用例
+import "libkperf/kperf"
+import "fmt"
+import "time"
+
+deviceAttrs := []kperf.PmuDeviceAttr{kperf.PmuDeviceAttr{Metric: kperf.PMU_HHA_CROSS_NUMA}, kperf.PmuDeviceAttr{Metric: kperf.PMU_HHA_CROSS_SOCKET}}
+fd, _ := kperf.PmuDeviceOpen(deviceAttrs)
+kperf.PmuEnable(fd)
+time.Sleep(1 * time.Second)
+kperf.PmuDisable(fd)
+dataVo, _ := kperf.PmuRead(fd)
+deivceDataVo, _ := kperf.PmuGetDevMetric(dataVo, deviceAttrs)
+for _, v := range deivceDataVo.GoDeviceData {
+    if v.Metric == kperf.PMU_HHA_CROSS_NUMA {
+	    fmt.Printf("HHA cross-numa operations ratio (Numa: %v): %v\n", v.NumaId, v.Count)
+    }
+    if v.Metric == kperf.PMU_HHA_CROSS_SOCKET {
+	    fmt.Printf("HHA cross-socket operations ratio (Numa: %v): %v\n", v.NumaId, v.Count)
+    }
+}
+kperf.DevDataFree(deivceDataVo)
+kperf.PmuDataFree(dataVo)
+kperf.PmuClose(fd)
+```
+
+执行上述代码，输出的结果类似如下：
+```
+HHA cross-numa operations ratio (Numa: 0): 0.438888
+HHA cross-numa operations ratio (Numa: 1): 0.0248052
+HHA cross-numa operations ratio (Numa: 2): 0.0277224
+HHA cross-numa operations ratio (Numa: 3): 0.181404
+HHA cross-socket operations ratio (Numa: 0): 0.999437
+HHA cross-socket operations ratio (Numa: 1): 0.0253748
+HHA cross-socket operations ratio (Numa: 2): 0.329864
+HHA cross-socket operations ratio (Numa: 3): 0.18956
+```
+
 ### 采集系统调用函数耗时信息
 libkperf基于tracepoint事件采集能力，在原有能力的基础上，重新封装了一组相关的调用API，来提供采集系统调用函数耗时信息的能力，类似于perf trace命令
 
