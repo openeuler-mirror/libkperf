@@ -33,30 +33,30 @@ class CtypesEvtAttr(ctypes.Structure):
     """
     _fields_ = [('groupId', ctypes.c_int)]
 
-    def __init__(self, groupId: int=0, *args: Any, **kw: Any) -> None:
-        super().__init__(*args, **kw)
+    def __init__(self, groupId=0, *args, **kw):
+        super(CtypesEvtAttr, self).__init__(*args, **kw)
         self.groupId = ctypes.c_int(groupId)
 
 class EvtAttr:
     __slots__ = ['__c_evt_attr']
 
-    def __init__(self, groupId: int=0) -> None:
+    def __init__(self, groupId=0):
         self.__c_evt_attr = CtypesEvtAttr(groupId)
 
     @property
-    def c_evt_attr(self) -> CtypesEvtAttr:
+    def c_evt_attr(self):
         return self.__c_evt_attr
     
     @property
-    def groupId(self) -> int:
+    def groupId(self):
         return int(self.c_evt_attr.groupId)
     
     @groupId.setter
-    def groupId(self, groupId: int) -> None:
+    def groupId(self, groupId):
         self.c_evt_attr.groupId = ctypes.c_int(groupId)
 
     @classmethod
-    def from_c_evt_attr(cls, c_evt_attr: CtypesEvtAttr) -> 'EvtAttr':
+    def from_c_evt_attr(cls, c_evt_attr):
         evt_attr = cls()
         evt_attr.__c_evt_attr = c_evt_attr
         return evt_attr
@@ -115,24 +115,24 @@ class CtypesPmuAttr(ctypes.Structure):
     ]
 
     def __init__(self,
-                 evtList: List[str]=None,
-                 pidList: List[int]=None,
-                 cpuList: List[int]=None,
-                 evtAttr: List[int]=None,
-                 sampleRate: int=0,
-                 useFreq: bool=False,
-                 excludeUser: bool=False,
-                 excludeKernel: bool=False,
-                 symbolMode: int=0,
-                 callStack: bool=False,
-                 blockedSample: bool=False,
-                 dataFilter: int=0,
-                 evFilter: int=0,
-                 minLatency: int=0,
-                 includeNewFork: bool=False,
-                 branchSampleFilter: int=0,
-                 *args: Any, **kw: Any) -> None:
-        super().__init__(*args, **kw)
+                 evtList=None,
+                 pidList=None,
+                 cpuList=None,
+                 evtAttr=None,
+                 sampleRate=0,
+                 useFreq=False,
+                 excludeUser=False,
+                 excludeKernel=False,
+                 symbolMode=0,
+                 callStack=False,
+                 blockedSample=False,
+                 dataFilter=0,
+                 evFilter=0,
+                 minLatency=0,
+                 includeNewFork=False,
+                 branchSampleFilter=0,
+                 *args, **kw):
+        super(CtypesPmuAttr, self).__init__(*args, **kw)
 
         if evtList:
             numEvt = len(evtList)
@@ -183,26 +183,26 @@ class CtypesPmuAttr(ctypes.Structure):
         self.includeNewFork = includeNewFork
 
 
-class PmuAttr:
+class PmuAttr(object):
     __slots__ = ['__c_pmu_attr']
 
     def __init__(self,
-                 evtList: List[str]=None,
-                 pidList: List[int]=None,
-                 cpuList: List[int]=None,
-                 evtAttr: List[CtypesEvtAttr]=None,
-                 sampleRate: int=0,
-                 useFreq: bool=False,
-                 excludeUser: bool=False,
-                 excludeKernel: bool=False,
-                 symbolMode: int=0,
-                 callStack: bool=False,
-                 blockedSample: bool=False,
-                 dataFilter: int=0,
-                 evFilter: int=0,
-                 minLatency: int=0,
-                 includeNewFork: bool=False,
-                 branchSampleFilter: int=0) -> None:
+                 evtList=None,
+                 pidList=None,
+                 cpuList=None,
+                 evtAttr=None,
+                 sampleRate=0,
+                 useFreq=False,
+                 excludeUser=False,
+                 excludeKernel=False,
+                 symbolMode=0,
+                 callStack=False,
+                 blockedSample=False,
+                 dataFilter=0,
+                 evFilter=0,
+                 minLatency=0,
+                 includeNewFork=False,
+                 branchSampleFilter=0):
         self.__c_pmu_attr = CtypesPmuAttr(
             evtList=evtList,
             pidList=pidList,
@@ -223,19 +223,19 @@ class PmuAttr:
         )
 
     @property
-    def c_pmu_attr(self) -> CtypesPmuAttr:
+    def c_pmu_attr(self):
         return self.__c_pmu_attr
 
     @property
-    def numEvt(self) -> int:
+    def numEvt(self):
         return self.c_pmu_attr.numEvt
 
     @property
-    def evtList(self) -> List[str]:
+    def evtList(self):
         return [self.c_pmu_attr.evtList[i].decode(UTF_8) for i in range(self.numEvt)]
 
     @evtList.setter
-    def evtList(self, evtList: List[str]) -> None:
+    def evtList(self, evtList):
         if evtList:
             numEvt = len(evtList)
             self.c_pmu_attr.evtList = (ctypes.c_char_p * numEvt)(*[evt.encode(UTF_8) for evt in evtList])
@@ -245,15 +245,15 @@ class PmuAttr:
             self.c_pmu_attr.numEvt = ctypes.c_uint(0)
 
     @property
-    def numPid(self) -> int:
+    def numPid(self):
         return self.c_pmu_attr.numPid
 
     @property
-    def pidList(self) -> List[int]:
+    def pidList(self):
         return [self.c_pmu_attr.pidList[i] for i in range(self.numPid)]
 
     @pidList.setter
-    def pidList(self, pidList: List[int]) -> None:
+    def pidList(self, pidList):
         if pidList:
             numPid = len(pidList)
             self.c_pmu_attr.pidList = (ctypes.c_int * numPid)(*[pid for pid in pidList])
@@ -263,11 +263,11 @@ class PmuAttr:
             self.c_pmu_attr.numPid = ctypes.c_uint(0)
 
     @property
-    def evtAttr(self) -> List[CtypesEvtAttr]:
+    def evtAttr(self):
         return [self.c_pmu_attr.evtAttr[i] for i in range(len(self.c_pmu_attr.evtAttr))]
 
     @evtAttr.setter
-    def evtAttr(self, evtAttr: List[CtypesEvtAttr]) -> None:
+    def evtAttr(self, evtAttr):
         if evtAttr:
             numEvtAttr = len(evtAttr)
             self.c_pmu_attr.evtAttr = (CtypesEvtAttr * numEvtAttr)(*[CtypesEvtAttr(evt) for evt in evtAttr])
@@ -275,15 +275,15 @@ class PmuAttr:
             self.c_pmu_attr.evtAttr = None
     
     @property
-    def numCpu(self) -> int:
+    def numCpu(self):
         return self.c_pmu_attr.numCpu
 
     @property
-    def cpuList(self) -> List[int]:
+    def cpuList(self):
         return [self.c_pmu_attr.cpuList[i] for i in range(self.numCpu)]
 
     @cpuList.setter
-    def cpuList(self, cpuList: List[int]) -> None:
+    def cpuList(self, cpuList):
         if cpuList:
             numCpu = len(cpuList)
             self.c_pmu_attr.cpuList = (ctypes.c_int * numCpu)(*[cpu for cpu in cpuList])
@@ -293,109 +293,109 @@ class PmuAttr:
             self.c_pmu_attr.numCpu = ctypes.c_uint(0)
 
     @property
-    def sampleRate(self) -> int:
+    def sampleRate(self):
         if not self.useFreq:
             return self.c_pmu_attr.sampleRate.period
         else:
             return self.c_pmu_attr.sampleRate.freq
 
     @sampleRate.setter
-    def sampleRate(self, sampleRate: int) -> None:
+    def sampleRate(self, sampleRate):
         if not self.useFreq:
             self.c_pmu_attr.sampleRate.period = ctypes.c_uint(sampleRate)
         else:
             self.c_pmu_attr.sampleRate.freq = ctypes.c_uint(sampleRate)
 
     @property
-    def useFreq(self) -> bool:
+    def useFreq(self):
         return bool(self.c_pmu_attr.useFreq)
 
     @useFreq.setter
-    def useFreq(self, useFreq: bool) -> None:
+    def useFreq(self, useFreq):
         self.c_pmu_attr.useFreq = int(useFreq)
 
     @property
-    def excludeUser(self) -> bool:
+    def excludeUser(self):
         return bool(self.c_pmu_attr.excludeUser)
 
     @excludeUser.setter
-    def excludeUser(self, excludeUser: bool) -> None:
+    def excludeUser(self, excludeUser):
         self.c_pmu_attr.excludeUser = int(excludeUser)
 
     @property
-    def excludeKernel(self) -> bool:
+    def excludeKernel(self):
         return bool(self.c_pmu_attr.excludeKernel)
 
     @excludeKernel.setter
-    def excludeKernel(self, excludeKernel: bool) -> None:
+    def excludeKernel(self, excludeKernel):
         self.c_pmu_attr.excludeKernel = int(excludeKernel)
 
     @property
-    def symbolMode(self) -> int:
+    def symbolMode(self):
         return self.c_pmu_attr.symbolMode
 
     @symbolMode.setter
-    def symbolMode(self, symbolMode: int) -> None:
+    def symbolMode(self, symbolMode):
         self.c_pmu_attr.symbolMode = ctypes.c_uint(symbolMode)
 
     @property
-    def callStack(self) -> bool:
+    def callStack(self):
         return bool(self.c_pmu_attr.callStack)
 
     @callStack.setter
-    def callStack(self, callStack: bool) -> None:
+    def callStack(self, callStack):
         self.c_pmu_attr.callStack = int(callStack)
 
     @property
-    def blockedSample(self) -> bool:
+    def blockedSample(self):
         return bool(self.c_pmu_attr.blockedSample)
     
     @blockedSample.setter
-    def blockedSample(self, blockedSample: bool) -> None:
+    def blockedSample(self, blockedSample):
         self.c_pmu_attr.blockedSample = int(blockedSample)
 
     @property
-    def dataFilter(self) -> int:
+    def dataFilter(self):
         return self.c_pmu_attr.dataFilter
 
     @dataFilter.setter
-    def dataFilter(self, dataFilter: int) -> None:
+    def dataFilter(self, dataFilter):
         self.c_pmu_attr.dataFilter = ctypes.c_uint64(dataFilter)
 
     @property
-    def evFilter(self) -> int:
+    def evFilter(self):
         return self.c_pmu_attr.evFilter
 
     @evFilter.setter
-    def evFilter(self, evFilter: int) -> None:
+    def evFilter(self, evFilter):
         self.c_pmu_attr.evFilter = ctypes.c_uint(evFilter)
 
     @property
-    def minLatency(self) -> int:
+    def minLatency(self):
         return self.c_pmu_attr.minLatency
 
     @minLatency.setter
-    def minLatency(self, minLatency: int) -> None:
+    def minLatency(self, minLatency):
         self.c_pmu_attr.minLatency = ctypes.c_ulong(minLatency)
 
     @property
-    def includeNewFork(self) -> bool:
+    def includeNewFork(self):
         return bool(self.c_pmu_attr.includeNewFork)
 
     @includeNewFork.setter
-    def includeNewFork(self, includeNewFork: bool) -> None:
+    def includeNewFork(self, includeNewFork):
         self.c_pmu_attr.includeNewFork = int(includeNewFork)
     
     @property
-    def branchSampleFilter(self) -> int:
+    def branchSampleFilter(self):
         return self.c_pmu_attr.branchSampleFilter
 
     @branchSampleFilter.setter
-    def branchSampleFilter(self, branchSampleFilter: int) -> None:
+    def branchSampleFilter(self, branchSampleFilter):
         self.c_pmu_attr.branchSampleFilter = ctypes.c_ulong(branchSampleFilter)
 
     @classmethod
-    def from_c_pmu_data(cls, c_pmu_attr: CtypesPmuAttr) -> 'PmuAttr':
+    def from_c_pmu_data(cls, c_pmu_attr):
         pmu_attr = cls()
         pmu_attr.__c_pmu_attr = c_pmu_attr
         return pmu_attr
@@ -413,10 +413,10 @@ class CtypesPmuDeviceAttr(ctypes.Structure):
     ]
     
     def __init__(self,
-                metric: int = 0,
-                bdf: str = None,
-                *args: Any, **kw: Any) -> None:
-        super().__init__(*args, **kw)
+                metric=0,
+                bdf= None,
+                *args, **kw):
+        super(CtypesPmuDeviceAttr, self).__init__(*args, **kw)
 
         self.metric = ctypes.c_int(metric)
         if bdf:
@@ -425,44 +425,44 @@ class CtypesPmuDeviceAttr(ctypes.Structure):
             self.bdf = None
 
 
-class PmuDeviceAttr:
+class PmuDeviceAttr(object):
     __slots__ = ['__c_pmu_device_attr']
 
     def __init__(self,
-                 metric: int = 0,
-                 bdf: str = None) -> None:
+                 metric=0,
+                 bdf= None):
         self.__c_pmu_device_attr = CtypesPmuDeviceAttr(
             metric=metric,
             bdf=bdf
         )
 
     @property
-    def c_pmu_device_attr(self) -> CtypesPmuDeviceAttr:
+    def c_pmu_device_attr(self):
         return self.__c_pmu_device_attr
 
     @property
-    def metric(self) -> int:
+    def metric(self):
         return self.c_pmu_device_attr.metric
 
     @metric.setter
-    def metric(self, metric: int) -> None:
+    def metric(self, metric):
         self.c_pmu_device_attr.metric = ctypes.c_int(metric)
 
     @property
-    def bdf(self) -> str:
+    def bdf(self):
         if self.c_pmu_device_attr.bdf:
             return self.c_pmu_device_attr.bdf.decode(UTF_8)
         return None
 
     @bdf.setter
-    def bdf(self, bdf: str) -> None:
+    def bdf(self, bdf):
         if bdf:
             self.c_pmu_device_attr.bdf = ctypes.c_char_p(bdf.encode(UTF_8))
         else:
             self.c_pmu_device_attr.bdf = None
 
     @classmethod
-    def from_c_pmu_device_attr(cls, c_pmu_device_attr: CtypesPmuDeviceAttr) -> 'PmuDeviceAttr':
+    def from_c_pmu_device_attr(cls, c_pmu_device_attr):
         pmu_device_attr = cls()
         pmu_device_attr.__c_pmu_device_attr = c_pmu_device_attr
         return pmu_device_attr
@@ -510,43 +510,43 @@ class CtypesPmuDeviceData(ctypes.Structure):
     ]
     
     @property
-    def coreId(self) -> int:
+    def coreId(self):
         if self.mode == 1:  # PMU_METRIC_CORE
             return self._union.coreId
         return 0
     
     @property
-    def numaId(self) -> int:
+    def numaId(self):
         if self.mode == 2:  # PMU_METRIC_NUMA
             return self._union.numaId
         return 0
     
     @property
-    def clusterId(self) -> int:
+    def clusterId(self):
         if self.mode == 3:  # PMU_METRIC_CLUSTER
             return self._union.clusterId
         return 0
     
     @property
-    def bdf(self) -> str:
+    def bdf(self):
         if self.mode == 4 and self._union.bdf:  # PMU_METRIC_BDF
             return self._union.bdf.decode(UTF_8)
         return ""
 
     @property
-    def channelId(self) -> int:
+    def channelId(self):
         if self.mode == 5 and self._union._structure.channelId:  # PMU_METRIC_CHANNEL
             return self._union._structure.channelId
         return 0
 
     @property
-    def ddrNumaId(self) -> int:
+    def ddrNumaId(self):
         if self.mode == 5 and self._union._structure.ddrNumaId:  # PMU_METRIC_CHANNEL
             return self._union._structure.ddrNumaId
         return 0
 
     @property
-    def socketId(self) -> int:
+    def socketId(self):
         if self.mode == 5 and self._union._structure.socketId:  # PMU_METRIC_CHANNEL
             return self._union._structure.socketId
         return 0
@@ -555,74 +555,74 @@ class ImplPmuDeviceData:
     __slots__ = ['__c_pmu_device_data']
 
     def __init__(self,
-                 metric: int = 0,
-                 count: float = 0,
-                 mode: int = 0) -> None:
+                 metric=0,
+                 count=0,
+                 mode=0):
         self.__c_pmu_device_data = CtypesPmuDeviceData()
         self.__c_pmu_device_data.metric = ctypes.c_int(metric)
         self.__c_pmu_device_data.count = ctypes.c_double(count)
         self.__c_pmu_device_data.mode = ctypes.c_int(mode)
     
     @property
-    def c_pmu_device_data(self) -> CtypesPmuDeviceData:
+    def c_pmu_device_data(self):
         return self.__c_pmu_device_data
     
     @property
-    def metric(self) -> int:
+    def metric(self):
         return self.c_pmu_device_data.metric
     
     @property
-    def count(self) -> float:
+    def count(self):
         return self.c_pmu_device_data.count
     
     @property
-    def mode(self) -> int:
+    def mode(self):
         return self.c_pmu_device_data.mode
     
     @property
-    def coreId(self) -> int:
+    def coreId(self):
         if self.mode == 1:  # PMU_METRIC_CORE
             return self.c_pmu_device_data._union.coreId
         return 0
     
     @property
-    def numaId(self) -> int:
+    def numaId(self):
         if self.mode == 2:  # PMU_METRIC_NUMA
             return self.c_pmu_device_data._union.numaId
         return 0
     
     @property
-    def clusterId(self) -> int:
+    def clusterId(self):
         if self.mode == 3:  # PMU_METRIC_CLUSTER
             return self.c_pmu_device_data._union.clusterId
         return 0
     
     @property
-    def bdf(self) -> str:
+    def bdf(self):
         if self.mode == 4 and self.c_pmu_device_data._union.bdf:  # PMU_METRIC_BDF
             return self.c_pmu_device_data._union.bdf.decode(UTF_8)
         return ""
     
     @property
-    def channelId(self) -> int:
+    def channelId(self):
         if self.mode == 5 and self.c_pmu_device_data._union._structure.channelId:  # PMU_METRIC_CHANNEL
             return self.c_pmu_device_data._union._structure.channelId
         return 0
 
     @property
-    def ddrNumaId(self) -> int:
+    def ddrNumaId(self):
         if self.mode == 5 and self.c_pmu_device_data._union._structure.ddrNumaId:  # PMU_METRIC_CHANNEL
             return self.c_pmu_device_data._union._structure.ddrNumaId
         return 0
 
     @property
-    def socketId(self) -> int:
+    def socketId(self):
         if self.mode == 5 and self.c_pmu_device_data._union._structure.socketId:  # PMU_METRIC_CHANNEL
             return self.c_pmu_device_data._union._structure.socketId
         return 0
 
     @classmethod
-    def from_c_pmu_device_data(cls, c_pmu_device_data: CtypesPmuDeviceData) -> 'ImplPmuDeviceData':
+    def from_c_pmu_device_data(cls, c_pmu_device_data):
         pmu_device_data = cls()
         pmu_device_data.__c_pmu_device_data = c_pmu_device_data
         return pmu_device_data
@@ -631,15 +631,15 @@ class ImplPmuDeviceData:
 class PmuDeviceData:
     __slots__ = ['__pointer', '__iter', '__len']
 
-    def __init__(self, pointer: ctypes.POINTER(CtypesPmuDeviceData) = None, len: int = 0) -> None:
-        self.__pointer = pointer
-        self.__len = len
+    def __init__(self, pointer = None, len=0):
+        self.__pointer =pointer
+        self.__len =len
         self.__iter = (ImplPmuDeviceData.from_c_pmu_device_data(self.__pointer[i]) for i in range(self.__len))
     
-    def __del__(self) -> None:
+    def __del__(self):
         self.free()
     
-    def __len__(self) -> int:
+    def __len__(self):
         return self.__len
     
     def __getitem__(self, index):
@@ -648,14 +648,14 @@ class PmuDeviceData:
         return ImplPmuDeviceData.from_c_pmu_device_data(self.__pointer[index])
     
     @property
-    def len(self) -> int:
+    def len(self):
         return self.__len
     
     @property
-    def iter(self) -> Iterator[ImplPmuDeviceData]:
+    def iter(self):
         return self.__iter
     
-    def free(self) -> None:
+    def free(self):
         if self.__pointer is not None:
             DevDataFree(self.__pointer)
             self.__pointer = None
@@ -684,11 +684,11 @@ class CtypesPmuTraceAttr(ctypes.Structure):
     ]
 
     def __init__(self,
-                 funcs: List[str]=None,
-                 pidList: List[int]=None,
-                 cpuList: List[int]=None,
-                *args: Any, **kw:Any) -> None:
-        super().__init__(*args, **kw)
+                 funcs=None,
+                 pidList=None,
+                 cpuList=None,
+                *args, **kw):
+        super(CtypesPmuTraceAttr, self).__init__(*args, **kw)
 
         if funcs:
             numFuncs = len(funcs)
@@ -715,13 +715,13 @@ class CtypesPmuTraceAttr(ctypes.Structure):
             self.numCpu = ctypes.c_uint(0)
 
 
-class PmuTraceAttr:
+class PmuTraceAttr(object):
     __slots__ = ['__c_pmu_trace_attr']
 
     def __init__(self,
-                 funcs: List[str]=None,
-                 pidList: List[int]=None,
-                 cpuList: List[int]=None) -> None:
+                 funcs=None,
+                 pidList=None,
+                 cpuList=None):
         self.__c_pmu_trace_attr = CtypesPmuTraceAttr(
             funcs=funcs,
             pidList=pidList,
@@ -729,19 +729,19 @@ class PmuTraceAttr:
         )
     
     @property
-    def c_pmu_trace_attr(self) -> CtypesPmuTraceAttr:
+    def c_pmu_trace_attr(self):
         return self.__c_pmu_trace_attr
     
     @property
-    def numFuncs(self) -> int:
+    def numFuncs(self):
         return self.c_pmu_trace_attr.numFuncs
     
     @property
-    def funcs(self) -> List[str]:
+    def funcs(self):
         return [self.c_pmu_trace_attr.funcs[i].decode(UTF_8) for i in range(self.numFuncs)]
     
     @funcs.setter
-    def funcs(self, funcs: List[str]) -> None:
+    def funcs(self, funcs):
         if funcs:
             numFuncs = len(funcs)
             self.c_pmu_trace_attr.funcs = (ctypes.c_char_p * numFuncs)(*[func.encode(UTF_8) for func in funcs])
@@ -751,15 +751,15 @@ class PmuTraceAttr:
             self.c_pmu_trace_attr.numFuncs = ctypes.c_uint(0)
     
     @property
-    def numPid(self) -> int:
+    def numPid(self):
         return self.c_pmu_trace_attr.numPid
     
     @property
-    def pidList(self) -> List[int]:
+    def pidList(self):
         return [self.c_pmu_trace_attr.pidList[i] for i in range(self.numPid)]
     
     @pidList.setter
-    def pidList(self, pidList: List[int]) -> None:
+    def pidList(self, pidList):
         if pidList:
             numPid = len(pidList)
             self.c_pmu_trace_attr.pidList = (ctypes.c_int * numPid)(*[pid for pid in pidList])
@@ -769,15 +769,15 @@ class PmuTraceAttr:
             self.c_pmu_trace_attr.numPid = ctypes.c_uint(0)
     
     @property
-    def numCpu(self) -> int:
+    def numCpu(self):
         return self.c_pmu_trace_attr.numCpu
     
     @property
-    def cpuList(self) -> List[int]:
+    def cpuList(self):
         return [self.c_pmu_trace_attr.cpuList[i] for i in range(self.numCpu)]
     
     @cpuList.setter
-    def cpuList(self, cpuList: List[int]) -> None:
+    def cpuList(self, cpuList):
         if cpuList:
             numCpu = len(cpuList)
             self.c_pmu_trace_attr.cpuList = (ctypes.c_int * numCpu)(*[cpu for cpu in cpuList])
@@ -802,11 +802,11 @@ class CtypesCpuTopology(ctypes.Structure):
     ]
 
     def __init__(self,
-                 coreId: int=0,
-                 numaId: int=0,
-                 socketId: int=0,
-                 *args: Any, **kw: Any) -> None:
-        super().__init__(*args, **kw)
+                 coreId=0,
+                 numaId=0,
+                 socketId=0,
+                 *args, **kw):
+        super(CtypesCpuTopology, self).__init__(*args, **kw)
         self.coreId =   ctypes.c_int(coreId)
         self.numaId =   ctypes.c_int(numaId)
         self.socketId = ctypes.c_int(socketId)
@@ -816,9 +816,9 @@ class CpuTopology:
     __slots__ = ['__c_cpu_topo']
 
     def __init__(self,
-                 coreId: int=0,
-                 numaId: int=0,
-                 socketId: int=0) -> None:
+                 coreId=0,
+                 numaId=0,
+                 socketId=0):
         self.__c_cpu_topo = CtypesCpuTopology(
             coreId=coreId,
             numaId=numaId,
@@ -826,35 +826,35 @@ class CpuTopology:
         )
 
     @property
-    def c_cpu_topo(self) -> CtypesCpuTopology:
+    def c_cpu_topo(self):
         return self.__c_cpu_topo
 
     @property
-    def coreId(self) -> int:
+    def coreId(self):
         return self.c_cpu_topo.coreId
 
     @coreId.setter
-    def coreId(self, coreId: int) -> None:
+    def coreId(self, coreId):
         self.c_cpu_topo.coreId = ctypes.c_int(coreId)
 
     @property
-    def numaId(self) -> int:
+    def numaId(self):
         return self.c_cpu_topo.numaId
 
     @numaId.setter
-    def numaId(self, numaId: int) -> None:
+    def numaId(self, numaId):
         self.c_cpu_topo.numaId = ctypes.c_int(numaId)
 
     @property
-    def socketId(self) -> int:
+    def socketId(self):
         return self.c_cpu_topo.socketId
 
     @socketId.setter
-    def socketId(self, socketId: int) -> None:
+    def socketId(self, socketId):
         self.c_cpu_topo.socketId = ctypes.c_int(socketId)
 
     @classmethod
-    def from_c_cpu_topo(cls, c_cpu_topo: CtypesCpuTopology) -> 'CpuTopology':
+    def from_c_cpu_topo(cls, c_cpu_topo):
         cpu_topo = cls()
         cpu_topo.__c_cpu_topo = c_cpu_topo
         return cpu_topo
@@ -865,27 +865,27 @@ class CtypesSampleRawData(ctypes.Structure):
         ('data', ctypes.c_char_p)
     ]
 
-    def __init__(self, data: str='', *args: Any, **kw: Any) -> None:
-        super().__init__(*args, **kw)
+    def __init__(self, data='', *args, **kw):
+        super(CtypesSampleRawData, self).__init__(*args, **kw)
         self.data = ctypes.c_char_p(data.encode(UTF_8))
 
 
 class SampleRawData:
     __slots__ = ['__c_sample_rawdata']
 
-    def __init__(self, data: str='') -> None:
+    def __init__(self, data=''):
         self.__c_sample_rawdata = CtypesSampleRawData(data)
 
     @property
-    def c_pmu_data_rawData(self) -> CtypesSampleRawData:
+    def c_pmu_data_rawData(self):
         return self.__c_sample_rawdata
 
     @property
-    def data(self) -> str:
+    def data(self):
         return self.__c_sample_rawdata.data.decode(UTF_8)
 
     @classmethod
-    def from_sample_raw_data(cls, c_sample_raw_data: CtypesSampleRawData) -> 'SampleRawData':
+    def from_sample_raw_data(cls, c_sample_raw_data):
         sample_raw_data = cls()
         sample_raw_data.__c_sample_rawdata = c_sample_raw_data
         return sample_raw_data
@@ -910,9 +910,9 @@ class ImplBranchRecords():
     __slots__ = ['__c_branch_record']
 
     def __init__(self,
-                 fromAddr:  int=0,
-                 toAddr:    int=0,
-                 cycles:    int=0) -> None:
+                 fromAddr=0,
+                 toAddr=0,
+                 cycles=0):
         self.__c_branch_record = CytpesBranchSampleRecord(
             fromAddr=fromAddr,
             toAddr=toAddr,
@@ -920,23 +920,23 @@ class ImplBranchRecords():
         )
 
     @property
-    def c_branch_record(self) -> CytpesBranchSampleRecord:
+    def c_branch_record(self):
         return self.__c_branch_record
 
     @property
-    def fromAddr(self) -> int:
+    def fromAddr(self):
         return self.c_branch_record.fromAddr
     
     @property
-    def toAddr(self) -> int:
+    def toAddr(self):
         return self.c_branch_record.toAddr
     
     @property
-    def cycles(self) -> int:
+    def cycles(self):
         return self.c_branch_record.cycles
     
     @classmethod
-    def from_c_branch_record(cls, c_branch_record: CytpesBranchSampleRecord) -> 'ImplBranchRecords':
+    def from_c_branch_record(cls, c_branch_record):
         branch_record = cls()
         branch_record.__c_branch_record = c_branch_record
         return branch_record
@@ -945,17 +945,17 @@ class ImplBranchRecords():
 class BranchRecords():
     __slots__ = ['__pointer', '__iter', '__len']
 
-    def __init__(self, pointer: ctypes.POINTER(CytpesBranchSampleRecord) = None, nr: int=0) -> None:
+    def __init__(self, pointer = None, nr=0):
         self.__pointer = pointer
         self.__len = nr
         self.__iter = (ImplBranchRecords.from_c_branch_record(self.__pointer[i]) for i in range(self.__len))
     
     @property
-    def len(self) -> int:
+    def len(self):
         return self.__len
 
     @property
-    def iter(self) -> Iterator[ImplBranchRecords]:
+    def iter(self):
         return self.__iter
     
 class CytpesSpeDataExt(ctypes.Structure):
@@ -966,12 +966,12 @@ class CytpesSpeDataExt(ctypes.Structure):
         ('lat',   ctypes.c_ushort),
     ]
     def __init__(self,
-                 pa: int=0,
-                 va: int=0,
-                 event: int=0,
-                 lat: int=0,
-                 *args: Any, **kw: Any) -> None:
-        super().__init__(*args, **kw)
+                 pa=0,
+                 va=0,
+                 event=0,
+                 lat=0,
+                 *args, **kw):
+        super(CytpesSpeDataExt, self).__init__(*args, **kw)
         self.pa = ctypes.c_ulong(pa)
         self.va = ctypes.c_ulong(va)
         self.event = ctypes.c_ulong(event)
@@ -1000,33 +1000,33 @@ class PmuDataExt:
     __slots__ = ['__c_pmu_data_ext']
 
     @property
-    def c_pmu_data_ext(self) -> CtypesPmuDataExt:
+    def c_pmu_data_ext(self):
         return self.__c_pmu_data_ext
 
     @property
-    def pa(self) -> int:
+    def pa(self):
         return self.c_pmu_data_ext.ext.speDataExt.pa
 
     @property
-    def va(self) -> int:
+    def va(self):
         return self.c_pmu_data_ext.ext.speDataExt.va
 
     @property
-    def event(self) -> int:
+    def event(self):
         return self.c_pmu_data_ext.ext.speDataExt.event
 
     @property
-    def lat(self) -> int:
+    def lat(self):
         return self.c_pmu_data_ext.ext.speDataExt.lat
 
     @property
-    def branchRecords(self) -> BranchRecords:
+    def branchRecords(self):
         if self.__c_pmu_data_ext.ext.branchRecords.branchRecords:
             return BranchRecords(self.__c_pmu_data_ext.ext.branchRecords.branchRecords, self.__c_pmu_data_ext.ext.branchRecords.nr)
         return None
 
     @classmethod
-    def from_pmu_data_ext(cls, c_pmu_data_ext: CtypesPmuDataExt) -> 'PmuDataExt':
+    def from_pmu_data_ext(cls, c_pmu_data_ext):
         pmu_data_ext = cls()
         pmu_data_ext.__c_pmu_data_ext = c_pmu_data_ext
         return pmu_data_ext
@@ -1051,13 +1051,13 @@ class CtypesSampleRawField(ctypes.Structure):
     ]
 
     def __init__(self,
-                 field_name: str='',
-                 field_str: str='',
-                 offset: int=0,
-                 size: int=0,
-                 is_signed: int=0,
-                 *args: Any, **kw: Any) -> None:
-        super().__init__(*args, **kw)
+                 field_name='',
+                 field_str='',
+                 offset=0,
+                 size=0,
+                 is_signed=0,
+                 *args, **kw):
+        super(CtypesSampleRawField, self).__init__(*args, **kw)
         self.fieldName = ctypes.c_char_p(field_name.encode(UTF_8))
         self.fieldStr = ctypes.c_char_p(field_str.encode(UTF_8))
         self.offset = ctypes.c_uint(offset)
@@ -1069,39 +1069,39 @@ class SampleRawField:
     __slots__ = ['__c_sample_raw_field']
 
     def __init__(self,
-                 field_name: str='',
-                 field_str: str='',
-                 offset: int=0,
-                 size: int=0,
-                 is_signed: int=0) -> None:
+                 field_name='',
+                 field_str='',
+                 offset=0,
+                 size=0,
+                 is_signed=0):
         self.__c_sample_raw_field = CtypesSampleRawField(field_name, field_str, offset, size, is_signed)
 
     @property
-    def c_sample_raw_field(self) -> CtypesSampleRawField:
+    def c_sample_raw_field(self):
         return self.__c_sample_raw_field
 
     @property
-    def field_name(self) -> str:
+    def field_name(self):
         return self.__c_sample_raw_field.fieldName.decode(UTF_8)
 
     @property
-    def field_str(self) -> str:
+    def field_str(self):
         return self.__c_sample_raw_field.fieldStr.decode(UTF_8)
 
     @property
-    def size(self) -> int:
+    def size(self):
         return self.__c_sample_raw_field.size
 
     @property
-    def offset(self) -> int:
+    def offset(self):
         return self.__c_sample_raw_field.offset
 
     @property
-    def is_signed(self) -> bool:
+    def is_signed(self):
         return bool(self.__c_sample_raw_field.isSigned)
 
     @classmethod
-    def from_sample_raw_field(cls, __c_sample_raw_field: CtypesSampleRawField):
+    def from_sample_raw_field(cls, __c_sample_raw_field):
         sample_raw_data = cls()
         sample_raw_data.__c_sample_raw_field = __c_sample_raw_field
         return sample_raw_data
@@ -1144,22 +1144,22 @@ class CtypesPmuData(ctypes.Structure):
     ]
 
     def __init__(self,
-                 stack: CtypesStack=None,
-                 evt: str='',
-                 ts: int=0,
-                 pid: int=0,
-                 tid: int=0,
-                 cpu: int=0,
-                 groupId: int=0,
-                 cpuTopo: CtypesCpuTopology=None,
-                 comm: str='',
-                 period: int=0,
-                 count: int=0,
-                 countPercent: float=0.0,
-                 ext: CtypesPmuDataExt=None,
-                 rawData: CtypesSampleRawData=None,
-                 *args: Any, **kw: Any) -> None:
-        super().__init__(*args, **kw)
+                 stack=None,
+                 evt='',
+                 ts=0,
+                 pid=0,
+                 tid=0,
+                 cpu=0,
+                 groupId=0,
+                 cpuTopo=None,
+                 comm='',
+                 period=0,
+                 count=0,
+                 countPercent=0.0,
+                 ext=None,
+                 rawData=None,
+                 *args, **kw):
+        super(CtypesPmuData, self).__init__(*args, **kw)
 
         self.stack = stack
         self.evt = ctypes.c_char_p(evt.encode(UTF_8))
@@ -1181,20 +1181,20 @@ class ImplPmuData:
     __slots__ = ['__c_pmu_data']
 
     def __init__(self,
-                 stack: Stack=None,
-                 evt: str='',
-                 ts: int=0,
-                 pid: int=0,
-                 tid: int=0,
-                 cpu: int=0,
-                 groupId: int=0,
-                 cpuTopo: CpuTopology=None,
-                 comm: str='',
-                 period: int=0,
-                 count: int=0,
-                 countPercent: float=0.0,
-                 ext: PmuDataExt=None,
-                 rawData: SampleRawData=None) -> None:
+                 stack=None,
+                 evt='',
+                 ts=0,
+                 pid=0,
+                 tid=0,
+                 cpu=0,
+                 groupId=0,
+                 cpuTopo=None,
+                 comm='',
+                 period=0,
+                 count=0,
+                 countPercent=0.0,
+                 ext=None,
+                 rawData=None):
         self.__c_pmu_data = CtypesPmuData(
             stack=stack.c_stack if stack else None,
             evt=evt,
@@ -1213,119 +1213,119 @@ class ImplPmuData:
         )
 
     @property
-    def c_pmu_data(self) -> CtypesPmuData:
+    def c_pmu_data(self):
         return self.__c_pmu_data
 
     @property
-    def stack(self) -> Stack:
+    def stack(self):
         return Stack.from_c_stack(self.c_pmu_data.stack.contents) if self.c_pmu_data.stack else None
 
     @stack.setter
-    def stack(self, stack: Stack) -> None:
+    def stack(self, stack):
         self.c_pmu_data.stack = stack.c_stack if stack else None
 
     @property
-    def evt(self) -> str:
+    def evt(self):
         return self.c_pmu_data.evt.decode(UTF_8)
 
     @evt.setter
-    def evt(self, evt: str) -> None:
+    def evt(self, evt):
         self.c_pmu_data.evt = ctypes.c_char_p(evt.encode(UTF_8))
 
     @property
-    def ts(self) -> int:
+    def ts(self):
         return self.c_pmu_data.ts
 
     @ts.setter
-    def ts(self, ts: int) -> None:
+    def ts(self, ts):
         self.c_pmu_data.ts = ctypes.c_int64(ts)
 
     @property
-    def pid(self) -> int:
+    def pid(self):
         return self.c_pmu_data.pid
 
     @pid.setter
-    def pid(self, pid: int) -> None:
+    def pid(self, pid):
         self.c_pmu_data.pid = ctypes.c_int(pid)
 
     @property
-    def tid(self) -> int:
+    def tid(self):
         return self.c_pmu_data.tid
 
     @tid.setter
-    def tid(self, tid: int) -> None:
+    def tid(self, tid):
         self.c_pmu_data.tid = ctypes.c_int(tid)
 
     @property
-    def cpu(self) -> int:
+    def cpu(self):
         return self.c_pmu_data.cpu
 
     @cpu.setter
-    def cpu(self, cpu: int) -> None:
+    def cpu(self, cpu):
         self.c_pmu_data.cpu = ctypes.c_int(cpu)
 
     @property
-    def groupId(self) -> int:
+    def groupId(self):
         return self.c_pmu_data.groupId
 
     @groupId.setter
-    def groupId(self, groupId: int) -> None:
+    def groupId(self, groupId):
         self.c_pmu_data.groupId = ctypes.c_int(groupId)
 
     @property
-    def cpuTopo(self) -> CpuTopology:
+    def cpuTopo(self):
         return CpuTopology.from_c_cpu_topo(self.c_pmu_data.cpuTopo.contents) if self.c_pmu_data.cpuTopo else None
 
     @cpuTopo.setter
-    def cpuTopo(self, cpuTopo: CpuTopology) -> None:
+    def cpuTopo(self, cpuTopo):
         self.c_pmu_data.cpuTopo = cpuTopo.c_cpu_topo if cpuTopo else None
 
     @property
-    def comm(self) -> str:
+    def comm(self):
         return self.c_pmu_data.comm.decode(UTF_8)
 
     @comm.setter
-    def comm(self, comm: str) -> None:
+    def comm(self, comm):
         self.c_pmu_data.comm = ctypes.c_char_p(comm.encode(UTF_8))
 
     @property
-    def period(self) -> int:
+    def period(self):
         return self.c_pmu_data.period
 
     @period.setter
-    def period(self, period: int) -> None:
+    def period(self, period):
         self.c_pmu_data.period = ctypes.c_uint64(period)
 
     @property
-    def count(self) -> int:
+    def count(self):
         return self.c_pmu_data.count
 
     @count.setter
-    def count(self, count: int) -> None:
+    def count(self, count):
         self.c_pmu_data.count = ctypes.c_uint64(count)
 
     @property
-    def countPercent(self) -> float:
+    def countPercent(self):
         return self.c_pmu_data.countPercent
     
     @countPercent.setter
-    def countPercent(self, countPercent: float) -> None:
+    def countPercent(self, countPercent):
         self.c_pmu_data.countPercent = ctypes.c_double(countPercent)
         
     @property
-    def ext(self) -> PmuDataExt:
+    def ext(self):
         return PmuDataExt.from_pmu_data_ext(self.c_pmu_data.ext.contents) if self.c_pmu_data.ext else None
 
     @property
-    def rawData(self) -> SampleRawData:
+    def rawData(self):
         return SampleRawData.from_sample_raw_data(self.c_pmu_data.rawData) if self.c_pmu_data.rawData else None
 
     @ext.setter
-    def ext(self, ext: PmuDataExt) -> None:
+    def ext(self, ext):
         self.c_pmu_data.ext = ext.c_pmu_data_ext if ext else None
 
     @classmethod
-    def from_c_pmu_data(cls, c_pmu_data: CtypesPmuData) -> 'ImplPmuData':
+    def from_c_pmu_data(cls, c_pmu_data):
         pmu_data = cls()
         pmu_data.__c_pmu_data = c_pmu_data
         return pmu_data
@@ -1334,32 +1334,32 @@ class ImplPmuData:
 class PmuData:
     __slots__ = ['__pointer', '__iter', '__len']
 
-    def __init__(self, pointer: ctypes.POINTER(CtypesPmuData) = None, len: int = 0) -> None:
+    def __init__(self, pointer = None, len=0):
         self.__pointer = pointer
         self.__len = len
         self.__iter = (ImplPmuData.from_c_pmu_data(self.__pointer[i]) for i in range(self.__len))
 
-    def __del__(self) -> None:
+    def __del__(self):
         self.free()
 
-    def __len__(self) -> int:
+    def __len__(self):
         return self.__len
     
     def __iter__(self):
         return self.__iter
     
-    def pointer(self) -> ctypes.POINTER(CtypesPmuData):
+    def pointer(self):
         return self.__pointer
     
     @property
-    def len(self) -> int:
+    def len(self):
         return self.__len
 
     @property
-    def iter(self) -> Iterator[ImplPmuData]:
+    def iter(self):
         return self.__iter
 
-    def free(self) -> None:
+    def free(self):
         if self.__pointer is not None:
             PmuDataFree(self.__pointer)
             self.__pointer = None
@@ -1387,15 +1387,15 @@ class CtypesPmuTraceData(ctypes.Structure):
     ]
 
     def __init__(self,
-                 funcs: str = '',
-                 startTs: int = 0,
-                 elapsedTime: float = 0.0,
-                 pid: int = 0,
-                 tid: int = 0,
-                 cpu: int = 0,
-                 comm: str = '',
-                 *args: Any, **kw: Any) -> None:
-        super().__init__(*args, **kw)
+                 funcs= '',
+                 startTs=0,
+                 elapsedTime=0.0,
+                 pid=0,
+                 tid=0,
+                 cpu=0,
+                 comm= '',
+                 *args, **kw):
+        super(CtypesPmuTraceData, self).__init__(*args, **kw)
 
         self.funcs = ctypes.c_char_p(funcs.encode(UTF_8))
         self.startTs = ctypes.c_int64(startTs)
@@ -1408,14 +1408,14 @@ class CtypesPmuTraceData(ctypes.Structure):
 class ImplPmuTraceData:
     __slots__ = ['__c_pmu_trace_data']
     def __init__(self,
-                 funcs: str = '',
-                 startTs: int = 0,
-                 elapsedTime: float = 0.0,
-                 pid: int = 0,
-                 tid: int = 0,
-                 cpu: int = 0,
-                 comm: str = '',
-                 *args: Any, **kw: Any) -> None:
+                 funcs= '',
+                 startTs=0,
+                 elapsedTime=0.0,
+                 pid=0,
+                 tid=0,
+                 cpu=0,
+                 comm= '',
+                 *args, **kw):
         self.__c_pmu_trace_data = CtypesPmuTraceData(
             funcs=funcs,
             startTs=startTs,
@@ -1427,67 +1427,67 @@ class ImplPmuTraceData:
         )
     
     @property
-    def c_pmu_trace_data(self) -> CtypesPmuTraceData:
+    def c_pmu_trace_data(self):
         return self.__c_pmu_trace_data
     
     @property
-    def funcs(self) -> str:
+    def funcs(self):
         return self.__c_pmu_trace_data.funcs.decode(UTF_8)
     
     @funcs.setter
-    def funcs(self, funcs: str) -> None:
+    def funcs(self, funcs):
         self.__c_pmu_trace_data.funcs = ctypes.c_char_p(funcs.encode(UTF_8))
 
     @property
-    def startTs(self) -> int:
+    def startTs(self):
         return self.__c_pmu_trace_data.startTs
     
     @startTs.setter
-    def startTs(self, startTs: int) -> None:
+    def startTs(self, startTs):
         self.__c_pmu_trace_data.startTs = ctypes.c_int64(startTs)
     
     @property
-    def elapsedTime(self) -> float:
+    def elapsedTime(self):
         return self.__c_pmu_trace_data.elapsedTime
     
     @elapsedTime.setter
-    def elapsedTime(self, elapsedTime: float) -> None:
+    def elapsedTime(self, elapsedTime):
         self.__c_pmu_trace_data.elapsedTime = ctypes.c_double(elapsedTime)
     
     @property
-    def pid(self) -> int:
+    def pid(self):
         return self.__c_pmu_trace_data.pid
     
     @pid.setter
-    def pid(self, pid: int) -> None:
+    def pid(self, pid):
         self.__c_pmu_trace_data.pid = ctypes.c_int(pid)
     
     @property
-    def tid(self) -> int:
+    def tid(self):
         return self.__c_pmu_trace_data.tid
 
     @tid.setter
-    def tid(self, tid: int) -> None:
+    def tid(self, tid):
         self.__c_pmu_trace_data.tid = ctypes.c_int(tid)
     
     @property
-    def cpu(self) -> int:
+    def cpu(self):
         return self.__c_pmu_trace_data.cpu
     
     @cpu.setter
-    def cpu(self, cpu: int) -> None:
+    def cpu(self, cpu):
         self.__c_pmu_trace_data.cpu = ctypes.c_int(cpu)
     
     @property
-    def comm(self) -> str:
+    def comm(self):
         return self.__c_pmu_trace_data.comm.decode(UTF_8)
     
     @comm.setter
-    def comm(self, comm: str) -> None:
+    def comm(self, comm):
         self.__c_pmu_trace_data.comm = ctypes.c_char_p(comm.encode(UTF_8))
     
     @classmethod
-    def from_c_pmu_trace_data(cls, c_pmu_trace_data: CtypesPmuTraceData) -> 'ImplPmuTraceData':
+    def from_c_pmu_trace_data(cls, c_pmu_trace_data):
         pmu_trace_data = cls()
         pmu_trace_data.__c_pmu_trace_data = c_pmu_trace_data
         return pmu_trace_data
@@ -1495,28 +1495,28 @@ class ImplPmuTraceData:
 class PmuTraceData:
     __slots__ = ['__pointer', '__iter', '__len']
 
-    def __init__(self, pointer: ctypes.POINTER(CtypesPmuTraceData) = None, len: int = 0) -> None:
+    def __init__(self, pointer = None, len=0):
         self.__pointer = pointer
         self.__len = len
         self.__iter = (ImplPmuTraceData.from_c_pmu_trace_data(self.__pointer[i]) for i in range(self.__len))
     
-    def __del__(self) -> None:
+    def __del__(self):
         self.free()
     
     @property
-    def len(self) -> int:
+    def len(self):
         return self.__len
     
     @property
-    def iter(self) -> Iterator[ImplPmuTraceData]:
+    def iter(self):
         return self.__iter
     
-    def free(self) -> None:
+    def free(self):
         if self.__pointer is not None:
             PmuTraceDataFree(self.__pointer)
             self.__pointer = None
 
-def PmuOpen(collectType: int, pmuAttr: PmuAttr) -> int:
+def PmuOpen(collectType, pmuAttr):
     """
     int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr);
     """
@@ -1529,7 +1529,7 @@ def PmuOpen(collectType: int, pmuAttr: PmuAttr) -> int:
     return c_PmuOpen(c_collectType, ctypes.byref(pmuAttr.c_pmu_attr))
 
 
-def PmuEventListFree() -> None:
+def PmuEventListFree():
     """
     void PmuEventListFree();
     """
@@ -1540,7 +1540,7 @@ def PmuEventListFree() -> None:
     c_PmuEventListFree()
 
 
-def PmuEventList(eventType: int) -> Iterator[str]:
+def PmuEventList(eventType):
     """
     const char** PmuEventList(enum PmuEventType eventType, unsigned *numEvt);
     """
@@ -1555,7 +1555,7 @@ def PmuEventList(eventType: int) -> Iterator[str]:
     return (eventList[i].decode(UTF_8) for i in range(c_numEvt.value))
 
 
-def PmuEnable(pd: int) -> int:
+def PmuEnable(pd):
     """
     int PmuEnable(int pd);
     """
@@ -1568,7 +1568,7 @@ def PmuEnable(pd: int) -> int:
     return c_PmuEnable(c_pd)
 
 
-def PmuDisable(pd: int) -> int:
+def PmuDisable(pd):
     """
     int PmuDisable(int pd);
     """
@@ -1581,7 +1581,7 @@ def PmuDisable(pd: int) -> int:
     return c_PmuDisable(c_pd)
 
 
-def PmuCollect(pd: int, milliseconds: int, interval: int) -> int:
+def PmuCollect(pd, milliseconds, interval):
     """
     int PmuCollect(int pd, int milliseconds, unsigned interval);
     """
@@ -1596,7 +1596,7 @@ def PmuCollect(pd: int, milliseconds: int, interval: int) -> int:
     return c_PmuCollect(c_pd, c_milliseconds, c_interval)
 
 
-def PmuStop(pd: int) -> None:
+def PmuStop(pd):
     """
     void PmuStop(int pd);
     """
@@ -1609,7 +1609,7 @@ def PmuStop(pd: int) -> None:
     c_PmuStop(c_pd)
 
 
-def PmuDataFree(pmuData: ctypes.POINTER(CtypesPmuData)) -> None:
+def PmuDataFree(pmuData):
     """
     void PmuDataFree(struct PmuData* pmuData);
     """
@@ -1619,7 +1619,7 @@ def PmuDataFree(pmuData: ctypes.POINTER(CtypesPmuData)) -> None:
     c_PmuDataFree(pmuData)
 
 
-def PmuRead(pd: int) -> PmuData:
+def PmuRead(pd):
     """
     int PmuRead(int pd, struct PmuData** pmuData);
     """
@@ -1633,7 +1633,7 @@ def PmuRead(pd: int) -> PmuData:
     c_data_len = c_PmuRead(c_pd, ctypes.byref(c_data_pointer))
     return PmuData(c_data_pointer, c_data_len)
 
-def ResolvePmuDataSymbol(pmuData: ctypes.POINTER(CtypesPmuData)) -> int:
+def ResolvePmuDataSymbol(pmuData):
     """
     int ResolvePmuDataSymbol(struct PmuData* pmuData);
     """
@@ -1643,8 +1643,7 @@ def ResolvePmuDataSymbol(pmuData: ctypes.POINTER(CtypesPmuData)) -> int:
 
     return c_ResolvePmuDataSymbol(pmuData)
 
-def PmuAppendData(fromData: ctypes.POINTER(CtypesPmuData),
-                  toData: ctypes.POINTER(ctypes.POINTER(CtypesPmuData))) -> int:
+def PmuAppendData(fromData, toData):
     """
     int PmuAppendData(struct PmuData *fromData, struct PmuData **toData);
     """
@@ -1655,7 +1654,7 @@ def PmuAppendData(fromData: ctypes.POINTER(CtypesPmuData),
     return c_PmuAppendData(fromData, toData)
 
 
-def PmuClose(pd: int) -> None:
+def PmuClose(pd):
     """
     void PmuClose(int pd);
     """
@@ -1668,7 +1667,7 @@ def PmuClose(pd: int) -> None:
     c_PmuClose(c_pd)
 
 
-def PmuDumpData(pmuData: PmuData, filepath: str, dumpDwf: int) -> None:
+def PmuDumpData(pmuData, filepath, dumpDwf):
     """
     int PmuDumpData(struct PmuData *pmuData, unsigned len, char *filepath, int dumpDwf);
     """
@@ -1683,8 +1682,7 @@ def PmuDumpData(pmuData: PmuData, filepath: str, dumpDwf: int) -> None:
     c_PmuDumpData(pmuData.pointer(), c_len, c_filepath, c_dumpDwf)
 
 
-def PmuGetField(rawData: ctypes.POINTER(CtypesSampleRawData), field_name: str, value: ctypes.c_void_p,
-                          vSize: int) -> int:
+def PmuGetField(rawData, field_name, value, vSize):
     """
     int PmuGetField(struct SampleRawData *rawData, const char *fieldName, void *value, uint32_t vSize);
     """
@@ -1695,7 +1693,7 @@ def PmuGetField(rawData: ctypes.POINTER(CtypesSampleRawData), field_name: str, v
     return c_PmuGetField(rawData, field_name.encode(UTF_8), value, vSize)
 
 
-def PmuGetFieldExp(rawData: ctypes.POINTER(CtypesSampleRawData), field_name: str) -> SampleRawField:
+def PmuGetFieldExp(rawData, field_name):
     """
     SampleRawField *PmuGetFieldExp(struct SampleRawData *rawData, const char *fieldName);
     """
@@ -1708,7 +1706,7 @@ def PmuGetFieldExp(rawData: ctypes.POINTER(CtypesSampleRawData), field_name: str
     return SampleRawField.from_sample_raw_field(pointer_field.contents)
 
 
-def PmuDeviceBdfListFree() -> None:
+def PmuDeviceBdfListFree():
     """
     void PmuDeviceBdfListFree()
     """
@@ -1718,7 +1716,7 @@ def PmuDeviceBdfListFree() -> None:
 
     c_PmuDeviceBdfListFree()
 
-def PmuDeviceBdfList(bdf_type: int) -> Iterator[str]:
+def PmuDeviceBdfList(bdf_type):
     """
     const char** PmuDeviceBdfList(enum PmuBdfType bdfType, unsigned *numBdf);
     """
@@ -1731,10 +1729,10 @@ def PmuDeviceBdfList(bdf_type: int) -> Iterator[str]:
 
     c_bdf_list = c_PmuDeviceBdfList(c_bdf_type, ctypes.byref(c_num_bdf))
 
-    return [c_bdf_list[i].decode(UTF_8) for i in range(c_num_bdf.value)]
+    return [c_bdf_list.decode(UTF_8) for i in range(c_num_bdf.value)]
 
 
-def PmuDeviceOpen(device_attr: List[PmuDeviceAttr]) -> int:
+def PmuDeviceOpen(device_attr):
     """
     int PmuDeviceOpen(struct PmuDeviceAttr *deviceAttr, unsigned len);
     """
@@ -1746,7 +1744,7 @@ def PmuDeviceOpen(device_attr: List[PmuDeviceAttr]) -> int:
     return c_PmuDeviceOpen(c_device_attr, c_num_device)
 
 
-def PmuGetDevMetric(pmu_data: PmuData, device_attr: List[PmuDeviceAttr]) -> PmuDeviceData:
+def PmuGetDevMetric(pmu_data, device_attr):
     """
     int PmuGetDevMetric(struct PmuData *pmuData, unsigned pmuLen, struct PmuDeviceAttr *deviceAttr, unsigned len,
                         struct PmuDeviceData *devicedata);
@@ -1764,12 +1762,12 @@ def PmuGetDevMetric(pmu_data: PmuData, device_attr: List[PmuDeviceAttr]) -> PmuD
     c_device_data = ctypes.POINTER(CtypesPmuDeviceData)()
     
     res = c_PmuGetDevMetric(pmu_data.pointer(), len(pmu_data), c_device_attr, num_device, ctypes.byref(c_device_data))
-    if res <= 0:
+    if res <=0:
         return PmuDeviceData()
     
     return PmuDeviceData(c_device_data, res)
 
-def DevDataFree(dev_data: ctypes.POINTER(CtypesPmuDeviceData)) -> None:
+def DevDataFree(dev_data):
     """
     void DevDataFree(struct PmuDeviceData *devData);
     """
@@ -1779,7 +1777,7 @@ def DevDataFree(dev_data: ctypes.POINTER(CtypesPmuDeviceData)) -> None:
 
     c_DevDataFree(dev_data)
 
-def PmuGetCpuFreq(core: int) -> int:
+def PmuGetCpuFreq(core):
     """
     Get CPU frequency of a specific CPU core.
     
@@ -1795,7 +1793,7 @@ def PmuGetCpuFreq(core: int) -> int:
     c_PmuGetCpuFreq.restype = ctypes.c_longlong
     return c_PmuGetCpuFreq(core)
 
-def PmuGetClusterCore(clusterId: int) -> List[int]:
+def PmuGetClusterCore(clusterId):
     """
     Get CPU core list of a specific cluster.
     
@@ -1814,7 +1812,7 @@ def PmuGetClusterCore(clusterId: int) -> List[int]:
     
     return [c_core_list[i] for i in range(c_num_core)]
 
-def PmuGetNumaCore(numaId: int) -> List[int]:
+def PmuGetNumaCore(numaId):
     """
     Get CPU core list of a specific NUMA node.
     
@@ -1833,7 +1831,7 @@ def PmuGetNumaCore(numaId: int) -> List[int]:
     return [c_core_list[i] for i in range(c_num_core)]
 
 
-def PmuTraceOpen(traceType: int, pmuTraceAttr: PmuTraceAttr) -> int:
+def PmuTraceOpen(traceType, pmuTraceAttr):
     """
     int PmuTraceOpen(enum PmuTraceType traceType, struct PmuTraceAttr *traceAttr);
     """
@@ -1845,7 +1843,7 @@ def PmuTraceOpen(traceType: int, pmuTraceAttr: PmuTraceAttr) -> int:
 
     return c_PmuTraceOpen(c_traceType, ctypes.byref(pmuTraceAttr.c_pmu_trace_attr))
 
-def PmuTraceEnable(pd: int) -> int:
+def PmuTraceEnable(pd):
     """
     int PmuTraceEnable(int pd);
     """
@@ -1857,7 +1855,7 @@ def PmuTraceEnable(pd: int) -> int:
 
     return c_PmuTraceEnable(c_pd)
 
-def PmuTraceDisable(pd: int) -> int:
+def PmuTraceDisable(pd):
     """
     int PmuTraceDisable(int pd);
     """
@@ -1869,7 +1867,7 @@ def PmuTraceDisable(pd: int) -> int:
 
     return c_PmuTraceDisable(c_pd)
 
-def PmuTraceRead(pd: int) -> PmuTraceData:
+def PmuTraceRead(pd):
     """
     int PmuTraceRead(int pd, struct PmuTraceData** pmuTraceData);
     """
@@ -1883,7 +1881,7 @@ def PmuTraceRead(pd: int) -> PmuTraceData:
     c_data_len = c_PmuTraceRead(c_pd, ctypes.byref(c_data_pointer))
     return PmuTraceData(c_data_pointer, c_data_len)
 
-def PmuTraceClose(pd: int) -> None:
+def PmuTraceClose(pd):
     """
     void PmuTraceClose(int pd);
     """
@@ -1895,7 +1893,7 @@ def PmuTraceClose(pd: int) -> None:
 
     c_PmuTraceClose(c_pd)
 
-def PmuTraceDataFree(pmuTraceData: ctypes.POINTER(CtypesPmuTraceData)) -> None:
+def PmuTraceDataFree(pmuTraceData):
     """
     void PmuTraceDataFree(struct PmuTraceData* pmuTraceData);
     """
@@ -1904,7 +1902,7 @@ def PmuTraceDataFree(pmuTraceData: ctypes.POINTER(CtypesPmuTraceData)) -> None:
     c_PmuTraceDataFree.restype = None
     c_PmuTraceDataFree(pmuTraceData)
 
-def PmuSysCallFuncList() -> Iterator[str]:
+def PmuSysCallFuncList():
     """
     char **PmuSysCallFuncList(unsigned *numFunc);
     """
@@ -1917,7 +1915,7 @@ def PmuSysCallFuncList() -> Iterator[str]:
 
     return (c_func_list[i].decode(UTF_8) for i in range(c_num_func.value))
 
-def PmuSysCallFuncListFree() -> None:
+def PmuSysCallFuncListFree():
     """
     void PmuSysCallFuncListFree();
     """
@@ -1944,12 +1942,12 @@ class CtypesPmuCpuFreqDetail(ctypes.Structure):
     ]
 
     def __init__(self,
-                 cpuId: int = 0,
-                 minFreq: int = 0,
-                 maxFreq: int = 0,
-                 avgFreq: int = 0,
-                 *args:Any, **kw: Any) -> None:
-        super().__init__(*args, **kw)
+                 cpuId=0,
+                 minFreq=0,
+                 maxFreq=0,
+                 avgFreq=0,
+                 *args, **kw):
+        super(CtypesPmuCpuFreqDetail, self).__init__(*args, **kw)
         self.cpuId = ctypes.c_int(cpuId)
         self.minFreq = ctypes.c_uint64(minFreq)
         self.maxFreq = ctypes.c_uint64(maxFreq)
@@ -1959,11 +1957,11 @@ class CtypesPmuCpuFreqDetail(ctypes.Structure):
 class ImplPmuCpuFreqDetail:
     __slots__ = ['__c_pmu_cpu_freq_detail']
     def __init__(self,
-                 cpuId: int = 0,
-                 minFreq: int = 0,
-                 maxFreq: int = 0,
-                 avgFreq: int = 0,
-                 *args:Any, **kw: Any) -> None:
+                 cpuId=0,
+                 minFreq=0,
+                 maxFreq=0,
+                 avgFreq=0,
+                 *args, **kw):
         self.__c_pmu_cpu_freq_detail = CtypesPmuCpuFreqDetail(
             cpuId=cpuId,
             minFreq=minFreq,
@@ -1972,43 +1970,43 @@ class ImplPmuCpuFreqDetail:
         )
     
     @property
-    def c_pmu_cpu_freq_detail(self) -> CtypesPmuCpuFreqDetail:
+    def c_pmu_cpu_freq_detail(self):
         return self.__c_pmu_cpu_freq_detail
     
     @property
-    def cpuId(self) -> int:
+    def cpuId(self):
         return self.__c_pmu_cpu_freq_detail.cpuId
     
     @cpuId.setter
-    def cpuId(self, cpuId: int) -> None:
+    def cpuId(self, cpuId):
         self.__c_pmu_cpu_freq_detail.cpuId = ctypes.c_int(cpuId)
     
     @property
-    def minFreq(self) -> int:
+    def minFreq(self):
         return self.__c_pmu_cpu_freq_detail.minFreq
     
     @minFreq.setter
-    def minFreq(self, minFreq: int) -> None:
+    def minFreq(self, minFreq):
         self.__c_pmu_cpu_freq_detail.minFreq = ctypes.c_uint64(minFreq)
     
     @property
-    def maxFreq(self) -> int:
+    def maxFreq(self):
         return self.__c_pmu_cpu_freq_detail.maxFreq
     
     @maxFreq.setter
-    def maxFreq(self, maxFreq: int) -> None:
+    def maxFreq(self, maxFreq):
         self.__c_pmu_cpu_freq_detail.maxFreq = ctypes.c_uint64(maxFreq)
     
     @property
-    def avgFreq(self) -> int:
+    def avgFreq(self):
         return self.__c_pmu_cpu_freq_detail.avgFreq
     
     @avgFreq.setter
-    def avgFreq(self, avgFreq: int) -> None:
+    def avgFreq(self, avgFreq):
         self.__c_pmu_cpu_freq_detail.avgFreq = ctypes.c_uint64(avgFreq)
     
     @classmethod
-    def from_c_pmu_cpu_freq_detail(cls, c_pmu_cpu_freq_detail: CtypesPmuCpuFreqDetail) -> 'ImplPmuCpuFreqDetail':
+    def from_c_pmu_cpu_freq_detail(cls, c_pmu_cpu_freq_detail):
         freq_detail = cls()
         freq_detail.__c_pmu_cpu_freq_detail = c_pmu_cpu_freq_detail
         return freq_detail
@@ -2017,21 +2015,21 @@ class ImplPmuCpuFreqDetail:
 class PmuCpuFreqDetail:
     __slots__ = ['__pointer', '__iter', '__len']
 
-    def __init__(self, pointer: ctypes.POINTER(CtypesPmuCpuFreqDetail) = None, len: int = 0) -> None:
+    def __init__(self, pointer=None, len=0):
         self.__pointer = pointer
         self.__len = len
         self.__iter = (ImplPmuCpuFreqDetail.from_c_pmu_cpu_freq_detail(self.__pointer[i]) for i in range(self.__len))
     
     @property
-    def len(self) -> int:
+    def len(self):
         return self.__len
 
     @property
-    def iter(self) -> Iterator[ImplPmuCpuFreqDetail]:
+    def iter(self):
         return self.__iter
 
 
-def PmuReadCpuFreqDetail() -> PmuCpuFreqDetail:
+def PmuReadCpuFreqDetail():
     """
     struct PmuCpuFreqDetail* PmuReadCpuFreqDetail(unsigned* cpuNum);
     """
@@ -2043,7 +2041,7 @@ def PmuReadCpuFreqDetail() -> PmuCpuFreqDetail:
 
     return PmuCpuFreqDetail(c_freq_detail_pointer, c_cpu_len.value)
 
-def PmuOpenCpuFreqSampling(period: int) -> None:
+def PmuOpenCpuFreqSampling(period):
     """
     int PmuOpenCpuFreqSampling(unsigned period);
     """
@@ -2052,7 +2050,7 @@ def PmuOpenCpuFreqSampling(period: int) -> None:
     c_period = ctypes.c_uint(period)
     return c_PmuOpenCpuFreqSampling(c_period)
 
-def PmuCloseCpuFreqSampling() -> None:
+def PmuCloseCpuFreqSampling():
     """
     void PmuCloseCpuFreqSampling();
     """
