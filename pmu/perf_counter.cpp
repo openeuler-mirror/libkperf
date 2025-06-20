@@ -82,6 +82,9 @@ int KUNPENG_PMU::PerfCounter::Read(vector<PmuData> &data, std::vector<PerfSample
     if (findProc != procMap.end()) {
         current.pid = findProc->second->pid;
     }
+    if(this->evt->cgroupName.size() != 0) {
+        current.cgroupName = this->evt->cgroupName.c_str();
+    }
     return SUCCESS;
 }
 
@@ -113,6 +116,13 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int grou
     attr.disabled = 1;
     attr.inherit = 1;
 
+    // support cgroup feature
+    unsigned flags = 0;
+    if (this->GetCgroupFd() != -1) {
+        flags = PERF_FLAG_PID_CGROUP | PERF_FLAG_FD_CLOEXEC;
+        this->pid = this->GetCgroupFd();
+    }
+
     /**
      * For now we set the format id bit to implement grouping logic in the future
      */
@@ -124,17 +134,17 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int grou
         * the child events will not start counting until the group leader is enabled.
         */
         attr.disabled = 0;
-        this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, 0);
+        this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, flags);
     } else {
 #ifdef IS_X86
         if (this->evt->pmuType == KUNPENG_PMU::UNCORE_TYPE && !StartWith(this->evt->name, "cpu/")) {
-            this->fd = PerfEventOpen(&attr, -1, this->cpu, groupFd, 0);
+            this->fd = PerfEventOpen(&attr, -1, this->cpu, groupFd, flags);
 #else
         if (this->evt->pmuType == KUNPENG_PMU::UNCORE_TYPE && !StartWith(this->evt->name, "armv8_")) {
             this->fd = PerfEventOpen(&attr, -1, this->cpu, groupFd, 0);
 #endif
         } else {
-            this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, 0);
+            this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, flags);
         }
     }
     this->groupFd = groupFd;

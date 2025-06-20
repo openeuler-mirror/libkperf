@@ -82,9 +82,14 @@ int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupEnable, const int grou
     if (groupEnable) {
         attr.pinned = 0;
         attr.disabled = 0;
-    }        
+    }
+    unsigned flags = 0;
+    if (this->GetCgroupFd() != -1) {
+        flags = PERF_FLAG_PID_CGROUP | PERF_FLAG_FD_CLOEXEC;
+        this->pid = this->GetCgroupFd();
+    }
 
-    this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, 0);
+    this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, flags);
     DBG_PRINT("pid: %d type: %d cpu: %d config: %X myfd: %d groupfd: %d\n", this->pid, attr.type, cpu, attr.config, this->fd, groupFd);
     if (__glibc_unlikely(this->fd < 0)) {
         return MapErrno(errno);
@@ -125,6 +130,9 @@ int KUNPENG_PMU::PerfSampler::Close()
     }
     if (this->fd > 0) {
         close(this->fd);
+    }
+    if (this->evt->cgroupFd > 0) {
+        close(this->evt->cgroupFd);
     }
     return SUCCESS;
 }
@@ -244,6 +252,9 @@ void KUNPENG_PMU::PerfSampler::RawSampleProcess(
         TraceParser::ParserRawFormatData(current, sample, event, this->evt->name);
     }
     ParseBranchSampleData(current, sample, event, extPool);
+    if (this->evt->cgroupName.size() != 0) {
+        current->cgroupName = this->evt->cgroupName.c_str();
+    }
 }
 
 void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<PerfSampleIps> &sampleIps,

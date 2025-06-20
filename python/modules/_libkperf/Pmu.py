@@ -202,7 +202,9 @@ class PmuAttr:
                  evFilter: int=0,
                  minLatency: int=0,
                  includeNewFork: bool=False,
-                 branchSampleFilter: int=0) -> None:
+                 branchSampleFilter: int=0,
+                 cgroupName) -> None:
+               
         self.__c_pmu_attr = CtypesPmuAttr(
             evtList=evtList,
             pidList=pidList,
@@ -220,6 +222,7 @@ class PmuAttr:
             minLatency=minLatency,
             includeNewFork=includeNewFork,
             branchSampleFilter=branchSampleFilter,
+            cgroupName=cgroupName
         )
 
     @property
@@ -393,6 +396,10 @@ class PmuAttr:
     @branchSampleFilter.setter
     def branchSampleFilter(self, branchSampleFilter: int) -> None:
         self.c_pmu_attr.branchSampleFilter = ctypes.c_ulong(branchSampleFilter)
+
+    @property
+    def cgroup_name(self):
+         return self.c_pmu_attr.cgroupName.decode(UTF_8)
 
     @classmethod
     def from_c_pmu_data(cls, c_pmu_attr: CtypesPmuAttr) -> 'PmuAttr':
