@@ -769,13 +769,6 @@ func main() {
     kperf.PmuClose(pd)
 }
 ```
-
-```
-
-上述代码把前四个事件设定为一个分组，groupId都设定为1，最后一个事件不分组，groupId设定为-1。
-事件数组attr.evtList和事件属性数组attr.evtAttr必须一一对应，即长度必须一致。
-或者attr.evtAttr也可以是空指针，那么所有事件都不分组。
-
 事件分组的效果可以从PmuData.countPercent来体现。PmuData.countPercent表示事件实际采集时间除以事件期望采集时间。
 对于同一组的事件，他们的countPercent是相同的。如果一个组的事件过多，超过了硬件计数器的数目，那么这个组的所有事件都不会被采集，countPercent会等于-1.
 
