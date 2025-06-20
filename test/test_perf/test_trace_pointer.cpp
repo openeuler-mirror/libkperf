@@ -142,8 +142,6 @@ TEST_F(TestTraceRaw, trace_pointer_net_napi) {
         bool l4_hash;
         rt = PmuGetField(rawData, "l4_hash", &l4_hash, sizeof(l4_hash));
         ASSERT_EQ(rt, SUCCESS);
-        printf("name=%s napi_id=%d queue_mapping=%hd ip_summed=%02X l4_hash=%d ", name, napi_id, queue_mapping,
-               ip_summed, l4_hash);
     }
 }
 
@@ -163,7 +161,6 @@ TEST_F(TestTraceRaw, trace_pointer_skb_copy_datagram_iovec) {
         unsigned int len;
         rt = PmuGetField(rawData, "len", &len, sizeof(len));
         ASSERT_EQ(rt, SUCCESS);
-        printf("skbaddr=%p len=%d", skbaddr, len);
     }
 }
 

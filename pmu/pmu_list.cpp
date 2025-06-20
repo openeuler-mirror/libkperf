@@ -199,7 +199,7 @@ namespace KUNPENG_PMU {
                 continue;
             } 
             if (eventGroupInfoMap.find(evtList->GetGroupId()) == eventGroupInfoMap.end()) {
-                auto err = EvtInit(false, nullptr, pd, evtList, isMemoryEnough);
+                auto err = EvtInit(true, nullptr, pd, evtList, isMemoryEnough);
                 if (err != SUCCESS) {
                     return err;
                 }
@@ -233,6 +233,7 @@ namespace KUNPENG_PMU {
                     return err;
                 }
             }
+            evtGroup.second.evtLeader->SetGroupInfo(evtGroup.second);
         }
         groupMapPtr eventDataEvtGroup = std::make_shared<std::unordered_map<int, EventGroupInfo>>(eventGroupInfoMap);
         InsertDataEvtGroupList(pd, eventDataEvtGroup);

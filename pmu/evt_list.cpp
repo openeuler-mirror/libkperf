@@ -91,7 +91,9 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
             perfEvt->SetBranchSampleFilter(branchSampleFilter);
             int err = 0;
             if (groupEnable) {
-                err = perfEvt->Init(groupEnable, evtLeader->xyCounterArray[row][col]->GetFd(), resetOutPutFd);
+                // If evtLeader is nullptr, I am the leader.
+                auto groupFd = evtLeader?evtLeader->xyCounterArray[row][col]->GetFd():-1;
+                err = perfEvt->Init(groupEnable, groupFd, resetOutPutFd);
             } else {
                 err = perfEvt->Init(groupEnable, -1, resetOutPutFd);
             }
@@ -168,7 +170,14 @@ void KUNPENG_PMU::EvtList::FillFields(
 {
     for (auto i = start; i < end; ++i) {
         data[i].cpuTopo = cpuTopo;
-        data[i].evt = this->pmuEvt->name.c_str();
+        if (groupInfo && pmuEvt->collectType == COUNTING && i - start > 0) {
+            // For group events, PmuData are all read by event leader,
+            // and then some PmuData elements should be related to group members.
+            data[i].evt = groupInfo->evtGroupChildList[i-start-1]->pmuEvt->name.c_str();
+        } else {
+            // For no group events or group leader.
+            data[i].evt = this->pmuEvt->name.c_str();
+        }
         data[i].groupId = this->groupId;
         if (data[i].comm == nullptr) {
             data[i].comm = procTopo->comm;
@@ -269,7 +278,8 @@ void KUNPENG_PMU::EvtList::AddNewProcess(pid_t pid, const bool groupEnable, cons
         int err = 0;
         if (groupEnable) {
             int sz = this->pidList.size();
-            err = perfEvt->Init(groupEnable, evtLeader->xyCounterArray[row][sz - 1]->GetFd(), -1);
+            auto groupFd = evtLeader?evtLeader->xyCounterArray[row][sz - 1]->GetFd():-1;
+            err = perfEvt->Init(groupEnable, groupFd, -1);
         } else {
             err = perfEvt->Init(groupEnable, -1, -1);
         }
@@ -348,4 +358,9 @@ void KUNPENG_PMU::EvtList::ClearExitFd()
         procMap.erase(exitPid);
         numPid--;
     }
+}
+
+void KUNPENG_PMU::EvtList::SetGroupInfo(const EventGroupInfo &grpInfo)
+{
+    this->groupInfo = unique_ptr<EventGroupInfo>(new EventGroupInfo(grpInfo));
 }
