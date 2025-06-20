@@ -392,8 +392,8 @@ kperf.get_device_metric(pmu_data: PmuData, device_attr: List[PmuDeviceAttr]) 对
 
 kperf.device_bdf_list(bdf_type: PmuBdfType): 查找当前系统pcie指标中有效的bdf列表和smmu指标中的有效bdf列表
 
-* calss PmuBdfType:
-  PMU_BDF_TYPE_PCIE: pice指标类型
+* class PmuBdfType:
+  PMU_BDF_TYPE_PCIE: pcie指标类型
   PMU_BDF_TYPE_SMMU: smmu指标类型
 * 返回数据iterator[str],可通过for循环遍历该单元
 以下是kperf.device_bdf_list示例
