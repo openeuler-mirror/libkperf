@@ -132,14 +132,17 @@ static void CoreSpeClose(struct SpeCoreContext *ctx, struct SpeContext *speCtx)
 {
     if (ctx->speMpage && ctx->speMpage != MAP_FAILED) {
         munmap(ctx->speMpage, speCtx->speMmapSize);
+        ctx->speMpage = nullptr;
     }
 
     if (ctx->auxMpage && ctx->auxMpage != MAP_FAILED) {
         munmap(ctx->auxMpage, speCtx->auxMmapSize);
+        ctx->auxMpage = nullptr;
     }
 
     if (ctx->dummyMpage && ctx->dummyMpage != MAP_FAILED) {
         munmap(ctx->dummyMpage, speCtx->dummyMmapSize);
+        ctx->dummyMpage = nullptr;
     }
 
     if (ctx->speFd > 0) {
@@ -211,6 +214,7 @@ int SpeOpen(PmuEvt *attr, int cpu, SpeContext *ctx)
 
     if (attr->type == -1) {
         free(ctx);
+        ctx = nullptr;
         return LIBPERF_ERR_SPE_UNAVAIL;
     }
 
@@ -225,6 +229,7 @@ int SpeOpen(PmuEvt *attr, int cpu, SpeContext *ctx)
     ctx->coreCtxes = (struct SpeCoreContext *)malloc(sizeof(struct SpeCoreContext));
     if (!ctx->coreCtxes) {
         free(ctx);
+        ctx = nullptr;
         return COMMON_ERR_NOMEM;
     }
     ctx->coreCtxes->mask = ctx->auxMmapSize - 1;
@@ -233,7 +238,9 @@ int SpeOpen(PmuEvt *attr, int cpu, SpeContext *ctx)
     auto err = CoreSpeOpen(&ctx->coreCtxes, ctx, attr, cpu);
     if (err != 0) {
         free(ctx->coreCtxes);
+        ctx->coreCtxes = nullptr;
         free(ctx);
+        ctx = nullptr;
         return err;
     }
     return SUCCESS;
@@ -304,7 +311,9 @@ void SpeClose(struct SpeContext *ctx)
     }
 
     free(ctx->coreCtxes);
+    ctx->coreCtxes = nullptr;
     free(ctx);
+    ctx = nullptr;
     return;
 }
 
