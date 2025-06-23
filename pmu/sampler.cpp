@@ -129,7 +129,7 @@ int KUNPENG_PMU::PerfSampler::Close()
     return SUCCESS;
 }
 
-void KUNPENG_PMU::PerfSampler::UpdatePidInfo(const pid_t &pid, const int &tid)
+void KUNPENG_PMU::PerfSampler::UpdatePidInfo(const int &tid)
 {
     auto findProc = procMap.find(tid);
     if (findProc == procMap.end()) {
@@ -149,6 +149,9 @@ void KUNPENG_PMU::PerfSampler::UpdateCommInfo(KUNPENG_PMU::PerfEvent *event)
         procTopo->tid = event->comm.tid;
         procTopo->pid = event->comm.pid;
         procTopo->comm = static_cast<char *>(malloc(strlen(event->comm.comm) + 1));
+        if (procTopo->comm == nullptr) {
+            return;
+        }
         strcpy(procTopo->comm, event->comm.comm);
         DBG_PRINT("Add to proc map: %d\n", event->comm.tid);
         procMap[event->comm.tid] = procTopo;
@@ -283,7 +286,7 @@ void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<Perf
             }
             case PERF_RECORD_FORK: {
                 DBG_PRINT("Fork ptid: %d tid: %d\n", event->fork.pid, event->fork.tid);
-                UpdatePidInfo(event->fork.pid, event->fork.tid);
+                UpdatePidInfo(event->fork.tid);
                 break;
             }
             case PERF_RECORD_COMM: {
@@ -310,7 +313,7 @@ void KUNPENG_PMU::PerfSampler::FillComm(const size_t &start, const size_t &end, 
         auto& pmuData = data[i];
         auto findProc = procMap.find(pmuData.tid);
         if (findProc == procMap.end()) {
-            UpdatePidInfo(pmuData.pid, pmuData.tid);
+            UpdatePidInfo(pmuData.tid);
             findProc = procMap.find(pmuData.tid);
             if (findProc == procMap.end()) {
                 continue;
