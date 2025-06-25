@@ -671,13 +671,11 @@ int SymbolResolve::RecordElf(const char* fileName)
         }
         this->elfMap.emplace(file, myElf);
     } catch (std::exception& error) {
-        close(fd);
         pcerr::New(LIBSYM_ERR_ELFIN_FOMAT_FAILED, "libsym record elf format error: " + std::string{error.what()});
         elfSafeHandler.releaseLock(file);
         return LIBSYM_ERR_ELFIN_FOMAT_FAILED;
     }
-    
-    close(fd);
+
     pcerr::New(0, "success");
     elfSafeHandler.releaseLock(file);
     return 0;
@@ -719,14 +717,12 @@ int SymbolResolve::RecordDwarf(const char* fileName)
 
         efLoader.reset();
     } catch (std::exception& error) {
-        close(fd);
         dwarfSafeHandler.releaseLock((file));
         pcerr::New(LIBSYM_ERR_DWARF_FORMAT_FAILED,
                    "libsym record dwarf file named " + file + " format error: " + std::string{error.what()});
         return LIBSYM_ERR_DWARF_FORMAT_FAILED;
     }
 
-    close(fd);
     pcerr::New(0, "success");
     dwarfSafeHandler.releaseLock((file));
     return 0;
