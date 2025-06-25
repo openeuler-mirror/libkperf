@@ -1154,7 +1154,7 @@ namespace KUNPENG_PMU {
         return ddrcIndex;
     }
 
-    static bool getChannelId(const char *evt, const unsigned ddrNumaId, unsigned &channelId)
+    static bool getChannelId(const char *evt, unsigned &channelId)
     {
         string devName;
         string evtName;
@@ -1196,7 +1196,7 @@ namespace KUNPENG_PMU {
         unordered_map<tuple<unsigned, unsigned, unsigned>, PmuDeviceData, channelKeyHash> devDataByChannel;  //Key: socketId, channelId, ddrNumaId
         for (auto &data : rawData) {
             unsigned channelId;
-            if (!getChannelId(data.evtName, data.ddrNumaId, channelId)) {
+            if (!getChannelId(data.evtName, channelId)) {
                 continue;
             }
             auto ddrDatakey = make_tuple(data.socketId, channelId, data.ddrNumaId);

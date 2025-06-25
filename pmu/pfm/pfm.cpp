@@ -173,6 +173,7 @@ struct PmuEvt* PfmGetSpeEvent(
     evt->collectType = collectType;
     int type = GetSpeType();
     if (type == -1) {
+        delete evt;
         return nullptr;
     }
     evt->type = static_cast<unsigned long>(type);
