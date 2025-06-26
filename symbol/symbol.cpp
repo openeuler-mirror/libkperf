@@ -159,6 +159,16 @@ struct Symbol* SymResolverMapCodeAddr(const char* moduleName, unsigned long star
     }
 }
 
+int SymGetBuildId(const char *moduleName, char **buildId)
+{
+    try {
+        return SymbolResolve::GetInstance()->GetBuildId(moduleName, buildId);
+    } catch (std::bad_alloc& err) {
+        pcerr::New(COMMON_ERR_NOMEM);
+        return -1;
+    }
+}
+
 void FreeModuleData(int pid)
 {
     return SymbolResolve::GetInstance()->FreeModule(pid);

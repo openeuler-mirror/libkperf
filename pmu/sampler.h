@@ -43,8 +43,7 @@ namespace KUNPENG_PMU {
         {}
 
         int Init(const bool groupEnable, const int groupFd, const int resetOutputFd) override;
-        int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps,
-            std::vector<PmuDataExt *> &extPool, std::vector<PmuSwitchData> &switchData) override;
+        int Read(EventData &eventData) override;
 
         int MapPerfAttr(const bool groupEnable, const int groupFd) override;
 
@@ -56,8 +55,7 @@ namespace KUNPENG_PMU {
         int Mmap();
         union PerfEvent *SampleReadEvent();
         void RawSampleProcess(struct PmuData *sampleHead, PerfSampleIps *ips, union KUNPENG_PMU::PerfEvent *event, std::vector<PmuDataExt*> &extPool);
-        void ReadRingBuffer(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps,
-            std::vector<PmuDataExt*> &extPool, std::vector<PmuSwitchData> &switchData);
+        void ReadRingBuffer(EventData &eventData);
         void FillComm(const size_t &start, const size_t &end, std::vector<PmuData> &data);
         void UpdatePidInfo(const int &tid);
         void UpdateCommInfo(KUNPENG_PMU::PerfEvent *event);

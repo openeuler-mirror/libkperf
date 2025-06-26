@@ -37,8 +37,7 @@ namespace KUNPENG_PMU {
         {}
 
         int Init(const bool groupEnable, const int groupFd, const int resetOutputFd) override;
-        int Read(std::vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps,
-            std::vector<PmuDataExt*> &extPool, std::vector<PmuSwitchData> &switchData) override;
+        int Read(EventData &eventData) override;
         int MapPerfAttr(const bool groupEnable, const int groupFd) override;
         bool Mmap();
 

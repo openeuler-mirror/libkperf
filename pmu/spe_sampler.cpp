@@ -65,8 +65,7 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    int PerfSpe::Read(vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps,
-        std::vector<PmuDataExt*> &extPool, std::vector<PmuSwitchData> &switchData)
+    int PerfSpe::Read(EventData &eventData)
     {
         auto findSpe = speSet.find(this->cpu);
         if (findSpe == speSet.end()) {
@@ -82,7 +81,7 @@ namespace KUNPENG_PMU {
         }
 
         // Fill pmu data from SPE collector.
-        auto cnt = data.size();
+        auto cnt = eventData.data.size();
         if (pid == -1) {
             // Loop over all tids in records and resolve module symbol for all pids.
             UpdatePidList(findSpe->second);
@@ -91,14 +90,14 @@ namespace KUNPENG_PMU {
                     continue;
                 }
                 // Insert each spe record for each tid.
-                InsertSpeRecords(records.first, records.second, data, sampleIps, extPool);
+                InsertSpeRecords(records.first, records.second, eventData.data, eventData.sampleIps, eventData.extPool);
             }
         } else {
             // Loop over all tids.
             for (auto &proc : procMap) {
                 // Get all spe records for tid.
                 const auto &records = findSpe->second.GetPidRecords(proc.first);
-                InsertSpeRecords(proc.second->tid, records, data, sampleIps, extPool);
+                InsertSpeRecords(proc.second->tid, records, eventData.data, eventData.sampleIps, eventData.extPool);
             }
         }
 

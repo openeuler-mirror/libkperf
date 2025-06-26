@@ -191,8 +191,7 @@ void KUNPENG_PMU::EvtList::FillFields(
     }
 }
 
-int KUNPENG_PMU::EvtList::Read(vector<PmuData>& data, std::vector<PerfSampleIps>& sampleIps,
-                               std::vector<PmuDataExt*>& extPool, std::vector<PmuSwitchData>& switchData)
+int KUNPENG_PMU::EvtList::Read(EventData &eventData)
 {
 
     std::unique_lock<std::mutex> lg(mutex);
@@ -210,17 +209,17 @@ int KUNPENG_PMU::EvtList::Read(vector<PmuData>& data, std::vector<PerfSampleIps>
     for (unsigned int row = 0; row < numCpu; row++) {
         auto cpuTopo = this->cpuList[row].get();
         for (unsigned int col = 0; col < numPid; col++) {
-            auto cnt = data.size();
-            int err = this->xyCounterArray[row][col]->Read(data, sampleIps, extPool, switchData);
+            auto cnt = eventData.data.size();
+            int err = this->xyCounterArray[row][col]->Read(eventData);
             if (err != SUCCESS) {
                 return err;
             }
-            if (data.size() - cnt) {
+            if (eventData.data.size() - cnt) {
                 DBG_PRINT("evt: %s pid: %d cpu: %d samples num: %d\n", pmuEvt->name.c_str(), pidList[col]->pid,
-                          cpuTopo->coreId, data.size() - cnt);
+                          cpuTopo->coreId, eventData.data.size() - cnt);
             }
             // Fill event name and cpu topology.
-            FillFields(cnt, data.size(), cpuTopo, pidList[col].get(), data);
+            FillFields(cnt, eventData.data.size(), cpuTopo, pidList[col].get(), eventData.data);
         }
     }
 

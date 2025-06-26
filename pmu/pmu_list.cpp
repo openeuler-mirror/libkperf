@@ -405,7 +405,7 @@ namespace KUNPENG_PMU {
         auto eventList = GetEvtList(pd);
         for (auto item: eventList) {
             item->SetTimeStamp(ts);
-            auto err = item->Read(evtData.data, evtData.sampleIps, evtData.extPool, evtData.switchData);
+            auto err = item->Read(evtData);
             if (err != SUCCESS) {
                 return err;
             }
@@ -630,7 +630,7 @@ namespace KUNPENG_PMU {
         }
     }
 
-    PmuList::EventData& PmuList::GetDataList(const unsigned pd)
+    EventData& PmuList::GetDataList(const unsigned pd)
     {
         lock_guard<mutex> lg(dataListMtx);
         return dataList[pd];
@@ -710,6 +710,15 @@ namespace KUNPENG_PMU {
         }
         New(SUCCESS);
         return SUCCESS;
+    }
+
+    std::vector<PerfEvent> PmuList::GetMetaData(PmuData* pmuData) const
+    {
+        auto findData = userDataList.find(pmuData);
+        if (findData == userDataList.end()) {
+            return vector<PerfEvent>();
+        }
+        return findData->second.metaData;
     }
 
     void PmuList::AggregateData(const std::vector<PmuData>& evData, std::vector<PmuData>& newEvData)
@@ -1099,9 +1108,11 @@ namespace KUNPENG_PMU {
         }
 
         SymResolverInit();
-        int ret = SymResolverRecordKernel();
-        if (ret != SUCCESS) {
-            return ret;
+        if (taskParam->pmuEvt->excludeKernel != 1) {
+            int ret = SymResolverRecordKernel();
+            if (ret != SUCCESS) {
+                return ret;
+            }
         }
 
         std::vector<int> pidList = this->ppidList[pd];
@@ -1113,7 +1124,7 @@ namespace KUNPENG_PMU {
             for (const auto& pid: pidList) {
                 int rt = SymResolverRecordModuleNoDwarf(pid);
                 if (rt != SUCCESS) {
-                    return ret;
+                    return rt;
                 }
             }
         }
@@ -1122,7 +1133,7 @@ namespace KUNPENG_PMU {
             for (const auto& pid: pidList) {
                 int rt = SymResolverRecordModule(pid);
                 if (rt != SUCCESS) {
-                    return ret;
+                    return rt;
                 }
             }
         }

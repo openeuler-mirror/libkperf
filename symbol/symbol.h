@@ -127,6 +127,8 @@ void FreeModuleData(int pid);
  */
 void FreeAsmStack(struct StackAsm* stackAsm);
 
+int SymGetBuildId(const char *moduleName, char **buildId);
+
 struct ProcTopology {
     int pid;
     int tid;

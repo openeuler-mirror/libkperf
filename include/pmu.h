@@ -674,6 +674,34 @@ int PmuOpenCpuFreqSampling(unsigned period);
  */
 void PmuCloseCpuFreqSampling();
 
+typedef void* PmuFile;
+
+/**
+ * @brief Begin to write PmuData list to perf.data file.
+ *        It is a simplified perf.data only include basic fields for perf sample,
+ *        including id, cpu, tid, pid, addr and branch stack.
+ *        It also includes sample like mmap, mmap2, comm, fork.
+ * @param path path of perf.data
+ * @param pattr PmuAttr of collection task
+ * @return a handle of file to write. If error, return NULL and check Perrorno.
+ */
+PmuFile PmuBeginWrite(const char *path, const PmuAttr *pattr);
+
+/**
+ * @brief Write PmuData list to file.
+ * @param file file handle
+ * @param data PmuData list
+ * @param len length of data
+ * @return On success, return SUCCESS. on error, return error code.
+ */
+int PmuWriteData(PmuFile file, PmuData *data, int len);
+
+/**
+ * @brief End to write file.
+ * @param file file handle
+ */
+void PmuEndWrite(PmuFile file);
+
 #pragma GCC visibility pop
 #ifdef __cplusplus
 }

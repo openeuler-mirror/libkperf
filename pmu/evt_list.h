@@ -70,8 +70,7 @@ public:
     int Enable();
     int Stop();
     int Reset();
-    int Read(std::vector<PmuData>& pmuData, std::vector<PerfSampleIps>& sampleIps, std::vector<PmuDataExt*>& extPool, 
-             std::vector<PmuSwitchData>& switchData);
+    int Read(EventData &eventData);
 
     void SetGroupInfo(const EventGroupInfo &grpInfo);
 

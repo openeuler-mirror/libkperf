@@ -123,7 +123,6 @@ struct PerfRecordMmap {
     __u64 len;
     __u64 pgoff;
     char filename[PATH_MAX];
-    struct sampleId sampleId;
 };
 
 struct PerfRecordMmap2 {
@@ -137,13 +136,13 @@ struct PerfRecordMmap2 {
     __u64 ino;
     __u64 ino_generation;
     __u32 prot, flags;
-    char filename[];
+    char filename[PATH_MAX];
 };
 
 struct PerfRecordComm {
     struct perf_event_header header;
     __u32 pid, tid;
-    char comm[];
+    char comm[16];
 };
 
 struct PerfRecordSample {
@@ -190,6 +189,16 @@ union PerfEvent {
     struct PerfRecordExit exit;
     struct PerfRecordMmap2 mmap2;
     struct ContextSwitchEvent context_switch;
+};
+
+struct EventData {
+    unsigned pd;
+    PmuTaskType collectType;
+    std::vector<PmuData> data;
+    std::vector<PerfSampleIps> sampleIps;
+    std::vector<PmuDataExt *> extPool;
+    std::vector<PmuSwitchData> switchData;
+    std::vector<PerfEvent> metaData;
 };
 
 int MapErrno(int sysErr);
