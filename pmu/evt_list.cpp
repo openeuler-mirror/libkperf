@@ -100,6 +100,9 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
             if (err != SUCCESS) {
                 hasHappenedErr = true;
                 if (!perfEvt->IsMainPid()) {
+                    if (err == LIBPERF_ERR_NO_PROC) {
+                        noProcList.emplace(this->pidList[col]->tid);
+                    }
                     continue;
                 }
 
@@ -113,7 +116,7 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
 
                 if (err == LIBPERF_ERR_NO_PERMISSION) {
                     pcerr::SetCustomErr(LIBPERF_ERR_NO_PERMISSION, "Current user does not have the permission to collect the event."
-                                                                   "Swtich to the root user and run the 'echo -1 > /proc/sys/kernel/perf_event_paranoid'");
+                                                                   "Switch to the root user and run the 'echo -1 > /proc/sys/kernel/perf_event_paranoid'");
                 }
 
                 if (err == UNKNOWN_ERROR) {
@@ -323,19 +326,25 @@ void KUNPENG_PMU::EvtList::ClearExitFd()
         return;
     }
 
-    std::set<pid_t> exitPidVet;
     for (const auto& it: this->pidList) {
+        if (it->isMain) {
+            continue;
+        }
         std::string path = "/proc/" + std::to_string(it->tid);
         if (!ExistPath(path)) {
-            exitPidVet.insert(it->tid);
+            noProcList.insert(it->tid);
         }
+    }
+
+    if (noProcList.empty()) {
+        return;
     }
     // erase the exit perfVet
     for (int row = 0; row < numCpu; row++) {
         auto& perfVet = xyCounterArray[row];
         for (auto it = perfVet.begin(); it != perfVet.end();) {
             int pid = it->get()->GetPid();
-            if (exitPidVet.find(pid) != exitPidVet.end()) {
+            if (noProcList.find(pid) != noProcList.end()) {
                 int fd = it->get()->GetFd();
                 this->fdList.erase(this->fdList.find(fd));
                 close(fd);
@@ -346,7 +355,7 @@ void KUNPENG_PMU::EvtList::ClearExitFd()
         }
     }
 
-    for (const auto& exitPid: exitPidVet) {
+    for (const auto& exitPid: noProcList) {
         for (auto it = this->pidList.begin(); it != this->pidList.end();) {
             if (it->get()->tid == exitPid) {
                 this->unUsedPidList.push_back(it.operator*());
@@ -358,6 +367,8 @@ void KUNPENG_PMU::EvtList::ClearExitFd()
         procMap.erase(exitPid);
         numPid--;
     }
+
+    noProcList.clear();
 }
 
 void KUNPENG_PMU::EvtList::SetGroupInfo(const EventGroupInfo &grpInfo)
