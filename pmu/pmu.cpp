@@ -168,6 +168,26 @@ static int CheckBranchSampleFilter(const unsigned long& branchSampleFilter, enum
     return SUCCESS;
 }
 
+static int CheckCgroupNameList(unsigned numCgroup, char** cgroupName)
+{
+    if (numCgroup > 0 && cgroupName == nullptr) {
+        New(LIBPERF_ERR_INVALID_CGROUP_LIST, "Invalid cgroup name list: numcgroup is greater than 0, but cgroupName is null");
+        return LIBPERF_ERR_INVALID_CGROUP_LIST;
+    }
+
+    for (unsigned i = 0; i < numCgroup; i++) {
+        std::string cgroupPath = "/sys/fs/cgroup/perf_event/" + string(cgroupName[i]);
+        int cgroupFd = open(cgroupPath.c_str(), O_RDONLY);
+        if (cgroupFd < 0) {
+            New(LIBPERF_ERR_OPEN_INVALID_FILE, "open " + cgroupPath + " failed.");
+            return LIBPERF_ERR_OPEN_INVALID_FILE;
+        }
+        close(cgroupFd);
+    }
+
+    return SUCCESS;
+}
+
 static int CheckCollectTypeConfig(enum PmuTaskType collectType, struct PmuAttr *attr)
 {
     if (collectType < 0 || collectType >= MAX_TASK_TYPE) {
@@ -239,6 +259,12 @@ static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
     }
 
     err = CheckBranchSampleFilter(attr->branchSampleFilter, collectType);
+    if (err != SUCCESS) {
+        New(err);
+        return err;
+    }
+
+    err = CheckCgroupNameList(attr->numCgroup, attr->cgroupNameList);
     if (err != SUCCESS) {
         New(err);
         return err;
@@ -831,7 +857,17 @@ static void PrepareCpuList(PmuAttr *attr, PmuTaskAttr *taskParam, PmuEvt* pmuEvt
     }
 }
 
-static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *attr, const char* evtName, const int groupId)
+int GetCgroupFd(std::string& cgroupName) {
+    std::string cgroupPath = "/sys/fs/cgroup/perf_event/" + cgroupName;
+    int cgroupFd = open(cgroupPath.c_str(), O_RDONLY);
+    if (cgroupFd < 0) {
+        New(LIBPERF_ERR_OPEN_INVALID_FILE, "open " + cgroupPath + " failed.");
+        return -1;
+    }
+    return cgroupFd;
+}
+
+static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *attr, const char* evtName, const int groupId, const char* cgroupName, int cgroupFd)
 {
     unique_ptr<PmuTaskAttr, void (*)(PmuTaskAttr*)> taskParam(CreateNode<struct PmuTaskAttr>(), PmuTaskAttrFree);
     /**
@@ -842,6 +878,7 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
     for (int i = 0; i < attr->numPid; i++) {
         taskParam->pidList[i] = attr->pidList[i];
     }
+
     PmuEvt* pmuEvt = nullptr;
     if (collectType == SPE_SAMPLING) {
         pmuEvt = PfmGetSpeEvent(attr->dataFilter, attr->evFilter, attr->minLatency, collectType);
@@ -878,7 +915,27 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
     taskParam->pmuEvt->callStack = attr->callStack;
     taskParam->pmuEvt->blockedSample = attr->blockedSample;
     taskParam->pmuEvt->includeNewFork = attr->includeNewFork;
+    taskParam->pmuEvt->cgroupFd = cgroupFd;
+    if (cgroupName != nullptr) {
+        taskParam->pmuEvt->cgroupName = cgroupName;
+    }
+
     return taskParam.release();
+}
+
+bool InitCgroupFds(struct PmuAttr *attr, std::unordered_map<std::string, int>& cgroupFds) {
+    for (int i = 0; i < attr->numCgroup; ++i) {
+        std::string cgroupName = attr->cgroupNameList[i];
+        int fd = GetCgroupFd (cgroupName);
+        if (fd == -1) {
+            for (auto iter = cgroupFds.begin(); iter != cgroupFds.end(); iter++) {
+                close(iter->second);
+            }
+            return false;
+        }
+        cgroupFds[cgroupName] = fd;
+    }
+    return true;
 }
 
 struct PmuTaskAttr* AssignPmuTaskParam(enum PmuTaskType collectType, struct PmuAttr *attr)
@@ -886,15 +943,33 @@ struct PmuTaskAttr* AssignPmuTaskParam(enum PmuTaskType collectType, struct PmuA
     struct PmuTaskAttr* taskParam = nullptr;
     if (collectType == SPE_SAMPLING) {
         // evtList is nullptr, cannot loop over evtList.
-        taskParam = AssignTaskParam(collectType, attr, nullptr, 0);
+        taskParam = AssignTaskParam(collectType, attr, nullptr, 0, nullptr, -1);
         return taskParam;
     }
-    for (int i = 0; i < attr->numEvt; i++) {
-        struct PmuTaskAttr* current = AssignTaskParam(collectType, attr, attr->evtList[i], attr->evtAttr[i].groupId);
-        if (current == nullptr) {
+    if (attr->numCgroup > 0) {
+        std::unordered_map<std::string, int> cgroupFds;
+        if (!InitCgroupFds(attr, cgroupFds)) {
             return nullptr;
         }
-        AddTail(&taskParam, &current);
+
+        for (int i = 0; i < attr->numCgroup; ++i) {
+            std::string cgroupName(attr->cgroupNameList[i]);
+            for (int j = 0; j < attr->numEvt; ++j) {
+                struct PmuTaskAttr* current = AssignTaskParam(collectType, attr, attr->evtList[j], attr->evtAttr[j].groupId, cgroupName.c_str(), cgroupFds[cgroupName]);
+                if (current == nullptr) {
+                    return nullptr;
+                }
+                AddTail(&taskParam, &current);
+            }
+        }
+    } else {
+        for (int i = 0; i < attr->numEvt; ++i) {
+            struct PmuTaskAttr* current = AssignTaskParam(collectType, attr, attr->evtList[i], attr->evtAttr[i].groupId, nullptr, -1);
+            if (current == nullptr) {
+                return nullptr;
+            }
+            AddTail(&taskParam, &current);
+        }
     }
     return taskParam;
 }

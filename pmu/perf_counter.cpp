@@ -163,6 +163,9 @@ int KUNPENG_PMU::PerfCounter::CountValueToData(const __u64 value, const __u64 ti
     if (findProc != procMap.end()) {
         current.pid = findProc->second->pid;
     }
+    if(this->evt->cgroupName.size() != 0) {
+        current.cgroupName = this->evt->cgroupName.c_str();
+    }
     return SUCCESS;
 }
 
@@ -194,6 +197,13 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int grou
     attr.disabled = 1;
     attr.inherit = 1;
 
+    // support cgroup feature
+    unsigned flags = 0;
+    if (this->GetCgroupFd() != -1) {
+        flags = PERF_FLAG_PID_CGROUP | PERF_FLAG_FD_CLOEXEC;
+        this->pid = this->GetCgroupFd();
+    }
+
     /**
      * For now we set the format id bit to implement grouping logic in the future
      */
@@ -204,6 +214,7 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int grou
         * and any child events are initialized with disabled bit set to 0. Despite disabled bit being set to 0,
         * the child events will not start counting until the group leader is enabled.
         */
+
         if (groupFd != -1) {
             attr.disabled = 0;
             groupStatus = GroupStatus::GROUP_MEMBER;
@@ -211,17 +222,17 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int grou
             groupStatus = GroupStatus::GROUP_LEADER;
         }
         attr.read_format |= PERF_FORMAT_GROUP;
-        this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, 0);
+        this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, flags);
     } else {
 #ifdef IS_X86
         if (this->evt->pmuType == KUNPENG_PMU::UNCORE_TYPE && !StartWith(this->evt->name, "cpu/")) {
-            this->fd = PerfEventOpen(&attr, -1, this->cpu, groupFd, 0);
+            this->fd = PerfEventOpen(&attr, -1, this->cpu, groupFd, flags);
 #else
         if (this->evt->pmuType == KUNPENG_PMU::UNCORE_TYPE && !StartWith(this->evt->name, "armv8_")) {
             this->fd = PerfEventOpen(&attr, -1, this->cpu, groupFd, 0);
 #endif
         } else {
-            this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, 0);
+            this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, flags);
         }
         groupStatus = GroupStatus::NO_GROUP;
     }

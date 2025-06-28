@@ -67,6 +67,10 @@ public:
         return pid;
     }
 
+    int GetCgroupFd() const {
+        return evt->cgroupFd;
+    }
+
     virtual bool IsMainPid() const
     {
         if (procMap.find(pid) != procMap.end()) {

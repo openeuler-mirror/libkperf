@@ -687,3 +687,102 @@ TEST_F(TestAPI, TestCpuFreqSampling) {
     ASSERT_EQ(cpuNum, MAX_CPU_NUM);
     PmuCloseCpuFreqSampling();
 }
+
+TEST_F(TestAPI, InvalidCgroupNameList)
+{
+    auto attr = GetPmuAttribute();
+    attr.cgroupNameList = nullptr;
+    attr.numCgroup = 1;
+    auto pd = PmuOpen(SAMPLING, &attr);
+    ASSERT_EQ(pd, -1);
+}
+
+
+TEST_F(TestAPI, cgroupNameNotExist)
+{
+    auto attr = GetPmuAttribute();
+    char* cgroupName[1];
+    cgroupName[0] = (char*)"mygrouptest";
+    attr.cgroupNameList = cgroupName;
+    attr.numCgroup = 1;
+    auto pd = PmuOpen(SAMPLING, &attr);
+    ASSERT_EQ(pd, -1);
+}
+
+TEST_F(TestAPI, ValidCgroupName)
+{
+    const std::string cgroupPath= "/sys/fs/cgroup/perf_event/testcgroup";
+    if (mkdir(cgroupPath.c_str(), 0755) != 0) {
+        std::cout << "make testcgroup failed" << std::endl;
+        return;
+    }
+    auto attr = GetPmuAttribute();
+    char* cgroupName[1];
+    cgroupName[0] = (char*)"testcgroup";
+    attr.cgroupNameList = cgroupName;
+    attr.numCgroup = 1;
+    auto pd = PmuOpen(SAMPLING, &attr);
+    ASSERT_GT(pd, 0);
+    if (rmdir(cgroupPath.c_str()) != 0) {
+      std::cout << "remove  testcgroup failed" << std::endl;
+    }
+}
+
+TEST_F(TestAPI, cgroupNameSampleNormal)
+{
+    // 创建cgroup
+    const std::string cgroupPath= "/sys/fs/cgroup/perf_event/testcgroup";
+    if (mkdir(cgroupPath.c_str(), 0755) != 0) {
+        std::cout << "make testcgroup failed" << std::endl;
+        return;
+    }
+
+    // 向cgroup中写入进程pid
+    pid_t pid = getpid();
+    std::stringstream ss;
+    ss << pid;
+    const std::string cgroupProc = cgroupPath + "/cgroup.procs";
+    std::ofstream ofs(cgroupProc);
+    if (!ofs) {
+        std::cout << "open cgroup proc: " << cgroupProc << " failed " << std::endl;
+        if (rmdir(cgroupPath.c_str()) != 0) {
+            std::cout << "remove  testcgroup failed" << std::endl;
+        }
+        return;
+    }
+    ofs << ss.str();
+
+    auto attr = GetPmuAttribute();
+    char* cgroupName[1];
+    cgroupName[0] = (char*)"testcgroup";
+    attr.cgroupNameList = cgroupName;
+    attr.numCgroup = 1;
+    auto pd = PmuOpen(SAMPLING, &attr);
+    if (pd <= 0) {
+        if (rmdir(cgroupPath.c_str()) != 0) {
+            std::cout << "remove  testcgroup failed" << std::endl;
+        }
+    }
+
+    PmuEnable(pd);
+    PmuData* pmuData = nullptr;
+    int len = PmuRead(pd, &pmuData);
+    if (len == -1) {
+        std::cerr << "error msg:" << Perror() << std::endl;
+         if (rmdir(cgroupPath.c_str()) != 0) {
+            std::cout << "remove  testcgroup failed" << std::endl;
+        }
+        return;
+    }
+
+    PmuData data = pmuData[0];
+    ASSERT_EQ(data.cgroupName, "testcgroup");
+    ASSERT_GT(data.period, 0);
+    PmuDataFree(pmuData);
+    PmuDisable(pd);
+    PmuClose(pd);
+
+    if (rmdir(cgroupPath.c_str()) != 0) {
+      std::cout << "remove  testcgroup failed" << std::endl;
+    }
+}

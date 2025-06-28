@@ -49,6 +49,8 @@ struct PmuEvt {
     };
     unsigned useFreq : 1;
     unsigned includeNewFork : 1; // count new fork tid
+    int cgroupFd;
+    std::string cgroupName;
 };
 
 namespace KUNPENG_PMU {
