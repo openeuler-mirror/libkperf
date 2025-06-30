@@ -119,28 +119,28 @@ class Error:
     LIBPERF_WARN_PCIE_BIOS_NOT_NEWEST = 1003
     LIBPERF_WARN_INVALID_SMMU_BDF = 1004
 
-def errorno() -> int:
+def errorno():
     """
     Obtaining error codes
     """
     return _libkperf.Perrorno()
 
 
-def error()-> str:
+def error():
     """
     Obtaining Error Information
     """
     return _libkperf.Perror()
 
 
-def get_warn() -> int:
+def get_warn():
     """
     Get warning codes
     """
     return _libkperf.GetWarn()
 
 
-def get_warn_msg()-> str:
+def get_warn_msg():
     """
     Get warning message
     """

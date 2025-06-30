@@ -132,14 +132,17 @@ static void CoreSpeClose(struct SpeCoreContext *ctx, struct SpeContext *speCtx)
 {
     if (ctx->speMpage && ctx->speMpage != MAP_FAILED) {
         munmap(ctx->speMpage, speCtx->speMmapSize);
+        ctx->speMpage = nullptr;
     }
 
     if (ctx->auxMpage && ctx->auxMpage != MAP_FAILED) {
         munmap(ctx->auxMpage, speCtx->auxMmapSize);
+        ctx->auxMpage = nullptr;
     }
 
     if (ctx->dummyMpage && ctx->dummyMpage != MAP_FAILED) {
         munmap(ctx->dummyMpage, speCtx->dummyMmapSize);
+        ctx->dummyMpage = nullptr;
     }
 
     if (ctx->speFd > 0) {
@@ -211,6 +214,7 @@ int SpeOpen(PmuEvt *attr, int cpu, SpeContext *ctx)
 
     if (attr->type == -1) {
         free(ctx);
+        ctx = nullptr;
         return LIBPERF_ERR_SPE_UNAVAIL;
     }
 
@@ -225,6 +229,7 @@ int SpeOpen(PmuEvt *attr, int cpu, SpeContext *ctx)
     ctx->coreCtxes = (struct SpeCoreContext *)malloc(sizeof(struct SpeCoreContext));
     if (!ctx->coreCtxes) {
         free(ctx);
+        ctx = nullptr;
         return COMMON_ERR_NOMEM;
     }
     ctx->coreCtxes->mask = ctx->auxMmapSize - 1;
@@ -233,7 +238,9 @@ int SpeOpen(PmuEvt *attr, int cpu, SpeContext *ctx)
     auto err = CoreSpeOpen(&ctx->coreCtxes, ctx, attr, cpu);
     if (err != 0) {
         free(ctx->coreCtxes);
+        ctx->coreCtxes = nullptr;
         free(ctx);
+        ctx = nullptr;
         return err;
     }
     return SUCCESS;
@@ -304,7 +311,9 @@ void SpeClose(struct SpeContext *ctx)
     }
 
     free(ctx->coreCtxes);
+    ctx->coreCtxes = nullptr;
     free(ctx);
+    ctx = nullptr;
     return;
 }
 
@@ -478,7 +487,7 @@ static struct SpeRecord *CoreAuxData(struct SpeCoreContext *ctx, AuxContext *aux
     return bufEnd;
 }
 
-static size_t ComputeAuxSize(size_t auxMapLen, size_t headOff, size_t oldOff, int pageSize)
+static size_t ComputeAuxSize(size_t auxMapLen, size_t headOff, size_t oldOff)
 {
     // Compute current aux buffer size by current offset and previous offset.
     size_t size = 0;
@@ -493,7 +502,7 @@ static size_t ComputeAuxSize(size_t auxMapLen, size_t headOff, size_t oldOff, in
 }
 
 static struct SpeRecord *CoreSpeData(struct SpeCoreContext *ctx, struct ContextSwitchData *dummyData,
-                                     struct SpeRecord *buf, int *remainSize, int pageSize, int cpu)
+                                     struct SpeRecord *buf, int *remainSize, int cpu)
 {
     int dummyIdx = 1;
     struct perf_event_mmap_page *mpage = (struct perf_event_mmap_page *)ctx->speMpage;
@@ -505,7 +514,7 @@ static struct SpeRecord *CoreSpeData(struct SpeCoreContext *ctx, struct ContextS
     }
     size_t headOff = head & ctx->mask;
     size_t oldOff = old & ctx->mask;
-    size_t size = ComputeAuxSize(mpage->aux_size, headOff, oldOff, pageSize);
+    size_t size = ComputeAuxSize(mpage->aux_size, headOff, oldOff);
 
     size_t auxOffset = 0;
     struct SpeRecord *bufEnd = nullptr;
@@ -545,7 +554,7 @@ int Spe::SpeReadData(struct SpeContext *context, struct SpeRecord *buf, int size
     int remainSize = size;
     int dummySize = context->dummyMmapSize;
     CoreDummyData(context->coreCtxes, dummyData, dummySize, context->pageSize);
-    CoreSpeData(context->coreCtxes, dummyData, buf, &remainSize, context->pageSize, cpu);
+    CoreSpeData(context->coreCtxes, dummyData, buf, &remainSize, cpu);
     return size - remainSize;
 }
 

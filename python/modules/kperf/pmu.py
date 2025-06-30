@@ -107,12 +107,12 @@ class SymbolMode:
     RESOLVE_ELF_DWARF = 2  # Resolve elf and dwarf. All fields in Symbol will be valid.
 
 class PmuDeviceMetric:
-    # Pernuma metric.
-    # Collect ddr read bandwidth for each numa node.
+    # Perchannel metric.
+    # Collect ddr read bandwidth for each channel.
     # Unit: Bytes/s
     PMU_DDR_READ_BW = 0
-    # Pernuma metric.
-    # Collect ddr write bandwidth for each numa node.
+    # Perchannel metric.
+    # Collect ddr write bandwidth for each channel.
     # Unit: Bytes/s
     PMU_DDR_WRITE_BW = 1
     # Percore metric.
@@ -127,8 +127,8 @@ class PmuDeviceMetric:
     # Collect L3 total reference count, including miss and hit count.
     # Unit: count
     PMU_L3_REF = 4
-    # Pernuma metric.
-    # Collect L3 total latency for each numa node.
+    # Percluster metric.
+    # Collect L3 total latency for each cluster node.
     # Unit: cycles
     PMU_L3_LAT = 5
     # Collect pcie rx bandwidth.
@@ -146,6 +146,12 @@ class PmuDeviceMetric:
     # Collect smmu address transaction.
     # Unit: count
     PMU_SMMU_TRAN = 10
+    # Pernuma metric.
+    # Collect rate of cross-numa operations received by HHA.
+    PMU_HHA_CROSS_NUMA = 11
+    # Pernuma metric.
+    # Collect rate of cross-socket operations received by HHA.
+    PMU_HHA_CROSS_SOCKET = 12
 
 class PmuDeviceAttr(_libkperf.PmuDeviceAttr):
     """
@@ -158,7 +164,7 @@ class PmuDeviceAttr(_libkperf.PmuDeviceAttr):
     };
     """
     def __init__(self, metric, bdf=None):
-        super().__init__(
+        super(PmuDeviceAttr, self).__init__(
             metric=metric,
             bdf=bdf
         )
@@ -247,23 +253,23 @@ class PmuAttr(_libkperf.PmuAttr):
         includeNewFork: In count mode, enable it you can get the new child thread count, default is disabled.
     """
     def __init__(self,
-                 evtList: List[str] = None, 
-                 pidList: List[int] = None,
-                 cpuList: List[int] = None,
-                 evtAttr: List[_libkperf.CtypesEvtAttr] = None,
-                 sampleRate: int = 0,
-                 useFreq: bool = False,
-                 excludeUser: bool = False,
-                 excludeKernel: bool = False,
-                 symbolMode: int = 0,
-                 callStack: bool = False,
-                 blockedSample: bool = False,
-                 dataFilter: int = 0,
-                 evFilter: int = 0,
-                 minLatency: int = 0,
-                 includeNewFork: bool = False,
-                 branchSampleFilter: int = 0) -> None:
-        super().__init__(
+                 evtList = None, 
+                 pidList = None,
+                 cpuList = None,
+                 evtAttr = None,
+                 sampleRate = 0,
+                 useFreq = False,
+                 excludeUser = False,
+                 excludeKernel = False,
+                 symbolMode = 0,
+                 callStack = False,
+                 blockedSample = False,
+                 dataFilter = 0,
+                 evFilter = 0,
+                 minLatency = 0,
+                 includeNewFork = False,
+                 branchSampleFilter = 0):
+        super(PmuAttr, self).__init__(
             evtList=evtList,
             pidList=pidList,
             cpuList=cpuList,
@@ -320,10 +326,10 @@ class PmuTraceAttr(_libkperf.PmuTraceAttr):
     };
     """
     def __init__(self,
-                 funcs: List[str] = None,
-                 pidList: List[int] = None,
-                 cpuList: List[int] = None) -> None:
-        super().__init__(
+                 funcs = None,
+                 pidList = None,
+                 cpuList = None):
+        super(PmuTraceAttr, self).__init__(
             funcs=funcs,
             pidList=pidList,
             cpuList=cpuList
@@ -335,7 +341,7 @@ class ImplPmuTraceData(_libkperf.ImplPmuTraceData):
 class PmuTraceData(_libkperf.PmuTraceData):
     pass
 
-def open(collect_type: PmuTaskType, pmu_attr: PmuAttr) -> int:
+def open(collect_type, pmu_attr):
     """
     Initialize the collection target.
     On success, a task id is returned which is the unique identifier of the task.
@@ -348,7 +354,7 @@ def open(collect_type: PmuTaskType, pmu_attr: PmuAttr) -> int:
     return _libkperf.PmuOpen(int(collect_type), pmu_attr)
 
 
-def event_list(event_type: PmuEventType)-> Iterator[str]:
+def event_list(event_type):
     """
     Query all available event from system.
     :param event_type: type of event chosen by user
@@ -357,7 +363,7 @@ def event_list(event_type: PmuEventType)-> Iterator[str]:
     return _libkperf.PmuEventList(int(event_type))
 
 
-def enable(pd: int)-> int:
+def enable(pd):
     """
     Enable counting or sampling of task <pd>.
     On success, 0 is returned.
@@ -368,7 +374,7 @@ def enable(pd: int)-> int:
     return _libkperf.PmuEnable(pd)
 
 
-def disable(pd: int)-> int:
+def disable(pd):
     """
     Disable counting or sampling of task <pd>.
     On success, 0 is returned.
@@ -379,7 +385,7 @@ def disable(pd: int)-> int:
     return _libkperf.PmuDisable(pd)
 
 
-def read(pd: int) -> PmuData:
+def read(pd):
     """
     Collect data.
     Pmu data are collected starting from the last PmuEnable or PmuRead.
@@ -390,7 +396,7 @@ def read(pd: int) -> PmuData:
     """
     return _libkperf.PmuRead(pd)
 
-def resolvePmuDataSymbol(pmuData: PmuData) -> int:
+def resolvePmuDataSymbol(pmuData):
     """
     when kperf symbol mode is NO_SYMBOL_RESOLVE during PmuRead(), this function can be used to resolve stack symbols
     :param: pmuData
@@ -399,7 +405,7 @@ def resolvePmuDataSymbol(pmuData: PmuData) -> int:
     return _libkperf.ResolvePmuDataSymbol(pmuData.pointer())
 
 
-def stop(pd: int) -> None:
+def stop(pd):
     """
     stop a sampling task in asynchronous mode
     :param pd: task id.
@@ -407,7 +413,7 @@ def stop(pd: int) -> None:
     return _libkperf.PmuStop(pd)
 
 
-def close(pd: int) -> None:
+def close(pd):
     """
     Close task with id <pd>.
     After PmuClose is called, all pmu data related to the task become invalid.
@@ -416,7 +422,7 @@ def close(pd: int) -> None:
     return _libkperf.PmuClose(pd)
 
 
-def dump(pmuData: PmuData, filepath: str, dump_dwf: int) -> None:
+def dump(pmuData, filepath, dump_dwf):
     """
     /**
     Dump pmu data to a specific file.
@@ -431,7 +437,7 @@ def dump(pmuData: PmuData, filepath: str, dump_dwf: int) -> None:
     return _libkperf.PmuDumpData(pmuData, filepath, dump_dwf)
 
 
-def get_field(pmu_data: _libkperf.ImplPmuData, field_name: str, value: c_void_p) -> int:
+def get_field(pmu_data, field_name, value):
     """
     get field value of trace pointer named field_name
     :param pmu_data: _libkperf.ImplPmuData
@@ -442,7 +448,7 @@ def get_field(pmu_data: _libkperf.ImplPmuData, field_name: str, value: c_void_p)
     return _libkperf.PmuGetField(pmu_data.rawData.c_pmu_data_rawData, field_name, value, sizeof(value))
 
 
-def get_field_exp(pmu_data: _libkperf.ImplPmuData, field_name: str) -> SampleRawField:
+def get_field_exp(pmu_data, field_name):
     """
     get the field detail of trace pointer event
     :param pmu_data: the _libkperf.ImplPmuData
@@ -451,7 +457,7 @@ def get_field_exp(pmu_data: _libkperf.ImplPmuData, field_name: str) -> SampleRaw
     """
     return _libkperf.PmuGetFieldExp(pmu_data.rawData.c_pmu_data_rawData, field_name)
 
-def device_bdf_list(bdf_type: PmuBdfType) -> Iterator[str]:
+def device_bdf_list(bdf_type):
     """
     Query all available BDF (Bus:Device.Function) list from system.
     :param bdf_type: type of bdf chosen by user
@@ -459,7 +465,7 @@ def device_bdf_list(bdf_type: PmuBdfType) -> Iterator[str]:
     """
     return _libkperf.PmuDeviceBdfList(int(bdf_type))
 
-def device_open(device_attr: List[PmuDeviceAttr]) -> int:
+def device_open(device_attr):
     """
     A high level interface for initializing PMU events for devices,
     such as L3 cache, DDRC, PCIe, and SMMU, to collect metrics like bandwidth, latency, and others.
@@ -469,7 +475,7 @@ def device_open(device_attr: List[PmuDeviceAttr]) -> int:
     """
     return _libkperf.PmuDeviceOpen(device_attr)
 
-def get_device_metric(pmu_data: PmuData, device_attr: List[PmuDeviceAttr]) -> PmuDeviceData:
+def get_device_metric(pmu_data, device_attr):
     """
     Get device performance metric data from pmu data
     :param pmu_data: raw data collected by pmu
@@ -479,7 +485,7 @@ def get_device_metric(pmu_data: PmuData, device_attr: List[PmuDeviceAttr]) -> Pm
     return _libkperf.PmuGetDevMetric(pmu_data, device_attr)
 
 
-def get_cpu_freq(core: int) -> int:
+def get_cpu_freq(core):
     """
     Get cpu frequency
     :param core: cpu core id
@@ -488,7 +494,7 @@ def get_cpu_freq(core: int) -> int:
     return _libkperf.PmuGetCpuFreq(core)
 
 
-def get_cluster_core(clusterId: int) -> List[int]:
+def get_cluster_core(clusterId):
     """
     Get the list of core in a cluster
     :param cluster: cluster id
@@ -496,7 +502,7 @@ def get_cluster_core(clusterId: int) -> List[int]:
     """
     return _libkperf.PmuGetClusterCore(clusterId)
 
-def get_numa_core(numaId: int) -> List[int]:
+def get_numa_core(numaId):
     """
     Get the list of core in a numa node
     :param numaId: numa node id
@@ -504,37 +510,37 @@ def get_numa_core(numaId: int) -> List[int]:
     """
     return _libkperf.PmuGetNumaCore(numaId)
 
-def trace_open(trace_type: PmuTraceType, pmu_trace_attr: PmuTraceAttr) -> int:
+def trace_open(trace_type, pmu_trace_attr):
     """
     int PmuTraceOpen(enum PmuTraceType traceType, struct PmuTraceAttr *traceAttr);
     """
     return _libkperf.PmuTraceOpen(int(trace_type), pmu_trace_attr)
 
-def trace_enable(pd: int) -> int:
+def trace_enable(pd):
     """
     int PmuTraceEnable(int pd);
     """
     return _libkperf.PmuTraceEnable(pd)
 
-def trace_disable(pd: int) -> int:
+def trace_disable(pd):
     """
     int PmuTraceDisable(int pd);
     """
     return _libkperf.PmuTraceDisable(pd)
 
-def trace_read(pd: int) -> PmuTraceData:
+def trace_read(pd):
     """
     int PmuTraceRead(int pd, struct PmuTraceData **traceData);
     """
     return _libkperf.PmuTraceRead(pd)
 
-def trace_close(pd: int) -> None:
+def trace_close(pd):
     """
     void PmuTraceClose(int pd);
     """
     return _libkperf.PmuTraceClose(pd)
 
-def sys_call_func_list() -> Iterator[str]:
+def sys_call_func_list():
     """
     get the system call function list
     :return: system call function list
@@ -544,13 +550,13 @@ def sys_call_func_list() -> Iterator[str]:
 class CpuFreqDetail(_libkperf.PmuCpuFreqDetail):
     pass
 
-def open_cpu_freq_sampling(period: int) -> None:
+def open_cpu_freq_sampling(period):
     return _libkperf.PmuOpenCpuFreqSampling(period)
 
-def close_cpu_freq_sampling() -> None:
+def close_cpu_freq_sampling():
     return _libkperf.PmuCloseCpuFreqSampling()
 
-def read_cpu_freq_detail() -> CpuFreqDetail:
+def read_cpu_freq_detail():
     return _libkperf.PmuReadCpuFreqDetail()
 
 __all__ = [

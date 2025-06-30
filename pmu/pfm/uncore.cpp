@@ -391,6 +391,7 @@ struct PmuEvt* GetUncoreEvent(const char* pmuName, int collectType)
     // Fill fields for uncore devices.
     auto err = FillUncoreFields(pmuName, pmuEvtPtr);
     if (err != SUCCESS) {
+        delete pmuEvtPtr;
         return nullptr;
     }
     return pmuEvtPtr;
@@ -414,6 +415,7 @@ struct PmuEvt* GetUncoreRawEvent(const char* pmuName, int collectType)
     // Fill fields for uncore devices.
     auto err = FillUncoreFields(pmuName, pmuEvtPtr);
     if (err != SUCCESS) {
+        delete pmuEvtPtr;
         return nullptr;
     }
     return pmuEvtPtr;

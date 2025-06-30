@@ -15,6 +15,7 @@
  ******************************************************************************/
 #include <memory>
 #include <algorithm>
+#include <numeric>
 #include <sys/resource.h>
 #include "linked_list.h"
 #include "cpu_map.h"
@@ -149,7 +150,7 @@ namespace KUNPENG_PMU {
             }
             fdNum += CalRequireFd(cpuTopoList.size(), procTopoList.size(), taskParam->pmuEvt->collectType);
             std::shared_ptr<EvtList> evtList =
-                    std::make_shared<EvtList>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt, pmuTaskAttrHead->group_id);
+                    std::make_shared<EvtList>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt, pmuTaskAttrHead->groupId);
             needBytesNum += PredictRequiredMemory(taskParam->pmuEvt->collectType, cpuTopoList.size(), procTopoList.size());
             evtList->SetBranchSampleFilter(GetBranchSampleFilter(pd));
             InsertEvtList(pd, evtList);
@@ -198,7 +199,7 @@ namespace KUNPENG_PMU {
                 continue;
             } 
             if (eventGroupInfoMap.find(evtList->GetGroupId()) == eventGroupInfoMap.end()) {
-                auto err = EvtInit(false, nullptr, pd, evtList, isMemoryEnough);
+                auto err = EvtInit(true, nullptr, pd, evtList, isMemoryEnough);
                 if (err != SUCCESS) {
                     return err;
                 }
@@ -232,6 +233,7 @@ namespace KUNPENG_PMU {
                     return err;
                 }
             }
+            evtGroup.second.evtLeader->SetGroupInfo(evtGroup.second);
         }
         groupMapPtr eventDataEvtGroup = std::make_shared<std::unordered_map<int, EventGroupInfo>>(eventGroupInfoMap);
         InsertDataEvtGroupList(pd, eventDataEvtGroup);
@@ -294,7 +296,34 @@ namespace KUNPENG_PMU {
         }
     }
 
-    void HandleBlockData(std::vector<PmuData>& pmuData, std::vector<PmuSwitchData>& switchData)
+
+    void SortTwoVector(std::vector<PmuData>& pmuData, std::vector<PerfSampleIps>& sampleIps)
+    {
+        std::vector<size_t> indices(pmuData.size());
+        std::iota(indices.begin(), indices.end(), 0);
+        std::stable_sort(indices.begin(), indices.end(), [&pmuData](size_t a, size_t b){
+            if (pmuData[a].tid == pmuData[b].tid) {
+                return pmuData[a].ts < pmuData[b].ts;
+            }
+            return pmuData[a].tid < pmuData[b].tid;
+        });
+
+        std::vector<PmuData> sortedPmuData;
+        std::vector<PerfSampleIps> sortedSampleIps;
+        size_t size = pmuData.size();
+        sortedPmuData.reserve(size);
+        sortedSampleIps.reserve(size);
+
+        for (size_t i = 0; i < size; ++i) {
+            sortedPmuData.emplace_back(std::move(pmuData[indices[i]]));
+            sortedSampleIps.emplace_back(std::move(sampleIps[indices[i]]));
+        }
+        pmuData = std::move(sortedPmuData);
+        sampleIps = std::move(sortedSampleIps);
+    }
+
+    void HandleBlockData(std::vector<PmuData>& pmuData, std::vector<PerfSampleIps>& sampleIps,
+                                 SymbolMode symMode,std::vector<PmuSwitchData>& switchData)
     {
         std::sort(switchData.begin(), switchData.end(), [](const PmuSwitchData& a, const PmuSwitchData& b) {
             if (a.tid == b.tid) {
@@ -305,7 +334,7 @@ namespace KUNPENG_PMU {
         std::unordered_map<int, std::vector<int64_t>> tidToOffTimeStamps;
         int64_t outTime = 0;
         int prevTid = -1;
-        for (const auto& item: switchData) {
+        for (const auto& item : switchData) {
             if (item.swOut) {
                 outTime = item.ts;
                 prevTid = item.tid;
@@ -323,19 +352,13 @@ namespace KUNPENG_PMU {
                 }
             }
         }
-
-        std::sort(pmuData.begin(), pmuData.end(), [](const PmuData& a, const PmuData& b) {
-            if (a.tid == b.tid) {
-                return a.ts < b.ts;
-            }
-            return a.tid < b.tid;
-        });
+        SortTwoVector(pmuData, sampleIps);
         int csCnt = 0;
         int64_t prevTs = 0;
         int64_t currentTs = 0;
         int64_t curPeriod = 0;
         int currentTid = -1;
-        for (auto& item: pmuData) {
+        for (auto& item : pmuData) {
             if (currentTid != item.tid) {
                 currentTid = item.tid;
                 csCnt = 0;
@@ -347,7 +370,9 @@ namespace KUNPENG_PMU {
             if (strcmp(item.evt, "context-switches") == 0) {
                 // Convert stack from 'schedule[kernel] -> futex_wait[kernel] -> ...[kernel] -> lock_wait -> start_thread'
                 // to 'lock_wait -> start_thread', only keeping user stack.
-                TrimKernelStack(item);
+                if (symMode != NO_SYMBOL_RESOLVE) {
+                      TrimKernelStack(item);
+                }
                 // Before the context-switches event, there is only one cycles event, which we need to ignore. 
                 if (currentTs == 0) {
                     currentTs = item.ts;
@@ -444,6 +469,7 @@ namespace KUNPENG_PMU {
 
     void PmuList::Close(const int pd)
     {
+        EraseDummyEvent(pd);
         auto evtList = GetEvtList(pd);
         for (auto item: evtList) {
             item->Close();
@@ -455,7 +481,6 @@ namespace KUNPENG_PMU {
         EraseDataEvtGroupList(pd);
         RemoveEpollFd(pd);
         EraseSpeCpu(pd);
-        EraseDummyEvent(pd);
         EraseParentEventMap(pd);
         SymResolverDestroy();
         PmuEventListFree();
@@ -667,12 +692,20 @@ namespace KUNPENG_PMU {
         }
 
         auto& eventData = userDataList[iPmuData];
-        auto symMode = symModeList[eventData.pd];
         for (size_t i = 0; i < eventData.data.size(); ++i) {
             auto& pmuData = eventData.data[i];
             auto& ipsData = eventData.sampleIps[i];
             if (pmuData.stack == nullptr) {
                 pmuData.stack = StackToHash(pmuData.pid, ipsData.ips.data(), ipsData.ips.size());
+            }
+        }
+        if (GetBlockedSampleState(eventData.pd) == 1) {
+            for (auto& item : eventData.data) {
+                if (strcmp(item.evt, "context-switches") == 0) {
+                    // Convert stack from 'schedule[kernel] -> futex_wait[kernel] -> ...[kernel] -> lock_wait -> start_thread'
+                    // to 'lock_wait -> start_thread', only keeping user stack.
+                    TrimKernelStack(item);
+                }
             }
         }
         New(SUCCESS);
@@ -760,7 +793,8 @@ namespace KUNPENG_PMU {
         } else {
             FillStackInfo(evData);
             if (GetBlockedSampleState(pd) == 1) {
-                HandleBlockData(evData.data, evData.switchData);
+                auto symMode = symModeList[evData.pd];
+                HandleBlockData(evData.data, evData.sampleIps, symMode, evData.switchData);
             }
             auto inserted = userDataList.emplace(pData, move(evData));
             dataList.erase(pd);

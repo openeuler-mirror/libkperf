@@ -8,7 +8,7 @@ set(SYMBOL_FILE_DIR ${PROJECT_TOP_DIR}/symbol)
 set(INCLUDE_DIR ${PROJECT_TOP_DIR}/include)
 set(UTIL_FILE_DIR ${PROJECT_TOP_DIR}/util)
 
-file(GLOB SYMBOL_SRC ${SYMBOL_FILE_DIR}/*c ${SYMBOL_FILE_DIR}/*cpp ${UTIL_FILE_DIR}/pcerr.cpp)
+file(GLOB SYMBOL_SRC ${SYMBOL_FILE_DIR}/*c ${SYMBOL_FILE_DIR}/*cpp ${UTIL_FILE_DIR}/pcerr.cpp ${UTIL_FILE_DIR}/common.cpp)
 
 include_directories(${UTIL_FILE_DIR})
 include_directories(${SYMBOL_FILE_DIR})

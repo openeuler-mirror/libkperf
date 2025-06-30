@@ -127,82 +127,106 @@ Here are some examples:
 * Get pmu count for a process
 
 ```C++
-int pidList[1];
-pidList[0] = pid;
-char *evtList[1];
-evtList[0] = "cycles";
-// Initialize event list and pid list in PmuAttr.
-// There is one event in list, named 'cycles'.
-PmuAttr attr = {0};
-attr.evtList = evtList;
-attr.numEvt = 1;
-attr.pidList = pidList;
-attr.numPid = 1;
-// Call PmuOpen and pmu descriptor <pd> is return.
-// <pd> is an identity for current task.
-int pd = PmuOpen(COUNTING, &attr);
-// Start collection.
-PmuEnable(pd);
-// Collect for one second.
-sleep(1);
-// Stop collection.
-PmuDisable(pd);
-PmuData *data = NULL;
-// Read pmu data. You can also read data before PmuDisable.
-int len = PmuRead(pd, &data);
-for (int i = 0; i < len; ++i) {
-	...
+#include <iostream>
+
+#include "symbol.h"
+#include "pmu.h"
+#include "pcerrc.h"
+
+int main() {
+    int pid = getpid();
+    int pidList[1];
+    pidList[0] = pid;
+    char *evtList[1];
+    evtList[0] = "cycles";
+    // Initialize event list and pid list in PmuAttr.
+    // There is one event in list, named 'cycles'.
+    PmuAttr attr = {0};
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+    attr.pidList = pidList;
+    attr.numPid = 1;
+    // Call PmuOpen and pmu descriptor <pd> is return.
+    // <pd> is an identity for current task.
+    int pd = PmuOpen(COUNTING, &attr);
+    // Start collection.
+    PmuEnable(pd);
+    // Collect for one second.
+    sleep(1);
+    // Stop collection.
+    PmuDisable(pd);
+    PmuData *data = NULL;
+    // Read pmu data. You can also read data before PmuDisable.
+    int len = PmuRead(pd, &data);
+    for (int i = 0; i < len; ++i) {
+        PmuData *d = &data[i];
+        std::cout << "evt=" << d->evt << "count=" << d->count << std::endl;
+    }
+    // To free PmuData, call PmuDataFree.
+    PmuDataFree(data);
+    // Like fd, call PmuClose if pd will not be used.
+    PmuClose(pd);
 }
-// To free PmuData, call PmuDataFree.
-PmuDataFree(data);
-// Like fd, call PmuClose if pd will not be used.
-PmuClose(pd);
+
 ```
 
 * Sample a process
 
 ```C++
-int pidList[1];
-pidList[0] = pid;
-char *evtList[1];
-evtList[0] = "cycles";
-// Initialize event list and pid list in PmuAttr.
-// There is one event in list, named 'cycles'.
-PmuAttr attr = {0};
-attr.evtList = evtList;
-attr.numEvt = 1;
-attr.pidList = pidList;
-attr.numPid = 1;
-// Call PmuOpen and pmu descriptor <pd> is return.
-// <pd> is an identity for current task.
-// Use SAMPLING for sample task.
-int pd = PmuOpen(SAMPLING, &attr);
-// Start collection.
-PmuEnable(pd);
-// Collect for one second.
-sleep(1);
-// Stop collection.
-PmuDisable(pd);
-PmuData *data = NULL;
-// Read pmu data. You can also read data before PmuDisable.
-int len = PmuRead(pd, &data);
-for (int i = 0; i < len; ++i) {
-    // Get an element from array.
-	PmuData *d = &data[i];
-    // Get stack object which is a linked list.
-    Stack *stack = d->stack;
-    while (stack) {
-        // Get symbol object.
-        if (stack->symbol) {
-            ...
+#include <iostream>
+
+#include "symbol.h"
+#include "pmu.h"
+#include "pcerrc.h"
+
+int main() {
+    int pid = getpid();
+    int pidList[1];
+    pidList[0] = pid;
+    char *evtList[1];
+    evtList[0] = "cycles";
+    // Initialize event list and pid list in PmuAttr.
+    // There is one event in list, named 'cycles'.
+    PmuAttr attr = {0};
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+    attr.pidList = pidList;
+    attr.numPid = 1;
+    // Call PmuOpen and pmu descriptor <pd> is return.
+    // <pd> is an identity for current task.
+    // Use SAMPLING for sample task.
+    int pd = PmuOpen(SAMPLING, &attr);
+    // Start collection.
+    PmuEnable(pd);
+    // Collect for one second.
+    sleep(1);
+    // Stop collection.
+    PmuDisable(pd);
+    PmuData *data = NULL;
+    // Read pmu data. You can also read data before PmuDisable.
+    int len = PmuRead(pd, &data);
+    for (int i = 0; i < len; ++i) {
+        // Get an element from array.
+      PmuData *d = &data[i];
+        // Get stack object which is a linked list.
+        Stack *stack = d->stack;
+        while (stack) {
+            // Get symbol object.
+            if (stack->symbol) {
+                 Symbol *data = stack->symbol;
+                std::cout << std::hex << data->addr << " " << data->symbolName << "+0x" << data->offset << " "
+                          << data->codeMapAddr << " (" << data->module << ")"
+                          << " (" << std::dec << data->fileName << ":" << data->lineNum << ")" << std::endl;
+            }
+            stack = stack->next;
         }
-        stack = stack->next;
     }
+    // To free PmuData, call PmuDataFree.
+    PmuDataFree(data);
+    // Like fd, call PmuClose if pd will not be used.
+    PmuClose(pd);
 }
-// To free PmuData, call PmuDataFree.
-PmuDataFree(data);
-// Like fd, call PmuClose if pd will not be used.
-PmuClose(pd);
+
 ```
 
 * Python examples
@@ -291,6 +315,13 @@ python example.py
   You can directly go to the go/src/libkperf_test directory.
 
 ```shell
+export GO111MODULE=off
+export LD_LIBRARY_PATH=../libkperf/lib:$LD_LIBRARY_PATH
 go test -v # run all
 go test -v -test.run TestCount #specify the test case to run
+```
+
+* **GO language static mode compilation:**
+```shell
+go build -tags="static"
 ```

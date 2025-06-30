@@ -34,7 +34,7 @@ struct PmuTaskAttr {
                                     // list length has to be as the same as numPid
     std::shared_ptr<PmuEvt> pmuEvt;     // which pmu to be collected
 
-    int group_id;                   // event group id
+    int groupId;                   // event group id
     
     struct PmuTaskAttr* next;       // next task attribute
 };

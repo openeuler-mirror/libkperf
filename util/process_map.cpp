@@ -24,58 +24,7 @@
 #include "process_map.h"
 
 using namespace std;
-constexpr int COMM_SIZE = 128;
 constexpr int PATH_LEN = 1024;
-unsigned int GetNumPid()
-{
-    DIR *directory = opendir("/proc");
-    struct dirent *entry;
-    unsigned int count = 0;
-    if (directory == nullptr) {
-        perror("Error opening /proc directory");
-        return -1;
-    }
-
-    // Count the number of process directories (pidList)
-    while ((entry = readdir(directory))) {
-        // Check if the entry is a directory and represents a process ID
-        if (entry->d_type == DT_DIR && atoi(entry->d_name) != 0) {
-            count++;
-        }
-    }
-    closedir(directory);
-    return count;
-}
-
-int *GetAllPids(unsigned int *count)
-{
-    DIR *directory;
-    struct dirent *entry;
-    int *pidList = nullptr;
-    directory = opendir("/proc");
-
-    *count = GetNumPid();
-
-    // Allocate memory for storing pidList
-    if ((*count) < SIZE_MAX / sizeof(int)) {
-        pidList = static_cast<int *>(malloc((*count) * sizeof(int)));
-    }
-    if (pidList == nullptr) {
-        perror("Memory allocation error");
-        closedir(directory);
-        return nullptr;
-    }
-
-    int index = 0;
-    while ((entry = readdir(directory))) {
-        if (entry->d_type == DT_DIR && atoi(entry->d_name) != 0) {
-            pidList[index++] = atoi(entry->d_name);
-        }
-    }
-
-    closedir(directory);
-    return pidList;
-}
 
 void FreeProcTopo(struct ProcTopology *procTopo)
 {

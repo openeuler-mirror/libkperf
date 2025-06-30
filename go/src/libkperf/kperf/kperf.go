@@ -17,7 +17,8 @@ package kperf
 
 /*
 #cgo CFLAGS: -I ../include
-#cgo LDFLAGS: -L ../lib -lkperf -lsym
+#cgo !static LDFLAGS: -L ../lib -lkperf -lsym
+#cgo static LDFLAGS: -L ../static_lib -lkperf -lsym -lelf++ -ldwarf++ -lstdc++ -lnuma
 
 #include "pmu.h"
 #include "symbol.h"
@@ -245,12 +246,12 @@ var (
 
 // PmuDeviceMetric
 var (
-	// Pernuma metric.
-    // Collect ddr read bandwidth for each numa node.
+    // Perchannel metric.
+    // Collect ddr read bandwidth for each channel.
     // Unit: Bytes/s
     PMU_DDR_READ_BW C.enum_PmuDeviceMetric = C.PMU_DDR_READ_BW
-    // Pernuma metric.
-    // Collect ddr write bandwidth for each numa node.
+    // Perchannel metric.
+    // Collect ddr write bandwidth for each channel.
     // Unit: Bytes/s
     PMU_DDR_WRITE_BW C.enum_PmuDeviceMetric = C.PMU_DDR_WRITE_BW
     // Percore metric.
@@ -265,8 +266,8 @@ var (
     // Collect L3 total reference count, including miss and hit count.
     // Unit: count
     PMU_L3_REF C.enum_PmuDeviceMetric = C.PMU_L3_REF
-    // Pernuma metric.
-    // Collect L3 total latency for each numa node.
+    // Percluster metric.
+    // Collect L3 total latency for each cluster node.
     // Unit: cycles
     PMU_L3_LAT C.enum_PmuDeviceMetric = C.PMU_L3_LAT
     // Collect pcie rx bandwidth.
@@ -284,6 +285,12 @@ var (
     // Collect smmu address transaction.
     // Unit: count
     PMU_SMMU_TRAN C.enum_PmuDeviceMetric = C.PMU_SMMU_TRAN
+    // Pernuma metric.
+    // Collect rate of cross-numa operations received by HHA.
+    PMU_HHA_CROSS_NUMA C.enum_PmuDeviceMetric = C.PMU_HHA_CROSS_NUMA
+    // Pernuma metric.
+    // Collect rate of cross-socket operations received by HHA.
+    PMU_HHA_CROSS_SOCKET C.enum_PmuDeviceMetric = C.PMU_HHA_CROSS_SOCKET
 )
 
 // PmuBdfType
@@ -348,6 +355,7 @@ type PmuData struct {
 	Pid int				               // process id
 	Tid int							   // thread id
 	Cpu int						       // cpu id
+	GroupId int						   // id for group event
 	Comm string						   // process command 
 	Period uint64                      // sample period
 	Count uint64					   // event count. Only available for counting
@@ -1178,6 +1186,7 @@ func transferCPmuDataToGoData(cPmuData *C.struct_PmuData, dataLen int, fd int) [
 		goDatas[i].Count = uint64(dataObj.count)
 		goDatas[i].CountPercent = float64(dataObj.countPercent)
 		goDatas[i].Cpu = int(dataObj.cpu)
+		goDatas[i].GroupId = int(dataObj.groupId)
 		if dataObj.cpuTopo != nil {
 			goDatas[i].CpuTopo = CpuTopology{CoreId: int(dataObj.cpuTopo.coreId), NumaId: int(dataObj.cpuTopo.numaId), SocketId: int(dataObj.cpuTopo.socketId)}
 		}
