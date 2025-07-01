@@ -17,7 +17,7 @@ import ctypes
 from  .Config import UTF_8, sym_so
 
 
-def Perrorno() -> int:
+def Perrorno():
     """
     int Perrorno();
     """
@@ -28,7 +28,7 @@ def Perrorno() -> int:
     return c_Perrorno()
 
 
-def Perror() -> str:
+def Perror():
     """
     const char* Perror();
     """
@@ -39,7 +39,7 @@ def Perror() -> str:
     return c_Perror().decode(UTF_8)
 
 
-def GetWarn() -> int:
+def GetWarn():
     """
     int GetWarn();
     """
@@ -50,7 +50,7 @@ def GetWarn() -> int:
     return c_GetWarn()
 
 
-def GetWarnMsg() -> str:
+def GetWarnMsg():
     """
     const char* GetWarnMsg();
     """

@@ -93,11 +93,6 @@ TEST_F(TestAnaylzeData, collect_single_trace_data_success) {
     EnableTracePointer(pd, 1);
     int len = PmuTraceRead(pd, &data);
     EXPECT_TRUE(data != nullptr);
-    for (int i = 0; i < len; i++) {
-        cout << "funcName: " << data[i].funcs << " startTs: " << data[i].startTs << " elapsedTime: " << data[i].elapsedTime
-             << " pid: " << data[i].pid << " tid: " << data[i].tid << " cpu: " << data[i].cpu
-             << " comm: " << data[i].comm << endl;
-    }
 }
 
 /**
@@ -118,7 +113,7 @@ TEST_F(TestAnaylzeData, collect_sleep_trace_data_success) {
     ASSERT_NE(pd, -1);
     EnableTracePointer(pd, 1);
     int len = PmuTraceRead(pd, &data);
-    EXPECT_TRUE(data != nullptr);
+    ASSERT_TRUE(data != nullptr);
     ASSERT_LT(data[0].elapsedTime, 0.1);
 }
 

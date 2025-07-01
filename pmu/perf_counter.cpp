@@ -30,8 +30,20 @@
 #include "perf_counter.h"
 
 using namespace std;
+using namespace pcerr;
 
 static constexpr int MAX_ATTR_SIZE = 120;
+
+struct GroupReadFormat {
+    __u64 nr;
+    __u64 timeEnabled;
+    __u64 timeRunning;
+    struct {
+        __u64 value;
+        __u64 id;
+    } values[];
+};
+
 /**
  * Read pmu counter and deal with pmu multiplexing
  * Right now we do not implement grouping logic, thus we ignore the
@@ -40,18 +52,90 @@ static constexpr int MAX_ATTR_SIZE = 120;
 int KUNPENG_PMU::PerfCounter::Read(vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps,
     std::vector<PmuDataExt*> &extPool, std::vector<PmuSwitchData> &swtichData)
 {
-    struct ReadFormat perfCountValue;
-
-    /**
-     * If some how the file descriptor is less than 0,
-     * we make the count to be 0 and return
-     */
     if (__glibc_unlikely(this->fd < 0)) {
-        this->count = 0;
+        this->accumCount.clear();
         return UNKNOWN_ERROR;
     }
-    read(this->fd, &perfCountValue, sizeof(perfCountValue));
-    if (perfCountValue.value < count || perfCountValue.timeEnabled < enabled || perfCountValue.timeRunning < running) {
+
+    if (groupStatus == GroupStatus::NO_GROUP) {
+        return ReadSingleEvent(data);
+    } else if (groupStatus == GroupStatus::GROUP_LEADER) {
+        return ReadGroupEvents(data);
+    }
+
+    // Group members do not need to read counters,
+    // Group leader will read them all.
+    return SUCCESS;
+}
+
+int KUNPENG_PMU::PerfCounter::ReadSingleEvent(std::vector<PmuData> &data)
+{
+    ReadFormat perfCountValue;
+    int len = read(this->fd, &perfCountValue, sizeof(perfCountValue));
+    if (len < 0) {
+        New(UNKNOWN_ERROR, strerror(errno));
+        return UNKNOWN_ERROR;
+    }
+    if (accumCount.empty()) {
+        accumCount.assign(1, 0);
+    }
+    
+    int err = CountValueToData(perfCountValue.value, perfCountValue.timeEnabled,
+                            perfCountValue.timeRunning, accumCount[0], data);
+    if (err != SUCCESS) {
+        return err;
+    }
+
+    this->enabled = perfCountValue.timeEnabled;
+    this->running = perfCountValue.timeRunning;
+    return SUCCESS;
+}
+
+int KUNPENG_PMU::PerfCounter::ReadGroupEvents(std::vector<PmuData> &data)
+{
+    // Fixme:
+    // In current class, we do not know how many events in group.
+    // Then we read for max struct size: nr+timeEnabled+timeRunning+ MAX_GROUP_EVENTS*(value+id)
+    static const unsigned MAX_GROUP_EVENTS = 14;
+    unsigned readSize = sizeof(__u64)*3 + sizeof(__u64)*2*MAX_GROUP_EVENTS;
+    GroupReadFormat *perfCountValue = static_cast<GroupReadFormat*>(malloc(readSize));
+    if (perfCountValue == NULL) {
+        return COMMON_ERR_NOMEM;
+    }
+    int len = read(this->fd, perfCountValue, readSize);
+    if (len < 0) {
+        free(perfCountValue);
+        New(UNKNOWN_ERROR, strerror(errno));
+        return UNKNOWN_ERROR;
+    }
+
+    if (accumCount.empty()) {
+        accumCount.assign(perfCountValue->nr, 0);
+    }
+
+    for (int i = 0;i < accumCount.size(); ++i) {
+        auto err = CountValueToData(perfCountValue->values[i].value,
+                                    perfCountValue->timeEnabled,
+                                    perfCountValue->timeRunning,
+                                    accumCount[i],
+                                    data
+                                    );
+        if (err != SUCCESS) {
+            free(perfCountValue);
+            return err;
+        }
+    }
+
+    this->enabled = perfCountValue->timeEnabled;
+    this->running = perfCountValue->timeRunning;
+    free(perfCountValue);
+    return SUCCESS;
+}
+
+int KUNPENG_PMU::PerfCounter::CountValueToData(const __u64 value, const __u64 timeEnabled,
+                                                const __u64 timeRunning, __u64 &accumCount, vector<PmuData> &data)
+{
+    if (value < accumCount || timeEnabled < enabled || timeRunning < running) {
         return LIBPERF_ERR_COUNT_OVERFLOW;
     }
 
@@ -60,17 +144,14 @@ int KUNPENG_PMU::PerfCounter::Read(vector<PmuData> &data, std::vector<PerfSample
     // counting value (https://perf.wiki.kernel.org/index.php/Tutorial)
     double percent = 0.0;
     uint64_t increCount;
-    if ((perfCountValue.value == count) || (perfCountValue.timeRunning == running)) {
+    if ((value == accumCount) || (timeRunning == running)) {
         percent = -1;
         increCount = 0;   
     } else {
-        percent = static_cast<double>(perfCountValue.timeEnabled - enabled) / static_cast<double>(perfCountValue.timeRunning - running);
-        increCount = static_cast<uint64_t>((perfCountValue.value - count)* percent);
+        percent = static_cast<double>(timeEnabled - enabled) / static_cast<double>(timeRunning - running);
+        increCount = static_cast<uint64_t>((value - accumCount)* percent);
     }
-    
-    this->count = perfCountValue.value;
-    this->enabled = perfCountValue.timeEnabled;
-    this->running = perfCountValue.timeRunning;
+    accumCount = value;
 
     data.emplace_back(PmuData{0});
     auto& current = data.back();
@@ -123,7 +204,13 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int grou
         * and any child events are initialized with disabled bit set to 0. Despite disabled bit being set to 0,
         * the child events will not start counting until the group leader is enabled.
         */
-        attr.disabled = 0;
+        if (groupFd != -1) {
+            attr.disabled = 0;
+            groupStatus = GroupStatus::GROUP_MEMBER;
+        } else {
+            groupStatus = GroupStatus::GROUP_LEADER;
+        }
+        attr.read_format |= PERF_FORMAT_GROUP;
         this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, 0);
     } else {
 #ifdef IS_X86
@@ -136,7 +223,9 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int grou
         } else {
             this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, 0);
         }
+        groupStatus = GroupStatus::NO_GROUP;
     }
+    this->groupFd = groupFd;
     DBG_PRINT("type: %d cpu: %d config: %llx config1: %llx config2: %llx myfd: %d groupfd: %d\n",
         attr.type, cpu, attr.config, attr.config1, attr.config2, this->fd, groupFd);
     if (__glibc_unlikely(this->fd < 0)) {
@@ -150,12 +239,33 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int grou
  */
 int KUNPENG_PMU::PerfCounter::Enable()
 {
+    if (groupFd != -1) {
+        // Only group leader should use ioctl to enable, disable or reset,
+        // otherwise each event in the group will be collected for different durations.
+        return SUCCESS;
+    }
     int err = PerfEvt::Enable();
     if (err != SUCCESS) {
         return err;
     }
-    this->count = 0;
+    this->accumCount.clear();
     this->enabled = 0;
     this->running = 0;
     return SUCCESS;
+}
+
+int KUNPENG_PMU::PerfCounter::Disable()
+{
+    if (groupFd != -1) {
+        return SUCCESS;
+    }
+    return PerfEvt::Disable();
+}
+
+int KUNPENG_PMU::PerfCounter::Reset()
+{
+    if (groupFd != -1) {
+        return SUCCESS;
+    }
+    return PerfEvt::Reset();
 }

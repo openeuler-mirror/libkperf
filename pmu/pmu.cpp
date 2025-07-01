@@ -270,12 +270,12 @@ static void CopyAttrData(PmuAttr* newAttr, PmuAttr* inputAttr, enum PmuTaskType 
     newAttr->evtList = newEvtList;
     newAttr->numEvt = inputAttr->numEvt;
 
-    // If the event group ID is not enabled, set the group_id to -1. It indicates that the event is not grouped.
+    // If the event group ID is not enabled, set the groupId to -1. It indicates that the event is not grouped.
     if ((collectType == SAMPLING || collectType == COUNTING) && inputAttr->evtAttr == nullptr) {
         struct EvtAttr *evtAttr = new struct EvtAttr[newAttr->numEvt];
         // handle event group id. -1 means that it doesn't run event group feature.
         for (int i = 0; i < newAttr->numEvt; ++i) {
-            evtAttr[i].group_id = -1;
+            evtAttr[i].groupId = -1;
         }
         newAttr->evtAttr = evtAttr;
     }
@@ -289,13 +289,13 @@ static bool FreeEvtAttr(struct PmuAttr *attr)
     bool flag = false;
     int notGroupId = -1;
     for (int i = 0; i < attr->numEvt; ++i) {
-        if (attr->evtAttr[i].group_id != notGroupId ) {
+        if (attr->evtAttr[i].groupId != notGroupId ) {
             flag = true;
             break;
         }
     }
 
-    // when the values of group_id are all -1, the applied memory is released.
+    // when the values of groupId are all -1, the applied memory is released.
     if (!flag) {
         delete[] attr->evtAttr;
         attr->evtAttr = nullptr;
@@ -427,6 +427,7 @@ static void PmuTaskAttrFree(PmuTaskAttr *taskAttr)
 int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
 {
     SetWarn(SUCCESS);
+    New(SUCCESS);
     PmuAttr copiedAttr = *attr;
     pair<unsigned, char**> previousEventList = {0, nullptr};
     try {
@@ -830,25 +831,7 @@ static void PrepareCpuList(PmuAttr *attr, PmuTaskAttr *taskParam, PmuEvt* pmuEvt
     }
 }
 
-static bool PerfEventSupported(__u64 type, __u64 config)
-{
-    perf_event_attr attr{};
-    memset(&attr, 0, sizeof(attr));
-    attr.size = sizeof(struct perf_event_attr);
-    attr.type = type;
-    attr.config = config;
-    attr.disabled = 1;
-    attr.inherit = 1;
-    attr.read_format = PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING | PERF_FORMAT_ID;
-    int fd = KUNPENG_PMU::PerfEventOpen(&attr, -1, 0, -1, 0);
-    if (fd < 0) {
-        return false;
-    }
-    close(fd);
-    return true;
-}
-
-static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *attr, const char* evtName, const int group_id)
+static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *attr, const char* evtName, const int groupId)
 {
     unique_ptr<PmuTaskAttr, void (*)(PmuTaskAttr*)> taskParam(CreateNode<struct PmuTaskAttr>(), PmuTaskAttrFree);
     /**
@@ -879,25 +862,13 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
 #endif
             return nullptr;
         }
-
-        if (!PerfEventSupported(pmuEvt->type, pmuEvt->config)) {
-            int err = MapErrno(errno);
-            if (err == LIBPERF_ERR_NO_PERMISSION) {
-                New(LIBPERF_ERR_NO_PERMISSION, "Current user does not have the permission to collect the event.Swtich to the root user and run the 'echo -1 > /proc/sys/kernel/perf_event_paranoid'");
-            } else if(err == UNKNOWN_ERROR) {
-                New(UNKNOWN_ERROR, std::string{strerror(errno)});
-            } else {
-                New(err);
-            }
-            return nullptr;
-        }
     }
     /**
      * Assign cpus to collect
      */
     PrepareCpuList(attr, taskParam.get(), pmuEvt);
 
-    taskParam->group_id = group_id;
+    taskParam->groupId = groupId;
 
     taskParam->pmuEvt = shared_ptr<PmuEvt>(pmuEvt, PmuEvtFree);
     taskParam->pmuEvt->useFreq = attr->useFreq;
@@ -919,7 +890,7 @@ struct PmuTaskAttr* AssignPmuTaskParam(enum PmuTaskType collectType, struct PmuA
         return taskParam;
     }
     for (int i = 0; i < attr->numEvt; i++) {
-        struct PmuTaskAttr* current = AssignTaskParam(collectType, attr, attr->evtList[i], attr->evtAttr[i].group_id);
+        struct PmuTaskAttr* current = AssignTaskParam(collectType, attr, attr->evtList[i], attr->evtAttr[i].groupId);
         if (current == nullptr) {
             return nullptr;
         }

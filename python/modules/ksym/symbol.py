@@ -20,16 +20,16 @@ import _libkperf
 class Symbol(_libkperf.Symbol):
 
     def __init__(self,
-                 addr: int = 0,
-                 module: str = '',
-                 symbolName: str = '',
-                 fileName: str = '',
-                 lineNum: int = 0,
-                 offset: int = 0,
-                 codeMapEndAddr: int = 0,
-                 codeMapAddr: int = 0,
-                 count: int = 0) -> None:
-        super().__init__(
+                 addr = 0,
+                 module = '',
+                 symbolName = '',
+                 fileName = '',
+                 lineNum = 0,
+                 offset = 0,
+                 codeMapEndAddr = 0,
+                 codeMapAddr = 0,
+                 count = 0):
+        super(Symbol, self).__init__(
             addr=addr,
             module=module,
             symbolName=symbolName,
@@ -45,11 +45,11 @@ class Symbol(_libkperf.Symbol):
 class Stack(_libkperf.Stack):
 
     def __init__(self,
-                 symbol: Symbol = None,
-                 next: 'Stack' = None,
-                 prev: 'Stack' = None,
-                 count: int = 0) -> None:
-        super().__init__(
+                 symbol = None,
+                 next = None,
+                 prev = None,
+                 count = 0):
+        super(Stack, self).__init__(
             symbol=symbol.c_sym if symbol else None,
             next=next.c_stack if next else None,
             prev=prev.c_stack if prev else None,
@@ -57,39 +57,39 @@ class Stack(_libkperf.Stack):
         )
 
 
-def record_kernel() -> None:
+def record_kernel():
     _libkperf.SymResolverRecordKernel()
 
 
-def record_module(pid: int, dwarf: bool = True) -> None:
+def record_module(pid, dwarf = True):
     if dwarf:
         _libkperf.SymResolverRecordModule(pid)
     else:
         _libkperf.SymResolverRecordModuleNoDwarf(pid)
 
 
-def get_stack(pid: int, stacks: List[int]) -> Iterator[Stack]:
+def get_stack(pid, stacks):
     """
     Convert a callstack to an unsigned long long hashid
     """
     return _libkperf.StackToHash(pid, stacks)
 
 
-def get_symbol(pid: int,  addr: int) -> Symbol:
+def get_symbol(pid,  addr):
     """
     Map a specific address to a symbol
     """
     return _libkperf.SymResolverMapAddr(pid, addr)
 
 
-def free_module(pid: int) -> None:
+def free_module(pid):
     """
     free pid module data
     """
     _libkperf.FreeModuleData(pid)
 
 
-def destroy() -> None:
+def destroy():
     _libkperf.SymResolverDestroy()
 
 

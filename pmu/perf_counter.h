@@ -40,12 +40,30 @@ namespace KUNPENG_PMU {
             std::vector<PmuDataExt*> &extPool, std::vector<PmuSwitchData> &swtichData) override;
         int MapPerfAttr(const bool groupEnable, const int groupFd) override;
         int Enable() override;
+        int Disable() override;
+        int Reset() override;
 
     private:
-	// Accumulated pmu count, time enabled and time running.
-	__u64 count = 0;
-	__u64 enabled = 0;
-	__u64 running = 0;
+        enum class GroupStatus
+        {
+            NO_GROUP,
+            GROUP_LEADER,
+            GROUP_MEMBER
+        };
+
+        int CountValueToData(const __u64 value, const __u64 timeEnabled,
+                                const __u64 timeRunning, __u64 &accumCount, std::vector<PmuData> &data);
+        int ReadSingleEvent(std::vector<PmuData> &data);
+        int ReadGroupEvents(std::vector<PmuData> &data);
+
+	    // Accumulated pmu count, time enabled and time running.
+	    __u64 enabled = 0;
+	    __u64 running = 0;
+        // For group events, <accumCount> is the accum counts of all members.
+        // For normal events, <accumCount> has only one element.
+        std::vector<__u64> accumCount;
+        int groupFd = 0;
+        GroupStatus groupStatus = GroupStatus::NO_GROUP; 
     };
 }  // namespace KUNPENG_PMU
 #endif

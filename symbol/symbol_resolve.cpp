@@ -25,6 +25,7 @@
 #include "name_resolve.h"
 #include "pcerr.h"
 #include "symbol_resolve.h"
+#include "common.h"
 
 using namespace KUNPENG_SYM;
 constexpr __u64 MAX_LINE_LENGTH = 1024;
@@ -671,13 +672,11 @@ int SymbolResolve::RecordElf(const char* fileName)
         }
         this->elfMap.emplace(file, myElf);
     } catch (std::exception& error) {
-        close(fd);
         pcerr::New(LIBSYM_ERR_ELFIN_FOMAT_FAILED, "libsym record elf format error: " + std::string{error.what()});
         elfSafeHandler.releaseLock(file);
         return LIBSYM_ERR_ELFIN_FOMAT_FAILED;
     }
-    
-    close(fd);
+
     pcerr::New(0, "success");
     elfSafeHandler.releaseLock(file);
     return 0;
@@ -719,14 +718,12 @@ int SymbolResolve::RecordDwarf(const char* fileName)
 
         efLoader.reset();
     } catch (std::exception& error) {
-        close(fd);
         dwarfSafeHandler.releaseLock((file));
         pcerr::New(LIBSYM_ERR_DWARF_FORMAT_FAILED,
                    "libsym record dwarf file named " + file + " format error: " + std::string{error.what()});
         return LIBSYM_ERR_DWARF_FORMAT_FAILED;
     }
 
-    close(fd);
     pcerr::New(0, "success");
     dwarfSafeHandler.releaseLock((file));
     return 0;
@@ -1137,6 +1134,12 @@ struct StackAsm* SymbolResolve::MapAsmCodeStack(
 {
     char startAddrStr[ADDR_LEN];
     char endAddrStr[ADDR_LEN];
+
+    if (!ExistPath(moduleName)) {
+        pcerr::New(LIBSYM_ERR_FILE_INVALID, "file does not exist");
+        return nullptr;
+    }
+
     if (startAddr >= endAddr) {
         pcerr::New(LIBSYM_ERR_START_SMALLER_END, "libysm the end address must be greater than the start address");
         return nullptr;
@@ -1150,6 +1153,7 @@ struct StackAsm* SymbolResolve::MapAsmCodeStack(
         pcerr::New(LIBSYM_ERR_SNPRINF_OPERATE_FAILED, "libsym fails to execute snprintf");
         return nullptr;
     }
+
     std::string cmd = "objdump -Fld " + moduleName + " --start-address=" + std::string{startAddrStr} +
                       " --stop-address=" + std::string{endAddrStr};
     FILE* pipe = popen(cmd.c_str(), "r");

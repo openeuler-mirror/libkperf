@@ -129,7 +129,7 @@ int KUNPENG_PMU::PerfSampler::Close()
     return SUCCESS;
 }
 
-void KUNPENG_PMU::PerfSampler::UpdatePidInfo(const pid_t &pid, const int &tid)
+void KUNPENG_PMU::PerfSampler::UpdatePidInfo(const int &tid)
 {
     auto findProc = procMap.find(tid);
     if (findProc == procMap.end()) {
@@ -149,6 +149,9 @@ void KUNPENG_PMU::PerfSampler::UpdateCommInfo(KUNPENG_PMU::PerfEvent *event)
         procTopo->tid = event->comm.tid;
         procTopo->pid = event->comm.pid;
         procTopo->comm = static_cast<char *>(malloc(strlen(event->comm.comm) + 1));
+        if (procTopo->comm == nullptr) {
+            return;
+        }
         strcpy(procTopo->comm, event->comm.comm);
         DBG_PRINT("Add to proc map: %d\n", event->comm.tid);
         procMap[event->comm.tid] = procTopo;
@@ -217,6 +220,7 @@ void KUNPENG_PMU::PerfSampler::RawSampleProcess(
         return;
     }
     KUNPENG_PMU::PerfRawSample *sample = (KUNPENG_PMU::PerfRawSample *)event->sample.array;
+    ips->ips.reserve(ips->ips.size() + sample->nr);
     // Copy ips from ring buffer and get stack info later.
     if (evt->callStack == 0) {
         int i = 0;
@@ -224,12 +228,13 @@ void KUNPENG_PMU::PerfSampler::RawSampleProcess(
             i++;
         }
         if (i < sample->nr) {
-            ips->ips.push_back(sample->ips[i]);
+            ips->ips.emplace_back(sample->ips[i]);
         }
     } else {
         for (int i = sample->nr - 1; i >= 0; --i) {
-            if (IsValidIp(sample->ips[i])) {
-                ips->ips.push_back(sample->ips[i]);
+            const auto& ip = sample->ips[i];
+            if (IsValidIp(ip)) {
+                ips->ips.emplace_back(ip);
             }
         }
     }
@@ -264,7 +269,7 @@ void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<Perf
                 break;
             }
             case PERF_RECORD_MMAP: {
-                if (symMode == RESOLVE_ELF_DWARF) {
+                if (symMode == RESOLVE_ELF_DWARF || symMode == NO_SYMBOL_RESOLVE) {
                     SymResolverUpdateModule(event->mmap.tid, event->mmap.filename, event->mmap.addr);
                 } else if (symMode == RESOLVE_ELF) {
                     SymResolverUpdateModuleNoDwarf(event->mmap.tid, event->mmap.filename, event->mmap.addr);
@@ -272,7 +277,7 @@ void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<Perf
                 break;
             }
             case PERF_RECORD_MMAP2: {
-                if (symMode == RESOLVE_ELF_DWARF) {
+                if (symMode == RESOLVE_ELF_DWARF || symMode == NO_SYMBOL_RESOLVE) {
                     SymResolverUpdateModule(event->mmap2.tid, event->mmap2.filename, event->mmap2.addr);
                 } else if (symMode == RESOLVE_ELF) {
                     SymResolverUpdateModuleNoDwarf(event->mmap2.tid, event->mmap2.filename, event->mmap2.addr);
@@ -281,7 +286,7 @@ void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<Perf
             }
             case PERF_RECORD_FORK: {
                 DBG_PRINT("Fork ptid: %d tid: %d\n", event->fork.pid, event->fork.tid);
-                UpdatePidInfo(event->fork.pid, event->fork.tid);
+                UpdatePidInfo(event->fork.tid);
                 break;
             }
             case PERF_RECORD_COMM: {
@@ -308,7 +313,7 @@ void KUNPENG_PMU::PerfSampler::FillComm(const size_t &start, const size_t &end, 
         auto& pmuData = data[i];
         auto findProc = procMap.find(pmuData.tid);
         if (findProc == procMap.end()) {
-            UpdatePidInfo(pmuData.pid, pmuData.tid);
+            UpdatePidInfo(pmuData.tid);
             findProc = procMap.find(pmuData.tid);
             if (findProc == procMap.end()) {
                 continue;

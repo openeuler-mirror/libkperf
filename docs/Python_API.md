@@ -82,8 +82,10 @@ kperf.open(collector_type: kperf.PmuTaskType, pmu_attr: kperf.PmuAttr)
 
 ```python
 # python代码示例
-import time
 import kperf
+import ksym
+import time
+
 evtList = ["cycles", "branch-misses"]
 pmu_attr = kperf.PmuAttr(evtList=evtList)
 pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
@@ -196,6 +198,7 @@ get_field(pmu_data: ImplPmuData, field_name: str, value: c_void_p)
 
 ```python
 import kperf
+import ksym
 import time
 from ctypes import *
 
@@ -272,8 +275,9 @@ kperf.trace_open(trace_type: kperf.PmuTraceType, pmu_trace_attr: kperf.PmuTraceA
 
 ```python
 # python代码示例
-import time
 import kperf
+import time
+
 funcs = ["read", "write"]
 pmu_trace_attr = kperf.PmuTraceAttr(funcs=funcs)
 pd = kperf.trace_open(kperf.PmuTraceType.TRACE_SYS_CALL, pmu_trace_attr)
@@ -335,17 +339,21 @@ kperf.device_open(dev_attr: List[PmuDeviceAttr]) 初始化采集uncore事件指�
     * PMU_L3_TRAFFIC 采集每个core的L3的访问字节数，单位：Bytes
     * PMU_L3_MISS 采集每个core的L3的miss数量，单位：count
     * PMU_L3_REF 采集每个core的L3的总访问数量，单位：count
-    * PMU_L3_LAT 采集每个numa的L3的总时延，单位：cycles
+    * PMU_L3_LAT 采集每个cluster的L3的总时延，单位：cycles
     * PMU_PCIE_RX_MRD_BW 采集pcie设备的rx方向上的读带宽，单位：Bytes/ns
     * PMU_PCIE_RX_MWR_BW 采集pcie设备的rx方向上的写带宽，单位：Bytes/ns
     * PMU_PCIE_TX_MRD_BW 采集pcie设备的tx方向上的读带宽，单位：Bytes/ns
     * PMU_PCIE_TX_MWR_BW 采集pcie设备的tx方向上的读带宽，单位：Bytes/ns
     * PMU_SMMU_TRAN 采集指定smmu设备的地址转换次数，单位：count
+    * PMU_HHA_CROSS_NUMA 采集每个numa的跨numa访问HHA的操作比例
+    * PMU_HHA_CROSS_SOCKET 采集每个numa的跨socket访问HHA的操作比例
   * bdf: 指定需要采集设备的bdf号，只对pcie和smmu指标有效
 * 返回值是int类型，pd > 0表示初始化成功，pd == -1初始化失败，可通过kperf.error()查看错误信息，以下是一个kperf.device_open的示例
 
 ```python
 # python代码示例
+import kperf
+import time
     dev_attr = [
         kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_L3_TRAFFIC)
     ]
@@ -384,8 +392,8 @@ kperf.get_device_metric(pmu_data: PmuData, device_attr: List[PmuDeviceAttr]) 对
 
 kperf.device_bdf_list(bdf_type: PmuBdfType): 查找当前系统pcie指标中有效的bdf列表和smmu指标中的有效bdf列表
 
-* calss PmuBdfType:
-  PMU_BDF_TYPE_PCIE: pice指标类型
+* class PmuBdfType:
+  PMU_BDF_TYPE_PCIE: pcie指标类型
   PMU_BDF_TYPE_SMMU: smmu指标类型
 * 返回数据iterator[str],可通过for循环遍历该单元
 以下是kperf.device_bdf_list示例
@@ -443,6 +451,9 @@ def close_cpu_freq_sampling() 关闭cpu频率采集
 def read_cpu_freq_detail() -> CpuFreqDetail 读取开启频率采集到读取时间内的cpu最大频率、最小频率以及平均频率
 ```python
 #python代码示例
+import kperf
+import time
+
 err = kperf.open_cpu_freq_sampling(100)
 if err != 0:
    print(f"error number: {kperf.errorno()} error message: {kperf.error()}")
@@ -459,6 +470,9 @@ kperf.close_cpu_freq_sampling()
 def resolvePmuDataSymbol(pmuData: PmuData) -> int: 当SymbolMode不设置或者设置为0时，可通过该接口解析read返回的PmuData数据中的符号
 ```python
 #python代码示例
+import kperf
+import time
+
 event_name = "cycles"
 pmu_attr = kperf.PmuAttr(
           evtList=[event_name],

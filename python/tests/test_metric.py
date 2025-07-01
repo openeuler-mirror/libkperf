@@ -256,6 +256,28 @@ def test_get_metric_smmu_transaction():
     print_dev_data_details(dev_data)
     kperf.close(pd)
 
+def test_collect_hha_cross():
+    dev_attr = [
+        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_HHA_CROSS_SOCKET),
+        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_HHA_CROSS_NUMA)
+    ]
+    pd = kperf.device_open(dev_attr)
+    print(kperf.error())
+    assert pd != -1, f"Expected non-negative pd, but got {pd}"
+    kperf.enable(pd)
+    time.sleep(1)
+    kperf.disable(pd)
+    ori_data = kperf.read(pd)
+    assert len(ori_data) != -1, f"Expected non-negative ori_len, but got {len(ori_data)}"
+
+    dev_data = kperf.get_device_metric(ori_data, dev_attr)
+    assert dev_data[0].metric == kperf.PmuDeviceMetric.PMU_HHA_CROSS_SOCKET
+    assert dev_data[0].mode == kperf.PmuMetricMode.PMU_METRIC_NUMA
+    assert dev_data[-1].metric == kperf.PmuDeviceMetric.PMU_HHA_CROSS_NUMA
+    assert dev_data[-1].mode == kperf.PmuMetricMode.PMU_METRIC_NUMA
+    print_dev_data_details(dev_data)
+    kperf.close(pd)
+
 if __name__ == '__main__':
     # 提示用户使用pytest 运行测试文件
     print("This is a pytest script. Run it using the 'pytest' command.")

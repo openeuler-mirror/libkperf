@@ -93,7 +93,7 @@ enum BranchSampleFilter {
 };
 
 struct EvtAttr {
-    int group_id; 
+    int groupId;
 };
 
 struct PmuAttr {
@@ -246,6 +246,7 @@ struct PmuData {
     pid_t pid;                      // process id
     int tid;                        // thread id
     int cpu;                        // cpu id
+    int groupId;                    // id for group event
     struct CpuTopology *cpuTopo;    // cpu topology
     const char *comm;               // process command
     uint64_t period;                // sample period
@@ -419,12 +420,12 @@ int PmuGetField(struct SampleRawData *rawData, const char *fieldName, void *valu
 struct SampleRawField *PmuGetFieldExp(struct SampleRawData *rawData, const char *fieldName);
 
 enum PmuDeviceMetric {
-    // Pernuma metric.
-    // Collect ddr read bandwidth for each numa node.
+    // Perchannel metric.
+    // Collect ddr read bandwidth for each channel.
     // Unit: Bytes
     PMU_DDR_READ_BW,
-    // Pernuma metric.
-    // Collect ddr write bandwidth for each numa node.
+    // Perchannel metric.
+    // Collect ddr write bandwidth for each channel.
     // Unit: Bytes
     PMU_DDR_WRITE_BW,
     // Percore metric.
@@ -457,7 +458,13 @@ enum PmuDeviceMetric {
     // Perpcie metric.
     // Collect smmu address transaction.
     // Unit: count
-    PMU_SMMU_TRAN
+    PMU_SMMU_TRAN,
+    // Pernuma metric.
+    // Collect rate of cross-numa operations received by HHA.
+    PMU_HHA_CROSS_NUMA,
+    // Pernuma metric.
+    // Collect rate of cross-socket operations received by HHA.
+    PMU_HHA_CROSS_SOCKET
 };
 
 struct PmuDeviceAttr {

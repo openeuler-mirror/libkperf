@@ -47,18 +47,18 @@ class CtypesSymbol(ctypes.Structure):
     ]
 
     def __init__(self,
-                 addr: int = 0,
-                 module: str = '',
-                 symbolName: str = '',
-                 mangleName: str = '',
-                 fileName: str = '',
-                 lineNum: int = 0,
-                 offset: int = 0,
-                 codeMapEndAddr: int = 0,
-                 codeMapAddr: int = 0,
-                 count: int = 0,
-                 *args: Any, **kw: Any) -> None:
-        super().__init__(*args, **kw)
+                 addr= 0,
+                 module= '',
+                 symbolName= '',
+                 mangleName= '',
+                 fileName= '',
+                 lineNum= 0,
+                 offset= 0,
+                 codeMapEndAddr= 0,
+                 codeMapAddr= 0,
+                 count= 0,
+                 *args, **kw):
+        super(CtypesSymbol, self).__init__(*args, **kw)
         self.addr = ctypes.c_ulong(addr)
         self.module = ctypes.c_char_p(module.encode(UTF_8))
 
@@ -79,16 +79,16 @@ class Symbol:
     __slots__ = ['__c_sym']
 
     def __init__(self,
-                 addr: int = 0,
-                 module: str = '',
-                 symbolName: str = '',
-                 mangleName: str = '',
-                 fileName: str = '',
-                 lineNum: int = 0,
-                 offset: int = 0,
-                 codeMapEndAddr: int = 0,
-                 codeMapAddr: int = 0,
-                 count: int = 0) -> None:
+                 addr= 0,
+                 module= '',
+                 symbolName= '',
+                 mangleName= '',
+                 fileName= '',
+                 lineNum= 0,
+                 offset= 0,
+                 codeMapEndAddr= 0,
+                 codeMapAddr= 0,
+                 count= 0):
         self.__c_sym = CtypesSymbol(
             addr=addr,
             module=module,
@@ -103,91 +103,91 @@ class Symbol:
         )
 
     @property
-    def c_sym(self) -> CtypesSymbol:
+    def c_sym(self):
         return self.__c_sym
 
     @property
-    def addr(self) -> int:
+    def addr(self):
         return self.c_sym.addr
 
     @addr.setter
-    def addr(self, addr: int) -> None:
+    def addr(self, addr):
         self.c_sym.addr = ctypes.c_ulong(addr)
 
     @property
-    def module(self) -> str:
+    def module(self):
         return self.c_sym.module.decode(UTF_8)
 
     @module.setter
-    def module(self, module: str) -> None:
+    def module(self, module):
         self.c_sym.module = ctypes.c_char_p(module.encode(UTF_8))
 
     @property
-    def symbolName(self) -> str:
+    def symbolName(self):
         return self.c_sym.symbolName.decode(UTF_8)
 
     @symbolName.setter
-    def symbolName(self, symbolName: str) -> None:
+    def symbolName(self, symbolName):
         self.c_sym.symbolName = ctypes.c_char_p(symbolName.encode(UTF_8))
     
     @property
-    def mangleName(self) -> str:
+    def mangleName(self):
         return self.c_sym.mangleName.decode(UTF_8)
 
     @mangleName.setter
-    def mangleName(self, mangleName: str) -> None:
+    def mangleName(self, mangleName):
         self.c_sym.mangleName = ctypes.c_char_p(mangleName.encode(UTF_8))
 
     @property
-    def fileName(self) -> str:
+    def fileName(self):
         return self.c_sym.fileName.decode(UTF_8)
 
     @fileName.setter
-    def fileName(self, fileName: str) -> None:
+    def fileName(self, fileName):
         self.c_sym.fileName = ctypes.c_char_p(fileName.encode(UTF_8))
 
     @property
-    def lineNum(self) -> int:
+    def lineNum(self):
         return self.c_sym.lineNum
 
     @lineNum.setter
-    def lineNum(self, lineNum: int) -> None:
+    def lineNum(self, lineNum):
         self.c_sym.lineNum = ctypes.c_uint(lineNum)
 
     @property
-    def offset(self) -> int:
+    def offset(self):
         return self.c_sym.offset
 
     @offset.setter
-    def offset(self, offset: int) -> None:
+    def offset(self, offset):
         self.c_sym.offset = ctypes.c_ulong(offset)
 
     @property
-    def codeMapEndAddr(self) -> int:
+    def codeMapEndAddr(self):
         return self.c_sym.codeMapEndAddr
 
     @codeMapEndAddr.setter
-    def codeMapEndAddr(self, codeMapEndAddr: int) -> None:
+    def codeMapEndAddr(self, codeMapEndAddr):
         self.c_sym.codeMapEndAddr = ctypes.c_ulong(codeMapEndAddr)
 
     @property
-    def codeMapAddr(self) -> int:
+    def codeMapAddr(self):
         return self.c_sym.codeMapAddr
 
     @codeMapAddr.setter
-    def codeMapAddr(self, codeMapAddr: int) -> None:
+    def codeMapAddr(self, codeMapAddr):
         self.c_sym.codeMapAddr = ctypes.c_ulong(codeMapAddr)
 
     @property
-    def count(self) -> int:
+    def count(self):
         return self.c_sym.count
 
     @count.setter
-    def count(self, count: int) -> None:
+    def count(self, count):
         self.c_sym.count = ctypes.c_uint64(count)
 
     @classmethod
-    def from_c_sym(cls, c_sym: CtypesSymbol) -> 'Symbol':
+    def from_c_sym(cls, c_sym):
         symbol = cls()
         symbol.__c_sym = c_sym
         return symbol
@@ -213,15 +213,15 @@ CtypesStack._fields_ = [
     ]
 
 
-class Stack:
+class Stack(object):
 
     __slots__ = ['__c_stack']
 
     def __init__(self,
-                 symbol: Symbol = None,
-                 next: 'Stack' = None,
-                 prev: 'Stack' = None,
-                 count: int = 0) -> None:
+                 symbol= None,
+                 next = None,
+                 prev = None,
+                 count= 0):
         self.__c_stack = CtypesStack(
             symbol=symbol.c_sym if symbol else None,
             next=next.c_stack if next else None,
@@ -230,45 +230,45 @@ class Stack:
         )
 
     @property
-    def c_stack(self) -> CtypesStack:
+    def c_stack(self):
         return self.__c_stack
 
     @property
-    def symbol(self) -> Symbol:
+    def symbol(self):
         return Symbol.from_c_sym(self.c_stack.symbol.contents) if self.c_stack.symbol else None
 
     @symbol.setter
-    def symbol(self, symbol: Symbol) -> None:
+    def symbol(self, symbol):
         self.c_stack.symbol = symbol.c_sym if symbol else None
 
 
     @property
-    def next(self) -> 'Stack':
+    def next(self):
         return self.from_c_stack(self.c_stack.next.contents) if self.c_stack.next else None
 
     @next.setter
-    def next(self, next: 'Stack') -> None:
+    def next(self, next):
         self.c_stack.next = next.c_stack if next else None
 
 
     @property
-    def prev(self) -> 'Stack':
+    def prev(self):
         return self.from_c_stack(self.c_stack.prev.contents) if self.c_stack.prev else None
 
     @prev.setter
-    def prev(self, prev: 'Stack') -> None:
+    def prev(self, prev):
         self.c_stack.prev = prev.c_stack if prev else None
 
     @property
-    def count(self) -> int:
+    def count(self):
         return self.c_stack.count
 
     @count.setter
-    def count(self, count: int) -> None:
+    def count(self, count):
         self.c_stack.count = ctypes.c_uint64(count)
 
     @classmethod
-    def from_c_stack(cls, c_stack: CtypesStack) -> 'Stack':
+    def from_c_stack(cls, c_stack):
         stack = cls()
         stack.__c_stack = c_stack
         return stack
@@ -292,12 +292,12 @@ class CtypesAsmCode(ctypes.Structure):
     ]
 
     def __init__(self,
-                 addr: int = 0,
-                 code: str = '',
-                 fileName: str = '',
-                 lineNum: int = 0,
-                 *args: Any, **kw: Any) -> None:
-        super().__init__(*args, **kw)
+                 addr= 0,
+                 code= '',
+                 fileName= '',
+                 lineNum= 0,
+                 *args, **kw):
+        super(CtypesAsmCode, self).__init__(*args, **kw)
         self.addr =  ctypes.c_ulong(addr)
         self.code = ctypes.c_char_p(code.encode(UTF_8))
         self.fileName = ctypes.c_char_p(fileName.encode(UTF_8))
@@ -309,10 +309,10 @@ class AsmCode:
     __slots__ = ['__c_asm_code']
 
     def __init__(self,
-                 addr: int = 0,
-                 code: str = '',
-                 fileName: str = '',
-                 lineNum: int = 0) -> None:
+                 addr= 0,
+                 code= '',
+                 fileName= '',
+                 lineNum= 0):
         self.__c_asm_code = CtypesAsmCode(
             addr=addr,
             code=code,
@@ -321,43 +321,43 @@ class AsmCode:
         )
 
     @property
-    def c_asm_code(self) -> CtypesAsmCode:
+    def c_asm_code(self):
         return self.__c_asm_code
 
     @property
-    def addr(self) -> int:
+    def addr(self):
         return self.c_asm_code.addr
 
     @addr.setter
-    def addr(self, addr: int) -> None:
+    def addr(self, addr):
         self.c_asm_code.addr = ctypes.c_ulong(addr)
 
     @property
-    def code(self) -> str:
+    def code(self):
         return self.c_asm_code.code.decode(UTF_8)
 
     @code.setter
-    def code(self, code: str) -> None:
+    def code(self, code):
         self.c_asm_code.code = ctypes.c_char_p(code.encode(UTF_8))
 
     @property
-    def fileName(self) -> str:
+    def fileName(self):
         return self.c_asm_code.fileName.decode(UTF_8)
 
     @fileName.setter
-    def fileName(self, fileName: str) -> None:
+    def fileName(self, fileName):
         self.c_asm_code.fileName = ctypes.c_char_p(fileName.encode(UTF_8))
 
     @property
-    def lineNum(self) -> int:
+    def lineNum(self):
         return self.c_asm_code.lineNum
 
     @lineNum.setter
-    def lineNum(self, lineNum: int) -> None:
+    def lineNum(self, lineNum):
         self.c_asm_code.lineNum = ctypes.c_uint(lineNum)
 
     @classmethod
-    def from_c_asm_code(cls, c_asm_code: CtypesAsmCode) -> 'AsmCode':
+    def from_c_asm_code(cls, c_asm_code):
         asm_code = cls()
         asm_code.__c_asm_code = c_asm_code
         return asm_code
@@ -383,13 +383,13 @@ class CtypesStackAsm(ctypes.Structure):
     ]
 
     def __init__(self,
-                 fileName: str = '',
-                 funcStartAddr: int = 0,
-                 functFileOffset: int = 0,
-                 next: 'CtypesStackAsm' = None,
-                 asmCode: CtypesAsmCode = None,
-                 *args: Any, **kw: Any) -> None:
-        super().__init__(*args, **kw)
+                 fileName= '',
+                 funcStartAddr= 0,
+                 functFileOffset= 0,
+                 next = None,
+                 asmCode= None,
+                 *args, **kw):
+        super(CtypesStackAsm, self).__init__(*args, **kw)
         self.fileName = ctypes.c_char_p(fileName.encode(UTF_8))
         self.funcStartAddr =  ctypes.c_ulong(funcStartAddr)
         self.functFileOffset =  ctypes.c_ulong(functFileOffset)
@@ -402,11 +402,11 @@ class StackAsm:
     __slots__ = ['__c_stack_asm']
 
     def __init__(self,
-                 fileName: str = '',
-                 funcStartAddr: int = 0,
-                 functFileOffset: int = 0,
-                 next: 'StackAsm' = None,
-                 asmCode: AsmCode = None) -> None:
+                 fileName= '',
+                 funcStartAddr= 0,
+                 functFileOffset= 0,
+                 next = None,
+                 asmCode= None):
         self.__c_stack_asm = CtypesStackAsm(
             fileName=fileName,
             funcStartAddr=funcStartAddr,
@@ -416,51 +416,51 @@ class StackAsm:
         )
 
     @property
-    def c_stack_asm(self) -> CtypesStackAsm:
+    def c_stack_asm(self):
         return self.__c_stack_asm
 
     @property
-    def fileName(self) -> str:
+    def fileName(self):
         return self.c_stack_asm.fileName.decode(UTF_8)
 
     @fileName.setter
-    def fileName(self, fileName: str) -> None:
+    def fileName(self, fileName):
         self.c_stack_asm.fileName = ctypes.c_char_p(fileName.encode(UTF_8))
 
     @property
-    def funcStartAddr(self) -> int:
+    def funcStartAddr(self):
         return self.c_stack_asm.funcStartAddr
 
     @funcStartAddr.setter
-    def funcStartAddr(self, funcStartAddr: int) -> None:
+    def funcStartAddr(self, funcStartAddr):
         self.c_stack_asm.funcStartAddr = ctypes.c_ulong(funcStartAddr)
         
     @property
-    def functFileOffset(self) -> int:
+    def functFileOffset(self):
         return self.c_stack_asm.functFileOffset
 
     @functFileOffset.setter
-    def functFileOffset(self, functFileOffset: int) -> None:
+    def functFileOffset(self, functFileOffset):
         self.c_stack_asm.functFileOffset = ctypes.c_ulong(functFileOffset)
 
     @property
-    def next(self) -> 'StackAsm':
+    def next(self):
         return self.from_c_stack_asm(self.c_stack_asm.next.contents) if self.c_stack_asm.next else None
 
     @next.setter
-    def next(self, next: 'StackAsm') -> None:
+    def next(self, next):
         self.c_stack_asm.next = next.c_stack_asm if next else None
 
     @property
-    def asmCode(self) -> AsmCode:
+    def asmCode(self):
         return AsmCode.from_c_asm_code(self.c_stack_asm.asmCode.contents) if self.c_stack_asm.asmCode else None
 
     @asmCode.setter
-    def asmCode(self, asmCode: AsmCode) -> None:
+    def asmCode(self, asmCode):
         self.c_stack_asm.asmCode = asmCode.c_asm_code if asmCode else None
 
     @classmethod
-    def from_c_stack_asm(cls, c_stack_asm: CtypesStackAsm) -> 'StackAsm':
+    def from_c_stack_asm(cls, c_stack_asm):
         stack_asm = cls()
         stack_asm.__c_stack_asm = c_stack_asm
         return stack_asm
@@ -492,15 +492,15 @@ class CtypesProcTopology(ctypes.Structure):
     ]
 
     def __init__(self,
-                 pid: int = 0,
-                 tid: int = 0,
-                 ppid: int = 0,
-                 childPid: List[int] = None,
-                 comm: str = '',
-                 exe: str = '',
-                 kernel: bool = False,
-                 *args: Any, **kw: Any) -> None:
-        super().__init__(*args, **kw)
+                 pid= 0,
+                 tid= 0,
+                 ppid= 0,
+                 childPid= None,
+                 comm= '',
+                 exe= '',
+                 kernel= False,
+                 *args, **kw):
+        super(CtypesProcTopology, self).__init__(*args, **kw)
         self.pid = ctypes.c_int(pid)
         self.tid = ctypes.c_int(tid)
         self.ppid = ctypes.c_int(ppid)
@@ -521,13 +521,13 @@ class ProcTopology:
     __slots__ = ['__c_proc_topology']
 
     def __init__(self,
-                 pid: int = 0,
-                 tid: int = 0,
-                 ppid: int = 0,
-                 childPid: List[int] = None,
-                 comm: str = '',
-                 exe: str = '',
-                 kernel: bool = False) -> None:
+                 pid= 0,
+                 tid= 0,
+                 ppid= 0,
+                 childPid= None,
+                 comm= '',
+                 exe= '',
+                 kernel= False):
         self.__c_proc_topology = CtypesProcTopology(
             pid = pid,
             tid=tid,
@@ -539,44 +539,44 @@ class ProcTopology:
         )
 
     @property
-    def c_proc_topology(self) -> CtypesProcTopology:
+    def c_proc_topology(self):
         return self.__c_proc_topology
 
     @property
-    def pid(self) -> int:
+    def pid(self):
         return self.c_proc_topology.pid
 
     @pid.setter
-    def pid(self, pid: int) -> None:
+    def pid(self, pid):
         self.c_proc_topology.pid = ctypes.c_int(pid)
 
     @property
-    def tid(self) -> int:
+    def tid(self):
         return self.c_proc_topology.tid
 
     @tid.setter
-    def tid(self, tid: int) -> None:
+    def tid(self, tid):
         self.c_proc_topology.tid = ctypes.c_int(tid)
         
         
     @property
-    def ppid(self) -> int:
+    def ppid(self):
         return self.c_proc_topology.ppid
 
     @ppid.setter
-    def ppid(self, ppid: int) -> None:
+    def ppid(self, ppid):
         self.c_proc_topology.ppid = ctypes.c_int(ppid)
     
     @property
-    def numChild(self) -> int:
+    def numChild(self):
         return self.c_proc_topology.numChild
 
     @property
-    def childPid(self) -> List[int]:
+    def childPid(self):
         return [self.c_proc_topology.childPid[i] for i in range(self.numChild)]
 
     @childPid.setter
-    def childPid(self, childPid: List[int]) -> None:
+    def childPid(self, childPid):
         if childPid:
             numChildPid = len(childPid)
             self.c_proc_topology.childPid = (ctypes.c_int * numChildPid)(*childPid)
@@ -586,29 +586,29 @@ class ProcTopology:
             self.c_proc_topology.numChild = ctypes.c_int(0)
     
     @property
-    def comm(self) -> str:
+    def comm(self):
         return self.c_proc_topology.comm.decode(UTF_8)
 
     @comm.setter
-    def comm(self, comm: str) -> None:
+    def comm(self, comm):
         self.c_proc_topology.comm = ctypes.c_char_p(comm.encode(UTF_8))
     
     @property
-    def exe(self) -> str:
+    def exe(self):
         return self.c_proc_topology.exe.decode(UTF_8)
 
     @exe.setter
-    def exe(self, exe: str) -> None:
+    def exe(self, exe):
         self.c_proc_topology.exe = ctypes.c_char_p(exe.encode(UTF_8))
 
     @classmethod
-    def from_c_proc_topology(cls, c_proc_topology: CtypesProcTopology) -> 'ProcTopology':
+    def from_c_proc_topology(cls, c_proc_topology):
         proc_topology = cls()
         proc_topology.__c_proc_topology = c_proc_topology
         return proc_topology
 
 
-def SymResolverRecordKernel() -> None:
+def SymResolverRecordKernel():
     """
     int SymResolverRecordKernel();
     """
@@ -619,7 +619,7 @@ def SymResolverRecordKernel() -> None:
     c_SymResolverRecordKernel()
 
 
-def SymResolverRecordModule(pid: int) -> None:
+def SymResolverRecordModule(pid):
     """
     int SymResolverRecordModule(int pid);
     """
@@ -632,7 +632,7 @@ def SymResolverRecordModule(pid: int) -> None:
     c_SymResolverRecordModule(c_pid)
 
 
-def SymResolverRecordModuleNoDwarf(pid: int) -> None:
+def SymResolverRecordModuleNoDwarf(pid):
     """
     int SymResolverRecordModuleNoDwarf(int pid);
     """
@@ -645,7 +645,7 @@ def SymResolverRecordModuleNoDwarf(pid: int) -> None:
     c_SymResolverRecordModuleNoDwarf(c_pid)
 
 
-def StackToHash(pid: int, stackList: List[int]) -> Stack:
+def StackToHash(pid, stackList):
     """
     struct Stack* StackToHash(int pid, unsigned long* stack, int nr);
     """
@@ -664,7 +664,7 @@ def StackToHash(pid: int, stackList: List[int]) -> Stack:
     return Stack.from_c_stack(c_stack.contents)
 
 
-def SymResolverMapAddr(pid: int,  addr: int) -> Symbol:
+def SymResolverMapAddr(pid,  addr):
     """
     struct Symbol* SymResolverMapAddr(int pid, unsigned long addr);
     """
@@ -681,7 +681,7 @@ def SymResolverMapAddr(pid: int,  addr: int) -> Symbol:
     return Symbol.from_c_sym(c_sym.contents)
 
 
-def FreeModuleData(pid: int) -> None:
+def FreeModuleData(pid):
     """
     void FreeModuleData(int pid);
     """
@@ -694,7 +694,7 @@ def FreeModuleData(pid: int) -> None:
     c_FreeModuleData(c_pid)
 
 
-def SymResolverDestroy() -> None:
+def SymResolverDestroy():
     """
     void SymResolverDestroy();
     """

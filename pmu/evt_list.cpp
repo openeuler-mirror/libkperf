@@ -91,7 +91,9 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
             perfEvt->SetBranchSampleFilter(branchSampleFilter);
             int err = 0;
             if (groupEnable) {
-                err = perfEvt->Init(groupEnable, evtLeader->xyCounterArray[row][col]->GetFd(), resetOutPutFd);
+                // If evtLeader is nullptr, I am the leader.
+                auto groupFd = evtLeader?evtLeader->xyCounterArray[row][col]->GetFd():-1;
+                err = perfEvt->Init(groupEnable, groupFd, resetOutPutFd);
             } else {
                 err = perfEvt->Init(groupEnable, -1, resetOutPutFd);
             }
@@ -107,6 +109,11 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
                     } else {
                         pcerr::SetCustomErr(err, "Invalid event:" + perfEvt->GetEvtName() + ", " + std::string{strerror(errno)});
                     }
+                }
+
+                if (err == LIBPERF_ERR_NO_PERMISSION) {
+                    pcerr::SetCustomErr(LIBPERF_ERR_NO_PERMISSION, "Current user does not have the permission to collect the event."
+                                                                   "Swtich to the root user and run the 'echo -1 > /proc/sys/kernel/perf_event_paranoid'");
                 }
 
                 if (err == UNKNOWN_ERROR) {
@@ -163,7 +170,15 @@ void KUNPENG_PMU::EvtList::FillFields(
 {
     for (auto i = start; i < end; ++i) {
         data[i].cpuTopo = cpuTopo;
-        data[i].evt = this->pmuEvt->name.c_str();
+        if (groupInfo && pmuEvt->collectType == COUNTING && i - start > 0) {
+            // For group events, PmuData are all read by event leader,
+            // and then some PmuData elements should be related to group members.
+            data[i].evt = groupInfo->evtGroupChildList[i-start-1]->pmuEvt->name.c_str();
+        } else {
+            // For no group events or group leader.
+            data[i].evt = this->pmuEvt->name.c_str();
+        }
+        data[i].groupId = this->groupId;
         if (data[i].comm == nullptr) {
             data[i].comm = procTopo->comm;
         }
@@ -176,6 +191,9 @@ void KUNPENG_PMU::EvtList::FillFields(
 int KUNPENG_PMU::EvtList::Read(vector<PmuData>& data, std::vector<PerfSampleIps>& sampleIps,
                                std::vector<PmuDataExt*>& extPool, std::vector<PmuSwitchData>& switchData)
 {
+
+    std::unique_lock<std::mutex> lg(mutex);
+
     for (unsigned int row = 0; row < numCpu; row++) {
         for (unsigned int col = 0; col < numPid; col++) {
             int err = this->xyCounterArray[row][col]->BeginRead();
@@ -245,40 +263,57 @@ void KUNPENG_PMU::EvtList::AddNewProcess(pid_t pid, const bool groupEnable, cons
         return;
     }
     std::unique_lock<std::mutex> lock(mutex);
+    this->pidList.emplace_back(shared_ptr<ProcTopology>(topology, FreeProcTopo));
+    bool hasInitErr = false;
+    std::map<int, PerfEvtPtr> perfEvtMap;
     for (unsigned int row = 0; row < numCpu; row++) {
-        this->pidList.emplace_back(shared_ptr<ProcTopology>(topology, FreeProcTopo));
-        procMap[pid] = this->pidList.back();
         PerfEvtPtr perfEvt = this->MapPmuAttr(this->cpuList[row]->coreId, this->pidList.back()->tid,
                                               this->pmuEvt.get());
         if (perfEvt == nullptr) {
-            return;
+            hasInitErr = true;
+            break;
         }
         perfEvt->SetSymbolMode(symMode);
         perfEvt->SetBranchSampleFilter(branchSampleFilter);
         int err = 0;
         if (groupEnable) {
             int sz = this->pidList.size();
-            err = perfEvt->Init(groupEnable, evtLeader->xyCounterArray[row][sz - 1]->GetFd(), -1);
+            auto groupFd = evtLeader?evtLeader->xyCounterArray[row][sz - 1]->GetFd():-1;
+            err = perfEvt->Init(groupEnable, groupFd, -1);
         } else {
             err = perfEvt->Init(groupEnable, -1, -1);
         }
         if (err != SUCCESS) {
-            return;
+            hasInitErr = true;
+            break;
         }
-        fdList.insert(perfEvt->GetFd());
+        perfEvtMap.emplace(row, perfEvt);
+    }
+
+    if (!hasInitErr) {
+        procMap[pid] = this->pidList.back();
         numPid++;
-        this->xyCounterArray[row].emplace_back(perfEvt);
-        /**
-         * If the current status is enable, start, read, other existing perfEvt may have been enabled and is counting,
-         * so the new perfEvt must also be added to enable. If the current status is read, the status of all perfEvt
-         * may be disable. At this time No need to collect counts.
-         */
-        if (evtStat == ENABLE || evtStat == START) {
-            perfEvt->Enable();
+        for (unsigned int row = 0; row < numCpu; row++) {
+            auto perfEvt = perfEvtMap[row];
+            fdList.insert(perfEvt->GetFd());
+            this->xyCounterArray[row].emplace_back(perfEvt);
+            /**
+             * If the current status is enable, start, read, other existing perfEvt may have been enabled and is counting,
+             * so the new perfEvt must also be added to enable. If the current status is read, the status of all perfEvt
+             * may be disable. At this time No need to collect counts.
+             */
+            if (evtStat == ENABLE || evtStat == START) {
+                perfEvt->Enable();
+            }
+            if (evtStat == READ && prevStat != DISABLE) {
+                perfEvt->Enable();
+            }
         }
-        if (evtStat == READ && prevStat != DISABLE) {
-            perfEvt->Enable();
+    } else {
+        for (const auto& evtPtr : perfEvtMap) {
+            close(evtPtr.second->GetFd());
         }
+        this->pidList.erase(this->pidList.end() - 1);
     }
 }
 
@@ -302,7 +337,7 @@ void KUNPENG_PMU::EvtList::ClearExitFd()
             int pid = it->get()->GetPid();
             if (exitPidVet.find(pid) != exitPidVet.end()) {
                 int fd = it->get()->GetFd();
-                this->fdList.erase(fd);
+                this->fdList.erase(this->fdList.find(fd));
                 close(fd);
                 it = perfVet.erase(it);
                 continue;
@@ -323,4 +358,9 @@ void KUNPENG_PMU::EvtList::ClearExitFd()
         procMap.erase(exitPid);
         numPid--;
     }
+}
+
+void KUNPENG_PMU::EvtList::SetGroupInfo(const EventGroupInfo &grpInfo)
+{
+    this->groupInfo = unique_ptr<EventGroupInfo>(new EventGroupInfo(grpInfo));
 }

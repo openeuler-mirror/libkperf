@@ -76,6 +76,7 @@ namespace KUNPENG_PMU {
                 if (forkPidQueue.empty()) {
                     continue;
                 }
+                std::lock_guard<std::mutex> lg(dummyMutex);
                 auto& pid = forkPidQueue.front();
                 for (const auto& evtList: evtLists) {
                     auto groupId = evtList->GetGroupId();
@@ -83,7 +84,6 @@ namespace KUNPENG_PMU {
                     DummyContext ctx = {evtList, static_cast<pid_t>(pid), evtGroupInfo.first, evtGroupInfo.second};
                     forkStrategy.DoHandler(ctx, evtGroupInfo.first, evtGroupInfo.second);
                 }
-                std::lock_guard<std::mutex> lg(dummyMutex);
                 forkPidQueue.pop();
             }
         });
@@ -146,7 +146,9 @@ namespace KUNPENG_PMU {
             if (header->type == PERF_RECORD_FORK) {
                 auto sample = (KUNPENG_PMU::PerfRecordFork*) header;
                 std::lock_guard<std::mutex> lg(dummyMutex);
-                forkPidQueue.push(sample->tid);
+                if((uint8_t*)page + MAP_LEN > ringBuf + off + sizeof(KUNPENG_PMU::PerfRecordFork)) {
+                    forkPidQueue.push(sample->tid);
+                }
             }
             if (header->type == PERF_RECORD_EXIT) {
                 auto sample = (KUNPENG_PMU::PerfRecordFork*) header;

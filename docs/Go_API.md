@@ -300,7 +300,7 @@ import "fmt"
 func main() {
     syscallList := kperf.PmuSysCallFuncList()
     if syscallList == nil {
-        fmt.Printf("sys call list is empty")
+        fmt.Printf("sys call list is empty\n")
     } else {
         for _, funcName := range syscallList {
             fmt.Printf("func name %v\n", funcName)
@@ -346,6 +346,8 @@ func PmuDeviceOpen(attr []PmuDeviceAttr) (int, error) 初始化采集uncore事�
     * PMU_PCIE_TX_MRD_BW 采集pcie设备的tx方向上的读带宽，单位：Bytes/ns
     * PMU_PCIE_TX_MWR_BW 采集pcie设备的tx方向上的读带宽，单位：Bytes/ns
     * PMU_SMMU_TRAN 采集指定smmu设备的地址转换次数，单位：count
+    * PMU_HHA_CROSS_NUMA 采集每个numa的跨numa访问HHA的操作比例
+    * PMU_HHA_CROSS_SOCKET 采集每个numa的跨socket访问HHA的操作比例
   * Bdf: 指定需要采集设备的bdf号，只对pcie和smmu指标有效
 * 返回值是int和error，pd > 0表示初始化成功，pd == -1初始化失败，可通过kperf.error()查看错误信息，以下是一个kperf.device_open的示例
 
@@ -478,12 +480,12 @@ import "fmt"
 func main() {
     err := kperf.PmuOpenCpuFreqSampling(100)
     if err != nil {
-		  fmt.Printf("kperf PmuOpenCpuFreqSampling failed, expect err is nil, but is %v", err)
+		  fmt.Printf("kperf PmuOpenCpuFreqSampling failed, expect err is nil, but is %v\n", err)
 	  }
 
     freqList := kperf.PmuReadCpuFreqDetail()
   	for _, v := range freqList {
-	  	fmt.Printf("cpuId=%v, minFreq=%d, maxFreq=%d, avgFreq=%d", v.CpuId, v.MinFreq, v.MaxFreq, v.AvgFreq)
+	  	fmt.Printf("cpuId=%v, minFreq=%d, maxFreq=%d, avgFreq=%d\n", v.CpuId, v.MinFreq, v.MaxFreq, v.AvgFreq)
 	  }
 
 	  kperf.PmuCloseCpuFreqSampling()
@@ -501,7 +503,7 @@ func main() {
     attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, CallStack:true, SampleRate: 1000, UseFreq:true}
     fd, err := kperf.PmuOpen(kperf.SAMPLE, attr)
     if err != nil {
-      fmt.Printf("kperf pmuopen sample failed, expect err is nil, but is %v", err)
+      fmt.Printf("kperf pmuopen sample failed, expect err is nil, but is %v\n", err)
       return
     }
 
@@ -511,24 +513,24 @@ func main() {
 
     dataVo, err := kperf.PmuRead(fd)
     if err != nil {
-      fmt.Printf("kperf pmuread failed, expect err is nil, but is %v", err)
+      fmt.Printf("kperf pmuread failed, expect err is nil, but is %v\n", err)
       return
     }
 
     for _, o := range dataVo.GoData {
       if len(o.Symbols) != 0 {
-        fmt.Printf("expect symbol data is empty, but is not")
+        fmt.Printf("expect symbol data is empty, but is not\n")
       }
     }
 
     parseErr := kperf.ResolvePmuDataSymbol(dataVo)
     if parseErr != nil {
-      fmt.Printf("kperf ResolvePmuDataSymbol failed, expect err is nil, but is %v", parseErr)
+      fmt.Printf("kperf ResolvePmuDataSymbol failed, expect err is nil, but is %v\n", parseErr)
     }
 
     for _, o := range dataVo.GoData {
       if len(o.Symbols) == 0 {
-        fmt.Printf("expect symbol data is not empty, but is empty")
+        fmt.Printf("expect symbol data is not empty, but is empty\n")
       }
     }
     kperf.PmuDataFree(dataVo)
