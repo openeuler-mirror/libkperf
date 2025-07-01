@@ -930,8 +930,8 @@ PmuDeviceData *devData = nullptr;
 auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 1, &devData);
 // devData的长度等于cluster个数
 for (int i=0;i<len;++i) {
-    // 每个devData表示一个cluster的L3平均时延，是以cycles为单位
-    std::cout << "L3 latency(" << devData[i].clusterId << "): " << devData[i].count<< " cycles\n";
+    // 每个devData表示一个cluster的L3平均时延，是以ns为单位
+    cout << "L3 latency(" << devData[i].clusterId << "): " << devData[i].count<< " ns\n";
 }
 DevDataFree(devData);
 PmuDataFree(oriData);
@@ -953,7 +953,7 @@ kperf.disable(pd)
 ori_data = kperf.read(pd)
 dev_data = kperf.get_device_metric(ori_data, dev_attr)
 for data in dev_data.iter:
-    print(f"L3 latency({data.clusterId}): {data.count} cycles")
+    print(f"L3 latency({data.clusterId}): {data.count} ns")
 ```
 
 ```go
@@ -970,7 +970,7 @@ kperf.PmuDisable(fd)
 dataVo, _ := kperf.PmuRead(fd)
 deivceDataVo, _ := kperf.PmuGetDevMetric(dataVo, deviceAttrs)
 for _, v := range deivceDataVo.GoDeviceData {
-	fmt.Printf("L3 latency(%v): %v cycles\n", v.ClusterId, v.Count)
+	fmt.Printf("L3 latency(%v): %v ns\n", v.ClusterId, v.Count)
 }
 kperf.DevDataFree(deivceDataVo)
 kperf.PmuDataFree(dataVo)
@@ -979,10 +979,10 @@ kperf.PmuClose(fd)
 
 执行上述代码，输出的结果类似如下：
 ```
-L3 latency(0): 101 cycles
-L3 latency(1): 334.6 cycles
-L3 latency(2): 267.8 cycles
-L3 latency(3): 198.4 cycles
+L3 latency(0): 101 ns
+L3 latency(1): 334.6 ns
+L3 latency(2): 267.8 ns
+L3 latency(3): 198.4 ns
 ...
 ```
 
