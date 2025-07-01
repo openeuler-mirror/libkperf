@@ -123,6 +123,7 @@ private:
     std::vector<CpuPtr> cpuList;
     std::vector<ProcPtr> pidList;
     std::vector<ProcPtr> unUsedPidList;
+    std::set<int> noProcList;
     std::shared_ptr<PmuEvt> pmuEvt;
     int groupId; // event group id
     std::vector<std::vector<std::shared_ptr<PerfEvt>>> xyCounterArray;
