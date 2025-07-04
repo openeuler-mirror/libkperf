@@ -66,6 +66,7 @@ kperf.disable(pd)
 ```
 
 ```go
+// go代码示例
 kperf.PmuEnable(pd)
 time.Sleep(time.Second)
 kperf.PmuDisable(pd)
@@ -659,7 +660,7 @@ perf stat -e "{cycles,branch-loads,branch-load-misses,iTLB-loads}",inst_retired
 
 如果对多个相关联的事件采集，可以把关联的事件放到一个事件组。比如，计算bad speculation需要用到事件inst_retired，inst_spec和cycles，计算retiring需要用到事件inst_retired和cycles。那么perf应该这样使用：
 ```
-perf stat -e "{inst_retired,inst_spec,cycles}","{inst_spec,cycles}"
+perf stat -e "{inst_retired,inst_spec,cycles}","{inst_retired,cycles}"
 ```
 用libkperf可以这样实现：
 ```c++
