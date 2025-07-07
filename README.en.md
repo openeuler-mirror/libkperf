@@ -325,3 +325,9 @@ go test -v -test.run TestCount #specify the test case to run
 ```shell
 go build -tags="static"
 ```
+
+If the dynamic library is not installed in the system default directory '/usr/bin', an error will occur at runtime: No such file or directory of 'libkperf.so'.
+In this case, You need to add the directory of 'libkperf.so' to the 'LD_LIBRARY_PATH' environment variable:
+```shell
+export LD_LIBRARY_PATH=/XXX/libkperf/output/lib:$LD_LIBRARY_PATH
+```

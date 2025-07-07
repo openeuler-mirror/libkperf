@@ -1,5 +1,7 @@
 Details
 ============
+以下示例中所使用API及其参数的详细介绍，可参考C_C++_API、Go_API和Python_API文档。
+
 ### Counting
 libkperf提供Counting模式，类似于perf stat功能。
 例如，如下perf命令:

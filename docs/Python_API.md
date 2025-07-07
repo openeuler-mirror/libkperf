@@ -380,10 +380,11 @@ kperf.get_device_metric(pmu_data: PmuData, device_attr: List[PmuDeviceAttr]) 对
 * class ImplPmuDeviceData:
   * metric: 采集的指标
   * count：指标的计数值
-  * mode: 指标的采集类型，按core、按numa、按channel还是按bdf号
+  * mode: 指标的采集类型，按core、按numa、按cluster、按channel还是按bdf号
   * union：
     * coreId: 数据的core编号
     * numaId: 数据的numa编号
+    * cluster: 簇ID
     * bdf: 数据的bdf编号
     * DdrDataStructure: ddr相关的统计数据
 
