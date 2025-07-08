@@ -202,7 +202,9 @@ class PmuAttr(object):
                  evFilter=0,
                  minLatency=0,
                  includeNewFork=False,
-                 branchSampleFilter=0):
+                 branchSampleFilter=0,
+                 cgroupNameList=None):
+
         self.__c_pmu_attr = CtypesPmuAttr(
             evtList=evtList,
             pidList=pidList,
@@ -220,6 +222,7 @@ class PmuAttr(object):
             minLatency=minLatency,
             includeNewFork=includeNewFork,
             branchSampleFilter=branchSampleFilter,
+            cgroupNameList=cgroupNameList
         )
 
     @property
@@ -243,6 +246,24 @@ class PmuAttr(object):
         else:
             self.c_pmu_attr.evtList = None
             self.c_pmu_attr.numEvt = ctypes.c_uint(0)
+
+    @property
+    def numCgroup(self):
+        return self.c_pmu_attr.numCgroup
+
+    @property
+    def cgroupNameList(self):
+        return [self.c_pmu_attr.cgroupNameList[i].decode(UTF_8) for i in range(self.numCgroup)]
+
+    @cgroupNameList.setter
+    def cgroupNameList(self, cgroupNameList):
+        if cgroupNameList:
+            numCgroup = len(cgroupNameList)
+            self.c_pmu_attr.cgroupNameList = (ctypes.c_char_p * numCgroup)(*[cgroupName.encode(UTF_8) for cgroupName in cgroupNameList])
+            self.c_pmu_attr.numCgroup = ctypes.c_uint(numCgroup)
+        else:
+            self.c_pmu_attr.cgroupNameList = None
+            self.c_pmu_attr.numCgroup = ctypes.c_uint(0)
 
     @property
     def numPid(self):

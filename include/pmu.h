@@ -165,6 +165,11 @@ struct PmuAttr {
     unsigned includeNewFork : 1;
     // if the filtering mode is set, the branch_sample_stack data is collectd in sampling mode.By default,the filtering mode dose not take effect.
     unsigned long branchSampleFilter;
+    // cgroup name
+    // if not use cgroup function, this field will be nullptr.
+    // if use cgroup function. use the cgroup name in the cgroupNamelist to apply all events in the Event list
+    char** cgroupNameList;
+    int numCgroup;
 };
 
 enum PmuTraceType {
@@ -254,6 +259,7 @@ struct PmuData {
     double countPercent;            // event count Percent. when count = 0, countPercent = -1; Only available for Counting.
     struct PmuDataExt *ext;         // extension. Only available for Spe.
     struct SampleRawData *rawData;  // trace pointer collect data.
+    const char* cgroupName;         // trace data from which cgroup 
 };
 
 struct PmuTraceData {

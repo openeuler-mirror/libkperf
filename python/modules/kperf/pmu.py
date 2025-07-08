@@ -268,7 +268,8 @@ class PmuAttr(_libkperf.PmuAttr):
                  evFilter = 0,
                  minLatency = 0,
                  includeNewFork = False,
-                 branchSampleFilter = 0):
+                 branchSampleFilter = 0,
+                 cgroupNameList = None):
         super(PmuAttr, self).__init__(
             evtList=evtList,
             pidList=pidList,
@@ -286,6 +287,7 @@ class PmuAttr(_libkperf.PmuAttr):
             minLatency=minLatency,
             includeNewFork=includeNewFork,
             branchSampleFilter=branchSampleFilter,
+            cgroupNameList=cgroupNameList
         )
 
 
