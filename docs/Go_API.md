@@ -380,7 +380,7 @@ func PmuGetDevMetric(dataVo PmuDataVo, deviceAttr []PmuDeviceAttr) (PmuDeviceDat
 * type PmuDeviceData struct:
   * Metric C.enum_PmuDeviceMetric 采集的指标
 	* Count float64                 指标的计数值
-	* Mode C.enum_PmuMetricMode     指标的采集类型，按core、按numa、按channel还是按bdf号
+	* Mode C.enum_PmuMetricMode     指标的采集类型，按core、按numa、按cluster、按channel还是按bdf号
 	* CoreId uint32                 数据的core编号
 	* NumaId uint32                 数据的numa编号
 	* ClusterId uint32              簇ID

@@ -300,3 +300,8 @@ go test -v -test.run TestCount #指定运行的用例
 ```shell
 go build -tags="static"
 ```
+
+如果动态库没有安装到系统默认的/usr/bin目录下，在运行时会报错：找不到"libkperf.so"动态库。此时需要将"libkperf.so"所在目录添加到"LD_LIBRARY_PATH"环境变量中：
+```shell
+export LD_LIBRARY_PATH=/XXX/libkperf/output/lib:$LD_LIBRARY_PATH
+```
