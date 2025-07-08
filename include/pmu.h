@@ -209,6 +209,8 @@ struct BranchSampleRecord {
     unsigned long fromAddr;
     unsigned long toAddr;
     unsigned long cycles;
+    uint8_t misPred;
+    uint8_t predicted;
 };
 
 struct PmuDataExt {

@@ -189,7 +189,7 @@ func TestBrbe(t *testing.T) {
 		}
 
 		for _, b := range o.BranchRecords {
-			t.Logf("branch record info fromAddr=%#x, toAddr=%#x cycles=%v", b.FromAddr, b.ToAddr, b.Cycles)
+			t.Logf("branch record info fromAddr=%#x, toAddr=%#x cycles=%v mispred=%v predicted=%v", b.FromAddr, b.ToAddr, b.Cycles, b.MisPred, b.Predicted)
 		}
 	}
 	kperf.PmuDataFree(dataVo)
