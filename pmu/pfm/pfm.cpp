@@ -117,6 +117,13 @@ static bool CheckRawEvent(const char *pmuName)
     return true;
 }
 
+static bool IsTraceEventFormat(const std::string evtName) {
+    if (evtName.find(":") != std::string::npos) {
+        return true;
+    }
+    return false;
+}
+
 static int GetEventType(const char *pmuName)
 {
     if (CheckEventInList(CORE_EVENT, pmuName)) {
@@ -135,7 +142,7 @@ static int GetEventType(const char *pmuName)
     return -1;
 #else
     // Kernel trace point event name like 'block:block_bio_complete'
-    if (CheckEventInList(TRACE_EVENT, pmuName)) {
+    if (IsTraceEventFormat(pmuName) && CheckEventInList(TRACE_EVENT, pmuName)) {
         return TRACE_TYPE;
     }
     // Parse uncore event raw name like 'hisi_sccl3_ddrc0/config=0x0/'

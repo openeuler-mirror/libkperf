@@ -144,6 +144,8 @@ func PmuRead(fd int) (PmuDataVo, error)
     * FromAddr uint64 起始地址
     * ToAddr   uint64 跳转地址
     * Cycles   uint64 执行指令数
+    * MisPred  uint8 分支目标预测错误
+    * Predicted uint8 分支预测正确
   * SpeExt SpeDataExt
     * Pa uint64     物理地址
     * Va uint64	   虚拟地址

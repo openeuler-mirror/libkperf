@@ -1298,7 +1298,11 @@ for (int i = 0; i < len; i++)
         for (int j = 0; j < pmuData.ext->nr; j++)
         {
             auto *rd = pmuData.ext->branchRecords;
-            std::cout << std::hex << rd[j].fromAddr << "->" << rd[j].toAddr << " " << rd[j].cycles << std::endl;
+            std::string predStr = "P";
+            if (rd[j].misPred == 1) {
+                predStr = "M";
+            }
+            std::cout << std::hex << rd[j].fromAddr << "->" << rd[j].toAddr << " " << rd[j].cycles << " " << predStr << std::endl;
         }
     }
 }
@@ -1307,11 +1311,11 @@ PmuClose(pd);
 ```
 执行上述代码，输出的结果类似如下：
 ```
-ffff88f6065c->ffff88f60b0c 35
-ffff88f60aa0->ffff88f60618 1
-40065c->ffff88f60b00 1
-400824->400650 1
-400838->400804 1
+ffff88f6065c->ffff88f60b0c 35 P
+ffff88f60aa0->ffff88f60618 1  P
+40065c->ffff88f60b00 1 P
+400824->400650 1 P
+400838->400804 1 P
 ```
 
 ```python
@@ -1334,7 +1338,8 @@ pmu_data = kperf.read(pd)
 for data in pmu_data.iter:
     if data.ext and data.ext.branchRecords:
         for item in data.ext.branchRecords.iter:
-            print(f"{hex(item.fromAddr)}->{hex(item.toAddr)} {item.cycles}")
+            preStr = 'M' if item.misPred == 1 else 'P'
+            print(f"{hex(item.fromAddr)}->{hex(item.toAddr)} {item.cycles} {preStr}")
 ```
 
 ```go
@@ -1364,7 +1369,11 @@ func main() {
 
 	for _, o := range dataVo.GoData {
 		for _, b := range o.BranchRecords {
-			fmt.Printf("%#x->%#x %#x\n", b.FromAddr, b.ToAddr, b.Cycles)
+            preStr := "P"
+            if b.MisPred == 1 {
+                preStr = "M"
+            }
+			fmt.Printf("%#x->%#x %v %s\n", b.FromAddr, b.ToAddr, b.Cycles, preStr)
 		}
 	}
 	kperf.PmuDataFree(dataVo)
@@ -1374,11 +1383,11 @@ func main() {
 ```
 执行上述代码，输出的结果类似如下：
 ```
-0xffff88f6065c->0xffff88f60b0c 35
-0xffff88f60aa0->0xffff88f60618 1
-0x40065c->0xffff88f60b00 1
-0x400824->0x400650 1
-0x400838->0x400804 1
+0xffff88f6065c->0xffff88f60b0c 35 P
+0xffff88f60aa0->0xffff88f60618 1 P
+0x40065c->0xffff88f60b00 1 P
+0x400824->0x400650 1 P
+0x400838->0x400804 1 P
 ```
 
 ### IO和计算热点混合采样(Blocked Sample)

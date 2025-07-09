@@ -347,6 +347,8 @@ type BranchSampleRecord struct {
 	FromAddr uint64    // from addr
 	ToAddr uint64      // to addr
 	Cycles uint64      // cycles
+	MisPred uint8     // mispred
+	Predicted uint8   // predicted
 }
 
 type PmuData struct {
@@ -1256,6 +1258,8 @@ func (data *PmuData) appendBranchRecords(pmuData C.struct_PmuData) {
 		branchList[i].FromAddr = uint64(branchRecords[i].fromAddr)
 		branchList[i].ToAddr   = uint64(branchRecords[i].toAddr)
 		branchList[i].Cycles   = uint64(branchRecords[i].cycles)
+		branchList[i].MisPred  = uint8(branchRecords[i].misPred)
+		branchList[i].Predicted = uint8(branchRecords[i].predicted)
 	}
 	data.BranchRecords = branchList
 }
