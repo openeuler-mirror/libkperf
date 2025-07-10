@@ -72,6 +72,11 @@ func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error)
       branchSampleMode = kperf.BranchSampleFilter.KPERF_SAMPLE_BRANCH_ANY | kperf.BranchSampleFilter.KPERF_SAMPLE_BRANCH_USER
       pmu_attr = kperf.PmuAttr(sampleRate=1000, useFreq=True, pidList=pidList, evtList=evtList, branchSampleFilter=branchSampleMode)
       仅支持SAMPLING模式, 其中KPERF_SAMPLE_BRANCH_USER， KPERF_SAMPLE_BRANCH_KERNEL， KPERF_SAMPLE_BRANCH_HV使用时必须搭配KPERF_SAMPLE_BRANCH_ANY或者KPERF_SAMPLE_BRANCH_ANY之后的值一起使用
+  * char** cgroupNameList;
+    采集cgroup的名称列表
+  * int numCgroup;
+    采集cgroup的个数
+
 * 返回值是int,error, 如果error不等于nil，则返回的int值为对应采集任务ID
 
 ```go
@@ -151,6 +156,7 @@ func PmuRead(fd int) (PmuDataVo, error)
     * Va uint64	   虚拟地址
     * Event uint64  混合事件的比特位
     * Lat uint16    调度操作到执行操作的周期数
+  * cgroupName cgroup名称
 
 ```go
 //go 代码示例

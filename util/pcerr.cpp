@@ -55,6 +55,7 @@ namespace pcerr {
             {LIBPERF_ERR_RESET_FD, "failed to reset fd output"},
             {LIBPERF_ERR_SET_FD_RDONLY_NONBLOCK, "failed to set fd readonly and nonbolock"},
             {LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86, "the current interface does not support x86"},
+            {LIBPERF_ERR_INVALID_CGROUP_LIST, "invalid cgroup name list"},
     };
     static std::unordered_map<int, std::string> warnMsgs = {
             {LIBPERF_WARN_CTXID_LOST, "Some SPE context packets are not found in the traces."},

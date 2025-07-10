@@ -38,6 +38,7 @@ static unordered_map<unsigned, bool> runningStatus;
 static SafeHandler<unsigned> pdMutex;
 static pair<unsigned, const char**> uncoreEventPair;
 static std::set<int> onLineCpuIds;
+static string cgroupDir = "/sys/fs/cgroup/";
 
 struct PmuTaskAttr* AssignPmuTaskParam(PmuTaskType collectType, struct PmuAttr *attr);
 
@@ -171,12 +172,18 @@ static int CheckBranchSampleFilter(const unsigned long& branchSampleFilter, enum
 static int CheckCgroupNameList(unsigned numCgroup, char** cgroupName)
 {
     if (numCgroup > 0 && cgroupName == nullptr) {
-        New(LIBPERF_ERR_INVALID_CGROUP_LIST, "Invalid cgroup name list: numcgroup is greater than 0, but cgroupName is null");
+        New(LIBPERF_ERR_INVALID_CGROUP_LIST, "Invalid cgroup name list: numCgroup is greater than 0, but cgroupNameList is null");
         return LIBPERF_ERR_INVALID_CGROUP_LIST;
     }
-
+    int cgroupIsV2 = CheckCgroupV2();
+    if (cgroupIsV2 == -1) {
+        New(LIBPERF_ERR_INVALID_CGROUP_LIST, "The cgroup mount does not exist or has no permission to access");
+        return LIBPERF_ERR_INVALID_CGROUP_LIST;
+    } else if (!cgroupIsV2) {  // cgroup v1
+        cgroupDir += "perf_event/";
+    }
     for (unsigned i = 0; i < numCgroup; i++) {
-        std::string cgroupPath = "/sys/fs/cgroup/perf_event/" + string(cgroupName[i]);
+        std::string cgroupPath = cgroupDir + string(cgroupName[i]);
         int cgroupFd = open(cgroupPath.c_str(), O_RDONLY);
         if (cgroupFd < 0) {
             New(LIBPERF_ERR_OPEN_INVALID_FILE, "open " + cgroupPath + " failed.");
@@ -230,6 +237,14 @@ static int CheckCollectTypeConfig(enum PmuTaskType collectType, struct PmuAttr *
     if (collectType == SPE_SAMPLING && attr->evtAttr != nullptr) {
         New(LIBPERF_ERR_INVALID_GROUP_SPE);
         return LIBPERF_ERR_INVALID_GROUP_SPE;
+    }
+    if (attr->cgroupNameList != nullptr && attr->pidList != nullptr) {
+        New(LIBPERF_ERR_INVALID_CGROUP_LIST, "Cannot specify both cgroup and pid. Please use only one.");
+        return LIBPERF_ERR_INVALID_CGROUP_LIST;
+    }
+    if (collectType == SPE_SAMPLING && attr->numCgroup > 1) {
+        New(LIBPERF_ERR_INVALID_CGROUP_LIST, "SPE mode only support one cgroup");
+        return LIBPERF_ERR_INVALID_CGROUP_LIST;
     }
     return SUCCESS;
 }
@@ -858,7 +873,7 @@ static void PrepareCpuList(PmuAttr *attr, PmuTaskAttr *taskParam, PmuEvt* pmuEvt
 }
 
 int GetCgroupFd(std::string& cgroupName) {
-    std::string cgroupPath = "/sys/fs/cgroup/perf_event/" + cgroupName;
+    std::string cgroupPath = cgroupDir + cgroupName;
     int cgroupFd = open(cgroupPath.c_str(), O_RDONLY);
     if (cgroupFd < 0) {
         New(LIBPERF_ERR_OPEN_INVALID_FILE, "open " + cgroupPath + " failed.");
@@ -926,7 +941,7 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
 bool InitCgroupFds(struct PmuAttr *attr, std::unordered_map<std::string, int>& cgroupFds) {
     for (int i = 0; i < attr->numCgroup; ++i) {
         std::string cgroupName = attr->cgroupNameList[i];
-        int fd = GetCgroupFd (cgroupName);
+        int fd = GetCgroupFd(cgroupName);
         if (fd == -1) {
             for (auto iter = cgroupFds.begin(); iter != cgroupFds.end(); iter++) {
                 close(iter->second);
@@ -941,17 +956,17 @@ bool InitCgroupFds(struct PmuAttr *attr, std::unordered_map<std::string, int>& c
 struct PmuTaskAttr* AssignPmuTaskParam(enum PmuTaskType collectType, struct PmuAttr *attr)
 {
     struct PmuTaskAttr* taskParam = nullptr;
-    if (collectType == SPE_SAMPLING) {
-        // evtList is nullptr, cannot loop over evtList.
-        taskParam = AssignTaskParam(collectType, attr, nullptr, 0, nullptr, -1);
-        return taskParam;
-    }
     if (attr->numCgroup > 0) {
         std::unordered_map<std::string, int> cgroupFds;
         if (!InitCgroupFds(attr, cgroupFds)) {
             return nullptr;
         }
-
+        if (collectType == SPE_SAMPLING) {
+            std::string cgroupName(attr->cgroupNameList[0]);
+            // evtList is nullptr, cannot loop over evtList.
+            taskParam = AssignTaskParam(collectType, attr, nullptr, 0, cgroupName.c_str(), cgroupFds[cgroupName]);
+            return taskParam;
+        }
         for (int i = 0; i < attr->numCgroup; ++i) {
             std::string cgroupName(attr->cgroupNameList[i]);
             for (int j = 0; j < attr->numEvt; ++j) {
@@ -963,6 +978,10 @@ struct PmuTaskAttr* AssignPmuTaskParam(enum PmuTaskType collectType, struct PmuA
             }
         }
     } else {
+        if (collectType == SPE_SAMPLING) {
+            taskParam = AssignTaskParam(collectType, attr, nullptr, 0, nullptr, -1);
+            return taskParam;
+        }
         for (int i = 0; i < attr->numEvt; ++i) {
             struct PmuTaskAttr* current = AssignTaskParam(collectType, attr, attr->evtList[i], attr->evtAttr[i].groupId, nullptr, -1);
             if (current == nullptr) {

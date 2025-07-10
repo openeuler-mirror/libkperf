@@ -24,6 +24,7 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <climits>
+#include <sys/vfs.h>
 #include "pcerrc.h"
 #include "pcerr.h"
 #include "common.h"
@@ -151,9 +152,22 @@ std::string GetTraceEventDir()
     return "";
 }
 
-bool StartWith(const std::string& str, const std::string& prefix) {
+bool StartWith(const std::string& str, const std::string& prefix)
+{
     if (str.size() < prefix.size()) {
         return false;
     }
     return str.substr(0, prefix.size()) == prefix;
+}
+
+int CheckCgroupV2()
+{
+    const char *mnt = "/sys/fs/cgroup";
+    struct statfs stbuf;
+
+    if (statfs(mnt, &stbuf) < 0) {
+        return -1;
+    }
+
+    return (stbuf.f_type == CGROUP2_SUPER_MAGIC);
 }

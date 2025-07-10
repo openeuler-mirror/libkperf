@@ -327,8 +327,14 @@ func TestResolvePmuDataSymbol(t *testing.T) {
 
 func TestCgroupNameList(t *testing.T) {
     
-	groupPath := "/sys/fs/cgroup/perf_event/testGocgroup"
-
+	cgroupV2File := "/sys/fs/cgroup/cgroup.controllers"
+	_, err := os.Stat(cgroupV2File)
+	groupPath := "/sys/fs/cgroup"
+	if os.IsNotExist(err) {
+		groupPath += "/perf_event/testGocgroup" //cgroup v1
+	} else {
+		groupPath += "/testGocgroup"
+	}
 	_, statErr := os.Stat(groupPath)
 	if statErr != nil {
 		err := os.Mkdir(groupPath, 0755)

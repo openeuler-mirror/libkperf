@@ -28,6 +28,8 @@
 #error "Only the x86_64 and aarch64 architecture are supported."
 #endif
 
+#define CGROUP2_SUPER_MAGIC 0x63677270
+
 const std::string TRACE_EVENT_PATH = "/sys/kernel/tracing/events/";
 const std::string TRACE_DEBUG_EVENT_PATH = "/sys/kernel/debug/tracing/events/";
 
@@ -48,5 +50,6 @@ int RaiseNumFd(uint64_t numFd);
 bool ExistPath(const std::string& filePath);
 std::string GetTraceEventDir();
 bool StartWith(const std::string& str, const std::string& prefix);
+int CheckCgroupV2();
 
 #endif  // LIBKPROF_COMMON_H
