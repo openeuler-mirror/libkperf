@@ -112,6 +112,8 @@ class CtypesPmuAttr(ctypes.Structure):
         ('minLatency',    ctypes.c_ulong),
         ('includeNewFork', ctypes.c_uint, 1),
         ('branchSampleFilter', ctypes.c_ulong),
+        ('cgroupNameList', ctypes.POINTER(ctypes.c_char_p)),
+        ('numCgroup',     ctypes.c_uint),
     ]
 
     def __init__(self,
@@ -131,6 +133,8 @@ class CtypesPmuAttr(ctypes.Structure):
                  minLatency=0,
                  includeNewFork=False,
                  branchSampleFilter=0,
+                 cgroupNameList=None,
+                 numCgroup=0,
                  *args, **kw):
         super(CtypesPmuAttr, self).__init__(*args, **kw)
 
@@ -168,6 +172,15 @@ class CtypesPmuAttr(ctypes.Structure):
             self.evtAttr = (CtypesEvtAttr * numEvtAttr)(*[CtypesEvtAttr(evt) for evt in evtAttr])
         else:
             self.evtAttr = None
+        
+        if cgroupNameList:
+            numCgroup = len(cgroupNameList)
+            self.cgroupNameList = (ctypes.c_char_p * numCgroup)(*[cgroupName.encode(UTF_8) for cgroupName in cgroupNameList])
+            self.numCgroup = ctypes.c_uint(numCgroup)
+        else:
+            self.cgroupNameList = None
+            self.numCgroup = ctypes.c_uint(0)
+
 
         self.symbolMode = ctypes.c_uint(symbolMode)
         self.dataFilter = ctypes.c_uint64(dataFilter)
@@ -1175,7 +1188,8 @@ class CtypesPmuData(ctypes.Structure):
         ('count',   ctypes.c_uint64),
         ('countPercent', ctypes.c_double),
         ('ext',     ctypes.POINTER(CtypesPmuDataExt)),
-        ('rawData', ctypes.POINTER(CtypesSampleRawData))
+        ('rawData', ctypes.POINTER(CtypesSampleRawData)),
+        ('cgroupName', ctypes.c_char_p),
     ]
 
     def __init__(self,
@@ -1193,6 +1207,7 @@ class CtypesPmuData(ctypes.Structure):
                  countPercent=0.0,
                  ext=None,
                  rawData=None,
+                 cgroupName='',
                  *args, **kw):
         super(CtypesPmuData, self).__init__(*args, **kw)
 
@@ -1210,6 +1225,7 @@ class CtypesPmuData(ctypes.Structure):
         self.countPercent = ctypes.c_double(countPercent)
         self.ext = ext
         self.rawData = rawData
+        self.cgroupName = ctypes.c_char_p(cgroupName.encode(UTF_8))
 
 
 class ImplPmuData:
@@ -1229,7 +1245,8 @@ class ImplPmuData:
                  count=0,
                  countPercent=0.0,
                  ext=None,
-                 rawData=None):
+                 rawData=None,
+                 cgroupName=''):
         self.__c_pmu_data = CtypesPmuData(
             stack=stack.c_stack if stack else None,
             evt=evt,
@@ -1244,7 +1261,8 @@ class ImplPmuData:
             count=count,
             countPercent=countPercent,
             ext=ext.c_pmu_data_ext if ext else None,
-            rawData=rawData.c_pmu_data_rawData if rawData else None
+            rawData=rawData.c_pmu_data_rawData if rawData else None,
+            cgroupName=cgroupName
         )
 
     @property
@@ -1358,6 +1376,14 @@ class ImplPmuData:
     @ext.setter
     def ext(self, ext):
         self.c_pmu_data.ext = ext.c_pmu_data_ext if ext else None
+    
+    @property
+    def cgroupName(self):
+        return self.c_pmu_data.cgroupName.decode(UTF_8)
+
+    @cgroupName.setter
+    def cgroupName(self, cgroupName):
+        self.c_pmu_data.cgroupName = ctypes.c_char_p(cgroupName.encode(UTF_8))
 
     @classmethod
     def from_c_pmu_data(cls, c_pmu_data):

@@ -3,6 +3,7 @@ package libkperf_test
 import "testing"
 import "time"
 import "os"
+import "fmt"
 
 import "libkperf/kperf"
 
@@ -318,6 +319,57 @@ func TestResolvePmuDataSymbol(t *testing.T) {
 	for _, o := range dataVo.GoData {
 		if len(o.Symbols) == 0 {
 			t.Fatalf("expect symbol data is not empty, but is empty")
+		}
+	}
+	kperf.PmuDataFree(dataVo)
+	kperf.PmuClose(fd)
+}
+
+func TestCgroupNameList(t *testing.T) {
+    
+	groupPath := "/sys/fs/cgroup/perf_event/testGocgroup"
+
+	_, statErr := os.Stat(groupPath)
+	if statErr != nil {
+		err := os.Mkdir(groupPath, 0755)
+		if err != nil {
+			t.Fatalf("failed to mkdir groupPath named %s, err is %v", groupPath, err)
+		}
+	}
+	cgroupProcPath := groupPath + "/cgroup.procs"
+	procFile, procOpenErr := os.OpenFile(cgroupProcPath, os.O_RDWR | os.O_CREATE|os.O_TRUNC, 0644)
+
+	if procOpenErr != nil {
+		t.Fatalf("failed to open file %v, err is %v", cgroupProcPath, procOpenErr)
+	}
+
+	defer procFile.Close()
+
+	pid := os.Getpid()
+	contentStr := fmt.Sprintf("%d\n", pid)
+	_, writeErr := procFile.WriteString(contentStr)
+	if writeErr != nil {
+		t.Fatalf("failed to write pidinfo, err is %v", writeErr)
+	}
+
+	attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, SymbolMode:kperf.ELF_DWARF, CallStack:true, SampleRate: 1000, UseFreq:true, CgroupNameList:[]string{"testGocgroup"}}
+	fd, err := kperf.PmuOpen(kperf.SAMPLE, attr)
+	if err != nil {
+		t.Fatalf("kperf pmuopen sample failed, expect err is nil, but is %v", err)
+	}
+
+	kperf.PmuEnable(fd)
+	time.Sleep(time.Second)
+	kperf.PmuDisable(fd)
+
+	dataVo, err := kperf.PmuRead(fd)
+	if err != nil {
+		t.Fatalf("kperf pmuread failed, expect err is nil, but is %v", err)
+	}
+
+	for _, o := range dataVo.GoData {
+		if "testGocgroup" != o.CgroupName {
+			t.Fatalf("kperf pmuread cgroupName err")
 		}
 	}
 	kperf.PmuDataFree(dataVo)

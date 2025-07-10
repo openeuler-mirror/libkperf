@@ -328,6 +328,7 @@ type PmuAttr struct {
 	IncludeNewFork bool                // enable it you can get the new child thread count, only in counting mode
 	BranchSampleFilter uint64          // if the filter mode is set, branch_sample_stack data is collected in sampling mode
 	BlockedSample bool                 // This indicates whether the blocked sample mode is enabled. In this mode, both on Cpu and off Cpu data is collected
+	CgroupNameList []string            // cgroup name list, if not user cgroup function, this field will be nullptr.if use cgroup function,use the cgroup name in the cgroupList to apply all event in the Event list
 }
 
 type CpuTopology struct {
@@ -366,6 +367,7 @@ type PmuData struct {
 	Symbols []sym.Symbol			   // symbol list
  	BranchRecords []BranchSampleRecord // branch record list
 	SpeExt SpeDataExt                  // SPE data
+	CgroupName string                  // trace data from which cgroup
 
 	cPmuData C.struct_PmuData          // C.struct_PmuData
 }
@@ -472,6 +474,17 @@ func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error) {
 		}
 		cAttr.numEvt = C.uint32_t(evtLen)
 		cAttr.evtList = &evtList[0]
+	}
+
+	cgroupLen := len(attr.CgroupNameList)
+	if cgroupLen > 0 {
+		groupNameList := make([]*C.char, cgroupLen)
+		for i, groupName := range attr.CgroupNameList {
+			groupNameList[i] = C.CString(groupName)
+			defer C.free(unsafe.Pointer(groupNameList[i]))
+		}
+		cAttr.numCgroup = C.uint32_t(cgroupLen)
+		cAttr.cgroupNameList = &groupNameList[0]
 	}
 
 	pidLen := len(attr.PidList)
@@ -1189,6 +1202,7 @@ func transferCPmuDataToGoData(cPmuData *C.struct_PmuData, dataLen int, fd int) [
 		goDatas[i].CountPercent = float64(dataObj.countPercent)
 		goDatas[i].Cpu = int(dataObj.cpu)
 		goDatas[i].GroupId = int(dataObj.groupId)
+		goDatas[i].CgroupName = C.GoString(dataObj.cgroupName)
 		if dataObj.cpuTopo != nil {
 			goDatas[i].CpuTopo = CpuTopology{CoreId: int(dataObj.cpuTopo.coreId), NumaId: int(dataObj.cpuTopo.numaId), SocketId: int(dataObj.cpuTopo.socketId)}
 		}

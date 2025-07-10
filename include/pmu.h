@@ -169,7 +169,7 @@ struct PmuAttr {
     // if not use cgroup function, this field will be nullptr.
     // if use cgroup function. use the cgroup name in the cgroupNamelist to apply all events in the Event list
     char** cgroupNameList;
-    int numCgroup;
+    unsigned numCgroup;
 };
 
 enum PmuTraceType {
