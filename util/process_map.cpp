@@ -46,7 +46,7 @@ void FreeProcTopo(struct ProcTopology *procTopo)
     delete procTopo;
 }
 
-static int GetTgid(pid_t pid)
+int GetTgid(pid_t pid)
 {
     if (pid == -1) {
         // for system sampling.
@@ -85,7 +85,7 @@ static int GetTgid(pid_t pid)
     return -1;
 }
 
-static char *GetComm(pid_t pid)
+char *GetComm(pid_t pid)
 {
     std::string commName;
     if (pid == -1) {

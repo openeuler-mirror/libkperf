@@ -23,6 +23,9 @@ extern "C" {
 struct ProcTopology* GetProcTopology(pid_t pid);
 void FreeProcTopo(struct ProcTopology *procTopo);
 int* GetChildTid(int pid, int* numChild);
+int GetTgid(pid_t pid);
+char *GetComm(pid_t pid);
+
 #ifdef __cplusplus
 }
 #endif

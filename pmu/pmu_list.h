@@ -78,6 +78,8 @@ public:
     bool IsAllPidExit(const unsigned pd);
     int ResolvePmuDataSymbol(struct PmuData* iPmuData);
 
+    std::vector<PerfEvent> GetMetaData(PmuData* pmuData) const;
+
 private:
     using ProcPtr = std::shared_ptr<ProcTopology>;
     using CpuPtr = std::shared_ptr<CpuTopology>;
@@ -86,15 +88,6 @@ private:
     PmuList(const PmuList&) = delete;
     PmuList& operator=(const PmuList&) = delete;
     ~PmuList() = default;
-
-    struct EventData {
-        unsigned pd;
-        PmuTaskType collectType;
-        std::vector<PmuData> data;
-        std::vector<PerfSampleIps> sampleIps;
-        std::vector<PmuDataExt*> extPool;
-        std::vector<PmuSwitchData> switchData;
-    };
 
     void InsertEvtList(const unsigned pd, std::shared_ptr<EvtList> evtList);
     std::vector<std::shared_ptr<EvtList>>& GetEvtList(const unsigned pd);

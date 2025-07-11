@@ -172,6 +172,7 @@ namespace KUNPENG_SYM {
         struct Symbol* MapAddr(int pid, unsigned long addr);
         struct StackAsm* MapAsmCode(const char* moduleName, unsigned long startAddr, unsigned long endAddr);
         struct Symbol* MapCodeAddr(const char* moduleName, unsigned long startAddr);
+        int GetBuildId(const char *moduleName, char **buildId);
 
     private:
         void SearchElfInfo(MyElf &myElf, unsigned long addr, struct Symbol *symbol, unsigned long *offset);

@@ -49,8 +49,7 @@ struct GroupReadFormat {
  * Right now we do not implement grouping logic, thus we ignore the
  * PERF_FORMAT_ID section for now
  */
-int KUNPENG_PMU::PerfCounter::Read(vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps,
-    std::vector<PmuDataExt*> &extPool, std::vector<PmuSwitchData> &swtichData)
+int KUNPENG_PMU::PerfCounter::Read(EventData &eventData)
 {
     if (__glibc_unlikely(this->fd < 0)) {
         this->accumCount.clear();
@@ -58,9 +57,9 @@ int KUNPENG_PMU::PerfCounter::Read(vector<PmuData> &data, std::vector<PerfSample
     }
 
     if (groupStatus == GroupStatus::NO_GROUP) {
-        return ReadSingleEvent(data);
+        return ReadSingleEvent(eventData.data);
     } else if (groupStatus == GroupStatus::GROUP_LEADER) {
-        return ReadGroupEvents(data);
+        return ReadGroupEvents(eventData.data);
     }
 
     // Group members do not need to read counters,

@@ -1077,6 +1077,60 @@ struct Symbol* SymbolResolve::MapCodeAddr(const char* moduleName, unsigned long 
     return symbol;
 }
 
+int SymbolResolve::GetBuildId(const char *moduleName, char **buildId)
+{
+    // Refer to elf_read_build_id in linux.
+
+    struct ElfNoteHeader {
+        int nameSize;
+        int descSize;
+        int type;
+    };
+
+    static int BUILD_ID_TYPE = 3;
+    int fd = open(moduleName, O_RDONLY);
+    if (fd < 0) {
+        return LIBSYM_ERR_OPEN_FILE_FAILED;
+    }
+
+    try {
+        std::shared_ptr<elf::loader> efLoader = elf::create_mmap_loader(fd);
+        elf::elf ef(efLoader);
+        MyElf myElf(ef);
+        const elf::section *sec = &ef.get_section(".note.gnu.build-id");
+        if (!sec->valid()) {
+            sec = &ef.get_section(".notes");
+        }
+        if (!sec->valid()) {
+            sec = &ef.get_section(".note");
+        }
+        if (sec && sec->valid()) {
+            // Note section is something like that:
+            // | name size | desc size(0x14) | type(3) | name(GNU) | 912312fabef135672390... |
+            // |  4 bytes  |    4 bytes      | 4 bytes | name size |   20 bytes              |
+            auto header = (ElfNoteHeader*)sec->data();
+            auto ptr = (char*)header;
+            ptr += sizeof(*header);
+            char *name = ptr;
+            ptr += header->nameSize;
+            if (header->type == BUILD_ID_TYPE &&
+                header->nameSize == sizeof("GNU") &&
+                memcmp(name, "GNU", header->nameSize) == 0) {
+                *buildId = new char[header->descSize];
+                memset(*buildId, 0, header->descSize);
+                memcpy(*buildId, ptr, header->descSize);
+                return header->descSize;
+            }
+        }
+    } catch (std::exception& error) {
+        pcerr::New(LIBSYM_ERR_ELFIN_FOMAT_FAILED, "libsym record elf format error: " + std::string{error.what()});
+        return LIBSYM_ERR_ELFIN_FOMAT_FAILED;
+    }
+
+    pcerr::New(LIBSYM_ERR_READ_BUILDID);
+    return LIBSYM_ERR_READ_BUILDID;
+}
+
 struct StackAsm* ReadAsmCodeFromPipe(FILE* pipe)
 {
     struct StackAsm* head = nullptr;

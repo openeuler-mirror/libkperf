@@ -259,8 +259,7 @@ void KUNPENG_PMU::PerfSampler::RawSampleProcess(
     }
 }
 
-void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<PerfSampleIps> &sampleIps,
-    std::vector<PmuDataExt*> &extPool, std::vector<PmuSwitchData> &switchData)
+void KUNPENG_PMU::PerfSampler::ReadRingBuffer(EventData &eventData)
 {
     union KUNPENG_PMU::PerfEvent *event;
     while (true) {
@@ -271,14 +270,15 @@ void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<Perf
         __u32 sampleType = event->header.type;
         switch (sampleType) {
             case PERF_RECORD_SAMPLE: {
-                data.emplace_back(PmuData{0});
-                auto& current = data.back();
-                sampleIps.emplace_back(PerfSampleIps());
-                auto& ips = sampleIps.back();
-                this->RawSampleProcess(&current, &ips, event, extPool);
+                eventData.data.emplace_back(PmuData{0});
+                auto& current = eventData.data.back();
+                eventData.sampleIps.emplace_back(PerfSampleIps());
+                auto& ips = eventData.sampleIps.back();
+                this->RawSampleProcess(&current, &ips, event, eventData.extPool);
                 break;
             }
             case PERF_RECORD_MMAP: {
+                eventData.metaData.push_back(*event);
                 if (symMode == RESOLVE_ELF_DWARF || symMode == NO_SYMBOL_RESOLVE) {
                     SymResolverUpdateModule(event->mmap.tid, event->mmap.filename, event->mmap.addr);
                 } else if (symMode == RESOLVE_ELF) {
@@ -287,6 +287,7 @@ void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<Perf
                 break;
             }
             case PERF_RECORD_MMAP2: {
+                eventData.metaData.push_back(*event);
                 if (symMode == RESOLVE_ELF_DWARF || symMode == NO_SYMBOL_RESOLVE) {
                     SymResolverUpdateModule(event->mmap2.tid, event->mmap2.filename, event->mmap2.addr);
                 } else if (symMode == RESOLVE_ELF) {
@@ -296,16 +297,18 @@ void KUNPENG_PMU::PerfSampler::ReadRingBuffer(vector<PmuData> &data, vector<Perf
             }
             case PERF_RECORD_FORK: {
                 DBG_PRINT("Fork ptid: %d tid: %d\n", event->fork.pid, event->fork.tid);
+                eventData.metaData.push_back(*event);
                 UpdatePidInfo(event->fork.tid);
                 break;
             }
             case PERF_RECORD_COMM: {
+                eventData.metaData.push_back(*event);
                 UpdateCommInfo(event);
                 break;
             }
             case PERF_RECORD_SWITCH: {
-                switchData.emplace_back(PmuSwitchData{0});
-                auto& switchCurData = switchData.back();
+                eventData.switchData.emplace_back(PmuSwitchData{0});
+                auto& switchCurData = eventData.switchData.back();
                 ParseSwitch(event, &switchCurData);
                 break;
             }
@@ -335,8 +338,7 @@ void KUNPENG_PMU::PerfSampler::FillComm(const size_t &start, const size_t &end, 
     }
 }
 
-int KUNPENG_PMU::PerfSampler::Read(vector<PmuData> &data, std::vector<PerfSampleIps> &sampleIps,
-    std::vector<PmuDataExt*> &extPool, std::vector<PmuSwitchData> &switchData)
+int KUNPENG_PMU::PerfSampler::Read(EventData &eventData)
 {
     // This may be a lack of space.
     if(!this->sampleMmap || !this->sampleMmap->base) {
@@ -346,10 +348,10 @@ int KUNPENG_PMU::PerfSampler::Read(vector<PmuData> &data, std::vector<PerfSample
     if (__glibc_unlikely(err != SUCCESS)) {
         return err;
     }
-    auto cnt = data.size();
-    this->ReadRingBuffer(data, sampleIps, extPool, switchData);
+    auto cnt = eventData.data.size();
+    this->ReadRingBuffer(eventData);
     if (this->pid == -1) {
-        FillComm(cnt, data.size(), data);
+        FillComm(cnt, eventData.data.size(), eventData.data);
     }
                                                                 
     return SUCCESS;
