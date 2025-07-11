@@ -76,12 +76,10 @@ struct PerfBuildId {
 // Simplified perf sample struct, only includes essential fields.
 struct PerfSample {
     perf_event_header header;
-    __u64 sampleid;
     __u64 ip;
     __u32 pid, tid;
     __u64 time;
     __u64 id;
-    __u32 cpu;
     __u64 period;
     __u64 bnr;
     perf_branch_entry lbr[];
@@ -182,13 +180,25 @@ public:
             return err;
         }
         // Write PmuData list.
+	    size_t bufferSize = GetPmuDataSize(data, len);
+	    // Copy pmu data to buffer and write ONCE, that's much faster.
+	    uint8_t *buffer = new uint8_t[bufferSize];
+	    size_t offset = 0;
         for (int i = 0; i < len; ++i) {
             auto &d = data[i];
-            err = WritePmuData(d);
+            err = WritePmuData(d, offset, buffer);
             if (err != SUCCESS) {
+		        delete[] buffer;
                 return err;
             }
         }
+	    err = write(fd, buffer, bufferSize);
+	    if (err < 0) {
+	        delete[] buffer;
+	        return COMMON_ERR_WRITE;
+	    }
+        ph.data.size += bufferSize;
+	    delete[] buffer;
 
         return SUCCESS;
     }
@@ -241,49 +251,49 @@ private:
         return SUCCESS;
     }
 
-    int WritePmuData(const PmuData &d)
+    size_t GetPmuDataSize(const PmuData *data, const int len) const
     {
-        int err = SUCCESS;
+	    size_t size = sizeof(PerfSample) * len;
+    	for (int i = 0;i < len;++i) {
+	        if (data[i].ext) {
+		        size += data[i].ext->nr * sizeof(perf_branch_entry);
+	        }
+	    }
+	    return size;
+    }
+
+    int WritePmuData(const PmuData &d, size_t &offset, uint8_t *buffer)
+    {
         size_t branchNr = 0;
         if (d.ext && d.ext->nr) {
             branchNr = d.ext->nr;
         }
 
-        PerfSample sample = {0};
-        sample.header.type = PERF_RECORD_SAMPLE;
-        sample.header.misc = PERF_RECORD_MISC_USER;
-        sample.header.size = sizeof(sample) + branchNr * sizeof(perf_branch_entry);
-        sample.sampleid = evt2id[d.evt];
-        sample.ip = d.stack->symbol->addr;
-        sample.tid = d.tid;
-        sample.pid = d.pid;
-        sample.time = d.ts;
-        sample.id = sample.sampleid;
-        sample.cpu = d.cpu;
-        sample.period = d.period;
-        sample.bnr = branchNr;
+        PerfSample *sample = (PerfSample*)(buffer + offset);
+        sample->header.type = PERF_RECORD_SAMPLE;
+        sample->header.misc = PERF_RECORD_MISC_USER;
+        sample->header.size = sizeof(PerfSample) + branchNr * sizeof(perf_branch_entry);
+        sample->ip = d.stack->symbol->addr;
+        sample->tid = d.tid;
+        sample->pid = d.pid;
+        sample->time = d.ts;
+        sample->id = evt2id[d.evt];
+        sample->period = d.period;
+        sample->bnr = branchNr;
 
         modules.insert(d.stack->symbol->module);
 
-        // Write perf sample except brbe data.
-        err = write(fd, &sample, sizeof(sample));
-        if (err < 0) {
-            return COMMON_ERR_WRITE;
-        }
-        // Write brbe data.
+	    // To write branch entries after PerfSample.
+	    perf_branch_entry *bentryList = (perf_branch_entry*)(buffer + offset + sizeof(PerfSample));
         for (size_t i = 0;i < branchNr; ++i) {
-            perf_branch_entry bentry = {0};
-            bentry.from = d.ext->branchRecords[i].fromAddr;
-            bentry.to = d.ext->branchRecords[i].toAddr;
-            bentry.cycles = d.ext->branchRecords[i].cycles;
-            bentry.mispred = d.ext->branchRecords[i].misPred;
-            bentry.predicted = d.ext->branchRecords[i].predicted;
-            err = write(fd, &bentry, sizeof(bentry));
-            if (err < 0) {
-                return COMMON_ERR_WRITE;
-            }
+            perf_branch_entry *bentry = &bentryList[i];
+            bentry->from = d.ext->branchRecords[i].fromAddr;
+            bentry->to = d.ext->branchRecords[i].toAddr;
+            bentry->cycles = d.ext->branchRecords[i].cycles;
+            bentry->mispred = d.ext->branchRecords[i].misPred;
+            bentry->predicted = d.ext->branchRecords[i].predicted;
         }
-        ph.data.size += sample.header.size;
+	    offset += sample->header.size;
         return SUCCESS;
     }
 
@@ -464,7 +474,7 @@ private:
     __u64 GetSampleType()
     {
         return PERF_SAMPLE_IP | PERF_SAMPLE_TID | PERF_SAMPLE_TIME | PERF_SAMPLE_ID |
-                PERF_SAMPLE_CPU | PERF_SAMPLE_PERIOD | PERF_SAMPLE_IDENTIFIER | PERF_SAMPLE_BRANCH_STACK;
+                PERF_SAMPLE_PERIOD |  PERF_SAMPLE_BRANCH_STACK;
     }
 
     PerfFileAttr GetFileAttr(const char *evt, const map<const char*, long> &evt2offset)

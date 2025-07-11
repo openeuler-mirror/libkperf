@@ -34,6 +34,8 @@ atomic<bool> toRead(false);
 bool running = true;
 PmuFile file = NULL;
 int lastErr = SUCCESS;
+bool verbose = false;
+int64_t startTs = 0;
 
 struct Param {
     vector<string> events;
@@ -51,6 +53,13 @@ int64_t GetTime()
     return std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::high_resolution_clock::now().time_since_epoch())
             .count();
+}
+
+void Ts(const string msg)
+{
+    if (verbose) {
+        cout << "[" << GetTime() - startTs << "]" << msg << "\n";
+    }
 }
 
 void Split(const string &eventStr, vector<string> &events)
@@ -102,6 +111,8 @@ static Param ParseArgs(int argc, char** argv)
         } else if (strcmp(argv[i], "-I") == 0 && i+1 < argc) {
             param.interval = atoi(argv[i+1]);
             ++i;
+        } else if (strcmp(argv[i], "-v") == 0) {
+            verbose = true;
         } else {
             PrintHelp();
             exit(0);
@@ -147,8 +158,10 @@ void AsyncReadAndWrite()
             continue;
         }
 
+        Ts("to read samples");
         PmuData *data = nullptr;
         int len = PmuRead(pd, &data);
+        Ts("read samples");
         if (len < 0) {
             lastErr = Perrorno();
             continue;
@@ -157,6 +170,7 @@ void AsyncReadAndWrite()
             lastErr = Perrorno();
             continue;
         }
+        Ts("write data");
         toRead.store(false, memory_order_release);
     }
 }
@@ -199,8 +213,8 @@ int Collect(const Param &param)
         return Perrorno();
     }
     PmuEnable(pd);
+    Ts("pmu open");
     for (int i = 0; i < param.duration; ++i) {
-        auto start = GetTime();
         usleep(1000 * param.interval);
         if (lastErr != SUCCESS) {
             cerr << Perror() << "\n";
@@ -212,17 +226,18 @@ int Collect(const Param &param)
         if (AllPidExit(param)) {
             break;
         }
-        auto end = GetTime();
-        cout << " iteration time: " << end - start << "\n";
     }
+    Ts("finish sampling");
     PmuDisable(pd);
     while(toRead.load(memory_order_acquire));
+    Ts("finish read samples");
     PmuEndWrite(file);
     PmuClose(pd);
     running = false;
     pthread_join(t, NULL);
 
     FreeEvtList(evtlist, param.events.size());
+    Ts("pmu close");
     return 0;
 }
 
@@ -258,7 +273,7 @@ bool ExecuteCommand(Param &param)
 int main(int argc, char** argv)
 {
     try {
-        auto start = GetTime();
+        startTs = GetTime();
         auto param = ParseArgs(argc, argv);
         if (!param.command.empty() && !ExecuteCommand(param)) {
             return 0;
@@ -270,9 +285,7 @@ int main(int argc, char** argv)
         if (!param.command.empty() && !param.pidList.empty()) {
             kill(param.pidList[0], SIGTERM);
         }
-        auto end = GetTime();
-        cout << " elapsed time: " << end - start << "\n";
-
+        Ts("end");
     } catch (exception &ex) {
         cout << "Failed: " << ex.what() << "\n";
     }

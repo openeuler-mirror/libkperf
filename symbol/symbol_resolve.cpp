@@ -543,10 +543,8 @@ int SymbolResolve::RecordModule(int pid, RecordModuleType recordModuleType)
         return LIBSYM_ERR_PARAM_PID_INVALID;
     }
     SetFalse(this->isCleared);
-    moduleSafeHandler.tryLock(pid);
     if (this->moduleMap.find(pid) != this->moduleMap.end()) {
         pcerr::New(0, "success");
-        moduleSafeHandler.releaseLock(pid);
         return 0;
     }
     std::string mapFile = "/proc/" + std::to_string(pid) + "/maps";
@@ -554,7 +552,6 @@ int SymbolResolve::RecordModule(int pid, RecordModuleType recordModuleType)
     if (!file.is_open()) {
         pcerr::New(LIBSYM_ERR_OPEN_FILE_FAILED,
                    "libsym can't open file named " + mapFile + " because of " + std::string{strerror(errno)});
-        moduleSafeHandler.releaseLock(pid);
         return LIBSYM_ERR_OPEN_FILE_FAILED;
     }
     std::vector<std::shared_ptr<ModuleMap>> modVec;
@@ -567,7 +564,6 @@ int SymbolResolve::RecordModule(int pid, RecordModuleType recordModuleType)
     }
     this->moduleMap.insert({pid, modVec});
     pcerr::New(0, "success");
-    moduleSafeHandler.releaseLock(pid);
     return 0;
 }
 
