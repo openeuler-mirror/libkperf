@@ -81,6 +81,10 @@
       branchSampleFilter对应的比特值，使用方式：
       attr.branchSampleFilter = KPERF_SAMPLE_BRANCH_USER | KPERF_SAMPLE_BRANCH_ANY;
       仅支持SAMPLING模式, 其中KPERF_SAMPLE_BRANCH_USER， KPERF_SAMPLE_BRANCH_KERNEL， KPERF_SAMPLE_BRANCH_HV使用时必须搭配KPERF_SAMPLE_BRANCH_ANY或者KPERF_SAMPLE_BRANCH_ANY之后的值一起使用
+  * char** cgroupNameList;
+    采集cgroup的名称列表
+  * unsigned numCgroup;
+    采集cgroup的个数
 
 * 返回值 > 0   初始化成功
   返回值 = -1 初始化失败，可通过Perror()查看错误信息
@@ -150,6 +154,7 @@
         * unsigned long nr  branchRecords的数量
         * struct BranchSampleRecord *branchRecords  branch指针数组
   * struct SampleRawData rawData: tracepointer数据指针
+  * const char* cgroupName: cgroup名称
 
 * 返回值 = 0 且 pmuData为空   采集时间内无可用数据
   返回值 != 0 且 pmuData为空  采集时发生错误，无法读取数据

@@ -66,7 +66,13 @@ static int OpenSpeEvent(PmuEvt *pmuAttr, int cpu)
     attr.exclude_kernel = pmuAttr->excludeKernel;
     attr.exclude_user = pmuAttr->excludeUser;
 
-    return PerfEventOpen(&attr, -1, cpu, -1, 0);
+    unsigned flags = 0;
+    pid_t pid = -1;
+    if (!pmuAttr->cgroupName.empty()) {
+        flags = PERF_FLAG_PID_CGROUP | PERF_FLAG_FD_CLOEXEC;
+        pid = pmuAttr->cgroupFd;
+    }
+    return PerfEventOpen(&attr, pid, cpu, -1, flags);
 }
 
 static int OpenDummyEvent(int cpu)

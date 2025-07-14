@@ -75,6 +75,10 @@ kperf.open(collector_type: kperf.PmuTaskType, pmu_attr: kperf.PmuAttr)
       branchSampleMode = kperf.BranchSampleFilter.KPERF_SAMPLE_BRANCH_ANY | kperf.BranchSampleFilter.KPERF_SAMPLE_BRANCH_USER
       pmu_attr = kperf.PmuAttr(sampleRate=1000, useFreq=True, pidList=pidList, evtList=evtList, branchSampleFilter=branchSampleMode)
       仅支持SAMPLING模式, 其中KPERF_SAMPLE_BRANCH_USER， KPERF_SAMPLE_BRANCH_KERNEL， KPERF_SAMPLE_BRANCH_HV使用时必须搭配KPERF_SAMPLE_BRANCH_ANY或者KPERF_SAMPLE_BRANCH_ANY之后的值一起使用
+  * cgroupNameList;
+    采集cgroup的名称列表
+  * numCgroup;
+    采集cgroup的个数
 * 返回值是int值
   fd > 0 成功初始化
   fd == -1 初始化失败，可通过 kperf.error()查看错误信息
@@ -160,6 +164,7 @@ pd为kperf.open返回值
         * iter brbe数据迭代器
         * len  brbe数据长度
   * rawData: tracepointer数据指针，搭配kperf.get_field和Kperf.get_field_exp使用
+  * cgroupName cgroup名称
 
 以下为kperf.read示例
 

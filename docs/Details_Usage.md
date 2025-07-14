@@ -21,6 +21,9 @@ PmuAttr attr = {0};
 attr.evtList = evtList;
 attr.numEvt = 2;
 int pd = PmuOpen(COUNTING, &attr);
+if (pd == -1) {
+   printf("kperf pmuopen counting failed: ", Perror());
+}
 ```
 
 ```python
@@ -1436,3 +1439,95 @@ pmu_hotspot 5 1 1 <test>
 1、只支持SAMPLING模式采集
 
 2、只支持对进程分析，不支持对系统分析
+
+### 采集cgroup
+libkperf支持对cgroup v1、v2的采集和采样，类似于perf的如下命令：
+```
+perf stat -e cycles,instructions -G test_cgroup
+perf record -e arm_spe_0/load_filter=1/ -G test_cgroup
+```
+其中counting和sampling模式下支持多个cgroup同时采集多个事件，SPE模式仅支持指定单个事件和单个cgroup。
+对于嵌套的cgroup，请使用完整的层级路径格式（父控制组/子控制组），例如"parent_cgroup/child_cgroup"。
+
+以counting模式为例，可以像这样设置PmuAttr：
+```c++
+// c++代码示例
+#include <iostream>
+
+#include "symbol.h"
+#include "pmu.h"
+#include "pcerrc.h"
+
+PmuAttr attr = {0};
+char *evtList[2] = {"cycles", "instructions"};
+attr.evtList = evtList;
+attr.numEvt = 2;
+char *cgroupNames[2] = {"test_cgroup", "my_cgroup"};
+attr.cgroupNameList = cgroupNames;
+attr.numCgroup = 2;
+int pd = PmuOpen(COUNTING, &attr);
+if (pd == -1) {
+   printf("kperf pmuopen counting failed: %s\n", Perror());
+}
+PmuEnable(pd);
+sleep(1);
+PmuDisable(pd);
+PmuData* data = nullptr;
+int len = PmuRead(pd, &data);
+//counting模式下data长度为numCgroup * cpu * numEvt
+for (int i = 0; i < len; i++) {
+    printf("evt=%s, cgroup=%s, cpu=%d, count=%d\n", data[i].evt, data[i].cgroupName, data[i].cpu, data[i].count);
+}
+PmuClose(pd);
+```
+
+```python
+# python代码示例
+import kperf
+import time
+
+evtList = ["cycles", "instructions"]
+cgroupNames = ["test_cgroup", "my_cgroup"]
+pmu_attr = kperf.PmuAttr(evtList=evtList, cgroupNameList=cgroupNames)
+pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
+if pd == -1:
+    print(kperf.error())
+    excit(1)
+kperf.enable(pd)
+time.sleep(1)
+kperf.disable(pd)
+pmu_data = kperf.read(pd)
+for item in pmu_data.iter:
+    print(f"evt={item.evt} cgroup={item.cgroupName} cpu={item.cpu} count={item.count}")
+kperf.close(pd)
+```
+
+```go
+// go代码示例
+import "libkperf/kperf"
+import "fmt"
+import "time"
+
+func main() {
+    evtList := []string{"cycles", "instructions"}
+    cgroupNames := []string{"test_cgroup", "my_cgroup"}
+    attr := kperf.PmuAttr{EvtList:evtList, CgroupNameList:cgroupNames}
+	pd, err := kperf.PmuOpen(kperf.COUNT, attr)
+	if err != nil {
+		fmt.Printf("kperf pmuopen counting failed, expect err is nil, but is %v\n", err)
+        return
+	}
+    kperf.PmuEnable(pd)
+    time.Sleep(time.Second)
+    kperf.PmuDisable(pd)
+    dataVo, err := kperf.PmuRead(pd)
+    if err != nil {
+        fmt.Printf("kperf pmuread failed, expect err is nil, but is %v\n", err)
+        return
+    }
+    for _, o := range dataVo.GoData {
+        fmt.Printf("evt=%v cgroup=%v cpu=%v count=%v \n", o.Evt, o.CgroupName, o.Cpu, o.Count)
+    }
+    kperf.PmuClose(pd)
+}
+```
