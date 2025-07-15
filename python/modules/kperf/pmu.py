@@ -561,6 +561,15 @@ def close_cpu_freq_sampling():
 def read_cpu_freq_detail():
     return _libkperf.PmuReadCpuFreqDetail()
 
+def begin_write(path, pattr):
+    return _libkperf.PmuBeginWrite(path, pattr)
+
+def write_data(file, data):
+    return _libkperf.PmuWriteData(file, data)
+
+def end_write(file):
+    return _libkperf.PmuEndWrite(file)
+
 __all__ = [
     'PmuTaskType',
     'PmuEventType',
@@ -611,5 +620,8 @@ __all__ = [
     'open_cpu_freq_sampling',
     'close_cpu_freq_sampling',
     'read_cpu_freq_detail',
-    'resolvePmuDataSymbol'
+    'resolvePmuDataSymbol',
+    'begin_write',
+    'write_data',
+    'end_write'
 ]

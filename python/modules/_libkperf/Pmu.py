@@ -2118,6 +2118,37 @@ def PmuCloseCpuFreqSampling():
     c_PmuCloseCpuFreqSampling = kperf_so.PmuCloseCpuFreqSampling
     c_PmuCloseCpuFreqSampling()
 
+def PmuBeginWrite(path, pattr):
+    """
+    PmuFile PmuBeginWrite(const char *path, const PmuAttr *pattr)
+    """
+    c_func = kperf_so.PmuBeginWrite
+    c_func.argtypes = [ctypes.c_char_p, ctypes.POINTER(CtypesPmuAttr)]
+    c_func.restype = ctypes.c_void_p
+
+    c_filepath = ctypes.c_char_p(path.encode(UTF_8))
+
+    return c_func(c_filepath, ctypes.byref(pattr.c_pmu_attr))
+
+def PmuWriteData(file, data):
+    """
+    int PmuWriteData(PmuFile file, PmuData *data, int len)
+    """
+    c_func = kperf_so.PmuWriteData
+    c_func.argtypes = [ctypes.c_void_p, ctypes.POINTER(CtypesPmuData), ctypes.c_uint]
+    c_func.restype = ctypes.c_int
+
+    c_len = ctypes.c_uint(data.len)
+    return c_func(file, data.pointer(), c_len)
+
+def PmuEndWrite(file):
+    """
+    void PmuEndWrite(PmuFile file)
+    """
+    c_func = kperf_so.PmuEndWrite
+    c_func.argtypes = [ctypes.c_void_p]
+
+    return c_func(file)
 
 __all__ = [
     'CtypesEvtAttr',
@@ -2168,5 +2199,8 @@ __all__ = [
     'PmuReadCpuFreqDetail',
     'PmuCloseCpuFreqSampling',
     'PmuCpuFreqDetail',
-    'ResolvePmuDataSymbol'
+    'ResolvePmuDataSymbol',
+    'PmuBeginWrite',
+    'PmuWriteData',
+    'PmuEndWrite'
 ]

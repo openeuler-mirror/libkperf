@@ -80,6 +80,15 @@ static void PrintHelp()
     std::cerr << "Samping and generate perf.data: pmu_perfdata -e <event1>,<event2> -d <duration> -o <perf_data_path> -- <command>\n";
     std::cerr << "Sampling an existed pid:         pmu_perfdata -e <event1>,<event2> -p <pid> -o <perf_data_path>\n";
     std::cerr << "Use brbe:                       pmu_perfdata -e <event1>,<event2> -b -p <pid> -o <perf_data_path>\n";
+    std::cerr << "Options:\n";
+    std::cerr << "      -e <event1>,<event2>        event list. default: cycles\n";
+    std::cerr << "      -b                          whether to use brbe.\n";
+    std::cerr << "      -o <path>                   output file path. default: ./libkperf.data\n";
+    std::cerr << "      -d <count>                  count of sampling interval: default: UINT32_MAX\n";
+    std::cerr << "      -I <milliseconds>           count of interval. unit: ms. default: 1000\n";
+    std::cerr << "      -p <pid>                    pid of process to attach.\n";
+    std::cerr << "      -F <freq>                   sampling frequency. default: 4000\n";
+    std::cerr << "      -v                          print verbose log.\n";
 }
 
 static Param ParseArgs(int argc, char** argv)
@@ -168,8 +177,10 @@ void AsyncReadAndWrite()
         }
         if (PmuWriteData(file, data, len) != SUCCESS) {
             lastErr = Perrorno();
+            PmuDataFree(data);
             continue;
         }
+        PmuDataFree(data);
         Ts("write data");
         toRead.store(false, memory_order_release);
     }

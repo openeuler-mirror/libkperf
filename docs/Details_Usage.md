@@ -1531,3 +1531,64 @@ func main() {
     kperf.PmuClose(pd)
 }
 ```
+
+### 生成perf.data
+libkperf支持把采集数据生成为perf.data，以便通过perf report或者编译反馈优化工具使用。目前只支持Sampling数据的输出。  
+
+c++示例参考example/pmu_perfdata.cpp.  
+编译该文件：
+```
+g++ -g pmu_perfdata.cpp -I /path/to/install/include/ -L /path/to/install/lib/ -lkperf -lsym -O3 -o pmu_perfdata
+```
+执行命令，采集进程三秒，并输出libkperf.data到当前目录：
+```
+LD_LIBRARY_PATH=/path/to/install/lib/ ./pmu_perfdata -d 3 -- /tmp/test
+```
+
+```python
+// python代码示例
+evtList = ["cycles"]
+pidlist = [273282]
+pmu_attr = kperf.PmuAttr(
+        evtList=evtList,
+        pidList=pidlist,
+        sampleRate=1000,
+        symbolMode=kperf.SymbolMode.RESOLVE_ELF
+    )
+pd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
+if pd == -1:
+    print(f"kperf pmuopen sample failed, expect err is nil, but is {kperf.errorno()}\n")
+kperf.enable(pd)
+time.sleep(1)
+kperf.disable(pd)
+
+pmu_data = kperf.read(pd)
+file = kperf.begin_write("/tmp/test.data", pmu_attr)
+kperf.write_data(file, pmu_data)
+kperf.end_write(file)
+kperf.close(pd)
+```
+
+```go
+import "libkperf/kperf"
+import "fmt"
+import "time"
+
+func main() {
+    pidlist := []int{273282}
+    attr := kperf.PmuAttr{EvtList:[]string{"task-clock"}, SymbolMode:kperf.ELF, SampleRate: 1000, PidList: pidlist}
+    pd, err := kperf.PmuOpen(kperf.SAMPLE, attr)
+    if err != nil {
+        fmt.Printf("kperf pmuopen counting failed, expect err is nil, but is %v", err)
+        return
+    }
+
+    kperf.PmuEnable(pd)
+    time.Sleep(time.Second)
+    kperf.PmuDisable(pd)
+    dataVo, err := kperf.PmuRead(pd)
+    file := kperf.PmuBeginWrite("/tmp/test.data", attr)
+    kperf.PmuWriteData(file, dataVo)
+    kperf.PmuEndWrite(file)
+}
+```

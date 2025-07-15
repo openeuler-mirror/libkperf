@@ -500,3 +500,21 @@ if err != 0:
   exit(1)
 kperf.close(fd)
 ```
+
+### kperf.begin_write
+用于把性能数据输出为perf.data格式的文件。该函数用于初始化该文件。  
+目前该文件只支持SAMPLING模式，只支持基本信息的输出，比如id, tid, pid, addr，也包含brbe的数据。
+* path: 文件路径
+* pattr: 采集任务的PmuAttr
+* 返回值: 文件句柄，用于下面两个API的调用
+
+### kperf.write_data
+把PmuData数组输出到文件里。
+* file: 文件句柄
+* data: 性能数据
+* len: data的长度
+* 返回值: 错误码
+
+### kperf.end_write
+结束文件的写入。在写入结束时必须调用该函数，否则文件可能不完整。
+* file: 文件句柄

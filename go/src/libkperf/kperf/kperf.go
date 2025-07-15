@@ -448,20 +448,30 @@ type PmuCpuFreqDetail struct {
 	AvgFreq uint64  // average frequency of core
 }
 
-// Initialize the collection target
-// On success, a task id is returned which is the unique identity for the task
-// On error, -1 is returned
-// Refer to comments of PmuAttr for details about settings
-// param collectType task type
-// param attr settings of the current task
-// return task id
-func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error) {
+func FreePmuAttr(attr *C.struct_PmuAttr) {
+	if attr == nil {
+		return
+	}
+	for i := 0; i < int(attr.numEvt); i++ {
+		offset := uintptr(i) * unsafe.Sizeof(uintptr(0))
+		ptr := *(**C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(attr.evtList)) + offset))
+		C.free(unsafe.Pointer(ptr))
+	}
+	for i := 0; i < int(attr.numCgroup); i++ {
+		offset := uintptr(i) * unsafe.Sizeof(uintptr(0))
+		ptr := *(**C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(attr.cgroupNameList)) + offset))
+		C.free(unsafe.Pointer(ptr))
+	}
+
+	defer C.free(unsafe.Pointer(attr))
+}
+
+func ToCPmuAttr(attr PmuAttr) (*C.struct_PmuAttr, int) {
 	attrSize := C.GetPmuAttrSize()
 	ptr := C.malloc(C.size_t(int(attrSize)))
 	if ptr == nil {
-		return -1, errors.New("malloc failed")
+		return nil, -1
 	}
-	defer C.free(ptr)
 	C.memset(ptr, 0, attrSize)
 
 	cAttr := (*C.struct_PmuAttr)(ptr)
@@ -470,7 +480,6 @@ func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error) {
 		evtList := make([]*C.char, evtLen)
 		for i, evt := range attr.EvtList {
 			evtList[i] = C.CString(evt)
-			defer C.free(unsafe.Pointer(evtList[i]))
 		}
 		cAttr.numEvt = C.uint32_t(evtLen)
 		cAttr.evtList = &evtList[0]
@@ -481,7 +490,6 @@ func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error) {
 		groupNameList := make([]*C.char, cgroupLen)
 		for i, groupName := range attr.CgroupNameList {
 			groupNameList[i] = C.CString(groupName)
-			defer C.free(unsafe.Pointer(groupNameList[i]))
 		}
 		cAttr.numCgroup = C.uint32_t(cgroupLen)
 		cAttr.cgroupNameList = &groupNameList[0]
@@ -559,6 +567,22 @@ func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error) {
 		cAttr.symbolMode = attr.SymbolMode
 	}
 
+	return cAttr, 0
+}
+
+// Initialize the collection target
+// On success, a task id is returned which is the unique identity for the task
+// On error, -1 is returned
+// Refer to comments of PmuAttr for details about settings
+// param collectType task type
+// param attr settings of the current task
+// return task id
+func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error) {
+	cAttr, err := ToCPmuAttr(attr)
+	defer FreePmuAttr(cAttr)
+	if err != 0 {
+		return -1, errors.New(C.GoString(C.Perror()))
+	}
 	fd := C.PmuOpen(collectType, cAttr)
 
 	if int(fd) == -1 {
@@ -1276,4 +1300,38 @@ func (data *PmuData) appendBranchRecords(pmuData C.struct_PmuData) {
 		branchList[i].Predicted = uint8(branchRecords[i].predicted)
 	}
 	data.BranchRecords = branchList
+}
+
+// brief Begin to write PmuData list to perf.data file.
+//        It is a simplified perf.data only include basic fields for perf sample,
+//        including id, cpu, tid, pid, addr and branch stack.
+//        It also includes sample like mmap, mmap2, comm, fork.
+func PmuBeginWrite(path string, attr PmuAttr) C.PmuFile {
+	cAttr, err := ToCPmuAttr(attr)
+	defer FreePmuAttr(cAttr)
+	if err != 0 {
+		return nil
+	}
+	cFilePath := C.CString(path)
+
+	file := C.PmuBeginWrite(cFilePath, cAttr)
+	return file
+}
+
+// brief Write PmuData list to file.
+func PmuWriteData(file C.PmuFile, dataVo PmuDataVo) error {
+	if len(dataVo.GoData) == 0 {
+		return errors.New("dataVo can't be empty")
+	}
+
+	rs := C.PmuWriteData(file, dataVo.cData, C.int(len(dataVo.GoData)))
+	if int(rs) != 0 {
+		return errors.New(C.GoString(C.Perror()))
+	}
+	return nil
+}
+
+// brief End to write file.
+func PmuEndWrite(file C.PmuFile) {
+	C.PmuEndWrite(file)
 }

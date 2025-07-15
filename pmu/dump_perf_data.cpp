@@ -273,15 +273,16 @@ private:
         sample->header.type = PERF_RECORD_SAMPLE;
         sample->header.misc = PERF_RECORD_MISC_USER;
         sample->header.size = sizeof(PerfSample) + branchNr * sizeof(perf_branch_entry);
-        sample->ip = d.stack->symbol->addr;
+        if (d.stack && d.stack->symbol) {
+            sample->ip = d.stack->symbol->addr;
+            modules.insert(d.stack->symbol->module);
+        }
         sample->tid = d.tid;
         sample->pid = d.pid;
         sample->time = d.ts;
         sample->id = evt2id[d.evt];
         sample->period = d.period;
         sample->bnr = branchNr;
-
-        modules.insert(d.stack->symbol->module);
 
 	    // To write branch entries after PerfSample.
 	    perf_branch_entry *bentryList = (perf_branch_entry*)(buffer + offset + sizeof(PerfSample));
@@ -356,9 +357,11 @@ private:
             for (int j = 0;j < numChild; ++j) {
                 err = SynthesizeCommEvents(fd, childTid[j], ph.data.size);
                 if (err != SUCCESS) {
+                    delete[] childTid;
                     return err;
                 }
             }
+            delete[] childTid;
             err = SynthesizeMmapEvents(fd, pattr->pidList[i], ph.data.size);
             if (err != SUCCESS) {
                 return err;
@@ -384,6 +387,7 @@ private:
             if (event == NULL) {
                 return COMMON_ERR_NOMEM;
             }
+            memset(event, 0, sizeof(PerfRecordMmap2) + idHdrSize);
             event->header.type = PERF_RECORD_MMAP2;
             event->filename[0] = '\0';
 
@@ -450,9 +454,11 @@ private:
         if (event == NULL) {
             return COMMON_ERR_NOMEM;
         }
+        memset(event, 0, sizeof(PerfRecordComm) + idHdrSize);
         auto comm = GetComm(pid);
         auto size = strlen(comm) > sizeof(event->comm) - 1 ? sizeof(event->comm) - 1 : strlen(comm);
         memcpy(event->comm, comm, size);
+        free(comm);
         event->comm[size] = '\0';
         event->pid = GetTgid(pid);
         event->header.type = PERF_RECORD_COMM;
@@ -499,6 +505,7 @@ private:
         // This is the offset of event id.
         fattr.ids.offset = evt2offset.at(evt);
         fattr.ids.size = sizeof(long);
+        delete pfm;
 
         return fattr;
     }
