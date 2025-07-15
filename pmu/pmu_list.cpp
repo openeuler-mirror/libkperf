@@ -39,64 +39,6 @@ namespace KUNPENG_PMU {
     std::mutex PmuList::dataListMtx;
     std::mutex PmuList::dataParentMtx;
 
-    static uint64_t PredictRequiredMemory(int collectType, uint64_t cpuNum, uint64_t pidNum) {
-        if (collectType == SAMPLING) {
-            uint64_t predictMmapNum = cpuNum * pidNum;
-            uint64_t reservedSpace  = 2 * 1024 * 1024;
-            uint64_t mmapSpaceSize  = sizeof(struct PerfMmap) * predictMmapNum;
-            // copiedEvent memory and mmap memory and reserved space memory, mmap memory 528384 is PAGE_SIZE * (pages + 1)
-            uint64_t needBytesNum = predictMmapNum * (PERF_SAMPLE_MAX_SIZE) + predictMmapNum * (SAMPLE_PAGES + 1) * SAMPLE_PAGE_SIZE + reservedSpace + mmapSpaceSize;
-            return needBytesNum;
-        }
-        return 0;
-    }
-
-    static bool PredictRemainSpaceIsEnough(uint64_t needBytesNum) {
-        if (needBytesNum == 0) {
-            return true;
-        }
-
-        ifstream file("/proc/meminfo");
-        if (!file.is_open()) {
-            DBG_PRINT("failed to open /proc/meminfo, unable to predict\n");
-            return false;
-        }
-
-        string line;
-        const int strLen = 1024;
-        while(std::getline(file, line)) {
-            if (line.empty() || !strstr(line.c_str(), "MemFree")) {
-                continue;
-            }
-            char memoryUint[strLen];
-            uint64_t memoryFreeNum;
-            if (sscanf(line.c_str(), "%*s %lu %s", &memoryFreeNum, &memoryUint) != 2) {
-                DBG_PRINT("failed to open parse MemFree data, unable to predict\n");
-                break;
-            }
-         
-            char firstUint = tolower(memoryUint[0]);
-            switch (firstUint) {
-                case 'k':
-                    memoryFreeNum = memoryFreeNum * 1024;
-                    break;
-                case 'm':
-                    memoryFreeNum = memoryFreeNum * 1024 * 1024;
-                    break;
-                case 'g':
-                    memoryFreeNum = memoryFreeNum * 1024 * 1024 * 1024;
-                    break;
-                default:
-                    break;
-            }
-            if (needBytesNum < memoryFreeNum) {
-                return true;
-            }
-            DBG_PRINT("Predict memory is not enough\n");
-        }
-        return false;
-    }
-
     int PmuList::CheckRlimit(const unsigned fdNum)
     {
         return RaiseNumFd(fdNum);
@@ -129,7 +71,6 @@ namespace KUNPENG_PMU {
         }
 
         unsigned fdNum = 0;
-        uint64_t needBytesNum = 0;
         while (pmuTaskAttrHead) {
             /**
              * Create cpu topology list
@@ -151,7 +92,6 @@ namespace KUNPENG_PMU {
             fdNum += CalRequireFd(cpuTopoList.size(), procTopoList.size(), taskParam->pmuEvt->collectType);
             std::shared_ptr<EvtList> evtList =
                     std::make_shared<EvtList>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt, pmuTaskAttrHead->groupId);
-            needBytesNum += PredictRequiredMemory(taskParam->pmuEvt->collectType, cpuTopoList.size(), procTopoList.size());
             evtList->SetBranchSampleFilter(GetBranchSampleFilter(pd));
             InsertEvtList(pd, evtList);
             pmuTaskAttrHead = pmuTaskAttrHead->next;
@@ -162,7 +102,7 @@ namespace KUNPENG_PMU {
             return err;
         }
 
-        err = Init(pd, PredictRemainSpaceIsEnough(needBytesNum));
+        err = Init(pd);
         if (err != SUCCESS)
         {
             return err;
@@ -172,9 +112,9 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
     
-    int PmuList::EvtInit(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader, const int pd, const std::shared_ptr<EvtList> &evtList, bool isMemoryEnough)
+    int PmuList::EvtInit(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader, const int pd, const std::shared_ptr<EvtList> &evtList)
     {
-        auto err = evtList->Init(groupEnable, evtLeader, isMemoryEnough);
+        auto err = evtList->Init(groupEnable, evtLeader);
         if (err != SUCCESS) {
             return err;
         }
@@ -187,19 +127,19 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    int PmuList::Init(const int pd, bool isMemoryEnough)
+    int PmuList::Init(const int pd)
     {
         std::unordered_map<int, struct EventGroupInfo> eventGroupInfoMap;
         for (auto& evtList : GetEvtList(pd)) {
             if (evtList->GetGroupId() == -1) {
-                auto err = EvtInit(false, nullptr, pd, evtList, isMemoryEnough);
+                auto err = EvtInit(false, nullptr, pd, evtList);
                 if (err != SUCCESS) {
                     return err;
                 }
                 continue;
             } 
             if (eventGroupInfoMap.find(evtList->GetGroupId()) == eventGroupInfoMap.end()) {
-                auto err = EvtInit(true, nullptr, pd, evtList, isMemoryEnough);
+                auto err = EvtInit(true, nullptr, pd, evtList);
                 if (err != SUCCESS) {
                     return err;
                 }
@@ -225,9 +165,9 @@ namespace KUNPENG_PMU {
                 int err = 0;
                 if (eventGroupInfoMap[evtChild->GetGroupId()].uncoreState == static_cast<UncoreState>(UncoreState::HasUncore)) {
                     SetWarn(LIBPERF_WARN_INVALID_GROUP_HAS_UNCORE);
-                    err = EvtInit(false, nullptr, pd, evtChild, isMemoryEnough);
+                    err = EvtInit(false, nullptr, pd, evtChild);
                 } else {
-                    err = EvtInit(true, eventGroupInfoMap[evtChild->GetGroupId()].evtLeader, pd, evtChild, isMemoryEnough);
+                    err = EvtInit(true, eventGroupInfoMap[evtChild->GetGroupId()].evtLeader, pd, evtChild);
                 }
                 if (err != SUCCESS) {
                     return err;
