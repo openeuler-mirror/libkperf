@@ -56,10 +56,6 @@ namespace KUNPENG_PMU {
     int PmuList::Register(const int pd, PmuTaskAttr* taskParam)
     {
         this->FillPidList(taskParam, pd);
-        int symbolErrNo = InitSymbolRecordModule(pd, taskParam);
-        if (symbolErrNo != SUCCESS) {
-            return symbolErrNo;
-        }
         /* Use libpfm to get the basic config for this pmu event */
         struct PmuTaskAttr* pmuTaskAttrHead = taskParam;
         // Init collect type for pmu data,
@@ -95,6 +91,12 @@ namespace KUNPENG_PMU {
             evtList->SetBranchSampleFilter(GetBranchSampleFilter(pd));
             InsertEvtList(pd, evtList);
             pmuTaskAttrHead = pmuTaskAttrHead->next;
+        }
+
+        int symbolErrNo = InitSymbolRecordModule(pd, taskParam);
+        if (symbolErrNo != SUCCESS) {
+            pcerr::SetCustomErr(symbolErrNo, Perror());
+            return symbolErrNo;
         }
 
         auto err = CheckRlimit(fdNum);
@@ -1041,13 +1043,10 @@ namespace KUNPENG_PMU {
 
     int PmuList::InitSymbolRecordModule(const unsigned pd, PmuTaskAttr* taskParam)
     {
-        SymbolMode symMode = GetSymbolMode(pd);
-
         if (taskParam->pmuEvt->collectType == COUNTING) {
             return SUCCESS;
         }
 
-        SymResolverInit();
         if (taskParam->pmuEvt->excludeKernel != 1) {
             int ret = SymResolverRecordKernel();
             if (ret != SUCCESS) {
