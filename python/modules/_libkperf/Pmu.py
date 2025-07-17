@@ -1790,7 +1790,7 @@ def PmuDeviceBdfList(bdf_type):
 
     c_bdf_list = c_PmuDeviceBdfList(c_bdf_type, ctypes.byref(c_num_bdf))
 
-    return [c_bdf_list.decode(UTF_8) for i in range(c_num_bdf.value)]
+    return [c_bdf_list[i].decode(UTF_8) for i in range(c_num_bdf.value)]
 
 
 def PmuDeviceOpen(device_attr):
