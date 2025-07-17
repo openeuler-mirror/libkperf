@@ -118,11 +118,18 @@ __u64 KUNPENG_PMU::ReadOnce(__u64 *head)
                     : "=r"(*(__u64 __attribute__((__may_alias__)) *)pointerUnion.charHead)
                     : "Q"(*head)
                     : "memory");
-#else
+#elif defined(IS_ARM)
             asm volatile("ldar %0, %1"
                     : "=r"(*(__u64 __attribute__((__may_alias__)) *)pointerUnion.charHead)
                     : "Q"(*head)
                     : "memory");
+#elif defined(IS_RISCV64)
+            asm volatile("ld %0, %1\nfence"
+                    : "=r"(*(__u64 __attribute__((__may_alias__)) *)pointerUnion.charHead)
+                    : "m"(*head)
+                    : "memory");
+#else
+            #error "Unsupported architecture"
 #endif
             break;
         default:

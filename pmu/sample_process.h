@@ -28,7 +28,7 @@
         } pointerUnion = {.val = (v)};                                                            \
         asm volatile("mov %1, %0" : "=Q"(*p) : "r"(*(__u64 *)pointerUnion.charHead) : "memory"); \
     })
-#else
+#elif defined(IS_ARM)
 #define PerfRingbufferSmpStoreRelease(p, v)                                                       \
     ({                                                                                            \
         union {                                                                                   \
@@ -36,6 +36,15 @@
             char charHead[1];                                                                     \
         } pointerUnion = {.val = (v)};                                                            \
         asm volatile("stlr %1, %0" : "=Q"(*p) : "r"(*(__u64 *)pointerUnion.charHead) : "memory"); \
+    })
+#elif defined(IS_RISCV64)
+#define PerfRingbufferSmpStoreRelease(p, v)                                                       \
+    ({                                                                                            \
+        union {                                                                                   \
+            typeof(*p) val;                                                                       \
+            char charHead[1];                                                                     \
+        } pointerUnion = {.val = (v)};                                                            \
+        asm volatile("sd %1, %0\nfence" : "=m"(*p) : "r"(*(__u64 *)pointerUnion.charHead) : "memory"); \
     })
 #endif
 
