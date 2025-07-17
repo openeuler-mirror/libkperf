@@ -36,6 +36,7 @@ PmuFile file = NULL;
 int lastErr = SUCCESS;
 bool verbose = false;
 int64_t startTs = 0;
+bool interrupt = false;
 
 struct Param {
     vector<string> events;
@@ -84,11 +85,22 @@ static void PrintHelp()
     std::cerr << "      -e <event1>,<event2>        event list. default: cycles\n";
     std::cerr << "      -b                          whether to use brbe.\n";
     std::cerr << "      -o <path>                   output file path. default: ./libkperf.data\n";
-    std::cerr << "      -d <count>                  count of sampling interval: default: UINT32_MAX\n";
-    std::cerr << "      -I <milliseconds>           count of interval. unit: ms. default: 1000\n";
+    std::cerr << "      -d <count>                  count of reading: default: UINT32_MAX\n";
+    std::cerr << "      -I <milliseconds>           interval for reading buffer. unit: ms. default: 1000\n";
     std::cerr << "      -p <pid>                    pid of process to attach.\n";
     std::cerr << "      -F <freq>                   sampling frequency. default: 4000\n";
     std::cerr << "      -v                          print verbose log.\n";
+}
+
+static int ToInt(const char *str)
+{
+    char *endptr;
+    long num = strtol(str, &endptr, 10);
+    if (*endptr != 0) {
+        throw invalid_argument("invalid arg: " + string(str));
+    }
+
+    return static_cast<int>(num);
 }
 
 static Param ParseArgs(int argc, char** argv)
@@ -109,16 +121,16 @@ static Param ParseArgs(int argc, char** argv)
             param.dataPath = argv[i+1];
             ++i;
         } else if (strcmp(argv[i], "-d") == 0 && i+1 < argc) {
-            param.duration = atoi(argv[i+1]);
+            param.duration = ToInt(argv[i+1]);
             ++i;
         } else if (strcmp(argv[i], "-p") == 0 && i+1 < argc) {
-            param.pidList.push_back(atoi(argv[i+1]));
+            param.pidList.push_back(ToInt(argv[i+1]));
             ++i;
         } else if (strcmp(argv[i], "-F") == 0 && i+1 < argc) {
-            param.freq = atoi(argv[i+1]);
+            param.freq = ToInt(argv[i+1]);
             ++i;
         } else if (strcmp(argv[i], "-I") == 0 && i+1 < argc) {
-            param.interval = atoi(argv[i+1]);
+            param.interval = ToInt(argv[i+1]);
             ++i;
         } else if (strcmp(argv[i], "-v") == 0) {
             verbose = true;
@@ -231,6 +243,10 @@ int Collect(const Param &param)
             cerr << Perror() << "\n";
             break;
         }
+        if (interrupt) {
+            cout << "Ctrl+C\n";
+            break;
+        }
         while(toRead.load(memory_order_acquire));
         toRead.store(true, memory_order_release);
 
@@ -281,10 +297,15 @@ bool ExecuteCommand(Param &param)
     return true;
 }
 
+void TermBySignal(int sig) {
+    interrupt = true;
+}
+
 int main(int argc, char** argv)
 {
     try {
         startTs = GetTime();
+        signal(SIGINT, TermBySignal);
         auto param = ParseArgs(argc, argv);
         if (!param.command.empty() && !ExecuteCommand(param)) {
             return 0;

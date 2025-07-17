@@ -145,7 +145,7 @@ public:
         // but we assign an ID to each event for all cores. Maybe it has no impact.
         PrepareEvt2Id(pattr);
         // Write event id and get offset of event id in the file.
-        map<const char*, long> evt2offset;
+        map<string, long> evt2offset;
         err = WriteEvtIds(evt2id, fd, evt2offset);
         if (err != SUCCESS) {
             return err;
@@ -284,8 +284,8 @@ private:
         sample->period = d.period;
         sample->bnr = branchNr;
 
-	    // To write branch entries after PerfSample.
-	    perf_branch_entry *bentryList = (perf_branch_entry*)(buffer + offset + sizeof(PerfSample));
+        // To write branch entries after PerfSample.
+        perf_branch_entry *bentryList = (perf_branch_entry*)(buffer + offset + sizeof(PerfSample));
         for (size_t i = 0;i < branchNr; ++i) {
             perf_branch_entry *bentry = &bentryList[i];
             bentry->from = d.ext->branchRecords[i].fromAddr;
@@ -294,7 +294,7 @@ private:
             bentry->mispred = d.ext->branchRecords[i].misPred;
             bentry->predicted = d.ext->branchRecords[i].predicted;
         }
-	    offset += sample->header.size;
+        offset += sample->header.size;
         return SUCCESS;
     }
 
@@ -483,7 +483,7 @@ private:
                 PERF_SAMPLE_PERIOD |  PERF_SAMPLE_BRANCH_STACK;
     }
 
-    PerfFileAttr GetFileAttr(const char *evt, const map<const char*, long> &evt2offset)
+    PerfFileAttr GetFileAttr(const char *evt, const map<string, long> &evt2offset)
     {
         // Now we don't have real perf_event_attr of collection task,
         // then we synthesize a similar one, only for sampling.
@@ -518,7 +518,7 @@ private:
         }
     }
 
-    int WriteEvtIds(const map<const char*, long> &evt2id, const int fd, map<const char*, long> &evt2offset)
+    int WriteEvtIds(const map<string, long> &evt2id, const int fd, map<string, long> &evt2offset)
     {
         for (auto ei : evt2id) {
             evt2offset[ei.first] = lseek(fd, 0, SEEK_CUR);
@@ -529,7 +529,7 @@ private:
         return SUCCESS;
     }
 
-    int WriteFileAttrs(const int fd, const PmuAttr *pattr, const map<const char*, long> &evt2offset)
+    int WriteFileAttrs(const int fd, const PmuAttr *pattr, const map<string, long> &evt2offset)
     {
         for (int i = 0;i < pattr->numEvt; ++i) {
             auto fattr = GetFileAttr(pattr->evtList[i], evt2offset);
@@ -623,7 +623,7 @@ private:
     const char *path = nullptr;
     PerfFileHeader ph = {0};
     int fd = 0;
-    map<const char*, long> evt2id;
+    map<string, long> evt2id;
     set<string> modules;
 
     const uint16_t PERF_RECORD_MISC_BUILD_ID_SIZE = (1 << 15);
