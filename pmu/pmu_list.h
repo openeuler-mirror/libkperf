@@ -96,8 +96,8 @@ private:
     void EraseSymModeList(const unsigned pd);
     void ErasePpidList(const unsigned pd);
 
-    int EvtInit(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader, const int pd, const std::shared_ptr<EvtList> &evtList, bool isMemoryEnough);
-    int Init(const int pd, bool isMemoryEnough);
+    int EvtInit(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader, const int pd, const std::shared_ptr<EvtList> &evtList);
+    int Init(const int pd);
 
     void InsertDataEvtGroupList(const unsigned pd, groupMapPtr evtGroupList);
     void EraseDataEvtGroupList(const unsigned pd);

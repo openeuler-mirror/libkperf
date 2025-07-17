@@ -63,7 +63,7 @@ public:
         this->prevStat = OPEN;
         this->evtStat = OPEN;
     }
-    int Init(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader, bool isMemoryEnough);
+    int Init(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader);
     int Pause();
     int Close();
     int Start();

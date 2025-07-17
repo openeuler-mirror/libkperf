@@ -66,7 +66,7 @@ int KUNPENG_PMU::EvtList::CollectorXYArrayDoTask(std::vector<std::vector<PerfEvt
     return SUCCESS;
 }
 
-int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader, bool isMemoryEnough)
+int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader)
 {
     // Init process map.
     for (auto& proc: pidList) {
@@ -84,7 +84,7 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
             if (perfEvt == nullptr) {
                 continue;
             }
-            if (!isMemoryEnough && col > 0 && !evtVec.empty()) {
+            if (col > 0 && !evtVec.empty()) {
                 resetOutPutFd = evtVec[0]->GetFd();
             }
             perfEvt->SetSymbolMode(symMode);
