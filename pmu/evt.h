@@ -30,7 +30,7 @@ public:
     using ProcPtr = std::shared_ptr<ProcTopology>;
     using ProcMap = std::unordered_map<pid_t, ProcPtr>;
 
-    PerfEvt(int cpu, int pid, struct PmuEvt *evt, ProcMap &procMap) : cpu(cpu), pid(pid), evt(evt), procMap(procMap) {}
+    PerfEvt(int cpu, int pid, struct PmuEvt *evt, ProcMap &procMap) : cpu(cpu), pid(pid), evt(evt), procMap(procMap), needTryExcludeKernel(false) {}
     ~PerfEvt() {}
     virtual int Start();
     virtual int Pause();
@@ -55,6 +55,10 @@ public:
     void SetBranchSampleFilter(const unsigned long& branchSampleFilter)
     {
         this->branchSampleFilter = branchSampleFilter;
+    }
+
+    void SetNeedTryExcludeKernel(const bool needTryExcludeKernel) {
+        this->needTryExcludeKernel = needTryExcludeKernel;
     }
 
     int GetFd() const
@@ -93,6 +97,7 @@ protected:
     ProcMap &procMap;
     SymbolMode symMode = NO_SYMBOL_RESOLVE;
     unsigned long branchSampleFilter = KPERF_NO_BRANCH_SAMPLE;
+    bool needTryExcludeKernel;
 };
 int PerfEventOpen(struct perf_event_attr* attr, pid_t pid, int cpu, int groupFd, unsigned long flags);
 __u64 ReadOnce(__u64 *head);

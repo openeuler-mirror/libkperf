@@ -171,3 +171,25 @@ int CheckCgroupV2()
 
     return (stbuf.f_type == CGROUP2_SUPER_MAGIC);
 }
+
+bool ConvertStrToInt(const std::string &intValStr, int32_t &val)
+{
+    try {
+        val = stoi(intValStr, nullptr, 10);
+    } catch (const std::exception &e) {
+        return false;
+    }
+    return true;
+}
+
+int GetParanoidVal()
+{
+    std::string paranoidValStr = ReadFileContent(PERF_EVENT_PARANOID_PATH);
+    if (!paranoidValStr.empty()) {
+        int val;
+        if (ConvertStrToInt(paranoidValStr, val)) {
+            return val;
+        }
+    }
+    return INT32_MAX;
+}

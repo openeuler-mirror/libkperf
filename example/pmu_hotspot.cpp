@@ -20,6 +20,7 @@
 #include <cstring>
 #include <iomanip>
 #include <signal.h>
+#include <sys/stat.h>
 #include "pcerrc.h"
 #include "pmu.h"
 #include "symbol.h"
@@ -232,11 +233,22 @@ void BlockedSample(int pid, double interval, int count, bool blockedSample)
     return;
 }
 
+
+bool ExistPath(const std::string &filePath) {
+    struct stat statbuf{};
+    return stat(filePath.c_str(), &statbuf) == 0;
+}
+
 void StartProc(char *process, int &pid)
 {
     if (process == nullptr) {
         return;
     }
+
+    if (!ExistPath(process)) {
+        throw std::invalid_argument("process name not a exec file.");
+    }
+
     pid = fork();
     if (pid == 0) {
         execlp(process, process, nullptr);

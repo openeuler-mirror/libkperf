@@ -239,6 +239,7 @@ func main() {
 	defer func() {
 		err := recover()
 		if err != nil {
+			fmt.Printf("Invalid argument: %s\n", err)
 			printUsage()
 		}
 	}()
@@ -277,6 +278,10 @@ func main() {
 	parsePid, err := strconv.ParseInt(os.Args[4], 10, 32)
 	needKill := false
 	if err != nil {
+		_, err := os.Stat(os.Args[4])
+		if err != nil {
+			panic(errors.New("process name not a exec file."))
+		}
 		parsePid, err := startProc(os.Args[4])
 		if err != nil {
 			panic(err)

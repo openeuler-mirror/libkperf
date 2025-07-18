@@ -65,18 +65,18 @@ struct CpuTopology* GetCpuTopology(int coreId)
 {
     auto cpuTopo = std::unique_ptr<CpuTopology>(new CpuTopology());
     memset(cpuTopo.get(), 0, sizeof(CpuTopology));
+    cpuTopo->coreId = coreId;
     if (coreId == -1) {
-        cpuTopo->coreId = coreId;
         cpuTopo->numaId = -1;
         cpuTopo->socketId = -1;
         return cpuTopo.release();
     }
 
     if (!ReadCpuPackageId(coreId, cpuTopo.get())) {
-        return nullptr;
+        cpuTopo->socketId = -1;
+        pcerr::SetWarn(LIBPERF_ERR_FAIL_GET_CPU, "failed to obtain the socketdId for " + std::to_string(coreId) + " core.");
     }
 
-    cpuTopo->coreId = coreId;
     cpuTopo->numaId = numa_node_of_cpu(coreId);
     return cpuTopo.release();
 }

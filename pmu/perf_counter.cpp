@@ -196,6 +196,13 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int grou
     attr.disabled = 1;
     attr.inherit = 1;
 
+    /**
+     * if no permission try setting exclude_kernel=1.
+     */
+    if (this->needTryExcludeKernel) {
+        attr.exclude_kernel = 1;
+    }
+
     // support cgroup feature
     unsigned flags = 0;
     if (this->GetCgroupFd() != -1) {
