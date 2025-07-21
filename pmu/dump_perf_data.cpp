@@ -245,7 +245,7 @@ private:
             return LIBPERF_ERR_NOT_SUPPORT_PMU_FILE;
         }
         if (pattr->period == 0) {
-            New(LIBPERF_ERR_NOT_SUPPORT_PMU_FILE, "Period ofr freq is zero, maybe it is not sampling PmuAttr");
+            New(LIBPERF_ERR_NOT_SUPPORT_PMU_FILE, "Period or freq is zero, maybe it is not sampling PmuAttr");
             return LIBPERF_ERR_NOT_SUPPORT_PMU_FILE;
         }
         return SUCCESS;

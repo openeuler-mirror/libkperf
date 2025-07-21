@@ -1546,7 +1546,7 @@ LD_LIBRARY_PATH=/path/to/install/lib/ ./pmu_perfdata -d 3 -- /tmp/test
 ```
 
 ```python
-// python代码示例
+# python代码示例
 evtList = ["cycles"]
 pidlist = [273282]
 pmu_attr = kperf.PmuAttr(
@@ -1557,7 +1557,8 @@ pmu_attr = kperf.PmuAttr(
     )
 pd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
 if pd == -1:
-    print(f"kperf pmuopen sample failed, expect err is nil, but is {kperf.errorno()}\n")
+    print(f"kperf pmuopen sample failed, expect err is nil, but is {kperf.error()}")
+    exit(0)
 kperf.enable(pd)
 time.sleep(1)
 kperf.disable(pd)
@@ -1579,7 +1580,7 @@ func main() {
     attr := kperf.PmuAttr{EvtList:[]string{"task-clock"}, SymbolMode:kperf.ELF, SampleRate: 1000, PidList: pidlist}
     pd, err := kperf.PmuOpen(kperf.SAMPLE, attr)
     if err != nil {
-        fmt.Printf("kperf pmuopen counting failed, expect err is nil, but is %v", err)
+        fmt.Printf("kperf pmuopen sampling failed, expect err is nil, but is %v", err)
         return
     }
 

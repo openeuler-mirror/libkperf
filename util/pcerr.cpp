@@ -22,6 +22,7 @@ namespace pcerr {
     static std::unordered_map<int, std::string> defaultMsg = {
             {SUCCESS, "success"},
             {COMMON_ERR_NOMEM, "not enough memory"},
+            {COMMON_ERR_WRITE, "failed to write file"},
             {LIBPERF_ERR_NO_AVAIL_PD, "no available pd for libperf"},
             {LIBPERF_ERR_CHIP_TYPE_INVALID, "invalid cpu arch"},
             {LIBPERF_ERR_FAIL_LISTEN_PROC, "failed to listen process"},
@@ -56,6 +57,9 @@ namespace pcerr {
             {LIBPERF_ERR_SET_FD_RDONLY_NONBLOCK, "failed to set fd readonly and nonbolock"},
             {LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86, "the current interface does not support x86"},
             {LIBPERF_ERR_INVALID_CGROUP_LIST, "invalid cgroup name list"},
+            {LIBPERF_ERR_NOT_SUPPORT_PMU_FILE, "writing perf.data is not supported"},
+            {LIBPERF_ERR_INVALID_PMU_FILE, "invalid pmu file handler"},
+            {LIBPERF_ERR_OPEN_INVALID_FILE, "failed to open file"},
     };
     static std::unordered_map<int, std::string> warnMsgs = {
             {LIBPERF_WARN_CTXID_LOST, "Some SPE context packets are not found in the traces."},
