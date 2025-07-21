@@ -38,6 +38,7 @@ struct MetricDataExt {
 	unsigned coreId;
 	unsigned clusterId;
 	char* bdf;
+	char* port;
 	unsigned channelId;
     unsigned ddrNumaId;
     unsigned socketId;
@@ -122,6 +123,7 @@ void IPmuGetMetricDataExt(struct PmuDeviceData* deviceData, struct MetricDataExt
 			break;
 		case PMU_METRIC_BDF:
 			metricData->bdf = deviceData->bdf;
+			metricData->port = deviceData->port;
 			break;
 		case PMU_METRIC_CLUSTER:
 			metricData->clusterId = deviceData->clusterId;
@@ -273,14 +275,23 @@ var (
     // Collect pcie rx bandwidth.
     // Perpcie metric.
     // Collect pcie rx bandwidth for pcie device.
-    // Unit: Bytes/s
+    // Unit: Bytes/us
     PMU_PCIE_RX_MRD_BW C.enum_PmuDeviceMetric = C.PMU_PCIE_RX_MRD_BW
     PMU_PCIE_RX_MWR_BW C.enum_PmuDeviceMetric = C.PMU_PCIE_RX_MWR_BW
     // Perpcie metric.
     // Collect pcie tx bandwidth for pcie device.
-    // Unit: Bytes/s
+    // Unit: Bytes/us
     PMU_PCIE_TX_MRD_BW C.enum_PmuDeviceMetric = C.PMU_PCIE_TX_MRD_BW
     PMU_PCIE_TX_MWR_BW C.enum_PmuDeviceMetric = C.PMU_PCIE_TX_MWR_BW
+	// Perpcie metric.
+    // Collect pcie rx latency for pcie device.
+    // Unit: ns
+    PMU_PCIE_RX_MRD_LAT C.enum_PmuDeviceMetric = C.PMU_PCIE_RX_MRD_LAT
+    PMU_PCIE_RX_MWR_LAT C.enum_PmuDeviceMetric = C.PMU_PCIE_RX_MWR_LAT
+    // Perpcie metric.
+    // Collect pcie tx latency for pcie device.
+    // Unit: ns
+    PMU_PCIE_TX_MRD_LAT C.enum_PmuDeviceMetric = C.PMU_PCIE_TX_MRD_LAT
     // Perpcie metric.
     // Collect smmu address transaction.
     // Unit: count
@@ -412,9 +423,12 @@ type PmuTraceDataVo struct {
 type PmuDeviceAttr struct {
 	Metric C.enum_PmuDeviceMetric
 
-	// Used for PMU_PCIE_XXX and PMU_SMMU_XXX to collect a specific pcie device.
+	// Used for PMU_PCIE_XXX_BW and PMU_SMMU_XXX to collect a specific pcie device.
     // The string of bdf is something like '7a:01.0'.
 	Bdf string
+    // Used for PMU_PCIE_XXX_LAT to collect latency data.
+    // Only one port supported.
+	Port string
 }
 
 type DdrDataStructure struct {
@@ -433,6 +447,7 @@ type PmuDeviceData struct {
 	NumaId uint32    // for pernuma metric
 	ClusterId uint32 // for percluster metric
 	Bdf string       // for perpcie metric
+	Port string      // for perpcie metric
 	DdrDataStructure // for perchannel metric
 }
 
@@ -1027,6 +1042,11 @@ func PmuDeviceOpen(attr []PmuDeviceAttr) (int, error) {
 		} else {
 			cAttr[i].bdf = nil
 		}
+		if len(v.Port) > 0 {
+			cAttr[i].port = C.CString(v.Port)
+		} else {
+			cAttr[i].port = nil
+		}
 	}
 	deviceTaskId := C.PmuDeviceOpen(&cAttr[0], C.uint(len(attr)))
 	if int(deviceTaskId) == -1 {
@@ -1051,6 +1071,11 @@ func PmuGetDevMetric(dataVo PmuDataVo, deviceAttr []PmuDeviceAttr) (PmuDeviceDat
 			cAttr[i].bdf = C.CString(v.Bdf)
 		} else {
 			cAttr[i].bdf = nil
+		}
+		if len(v.Port) > 0 {
+			cAttr[i].port = C.CString(v.Port)
+		} else {
+			cAttr[i].port = nil
 		}
 	}
 	metricLen := C.int(0)
@@ -1078,6 +1103,7 @@ func PmuGetDevMetric(dataVo PmuDataVo, deviceAttr []PmuDeviceAttr) (PmuDeviceDat
 		goDeviceList[i].NumaId = uint32(metricDataExt.numaId)
 		goDeviceList[i].ClusterId = uint32(metricDataExt.clusterId)
 		goDeviceList[i].Bdf = C.GoString(metricDataExt.bdf)
+		goDeviceList[i].Port = C.GoString(metricDataExt.port)
 		goDeviceList[i].ChannelId = uint32(metricDataExt.channelId)
 		goDeviceList[i].DdrNumaId = uint32(metricDataExt.ddrNumaId)
 		goDeviceList[i].SocketId = uint32(metricDataExt.socketId)

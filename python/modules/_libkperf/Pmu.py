@@ -439,16 +439,19 @@ class CtypesPmuDeviceAttr(ctypes.Structure):
     struct PmuDeviceAttr {
         enum PmuDeviceMetric metric;
         char *bdf;
+        char *port;
     };
     """
     _fields_ = [
         ('metric', ctypes.c_int),
-        ('bdf', ctypes.c_char_p)
+        ('bdf', ctypes.c_char_p),
+        ('port', ctypes.c_char_p)
     ]
     
     def __init__(self,
                 metric=0,
-                bdf= None,
+                bdf=None,
+                port=None,
                 *args, **kw):
         super(CtypesPmuDeviceAttr, self).__init__(*args, **kw)
 
@@ -457,17 +460,22 @@ class CtypesPmuDeviceAttr(ctypes.Structure):
             self.bdf = ctypes.c_char_p(bdf.encode(UTF_8))
         else:
             self.bdf = None
-
+        if port:
+            self.port = ctypes.c_char_p(port.encode(UTF_8))
+        else:
+            self.port = None
 
 class PmuDeviceAttr(object):
     __slots__ = ['__c_pmu_device_attr']
 
     def __init__(self,
                  metric=0,
-                 bdf= None):
+                 bdf=None,
+                 port=None):
         self.__c_pmu_device_attr = CtypesPmuDeviceAttr(
             metric=metric,
-            bdf=bdf
+            bdf=bdf,
+            port=port
         )
 
     @property
@@ -495,6 +503,19 @@ class PmuDeviceAttr(object):
         else:
             self.c_pmu_device_attr.bdf = None
 
+    @property
+    def port(self):
+        if self.c_pmu_device_attr.port:
+            return self.c_pmu_device_attr.port.decode(UTF_8)
+        return None
+
+    @port.setter
+    def port(self, port):
+        if port:
+            self.c_pmu_device_attr.port = ctypes.c_char_p(port.encode(UTF_8))
+        else:
+            self.c_pmu_device_attr.port = None
+
     @classmethod
     def from_c_pmu_device_attr(cls, c_pmu_device_attr):
         pmu_device_attr = cls()
@@ -519,6 +540,7 @@ class CtypesPmuDeviceData(ctypes.Structure):
             unsigned numaId;
             unsigned clusterId;
             char *bdf;
+            char *port;
             struct {
                 unsigned channelId;
                 unsigned ddrNumaId;
@@ -533,6 +555,7 @@ class CtypesPmuDeviceData(ctypes.Structure):
             ('numaId', ctypes.c_uint),
             ('clusterId', ctypes.c_uint),
             ('bdf', ctypes.c_char_p),
+            ('port', ctypes.c_char_p),
             ('_structure', DdrDataStructure)
         ]
     
@@ -565,6 +588,12 @@ class CtypesPmuDeviceData(ctypes.Structure):
     def bdf(self):
         if self.mode == 4 and self._union.bdf:  # PMU_METRIC_BDF
             return self._union.bdf.decode(UTF_8)
+        return ""
+
+    @property
+    def port(self):
+        if self.mode == 4 and self._union.port:  # PMU_METRIC_BDF
+            return self._union.port.decode(UTF_8)
         return ""
 
     @property
@@ -636,7 +665,13 @@ class ImplPmuDeviceData:
         if self.mode == 4 and self.c_pmu_device_data._union.bdf:  # PMU_METRIC_BDF
             return self.c_pmu_device_data._union.bdf.decode(UTF_8)
         return ""
-    
+
+    @property
+    def port(self):
+        if self.mode == 4 and self.c_pmu_device_data._union.port:  # PMU_METRIC_BDF
+            return self.c_pmu_device_data._union.port.decode(UTF_8)
+        return ""
+
     @property
     def channelId(self):
         if self.mode == 5 and self.c_pmu_device_data._union._structure.channelId:  # PMU_METRIC_CHANNEL

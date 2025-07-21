@@ -90,8 +90,8 @@ int ConvertHexStrToInt(const std::string& hexStr, uint64_t& bus)
     try {
         bus = stoul(hexStr, nullptr, 16);
     } catch (const std::exception& e) {
-        pcerr::New(LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING, "hexStr: " + hexStr + " is invalid");
-        return LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING;
+        pcerr::New(LIBPERF_ERR_NOT_SUPPORT_PCIE_COUNTING, "hexStr: " + hexStr + " is invalid");
+        return LIBPERF_ERR_NOT_SUPPORT_PCIE_COUNTING;
     }
     return SUCCESS;
 }

@@ -689,9 +689,9 @@ for (int i=0;i<len;++i) {
     evtMap[data[i].groupId][data[i].evt] += data[i].count;
 }
 // 获取第一个分组的数据，计算bad speculation。
-cout << "bad spec: " << (double)(evtMap[1]["inst_spec"] - evtMap[1]["inst_retired"])/evtMap[1]["cycles"] << "\n";
+std::cout << "bad spec: " << (double)(evtMap[1]["inst_spec"] - evtMap[1]["inst_retired"])/evtMap[1]["cycles"] << "\n";
 // 获取第二个分组的数据，计算retiring。
-cout << "retiring: " << (double)evtMap[2]["inst_retired"]/(6*evtMap[2]["cycles"]) << "\n";
+std::cout << "retiring: " << (double)evtMap[2]["inst_retired"]/(6*evtMap[2]["cycles"]) << "\n";
 ```
 
 ```python
@@ -937,7 +937,7 @@ auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 1, &devData);
 // devData的长度等于cluster个数
 for (int i=0;i<len;++i) {
     // 每个devData表示一个cluster的L3平均时延，是以ns为单位
-    cout << "L3 latency(" << devData[i].clusterId << "): " << devData[i].count<< " ns\n";
+    std::cout << "L3 latency(" << devData[i].clusterId << "): " << devData[i].count<< " ns\n";
 }
 DevDataFree(devData);
 PmuDataFree(oriData);
@@ -1019,8 +1019,8 @@ PmuDeviceData *devData = nullptr;
 auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 1, &devData);
 // devData的长度等于pcie设备的个数
 for (int i=0;i<len;++i) {
-    // 带宽的单位是Bytes/ns
-    cout << "pcie bw(" << devData[i].bdf << "): " << devData[i].count<< " Bytes/ns\n";
+    // 带宽的单位是Bytes/us
+    std::cout << "pcie bw(" << devData[i].bdf << "): " << devData[i].count<< " Bytes/us\n";
 }
 DevDataFree(devData);
 PmuDataFree(oriData);
@@ -1042,7 +1042,7 @@ kperf.disable(pd)
 ori_data = kperf.read(pd)
 dev_data = kperf.get_device_metric(ori_data, dev_attr)
 for data in dev_data.iter:
-    print(f"pcie bw({data.bdf}): {data.count} Bytes/ns")
+    print(f"pcie bw({data.bdf}): {data.count} Bytes/us")
 ```
 
 ```go
@@ -1059,7 +1059,7 @@ kperf.PmuDisable(fd)
 dataVo, _ := kperf.PmuRead(fd)
 deivceDataVo, _ := kperf.PmuGetDevMetric(dataVo, deviceAttrs)
 for _, v := range deivceDataVo.GoDeviceData {
-	fmt.Printf("pcie bw(%v): %v Bytes/ns\n", v.Bdf, v.Count)
+	fmt.Printf("pcie bw(%v): %v Bytes/us\n", v.Bdf, v.Count)
 }
 kperf.DevDataFree(deivceDataVo)
 kperf.PmuDataFree(dataVo)
@@ -1068,7 +1068,86 @@ kperf.PmuClose(fd)
 
 执行上述代码，输出的结果类似如下：
 ```
-pcie bw(16:04.0): 124122412 Bytes/ns
+pcie bw(16:04.0): 124122412 Bytes/us
+```
+
+### 采集PCIE延时
+libkperf提供了采集PCIE延时的能力，采集rx方向的读写延时和tx方向上的读延时，需要指定port参数。
+并不是所有的PCIE设备都可以被采集带宽，鲲鹏的pmu设备只覆盖了一部分PCIE设备，可以通过PmuDeviceBdfList来获取当前环境可采集的PCIE设备或Root port。
+
+参考代码：
+```c++
+// c++代码示例
+#include <iostream>
+#include "symbol.h"
+#include "pmu.h"
+
+PmuDeviceAttr devAttr[1];
+// 采集PCIE设备RX的读延时，PMU_PCIE_RX_MWR_LAT为RX的写延时，PMU_PCIE_TX_MRD_LAT为TX的读延时
+devAttr[0].metric = PMU_PCIE_RX_MRD_LAT;
+// 设置PCIE的port号
+devAttr[0].port = "c0:00.0";
+// 初始化采集任务
+int pd = PmuDeviceOpen(devAttr, 1);
+// 开始采集
+PmuEnable(pd);
+sleep(1);
+PmuData *oriData = nullptr;
+int oriLen = PmuRead(pd, &oriData);
+PmuDeviceData *devData = nullptr;
+auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 1, &devData);
+// devData的长度等于pcie设备的个数
+for (int i=0;i<len;++i) {
+    // PCIE延时的单位是ns
+    std::cout << "pcie lat(" << devData[i].port << "): " << devData[i].count<< " ns\n";
+}
+DevDataFree(devData);
+PmuDataFree(oriData);
+PmuDisable(pd);
+```
+
+```python
+# python代码示例
+import kperf
+import time
+
+dev_attr = [
+    kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_PCIE_RX_MRD_LAT, port="c0:00.0")
+]
+pd = kperf.device_open(dev_attr)
+kperf.enable(pd)
+time.sleep(1)
+kperf.disable(pd)
+ori_data = kperf.read(pd)
+dev_data = kperf.get_device_metric(ori_data, dev_attr)
+for data in dev_data.iter:
+    print(f"pcie lat({data.port}): {data.count} ns")
+```
+
+```go
+// go代码用例
+import "libkperf/kperf"
+import "fmt"
+import "time"
+
+deviceAttrs := []kperf.PmuDeviceAttr{kperf.PmuDeviceAttr{Metric: kperf.PMU_PCIE_RX_MRD_LAT, Port: "c0:00.0"}}
+fd, _ := kperf.PmuDeviceOpen(deviceAttrs)
+kperf.PmuEnable(fd)
+time.Sleep(1 * time.Second)
+kperf.PmuDisable(fd)
+dataVo, _ := kperf.PmuRead(fd)
+deivceDataVo, _ := kperf.PmuGetDevMetric(dataVo, deviceAttrs)
+for _, v := range deivceDataVo.GoDeviceData {
+	fmt.Printf("pcie lat(%v): %v ns\n", v.Port, v.Count)
+}
+kperf.DevDataFree(deivceDataVo)
+kperf.PmuDataFree(dataVo)
+kperf.PmuClose(fd)
+```
+
+执行上述代码，输出的结果类似如下：
+```
+pcie lat(c0:00.0): 840.625 ns
 ```
 
 ### 采集跨numa/跨socket访问HHA比例
@@ -1097,10 +1176,10 @@ PmuDeviceData *devData = nullptr;
 auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
 // devData的长度等于设备numa的个数
 for (int i = 0; i < len / 2; ++i) {
-    cout << "HHA cross-numa operations ratio (Numa: " << devData[i].numaId << "): " << devData[i].count<< "\n";
+    std::cout << "HHA cross-numa operations ratio (Numa: " << devData[i].numaId << "): " << devData[i].count<< "\n";
 }
 for (int i = len / 2; i < len; ++i) {
-    cout << "HHA cross-socket operations ratio (Numa: " << devData[i].numaId << "): " << devData[i].count<< "\n";
+    std::cout << "HHA cross-socket operations ratio (Numa: " << devData[i].numaId << "): " << devData[i].count<< "\n";
 }
 DevDataFree(devData);
 PmuDataFree(oriData);
@@ -1530,6 +1609,26 @@ func main() {
     }
     kperf.PmuClose(pd)
 }
+```
+
+执行上述代码，输出的结果类似如下：
+```
+evt=cycles, cgroup=test_cgroup, cpu=0, count=0
+evt=cycles, cgroup=test_cgroup, cpu=1, count=116331
+...
+evt=cycles, cgroup=test_cgroup, cpu=127, count=0
+evt=instructions, cgroup=test_cgroup, cpu=0, count=0
+evt=instructions, cgroup=test_cgroup, cpu=1, count=22522
+...
+evt=instructions, cgroup=test_cgroup, cpu=127, count=0
+evt=cycles, cgroup=my_cgroup, cpu=0, count=0
+evt=cycles, cgroup=my_cgroup, cpu=1, count=0
+...
+evt=cycles, cgroup=my_cgroup, cpu=127, count=452037
+evt=instructions, cgroup=my_cgroup, cpu=0, count=0
+evt=instructions, cgroup=my_cgroup, cpu=1, count=0
+...
+evt=instructions, cgroup=my_cgroup, cpu=127, count=369345
 ```
 
 ### 生成perf.data

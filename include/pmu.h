@@ -455,14 +455,23 @@ enum PmuDeviceMetric {
     // Collect pcie rx bandwidth.
     // Perpcie metric.
     // Collect pcie rx bandwidth for pcie device.
-    // Unit: Bytes/ns
+    // Unit: Bytes/us
     PMU_PCIE_RX_MRD_BW,
     PMU_PCIE_RX_MWR_BW,
     // Perpcie metric.
     // Collect pcie tx bandwidth for pcie device.
-    // Unit: Bytes/ns
+    // Unit: Bytes/us
     PMU_PCIE_TX_MRD_BW,
     PMU_PCIE_TX_MWR_BW,
+    // Perpcie metric.
+    // Collect pcie rx latency for pcie device.
+    // Unit: ns
+    PMU_PCIE_RX_MRD_LAT,
+    PMU_PCIE_RX_MWR_LAT,
+    // Perpcie metric.
+    // Collect pcie tx latency for pcie device.
+    // Unit: ns
+    PMU_PCIE_TX_MRD_LAT,
     // Perpcie metric.
     // Collect smmu address transaction.
     // Unit: count
@@ -478,9 +487,12 @@ enum PmuDeviceMetric {
 struct PmuDeviceAttr {
     enum PmuDeviceMetric metric;
 
-    // Used for PMU_PCIE_XXX and PMU_SMMU_XXX to collect a specifi pcie device.
+    // Used for PMU_PCIE_XXX_BW and PMU_SMMU_XXX to collect a specifi pcie device.
     // The string of bdf is something like '7a:01.0'.
     char *bdf;
+    // Used for PMU_PCIE_XXX_LAT to collect latency data.
+    // Only one port supported.
+    char *port;
 };
 
 enum PmuBdfType {
@@ -533,6 +545,7 @@ struct PmuDeviceData {
         unsigned clusterId;
         // for perpcie metric
         char *bdf;
+        char *port;
         // for perchannel metric of ddr
         struct {
             unsigned channelId;

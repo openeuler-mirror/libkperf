@@ -84,6 +84,9 @@ namespace KUNPENG_PMU {
         {PmuDeviceMetric::PMU_PCIE_RX_MWR_BW, "PMU_PCIE_RX_MWR_BW"},
         {PmuDeviceMetric::PMU_PCIE_TX_MRD_BW, "PMU_PCIE_TX_MRD_BW"},
         {PmuDeviceMetric::PMU_PCIE_TX_MWR_BW, "PMU_PCIE_TX_MWR_BW"},
+        {PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT, "PMU_PCIE_RX_MRD_LAT"},
+        {PmuDeviceMetric::PMU_PCIE_RX_MWR_LAT, "PMU_PCIE_RX_MWR_LAT"},
+        {PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT, "PMU_PCIE_TX_MRD_LAT"},
         {PmuDeviceMetric::PMU_SMMU_TRAN, "PMU_SMMU_TRAN"},
         {PmuDeviceMetric::PMU_HHA_CROSS_NUMA, "PMU_HHA_CROSS_NUMA"},
         {PmuDeviceMetric::PMU_HHA_CROSS_SOCKET, "PMU_HHA_CROSS_SOCKET"},
@@ -97,6 +100,9 @@ namespace KUNPENG_PMU {
                                                     PMU_PCIE_RX_MWR_BW,
                                                     PMU_PCIE_TX_MRD_BW,
                                                     PMU_PCIE_TX_MWR_BW,
+                                                    PMU_PCIE_RX_MRD_LAT,
+                                                    PMU_PCIE_RX_MWR_LAT,
+                                                    PMU_PCIE_TX_MRD_LAT,
                                                     PMU_SMMU_TRAN};
 
     static bool IsBdfMetric(PmuDeviceMetric metric)
@@ -260,6 +266,42 @@ namespace KUNPENG_PMU {
             }
         };
 
+        PMU_METRIC_PAIR PCIE_RX_MRD_LAT = {
+            PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT,
+            {
+                "hisi_pcie",
+                "core",
+                {"0x0210", "0x10210"},
+                "",
+                "port=",
+                1
+            }
+        };
+
+        PMU_METRIC_PAIR PCIE_RX_MWR_LAT = {
+            PmuDeviceMetric::PMU_PCIE_RX_MWR_LAT,
+            {
+                "hisi_pcie",
+                "core",
+                {"0x0010", "0x10010"},
+                "",
+                "port=",
+                1
+            }
+        };
+
+        PMU_METRIC_PAIR PCIE_TX_MRD_LAT = {
+            PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT,
+            {
+                "hisi_pcie",
+                "core",
+                {"0x0011", "0x10011"},
+                "",
+                "port=",
+                1
+            }
+        };
+
         PMU_METRIC_PAIR SMMU_TRAN = {
             PmuDeviceMetric::PMU_SMMU_TRAN,
             {
@@ -319,6 +361,9 @@ namespace KUNPENG_PMU {
         METRIC_CONFIG::PCIE_RX_MWR_BW,
         METRIC_CONFIG::PCIE_TX_MRD_BW,
         METRIC_CONFIG::PCIE_TX_MWR_BW,
+        METRIC_CONFIG::PCIE_RX_MRD_LAT,
+        METRIC_CONFIG::PCIE_RX_MWR_LAT,
+        METRIC_CONFIG::PCIE_TX_MRD_LAT,
         METRIC_CONFIG::SMMU_TRAN,
         METRIC_CONFIG::HHA_CROSS_NUMA,
         METRIC_CONFIG::HHA_CROSS_SOCKET,
@@ -512,8 +557,8 @@ namespace KUNPENG_PMU {
         }
         auto classifiedDevices = ClassifyDevicesByPrefix(pcieConfig.devicePrefix, pcieConfig.subDeviceName, pcieConfig.splitPosition);
         if (classifiedDevices.empty()) {
-            New(LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING, "No pcie pmu device is not exist in the " + SYS_DEVICES);
-            return LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING;
+            New(LIBPERF_ERR_NOT_SUPPORT_PCIE_COUNTING, "No pcie pmu device is not exist in the " + SYS_DEVICES);
+            return LIBPERF_ERR_NOT_SUPPORT_PCIE_COUNTING;
         }
         for (const auto& device : classifiedDevices) {
             const auto& pcieNuma = device.first;
@@ -521,8 +566,8 @@ namespace KUNPENG_PMU {
             for (auto& pciePmu : pciePmus) {
                 string bdfBusPath = SYS_DEVICES + "/" + pciePmu + "/bus";
                 if (!ExistPath(bdfBusPath)) {
-                    New(LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING, "pcie pmu bus file is empty");
-                    return LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING;
+                    New(LIBPERF_ERR_NOT_SUPPORT_PCIE_COUNTING, "pcie pmu bus file is empty");
+                    return LIBPERF_ERR_NOT_SUPPORT_PCIE_COUNTING;
                 }
                 string bdfMinPath = SYS_DEVICES + "/" + pciePmu + "/bdf_min";
                 string bdfMaxPath = SYS_DEVICES + "/" + pciePmu + "/bdf_max";
@@ -532,8 +577,8 @@ namespace KUNPENG_PMU {
                 try {
                     bus = stoul(bdfBusStr, nullptr, 16);
                 } catch (const std::exception& e) {
-                    New(LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING, "pcie pmu bus file is invalid");
-                    return LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING;
+                    New(LIBPERF_ERR_NOT_SUPPORT_PCIE_COUNTING, "pcie pmu bus file is invalid");
+                    return LIBPERF_ERR_NOT_SUPPORT_PCIE_COUNTING;
                 }
                 if (bus == 0) {
                     continue;
@@ -547,8 +592,8 @@ namespace KUNPENG_PMU {
                 string bdfMinStr = ReadFileContent(bdfMinPath);
                 string bdfMaxStr = ReadFileContent(bdfMaxPath);
                 if (bdfMinStr.empty() || bdfMaxStr.empty()) {
-                    New(LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING, "pcie pmu bdfMin or bdfMax file is empty");
-                    return LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING;
+                    New(LIBPERF_ERR_NOT_SUPPORT_PCIE_COUNTING, "pcie pmu bdfMin or bdfMax file is empty");
+                    return LIBPERF_ERR_NOT_SUPPORT_PCIE_COUNTING;
                 }
                 int bdfMin = 0;
                 int bdfMax = 0;
@@ -556,8 +601,8 @@ namespace KUNPENG_PMU {
                     bdfMin = stoul(bdfMinStr, nullptr, 16);
                     bdfMax = stoul(bdfMaxStr, nullptr, 16);
                 } catch (const std::exception& e) {
-                    New(LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING, "pcie pmu bdfMin or bdfMax file is invalid");
-                    return LIBPERF_ERR_NOT_SOUUPUT_PCIE_COUNTING;
+                    New(LIBPERF_ERR_NOT_SUPPORT_PCIE_COUNTING, "pcie pmu bdfMin or bdfMax file is invalid");
+                    return LIBPERF_ERR_NOT_SUPPORT_PCIE_COUNTING;
                 }
                 pciePmuBdfRang[pciePmu] = std::make_tuple(bdfBusStr.substr(strlen("0x")), bdfMin, bdfMax);
             }
@@ -708,8 +753,8 @@ namespace KUNPENG_PMU {
     {
         auto it = bdfToSmmuPmuMap.find(bdf);
         if (it == bdfToSmmuPmuMap.end()) {
-            New(LIBPERF_ERR_NOT_SOUUPUT_SMMU_BDF, "BDF Value " + bdf + " not found in any SMMU Directory.");
-            return LIBPERF_ERR_NOT_SOUUPUT_SMMU_BDF;
+            New(LIBPERF_ERR_NOT_SUPPORT_SMMU_BDF, "BDF Value " + bdf + " not found in any SMMU Directory.");
+            return LIBPERF_ERR_NOT_SUPPORT_SMMU_BDF;
         }
         smmuPmuName = it->second;
         New(SUCCESS);
@@ -720,8 +765,8 @@ namespace KUNPENG_PMU {
     {
         auto bdfIt = bdfToPcieMap.find(bdf);
         if (bdfIt == bdfToPcieMap.end()) {
-            New(LIBPERF_ERR_NOT_SOUUPUT_PCIE_BDF, "bdf value " + bdf + " is not managed by any PCIe Device.");
-            return LIBPERF_ERR_NOT_SOUUPUT_PCIE_BDF;
+            New(LIBPERF_ERR_NOT_SUPPORT_PCIE_BDF, "bdf value " + bdf + " is not managed by any PCIe Device.");
+            return LIBPERF_ERR_NOT_SUPPORT_PCIE_BDF;
         }
         pciePmuName = bdfIt->second;
         New(SUCCESS);
@@ -733,15 +778,24 @@ namespace KUNPENG_PMU {
     {
         vector<string> eventList;
         if (IsBdfMetric(deviceAttr.metric)) {
-            string bdf = deviceAttr.bdf;
+            string bdf;
+            string port;
             for (const auto& evt : metricConfig.events) {
                 string device = "";
                 if (metricConfig.bdfParameter == "bdf=") {
+                    bdf = deviceAttr.bdf;
                     int err = FindPcieDeviceByBdf(bdf, device);
                     if (err != SUCCESS) {
                         return {};
                     }
-                } else {
+                } else if (metricConfig.bdfParameter == "port=") {
+                    port = deviceAttr.port;
+                    int err = FindPcieDeviceByBdf(port, device);
+                    if (err != SUCCESS) {
+                        return {};
+                    }
+                } else if (metricConfig.bdfParameter == "filter_stream_id=") {
+                    bdf = deviceAttr.bdf;
                     int err = FindSmmuDeviceByBdf(bdf, device);
                     if (err != SUCCESS) {
                         return {};
@@ -751,12 +805,16 @@ namespace KUNPENG_PMU {
                 if (!metricConfig.extraConfig.empty()) {
                     eventString += "," + metricConfig.extraConfig;
                 }
-                if (!metricConfig.bdfParameter.empty() && !bdf.empty()) {
-                    stringstream bdfValue;
+                if (!metricConfig.bdfParameter.empty()) {
+                    stringstream paramValue;
                     uint16_t userBdf = 0;
-                    ConvertBdfStringToValue(bdf, userBdf);
-                    bdfValue << "0x" << hex << userBdf;
-                    eventString += "," + metricConfig.bdfParameter + bdfValue.str();
+                    if (!bdf.empty()) {
+                        ConvertBdfStringToValue(bdf, userBdf);
+                    } else {
+                        ConvertBdfStringToValue(port, userBdf);
+                    }
+                    paramValue << "0x" << hex << userBdf;
+                    eventString += "," + metricConfig.bdfParameter + paramValue.str();
                 }
                 eventString += "/";
                 eventList.push_back(eventString);
@@ -840,20 +898,37 @@ namespace KUNPENG_PMU {
 
     static int CheckBdf(struct PmuDeviceAttr& deviceAttr)
     {
-        if (IsBdfMetric(deviceAttr.metric) && deviceAttr.bdf == nullptr) {
-            New(LIBPERF_ERR_INVALID_PMU_DEVICES_BDF, "When collecting pcie or smmu metric, bdf value can not is nullptr!");
-            return LIBPERF_ERR_INVALID_PMU_DEVICES_BDF;
+        if (deviceAttr.metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_BW && deviceAttr.metric <= PmuDeviceMetric::PMU_PCIE_TX_MWR_BW) {
+            if (deviceAttr.bdf == nullptr) {
+                New(LIBPERF_ERR_INVALID_PMU_DEVICES_BDF, "When collecting pcie bandwidth, bdf value can not be nullptr!");
+                return LIBPERF_ERR_INVALID_PMU_DEVICES_BDF;
+            }
+            if (!CheckPcieBdf(deviceAttr.bdf)) {
+                New(LIBPERF_ERR_NOT_SUPPORT_PCIE_BDF, "this bdf not support pcie metric counting."
+                    " Please use PmuDeviceBdfList to query.");
+                return LIBPERF_ERR_NOT_SUPPORT_PCIE_BDF;
+            }
         }
-        if (deviceAttr.metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_BW && deviceAttr.metric <= PmuDeviceMetric::PMU_PCIE_TX_MWR_BW
-            && !CheckPcieBdf(deviceAttr.bdf)) {
-            New(LIBPERF_ERR_NOT_SOUUPUT_PCIE_BDF, "this bdf not support pcie metric counting."
+        if (deviceAttr.metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT && deviceAttr.metric <= PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT) {
+            if (deviceAttr.port == nullptr) {
+                New(LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT, "When collect pcie latency, the port can not be nullptr!");
+                return LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT;
+            }
+            if (!CheckPcieBdf(deviceAttr.port)) {
+                New(LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT, "the port not support pcie metric counting. ");
+                return LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT;
+            }
+        }
+        if (deviceAttr.metric == PmuDeviceMetric::PMU_SMMU_TRAN) {
+            if (deviceAttr.bdf == nullptr) {
+                New(LIBPERF_ERR_INVALID_PMU_DEVICES_BDF, "When collecting smmu metric, bdf value can not be nullptr!");
+                return LIBPERF_ERR_INVALID_PMU_DEVICES_BDF;
+            }
+            if (!CheckSmmuBdf(deviceAttr.bdf)) {
+                New(LIBPERF_ERR_NOT_SUPPORT_SMMU_BDF, "this bdf not support smmu metric counting."
                 " Please use PmuDeviceBdfList to query.");
-            return LIBPERF_ERR_NOT_SOUUPUT_PCIE_BDF;
-        }
-        if (deviceAttr.metric == PmuDeviceMetric::PMU_SMMU_TRAN && !CheckSmmuBdf(deviceAttr.bdf)) {
-            New(LIBPERF_ERR_NOT_SOUUPUT_SMMU_BDF, "this bdf not support smmu metric counting."
-            " Please use PmuDeviceBdfList to query.");
-            return LIBPERF_ERR_NOT_SOUUPUT_SMMU_BDF;
+                return LIBPERF_ERR_NOT_SUPPORT_SMMU_BDF;
+            }
         }
         New(SUCCESS);
         return SUCCESS;
@@ -890,7 +965,11 @@ namespace KUNPENG_PMU {
         for (int i = 0; i < len; ++i) {
             std::string key = "";
             if (IsBdfMetric(attr[i].metric)) {
-                key = std::to_string(attr[i].metric) + "_" + attr[i].bdf;
+                if (attr[i].bdf != nullptr) {
+                    key = std::to_string(attr[i].metric) + "_" + attr[i].bdf;
+                } else {
+                    key = std::to_string(attr[i].metric) + "_" + attr[i].port;
+                }
             } else {
                 key = std::to_string(attr[i].metric);
             }
@@ -912,6 +991,7 @@ namespace KUNPENG_PMU {
             unsigned numaId;
             unsigned clusterId;
             char *bdf;
+            char *port;
             struct {
                 unsigned channelId;
                 unsigned ddrNumaId;
@@ -987,6 +1067,9 @@ namespace KUNPENG_PMU {
             case PMU_PCIE_RX_MWR_BW:
             case PMU_PCIE_TX_MRD_BW:
             case PMU_PCIE_TX_MWR_BW:
+            case PMU_PCIE_RX_MWR_LAT:
+            case PMU_PCIE_RX_MRD_LAT:
+            case PMU_PCIE_TX_MRD_LAT:
             case PMU_SMMU_TRAN:
                 return PMU_METRIC_BDF;
             case PMU_HHA_CROSS_NUMA:
@@ -1241,7 +1324,7 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    int PcieBWAggregate(const PmuDeviceMetric metric, const vector<InnerDeviceData> &rawData, vector<PmuDeviceData> &devData)
+    int PcieAggregate(const PmuDeviceMetric metric, const vector<InnerDeviceData> &rawData, vector<PmuDeviceData> &devData)
     {
         const auto& deviceConfig = GetDeviceMtricConfig();
         const auto& findConfig = deviceConfig.find(metric);
@@ -1276,16 +1359,21 @@ namespace KUNPENG_PMU {
             if (findLenData == data.second.end() || findLatData == data.second.end()) {
                 continue;
             }
-            // Compute bandwidth: (packet length)/(latency)
-            double bw = 0.0;
+
+            double value = 0.0;
             if (findLatData->second.count != 0) {
-                bw = (double)(4 * findLenData->second.count) / findLatData->second.count;
+                // Compute average latency: (total latency) / (total sum), unit: ns
+                value = (double)(findLenData->second.count) / findLatData->second.count;
+                if (metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_BW && metric <= PmuDeviceMetric::PMU_PCIE_TX_MWR_BW) {
+                    // Compute bandwidth: (packet length) * 4 / (latency), unit: Bytes/us
+                    value *= 4;
+                }
             } else {
-                bw = -1;
+                value = -1;
             }
             PmuDeviceData outData;
             outData.metric = metric;
-            outData.count = bw;
+            outData.count = value;
             outData.mode = GetMetricMode(metric);
             outData.bdf = findLenData->second.bdf;
             devData.push_back(outData);
@@ -1323,14 +1411,18 @@ namespace KUNPENG_PMU {
                                                                 {PMU_DDR_WRITE_BW, DDRBw},
                                                                 {PMU_L3_TRAFFIC, L3Bw},
                                                                 {PMU_L3_LAT, L3Lat}};
+
     map<PmuDeviceMetric, AggregateMetricCb> aggregateMap = {
         {PMU_DDR_READ_BW, AggregateByChannel},
         {PMU_DDR_WRITE_BW, AggregateByChannel},
         {PMU_L3_LAT, AggregateByCluster},
-        {PMU_PCIE_RX_MRD_BW, PcieBWAggregate},
-        {PMU_PCIE_RX_MWR_BW, PcieBWAggregate},
-        {PMU_PCIE_TX_MRD_BW, PcieBWAggregate},
-        {PMU_PCIE_TX_MWR_BW, PcieBWAggregate},
+        {PMU_PCIE_RX_MRD_BW, PcieAggregate},
+        {PMU_PCIE_RX_MWR_BW, PcieAggregate},
+        {PMU_PCIE_TX_MRD_BW, PcieAggregate},
+        {PMU_PCIE_TX_MWR_BW, PcieAggregate},
+        {PMU_PCIE_RX_MRD_LAT, PcieAggregate},
+        {PMU_PCIE_RX_MWR_LAT, PcieAggregate},
+        {PMU_PCIE_TX_MRD_LAT, PcieAggregate},
         {PMU_SMMU_TRAN, SmmuTransAggregate},
         {PMU_HHA_CROSS_NUMA, AggregateByNuma},
         {PMU_HHA_CROSS_SOCKET, AggregateByNuma},
@@ -1362,13 +1454,21 @@ namespace KUNPENG_PMU {
         if (IsBdfMetric(devAttr.metric)) {
             auto bdfStr = ExtractEvtStr("bdf", evtName);
             if (bdfStr.empty()) {
+                bdfStr = ExtractEvtStr("port", evtName);
+            }
+            if (bdfStr.empty()) {
                 bdfStr = ExtractEvtStr("filter_stream_id", evtName);
             }
             if (bdfStr.empty()) {
                 return false;
             }
             uint16_t expectBdf;
-            int ret = ConvertBdfStringToValue(devAttr.bdf, expectBdf);
+            int ret;
+            if (devAttr.bdf != nullptr) {
+                ret = ConvertBdfStringToValue(devAttr.bdf, expectBdf);
+            } else {
+                ret = ConvertBdfStringToValue(devAttr.port, expectBdf);
+            }
             if (ret != SUCCESS) {
                 return false;
             }
@@ -1441,7 +1541,11 @@ namespace KUNPENG_PMU {
                 devData.socketId = pmuData[i].cpuTopo->socketId;
             }
             if (IsBdfMetric(devAttr.metric)) {
-                devData.bdf = devAttr.bdf;
+                if (devAttr.bdf != nullptr) {
+                    devData.bdf = devAttr.bdf;
+                } else {
+                    devData.port = devAttr.port;
+                }
             }
             devDataList.emplace_back(devData);
         }
