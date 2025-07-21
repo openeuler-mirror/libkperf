@@ -32,10 +32,14 @@
 #define MB() asm volatile("mfence":::"memory")
 #define RMB() asm volatile("lfence":::"memory")
 #define WMB() asm volatile("sfence":::"memory")
-#else
+#elif defined(IS_ARM)
 #define MB() asm volatile("dsb sy")
 #define RMB() asm volatile("dsb ld")
 #define WMB() asm volatile("dsb st")
+#elif defined(IS_RISCV64)
+#define MB()  asm volatile("fence rw, rw" ::: "memory")
+#define RMB() asm volatile("fence r, r" ::: "memory")
+#define WMB() asm volatile("fence w, w" ::: "memory")
 #endif
 
 #define EVENT_EXCEPTION_GEN 0x1

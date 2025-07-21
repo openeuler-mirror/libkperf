@@ -22,10 +22,12 @@
 
 #ifdef __x86_64__
 #define IS_X86 1
-#elif  defined(__aarch64__)
+#elif defined(__aarch64__)
 #define IS_ARM 1
+#elif defined(__riscv) && (__riscv_xlen == 64)
+#define IS_RISCV64 1
 #else
-#error "Only the x86_64 and aarch64 architecture are supported."
+#error "Only the x86_64, aarch64, and riscv64 architectures are supported."
 #endif
 
 #define CGROUP2_SUPER_MAGIC 0x63677270
