@@ -219,6 +219,8 @@ def main():
         try:
             pid = int(sys.argv[4])
         except ValueError:
+            if not os.path.exists(sys.argv[4]):
+                raise ValueError("process name not a exec file.")
             pid = start_proc(sys.argv[4])
             need_kill = True
 

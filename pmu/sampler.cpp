@@ -54,7 +54,10 @@ int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupEnable, const int grou
     attr.freq = this->evt->useFreq;
     attr.sample_period = this->evt->period;
     attr.read_format = PERF_FORMAT_ID;
-    attr.exclude_kernel = this->evt->excludeKernel;
+    /**
+     * if no permission try setting exclude_kernel=1.
+     */
+    attr.exclude_kernel = this->needTryExcludeKernel ? 1 : this->evt->excludeKernel;
     attr.exclude_user = this->evt->excludeUser;
 #ifdef IS_X86
     if (this->pid == -1) {

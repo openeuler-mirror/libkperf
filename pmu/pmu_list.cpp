@@ -912,10 +912,6 @@ namespace KUNPENG_PMU {
                 return LIBPERF_ERR_DEVICE_BUSY;
             }
             struct CpuTopology* cpuTopo = GetCpuTopology(pmuTaskAttrHead->cpuList[i]);
-            if (cpuTopo == nullptr) {
-                New(LIBPERF_ERR_FAIL_GET_CPU);
-                return LIBPERF_ERR_FAIL_GET_CPU;
-            }
             if (pmuTaskAttrHead->pmuEvt->collectType == SPE_SAMPLING) {
                 AddSpeCpu(pd, pmuTaskAttrHead->cpuList[i]);
             }

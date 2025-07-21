@@ -32,6 +32,7 @@
 
 const std::string TRACE_EVENT_PATH = "/sys/kernel/tracing/events/";
 const std::string TRACE_DEBUG_EVENT_PATH = "/sys/kernel/debug/tracing/events/";
+const std::string PERF_EVENT_PARANOID_PATH = "/proc/sys/kernel/perf_event_paranoid";
 
 inline bool IsValidIp(unsigned long ip)
 {
@@ -51,5 +52,7 @@ bool ExistPath(const std::string& filePath);
 std::string GetTraceEventDir();
 bool StartWith(const std::string& str, const std::string& prefix);
 int CheckCgroupV2();
+bool ConvertStrToInt(const std::string& intValStr, int32_t& val);
+int GetParanoidVal();
 
 #endif  // LIBKPROF_COMMON_H

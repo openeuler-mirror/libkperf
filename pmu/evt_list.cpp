@@ -89,13 +89,11 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
             }
             perfEvt->SetSymbolMode(symMode);
             perfEvt->SetBranchSampleFilter(branchSampleFilter);
-            int err = 0;
-            if (groupEnable) {
-                // If evtLeader is nullptr, I am the leader.
-                auto groupFd = evtLeader?evtLeader->xyCounterArray[row][col]->GetFd():-1;
+            int groupFd = groupEnable && evtLeader ? evtLeader->xyCounterArray[row][col]->GetFd():-1;
+            int err = perfEvt->Init(groupEnable, groupFd, resetOutPutFd);
+            if (err == LIBPERF_ERR_NO_PERMISSION && !this->pmuEvt->excludeKernel && !this->pmuEvt->excludeUser && GetParanoidVal() > 1) {
+                perfEvt->SetNeedTryExcludeKernel(true);
                 err = perfEvt->Init(groupEnable, groupFd, resetOutPutFd);
-            } else {
-                err = perfEvt->Init(groupEnable, -1, resetOutPutFd);
             }
             if (err != SUCCESS) {
                 hasHappenedErr = true;
