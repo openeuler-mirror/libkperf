@@ -148,6 +148,11 @@ static Param ParseArgs(int argc, char** argv)
     if (param.events.empty()) {
         param.events.push_back("cycles");
     }
+    
+    if (!param.pidList.empty() && !param.command.empty()) {
+        cerr << "cannot use -p and command line in the same time\n";
+        exit(0);
+    }
 
     return param;
 }

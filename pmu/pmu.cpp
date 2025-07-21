@@ -216,6 +216,10 @@ static int CheckCollectTypeConfig(enum PmuTaskType collectType, struct PmuAttr *
         return LIBPERF_ERR_INVALID_BLOCKED_SAMPLE;
     }
     if (collectType == SAMPLING) {
+        if (attr->freq == 0) {
+            New(LIBPERF_ERR_INVALID_EVTLIST, "Invalid frequency or period in PmuAttr.");
+            return LIBPERF_ERR_INVALID_EVTLIST;
+        }
         if (attr->blockedSample == 0 && attr->evtList == nullptr) {
             New(LIBPERF_ERR_INVALID_EVTLIST, "In sampling mode without blocked sample, the event list cannot be null.");
             return LIBPERF_ERR_INVALID_EVTLIST;
