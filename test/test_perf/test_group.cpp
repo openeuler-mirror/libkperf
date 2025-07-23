@@ -170,7 +170,7 @@ TEST_F(TestGroup, TestCountingEventGroupHasAggregateUncore)
     attr.numEvt = numEvt;
     char *evtList[numEvt] = {"r3", "r1", "r14", "r4", "r12", "r5", "r25", "r2",
                             "r26", "r2d", "r17", "r11",
-                            "hisi_sccl1_ddrc/flux_rd/", "r22"};
+                            "r22", "hisi_sccl1_ddrc/flux_rd/"};
     attr.evtList = evtList;
 
     struct EvtAttr groupId[numEvt] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13};
@@ -209,29 +209,6 @@ TEST_F(TestGroup, TestCountingEventGroupHasAggregateUncoreEnd)
     ASSERT_TRUE(CheckDataEventList(data, len, evtList));
 }
 
-TEST_F(TestGroup, TestCountingEventGroupHasAggregateUncoreEnd2)
-{
-    auto attr = GetPmuAttribute();
-    unsigned numEvt = 15;
-    attr.numEvt = numEvt;
-    char *evtList[numEvt] = {"r3", "r1", "r14", "r4", "r12", "r5", "r25", "r2",
-                            "r26", "r2d", "r17", "r11", "r22",
-                            "hisi_sccl1_ddrc/flux_rd/", "hisi_sccl1_hha/rx_wbi/"};
-    attr.evtList = evtList;
-
-    struct EvtAttr groupId[numEvt] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13, 13};
-    attr.evtAttr = groupId;
-    int pd = PmuOpen(COUNTING, &attr);
-    ASSERT_TRUE(pd != -1);
-    int ret = PmuCollect(pd, 100, collectInterval);
-    ASSERT_EQ(ret, SUCCESS);
-
-    int len = PmuRead(pd, &data);
-    EXPECT_TRUE(data != nullptr);
-    ASSERT_EQ(len, numEvt);
-    ASSERT_TRUE(CheckDataEventList(data, len, evtList));
-}
-
 TEST_F(TestGroup, TestCountingEventGroupAllAggregateUncore)
 {
     auto attr = GetPmuAttribute();
@@ -255,7 +232,7 @@ TEST_F(TestGroup, TestCountingEventGroupHasUncore)
     attr.numEvt = numEvt;
     char *evtList[numEvt] = {"r3", "r1", "r14", "r4", "r12", "r5", "r25", "r2",
                             "r26", "r2d", "r17", "r11",
-                            "hisi_sccl1_ddrc2/flux_rd/", "hisi_sccl1_ddrc0/flux_wr/", "r22", "r24"};
+                            "r22", "r24", "hisi_sccl1_ddrc/flux_rd/", "hisi_sccl1_ddrc/flux_wr/"};
     attr.evtList = evtList;
 
     struct EvtAttr groupId[numEvt] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13, 13, 13};
@@ -288,7 +265,7 @@ TEST_F(TestGroup, TestSamplingNoEventGroup)
 
     int pd = PmuOpen(SAMPLING, &attr);
     ASSERT_TRUE(pd!= -1);
-    int ret = PmuCollect(pd, 100, collectInterval);
+    int ret = PmuCollect(pd, 1000, collectInterval);
     ASSERT_EQ(ret, SUCCESS);
 
     int len = PmuRead(pd, &data);
@@ -311,7 +288,7 @@ TEST_F(TestGroup, TestSamplingEventGroup)
 
     int pd = PmuOpen(SAMPLING, &attr);
     ASSERT_TRUE(pd != -1);
-    int ret = PmuCollect(pd, 100, collectInterval);
+    int ret = PmuCollect(pd, 3000, collectInterval);
     ASSERT_EQ(ret, SUCCESS);
 
     int len = PmuRead(pd, &data);

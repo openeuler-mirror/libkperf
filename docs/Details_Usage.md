@@ -405,6 +405,11 @@ libkperf支持uncore事件的采集，只有Counting模式支持uncore事件的�
 可以像这样设置PmuAttr：
 ```c++
 // c++代码示例
+#include <iostream>
+#include "symbol.h"
+#include "pmu.h"
+#include "pcerrc.h"
+
 char *evtList[1];
 evtList[0] = "hisi_sccl1_ddrc0/flux_rd/";
 PmuAttr attr = {0};
@@ -669,6 +674,13 @@ perf stat -e "{inst_retired,inst_spec,cycles}","{inst_retired,cycles}"
 ```
 用libkperf可以这样实现：
 ```c++
+#include <iostream>
+#include <map>
+#include <cstdint>
+#include "symbol.h"
+#include "pmu.h"
+#include "pcerrc.h"
+
 // 指定5个事件，因为inst_retired和cycles会重复出现在多个指标中，所以需要重复指定事件。
 char *evtList[5] = {"inst_retired", "inst_spec", "cycles", "inst_retired", "cycles"};
 // 指定事件分组编号，前三个事件为一组，后两个事件为一组。
@@ -684,7 +696,7 @@ PmuDisable(pd);
 PmuData *data = nullptr;
 int len = PmuRead(pd, &data);
 // 根据分组来聚合数据
-map<int, map<string, uint64_t>> evtMap;
+std::map<int, std::map<std::string, uint64_t>> evtMap;
 for (int i=0;i<len;++i) {
     evtMap[data[i].groupId][data[i].evt] += data[i].count;
 }

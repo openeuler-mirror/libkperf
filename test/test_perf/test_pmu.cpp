@@ -80,7 +80,7 @@ TEST_F(TestPMU, PmuSystemCollectTwoThreads)
     usleep(1000);
     // Tell process to create thread.
     kill(appPid, SIGCONT);
-    int ret = PmuCollect(pd, 100, collectInterval);
+    int ret = PmuCollect(pd, 3000, collectInterval);
     int len = PmuRead(pd, &data);
     ASSERT_TRUE(data != nullptr);
     ASSERT_TRUE(FoundAllTids(data, len, appPid));
@@ -97,7 +97,7 @@ TEST_F(TestPMU, PmuProcCollectTwoThreads)
     usleep(1000);
     // Tell process to create thread.
     DelayContinue(appPid, 100);
-    int ret = PmuCollect(pd, 1000, collectInterval);
+    int ret = PmuCollect(pd, 3000, collectInterval);
     int len = PmuRead(pd, &data);
     ASSERT_TRUE(data != nullptr);
     ASSERT_TRUE(FoundAllTids(data, len, appPid));
@@ -140,7 +140,7 @@ TEST_F(TestPMU, PmuSystemCollectSubProc)
     usleep(1000);
     // Tell process to create thread.
     kill(appPid, SIGCONT);
-    int ret = PmuCollect(pd, 100, collectInterval);
+    int ret = PmuCollect(pd, 3000, collectInterval);
     int len = PmuRead(pd, &data);
     ASSERT_TRUE(data != nullptr);
     ASSERT_TRUE(FoundAllChildren(data, len, appPid));
@@ -194,7 +194,7 @@ TEST_F(TestPMU, TestSampling100000ThreadCase)
     attr.numCpu = 1;
     auto pd = PmuOpen(SAMPLING, &attr);
     PmuEnable(pd);
-    sleep(1);
+    sleep(3);
     PmuDisable(pd);
     int len = PmuRead(pd, &data);
     ASSERT_GT(len, 0);

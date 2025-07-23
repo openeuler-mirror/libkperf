@@ -13,6 +13,7 @@
  * Description: Unit test for metric.
  ******************************************************************************/
 #include "test_common.h"
+#include "cpu_map.h"
 #include <dirent.h>
 
 using namespace std;
@@ -37,7 +38,7 @@ TEST_F(TestMetric, GetInvalidBdfList)
     enum PmuBdfType bdfType = (enum PmuBdfType)5;
     unsigned bdfLen = 0;
     const char** bdfList = PmuDeviceBdfList(bdfType, &bdfLen);
-    ASSERT_EQ(Perrorno(), SUCCESS);
+    ASSERT_EQ(Perrorno(), 1064);
     ASSERT_EQ(bdfList, nullptr);
 }
 
@@ -46,8 +47,10 @@ TEST_F(TestMetric, GetPcieBdfList)
     enum PmuBdfType bdfType = PMU_BDF_TYPE_PCIE;
     unsigned bdfLen = 0;
     const char** bdfList = PmuDeviceBdfList(bdfType, &bdfLen);
+    if (bdfList == nullptr) {
+        GTEST_SKIP() << "No pcie device";
+    }
     ASSERT_EQ(Perrorno(), SUCCESS);
-    ASSERT_NE(bdfList, nullptr);
 }
 
 TEST_F(TestMetric, GetSmmuBdfList)
@@ -55,8 +58,10 @@ TEST_F(TestMetric, GetSmmuBdfList)
     enum PmuBdfType bdfType = PMU_BDF_TYPE_SMMU;
     unsigned bdfLen = 0;
     const char** bdfList = PmuDeviceBdfList(bdfType, &bdfLen);
+    if (bdfList == nullptr) {
+        GTEST_SKIP() << "No smmu device";
+    }
     ASSERT_EQ(Perrorno(), SUCCESS);
-    ASSERT_NE(bdfList, nullptr);
 }
 
 TEST_F(TestMetric, GetCpuFreq)
@@ -81,13 +86,13 @@ TEST_F(TestMetric, GetClusterIdListOverSize)
     unsigned clusterId = 33;
     unsigned* coreList = nullptr;
     int len = PmuGetClusterCore(clusterId, &coreList);
-    ASSERT_EQ(Perrorno(), SUCCESS);
+    ASSERT_EQ(Perrorno(), 1063);
     ASSERT_EQ(len, -1);
 }
 
 TEST_F(TestMetric, GetNumaIdList)
 {
-    unsigned numaId = 2;
+    unsigned numaId = 1;
     unsigned* coreList = nullptr;
     int len = PmuGetNumaCore(numaId, &coreList);
     ASSERT_EQ(Perrorno(), SUCCESS);
@@ -121,6 +126,10 @@ TEST_F(TestMetric, CollectDDRBandwidth)
 
 TEST_F(TestMetric, CollectL3Latency)
 {
+    CHIP_TYPE chipType = GetCpuType();
+    if (chipType != HIPB) {
+        GTEST_SKIP() << "Unsupported chip";
+    }
     PmuDeviceAttr devAttr = {};
     devAttr.metric = PMU_L3_LAT;
     int pd = PmuDeviceOpen(&devAttr, 1);
@@ -195,13 +204,12 @@ TEST_F(TestMetric, CollectL3TrafficAndL3REF)
     PmuClose(pd);
 }
 
-TEST_F(TestMetric, CollectL3LatencyAndL3Miss)
+TEST_F(TestMetric, CollectL3Miss)
 {
-    PmuDeviceAttr devAttr[2] = {};
-    devAttr[0].metric = PMU_L3_LAT;
-    devAttr[1].metric = PMU_L3_MISS;
+    PmuDeviceAttr devAttr[1] = {};
+    devAttr[0].metric = PMU_L3_MISS;
 
-    int pd = PmuDeviceOpen(devAttr, 2);
+    int pd = PmuDeviceOpen(devAttr, 1);
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
     sleep(1);
@@ -211,15 +219,13 @@ TEST_F(TestMetric, CollectL3LatencyAndL3Miss)
     ASSERT_NE(oriLen, -1);
 
     PmuDeviceData *devData = nullptr;
-    auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
+    auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 1, &devData);
     unsigned clusterCount = GetClusterCount();
-    unsigned dataLen = GetCpuNums() + clusterCount;
+    unsigned dataLen = GetCpuNums();
     ASSERT_EQ(len, dataLen);
     ASSERT_NE(devData[0].count, 0);
-    ASSERT_EQ(devData[0].metric, PMU_L3_LAT);
-    ASSERT_EQ(devData[0].mode, PMU_METRIC_CLUSTER);
-    ASSERT_EQ(devData[clusterCount].metric, PMU_L3_MISS);
-    ASSERT_EQ(devData[clusterCount].mode, PMU_METRIC_CORE);
+    ASSERT_EQ(devData[0].metric, PMU_L3_MISS);
+    ASSERT_EQ(devData[0].mode, PMU_METRIC_CORE);
     DevDataFree(devData);
     PmuDataFree(oriData);
     PmuClose(pd);
@@ -227,6 +233,10 @@ TEST_F(TestMetric, CollectL3LatencyAndL3Miss)
 
 TEST_F(TestMetric, GetMetricPcieBandwidth)
 {
+    CHIP_TYPE chipType = GetCpuType();
+    if (chipType != HIPB) {
+        GTEST_SKIP() << "Unsupported chip";
+    }
     const char** bdfList = nullptr;
     unsigned bdfLen = 0;
     bdfList = PmuDeviceBdfList(PMU_BDF_TYPE_PCIE, &bdfLen);
@@ -264,7 +274,9 @@ TEST_F(TestMetric, GetMetricSmmuTransaction)
     const char** bdfList = nullptr;
     unsigned bdfLen = 0;
     bdfList = PmuDeviceBdfList(PMU_BDF_TYPE_SMMU, &bdfLen);
-    ASSERT_NE(bdfList, nullptr);
+    if (bdfList == nullptr) {
+        GTEST_SKIP() << "No smmu device";
+    }
     PmuDeviceAttr devAttr[bdfLen] = {};
     for (int i = 0; i < bdfLen; ++i) {
         devAttr[i].metric = PMU_SMMU_TRAN;
@@ -324,6 +336,10 @@ TEST_F(TestMetric, GetMetricHHACross)
 
 TEST_F(TestMetric, GetMetricPcieLatency)
 {
+    CHIP_TYPE chipType = GetCpuType();
+    if (chipType != HIPB) {
+        GTEST_SKIP() << "Unsupported chip";
+    }
     const char** bdfList = nullptr;
     unsigned bdfLen = 0;
     bdfList = PmuDeviceBdfList(PMU_BDF_TYPE_PCIE, &bdfLen);

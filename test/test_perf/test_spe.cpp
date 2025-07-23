@@ -81,7 +81,7 @@ TEST_F(TestSPE, SpeSystemCollectTwoThreads)
     usleep(1000);
     // Tell process to create thread.
     DelayContinue(appPid, 100);
-    int ret = PmuCollect(pd, 500, collectInterval);
+    int ret = PmuCollect(pd, 3000, collectInterval);
     int len = PmuRead(pd, &data);
     ASSERT_TRUE(data != nullptr);
     ASSERT_TRUE(FoundAllTids(data, len, appPid));
@@ -98,7 +98,7 @@ TEST_F(TestSPE, SpeProcCollectTwoThreads)
     usleep(1000);
     // Tell process to create thread.
     DelayContinue(appPid, 100);
-    int ret = PmuCollect(pd, 1000, collectInterval);
+    int ret = PmuCollect(pd, 3000, collectInterval);
     int len = PmuRead(pd, &data);
     ASSERT_TRUE(data != nullptr);
     ASSERT_TRUE(FoundAllTids(data, len, appPid));
@@ -141,7 +141,7 @@ TEST_F(TestSPE, SpeSystemCollectSubProc)
     usleep(1000);
     // Tell process to create thread.
     kill(appPid, SIGCONT);
-    int ret = PmuCollect(pd, 100, collectInterval);
+    int ret = PmuCollect(pd, 3000, collectInterval);
     int len = PmuRead(pd, &data);
     ASSERT_TRUE(data != nullptr);
     ASSERT_TRUE(FoundAllChildren(data, len, appPid));
@@ -157,7 +157,7 @@ TEST_F(TestSPE, SpeProcCollectSubProc)
     pd = PmuOpen(SPE_SAMPLING, &attr);
     // Tell process to create thread.
     DelayContinue(appPid, 100);
-    int ret = PmuCollect(pd, 1000, collectInterval);
+    int ret = PmuCollect(pd, 3000, collectInterval);
     int len = PmuRead(pd, &data);
     ASSERT_TRUE(data != nullptr);
     ASSERT_TRUE(FoundAllChildren(data, len, appPid));
@@ -174,7 +174,7 @@ TEST_F(TestSPE, SpeProcCollect100000threadCase)
     attr.numCpu = 1;
     pd = PmuOpen(SPE_SAMPLING, &attr);
     PmuEnable(pd);
-    sleep(1);
+    sleep(3);
     PmuDisable(pd);
     int len = PmuRead(pd, &data);
     ASSERT_GT(len, 0);

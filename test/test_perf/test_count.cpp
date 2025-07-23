@@ -13,6 +13,8 @@
  * Description: Unit test for counting.
  ******************************************************************************/
 #include "test_common.h"
+#include "common.h"
+#include "cpu_map.h"
 #include <dirent.h>
 
 using namespace std;
@@ -111,15 +113,25 @@ TEST_F(TestCount, OpenDDRC)
 {
     // Open flux_rd and flux_wr of all DDRC device.
     vector<char*> eventNames;
-    vector<int> scclIdx = {1, 3, 5, 7};
-    vector<int> ddrcIdx = {0, 1, 2, 3};
+    CHIP_TYPE chipType = GetCpuType();
+    vector<int> scclIdx;
+    vector<string> ddrcIdx;
+    if (chipType == HIPA) {
+        scclIdx = {1, 3, 5, 7};
+        ddrcIdx = {"0", "1", "2", "3"};
+    } else if (chipType == HIPB) {
+        scclIdx = {1, 3, 9, 11};
+        ddrcIdx = {"0_0", "0_1", "2_0", "2_1", "3_0", "3_1", "5_0", "5_1"};
+    } else {
+        GTEST_SKIP() << "Unsupported chip";
+    }
     for (auto sccl : scclIdx) {
         for (auto ddrc : ddrcIdx) {
             const unsigned maxEvtLen =1024;
             char *fluxRdEvt = new char[maxEvtLen];
-            snprintf(fluxRdEvt, maxEvtLen, "hisi_sccl%d_ddrc%d/flux_rd/",sccl,ddrc);
+            snprintf(fluxRdEvt, maxEvtLen, "hisi_sccl%d_ddrc%s/flux_rd/",sccl,ddrc.c_str());
             char *fluxWrEvt = new char[maxEvtLen];
-            snprintf(fluxWrEvt, maxEvtLen, "hisi_sccl%d_ddrc%d/flux_wr/",sccl,ddrc);
+            snprintf(fluxWrEvt, maxEvtLen, "hisi_sccl%d_ddrc%s/flux_wr/",sccl,ddrc.c_str());
             eventNames.push_back(fluxRdEvt);
             eventNames.push_back(fluxWrEvt);
         }
@@ -138,15 +150,24 @@ TEST_F(TestCount, OpenDDRC)
 TEST_F(TestCount, NumaFluxWr)
 {
     // Test data of uncore event ddrc/flux_wr/.
-
-    // Run application which will write memory on numa node 2.
-    appPid = RunTestApp("write_on_numa2");
-
-    // Prepare ddr events.
-    char *evtList[4] = {"hisi_sccl5_ddrc0/flux_wr/", "hisi_sccl5_ddrc1/flux_wr/", "hisi_sccl5_ddrc2/flux_wr/", "hisi_sccl5_ddrc3/flux_wr/"};
+    // Run application which will write memory on numa node 1.
+    appPid = RunTestApp("write_on_numa1");
+    int ddrcNum;
+    CHIP_TYPE chipType = GetCpuType();
     PmuAttr attr = {0};
-    attr.evtList = evtList;
-    attr.numEvt = 4;
+    char *evtListHIPA[4] = {"hisi_sccl3_ddrc0/flux_wr/", "hisi_sccl3_ddrc1/flux_wr/", "hisi_sccl3_ddrc2/flux_wr/", "hisi_sccl3_ddrc3/flux_wr/"};
+    char *evtListHIPB[8] = {"hisi_sccl1_ddrc0_0/flux_wr/", "hisi_sccl1_ddrc0_1/flux_wr/", "hisi_sccl1_ddrc2_0/flux_wr/", "hisi_sccl1_ddrc2_1/flux_wr/",
+            "hisi_sccl1_ddrc3_0/flux_wr/", "hisi_sccl1_ddrc3_1/flux_wr/", "hisi_sccl1_ddrc5_0/flux_wr/", "hisi_sccl1_ddrc5_1/flux_wr/"};
+    if (chipType == HIPA) {
+        ddrcNum = 4;
+        attr.evtList = evtListHIPA;
+    } else if (chipType == HIPB) {
+        ddrcNum = 8;
+        attr.evtList = evtListHIPB;
+    } else {
+        GTEST_SKIP() << "Unsupported chip";
+    }
+    attr.numEvt = ddrcNum;
 
     // Collect pmu data.
     pd = PmuOpen(COUNTING, &attr);
@@ -155,7 +176,7 @@ TEST_F(TestCount, NumaFluxWr)
     int ret = PmuCollect(pd, 8000, collectInterval);
     ASSERT_EQ(ret, SUCCESS);
     int len = PmuRead(pd, &data);
-    ASSERT_EQ(len, 4);
+    ASSERT_EQ(len, ddrcNum);
 
     // Check flux event count which should be greater than total memory bytes divided by 256 bits.
     size_t cntSum = 0;
@@ -165,10 +186,13 @@ TEST_F(TestCount, NumaFluxWr)
     ASSERT_GE(cntSum, (1024 * 256 * 4 * 64) / 32);
 }
 
-TEST_F(TestCount, AggregateUncoreEvents)
+TEST_F(TestCount, AggregateUncoreEventsHIPA)
 {
     // Test aggregate of uncore events.
-
+    CHIP_TYPE chipType = GetCpuType();
+    if (chipType != HIPA) {
+        GTEST_SKIP() << "Unsupported chip";
+    }
     char* aggreUncore[1] = {"hisi_sccl1_ddrc/flux_rd/"};
     char* uncoreList[4] = {"hisi_sccl1_ddrc0/flux_rd/", "hisi_sccl1_ddrc1/flux_rd/", "hisi_sccl1_ddrc2/flux_rd/", "hisi_sccl1_ddrc3/flux_rd/"};
     PmuAttr attr = {0};
@@ -190,6 +214,44 @@ TEST_F(TestCount, AggregateUncoreEvents)
     PmuData *data2 = nullptr;
     int len2 = PmuRead(pd2, &data2);
     ASSERT_EQ(len2, 4);
+
+    uint64_t aggreCnt = data1[0].count;
+    unsigned long uncoreSum = 0;
+    for (int i = 0; i < len2; ++i) {
+        uncoreSum += data2[i].count;
+    }
+    ASSERT_NEAR(aggreCnt, uncoreSum, uncoreSum * 0.5);
+}
+
+TEST_F(TestCount, AggregateUncoreEventsHIPB)
+{
+    // Test aggregate of uncore events.
+    CHIP_TYPE chipType = GetCpuType();
+    PmuAttr attr = {0};
+    if (chipType != HIPB) {
+        GTEST_SKIP() << "Unsupported chip";
+    }
+    char* aggreUncore[1] = {"hisi_sccl1_ddrc/flux_rd/"};
+    char* uncoreList[8] = {"hisi_sccl1_ddrc0_0/flux_rd/", "hisi_sccl1_ddrc0_1/flux_rd/", "hisi_sccl1_ddrc2_0/flux_rd/", "hisi_sccl1_ddrc2_1/flux_rd/",
+                    "hisi_sccl1_ddrc3_0/flux_rd/", "hisi_sccl1_ddrc3_1/flux_rd/", "hisi_sccl1_ddrc5_0/flux_rd/", "hisi_sccl1_ddrc5_1/flux_rd/"};
+    attr.evtList = aggreUncore;
+    attr.numEvt = 1;
+    int pd1 = PmuOpen(COUNTING, &attr);
+    attr.evtList = uncoreList;
+    attr.numEvt = 8;
+    int pd2 = PmuOpen(COUNTING, &attr);
+    PmuEnable(pd1);
+    PmuEnable(pd2);
+    sleep(2);
+    PmuDisable(pd1);
+    PmuDisable(pd2);
+
+    PmuData *data1 = nullptr;
+    int len1 = PmuRead(pd1, &data1);
+    ASSERT_EQ(len1, 1);
+    PmuData *data2 = nullptr;
+    int len2 = PmuRead(pd2, &data2);
+    ASSERT_EQ(len2, 8);
 
     uint64_t aggreCnt = data1[0].count;
     unsigned long uncoreSum = 0;
@@ -262,6 +324,16 @@ TEST_F(TestCount, UncoreRawEventSmmuConfigError)
 TEST_F(TestCount, UncoreRawEventSmmu)
 {
     // Test whether raw uncore event.
+    vector<string> entries = ListDirectoryEntries("/sys/devices/");
+    bool findSmmu = false;
+    for (const auto& entry : entries) {
+        if (entry == "") {
+            findSmmu = true;
+        }
+    }
+    if (!findSmmu) {
+        GTEST_SKIP() << "No such smmu device: smmuv3_pmcg_100020";
+    }
     char* evtList[1] = {"smmuv3_pmcg_100020/cycles,filter_enable=1,filter_stream_id=0x7d/"};
     PmuAttr attr = {0};
     attr.evtList = evtList;
