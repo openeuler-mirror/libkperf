@@ -134,39 +134,52 @@ class PmuDeviceMetric:
     # Collect pcie rx bandwidth.
     # Perpcie metric.
     # Collect pcie rx bandwidth for pcie device.
-    # Unit: Bytes/s
+    # Unit: Bytes/us
     PMU_PCIE_RX_MRD_BW = 6
     PMU_PCIE_RX_MWR_BW = 7
     # Perpcie metric.
     # Collect pcie tx bandwidth for pcie device.
-    # Unit: Bytes/s
+    # Unit: Bytes/us
     PMU_PCIE_TX_MRD_BW = 8
     PMU_PCIE_TX_MWR_BW = 9
     # Perpcie metric.
+    # Collect pcie rx latency for pcie device.
+    # Unit: ns
+    PMU_PCIE_RX_MRD_LAT = 10
+    PMU_PCIE_RX_MWR_LAT = 11
+    # Perpcie metric.
+    # Collect pcie tx latency for pcie device.
+    # Unit: ns
+    PMU_PCIE_TX_MRD_LAT = 12
+    # Perpcie metric.
     # Collect smmu address transaction.
     # Unit: count
-    PMU_SMMU_TRAN = 10
+    PMU_SMMU_TRAN = 13
     # Pernuma metric.
     # Collect rate of cross-numa operations received by HHA.
-    PMU_HHA_CROSS_NUMA = 11
+    PMU_HHA_CROSS_NUMA = 14
     # Pernuma metric.
     # Collect rate of cross-socket operations received by HHA.
-    PMU_HHA_CROSS_SOCKET = 12
+    PMU_HHA_CROSS_SOCKET = 15
 
 class PmuDeviceAttr(_libkperf.PmuDeviceAttr):
     """
     struct PmuDeviceAttr {
         enum PmuDeviceMetric metric;
 
-        // Used for PMU_PCIE_XXX and PMU_SMMU_XXX to collect a specifi pcie device.
+        // Used for PMU_PCIE_XXX_BW and PMU_SMMU_XXX to collect a specifi pcie device.
         // The string of bdf is something like '7a:01.0'.
         char *bdf;
+        // Used for PMU_PCIE_XXX_LAT to collect latency data.
+        // Only one port supported.
+        char *port;
     };
     """
-    def __init__(self, metric, bdf=None):
+    def __init__(self, metric, bdf=None, port=None):
         super(PmuDeviceAttr, self).__init__(
             metric=metric,
-            bdf=bdf
+            bdf=bdf,
+            port=port
         )
 
 class PmuBdfType:
@@ -200,6 +213,7 @@ class PmuDeviceData(_libkperf.PmuDeviceData):
             unsigned numaId;
             // for perpcie metric
             char *bdf;
+            char *port;
             // for perchannel metric of ddr
             struct {
                 unsigned channelId;

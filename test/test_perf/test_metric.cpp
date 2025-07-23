@@ -321,3 +321,37 @@ TEST_F(TestMetric, GetMetricHHACross)
     PmuDataFree(oriData);
     PmuClose(pd);
 }
+
+TEST_F(TestMetric, GetMetricPcieLatency)
+{
+    const char** bdfList = nullptr;
+    unsigned bdfLen = 0;
+    bdfList = PmuDeviceBdfList(PMU_BDF_TYPE_PCIE, &bdfLen);
+    PmuDeviceAttr devAttr[bdfLen] = {};
+    for (int i = 0; i < bdfLen; ++i) {
+        devAttr[i].metric = PMU_PCIE_RX_MRD_LAT;
+        devAttr[i].port = strdup(bdfList[i]);
+    }
+
+    int pd = PmuDeviceOpen(devAttr, bdfLen);
+    ASSERT_NE(pd, -1);
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+    PmuData* oriData = nullptr;
+    int oriLen = PmuRead(pd, &oriData);
+    ASSERT_NE(oriLen, -1);
+
+    PmuDeviceData *devData = nullptr;
+    auto len = PmuGetDevMetric(oriData, oriLen, devAttr, bdfLen, &devData);
+    ASSERT_EQ(len, bdfLen);
+    ASSERT_EQ(devData[0].metric, PMU_PCIE_RX_MRD_LAT);
+    ASSERT_EQ(devData[0].mode, PMU_METRIC_BDF);
+    ASSERT_TRUE(strcmp(devData[0].port, bdfList[0]) == 0);
+    for (int i = 0; i < bdfLen; ++i) {
+        free(devAttr[i].port);
+    }
+    DevDataFree(devData);
+    PmuDataFree(oriData);
+    PmuClose(pd);
+}

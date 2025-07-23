@@ -239,12 +239,18 @@
     * PMU_L3_MISS 采集每个core的L3的miss数量，单位：count
     * PMU_L3_REF 采集每个core的L3的总访问数量，单位：count
     * PMU_L3_LAT 采集每个cluster的L3的总时延，单位：cycles
-    * PMU_PCIE_RX_MRD_BW 采集pcie设备的rx方向上的读带宽，单位：Bytes/ns
-    * PMU_PCIE_RX_MWR_BW 采集pcie设备的rx方向上的写带宽，单位：Bytes/ns
-    * PMU_PCIE_TX_MRD_BW 采集pcie设备的tx方向上的读带宽，单位：Bytes/ns
-    * PMU_PCIE_TX_MWR_BW 采集pcie设备的tx方向上的读带宽，单位：Bytes/ns
+    * PMU_PCIE_RX_MRD_BW 采集pcie设备的rx方向上的读带宽，单位：Bytes/us
+    * PMU_PCIE_RX_MWR_BW 采集pcie设备的rx方向上的写带宽，单位：Bytes/us
+    * PMU_PCIE_TX_MRD_BW 采集pcie设备的tx方向上的读带宽，单位：Bytes/us
+    * PMU_PCIE_TX_MWR_BW 采集pcie设备的tx方向上的读带宽，单位：Bytes/us
+    * PMU_PCIE_RX_MRD_LAT 采集pcie设备的rx方向上的读延时，单位：ns
+    * PMU_PCIE_RX_MWR_LAT 采集pcie设备的rx方向上的写延时，单位：ns
+    * PMU_PCIE_TX_MRD_LAT 采集pcie设备的tx方向上的读延时，单位：ns
     * PMU_SMMU_TRAN 采集指定smmu设备的地址转换次数，单位：count
-  * char *bdf: 指定需要采集设备的bdf号，只对pcie和smmu指标有效
+    * PMU_HHA_CROSS_NUMA 采集每个numa的跨numa访问HHA的操作比例
+    * PMU_HHA_CROSS_SOCKET 采集每个numa的跨socket访问HHA的操作比例
+  * char *bdf: 指定需要采集设备的bdf号，只对pcie带宽和smmu指标有效
+  * char *port: 指定需要采集设备的port号，只对pcie延时指标有效
 * 与PmuOpen类似，返回task Id
   返回值 > 0    初始化成功
   返回值 = -1  初始化失败，可通过Perror()查看错误信息
@@ -267,6 +273,7 @@
     * unsigned numaId: 数据的numa编号
     * unsigned clusterId: 簇ID
     * unsigned bdf: 数据的bdf编号
+    * unsigned port: 数据的port编号
     * struct: ddr相关的统计数据
       * unsigned channelId: ddr数据的channel编号
       * unsigned ddrNumaId: ddr数据的numa编号

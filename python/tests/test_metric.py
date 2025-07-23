@@ -278,6 +278,26 @@ def test_collect_hha_cross():
     print_dev_data_details(dev_data)
     kperf.close(pd)
 
+def test_get_metric_pcie_latency():
+    bdf_list_iter = kperf.device_bdf_list(kperf.PmuBdfType.PMU_BDF_TYPE_PCIE)
+    dev_attr = [
+        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_PCIE_RX_MRD_LAT, port=port)
+        for port in bdf_list_iter
+    ]
+    pd = kperf.device_open(dev_attr)
+    print(kperf.error())
+    assert pd != -1, f"Expected non-negative pd, but got {pd}"
+    kperf.enable(pd)
+    time.sleep(1)
+    kperf.disable(pd)
+    ori_data = kperf.read(pd)
+    assert len(ori_data) != -1, f"Expected non-negative ori_len, but got {len(ori_data)}"
+
+    dev_data = kperf.get_device_metric(ori_data, dev_attr)
+    assert len(dev_data) == len(dev_attr)
+    print_dev_data_details(dev_data)
+    kperf.close(pd)
+
 if __name__ == '__main__':
     # 提示用户使用pytest 运行测试文件
     print("This is a pytest script. Run it using the 'pytest' command.")
