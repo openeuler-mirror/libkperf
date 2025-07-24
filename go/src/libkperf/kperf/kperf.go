@@ -1306,16 +1306,16 @@ func (data *PmuData) appendBranchRecords(pmuData C.struct_PmuData) {
 //        It is a simplified perf.data only include basic fields for perf sample,
 //        including id, cpu, tid, pid, addr and branch stack.
 //        It also includes sample like mmap, mmap2, comm, fork.
-func PmuBeginWrite(path string, attr PmuAttr) C.PmuFile {
+func PmuBeginWrite(path string, attr PmuAttr) (C.PmuFile, error) {
 	cAttr, err := ToCPmuAttr(attr)
 	defer FreePmuAttr(cAttr)
 	if err != 0 {
-		return nil
+		return nil, errors.New(C.GoString(C.Perror()))
 	}
 	cFilePath := C.CString(path)
 
 	file := C.PmuBeginWrite(cFilePath, cAttr)
-	return file
+	return file, errors.New(C.GoString(C.Perror()))
 }
 
 // brief Write PmuData list to file.
