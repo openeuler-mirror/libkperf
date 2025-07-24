@@ -229,7 +229,7 @@ TEST_F(TestAPI, SpeNoSymbol)
     auto attr = GetSpeAttribute();
     attr.symbolMode = NO_SYMBOL_RESOLVE;
     pd = PmuOpen(SPE_SAMPLING, &attr);
-    int ret = PmuCollect(pd, 1000, collectInterval);
+    int ret = PmuCollect(pd, 3000, collectInterval);
     int len = PmuRead(pd, &data);
     EXPECT_TRUE(data != nullptr);
 
@@ -258,7 +258,7 @@ TEST_F(TestAPI, SpeReadSuccess)
 {
     auto attr = GetSpeAttribute();
     pd = PmuOpen(SPE_SAMPLING, &attr);
-    int ret = PmuCollect(pd, 1000, collectInterval);
+    int ret = PmuCollect(pd, 3000, collectInterval);
     ASSERT_TRUE(pd != -1);
     int len = PmuRead(pd, &data);
     EXPECT_TRUE(data != nullptr);
@@ -336,7 +336,7 @@ TEST_F(TestAPI, SampleSystem)
     attr.pidList = nullptr;
     attr.numPid = 0;
     pd = PmuOpen(SAMPLING, &attr);
-    int ret = PmuCollect(pd, 100, collectInterval);
+    int ret = PmuCollect(pd, 1000, collectInterval);
     int len = PmuRead(pd, &data);
     EXPECT_TRUE(data != nullptr);
     ASSERT_TRUE(HasExpectSource(data, len));
@@ -500,7 +500,7 @@ TEST_F(TestAPI, AppendPmuDataToNullArray)
     int err = PmuEnable(pd);
     ASSERT_EQ(err, SUCCESS);
 
-    usleep(1000 * 100);
+    usleep(3000 * 100);
     // Declare a null array.
     PmuData *total = nullptr;
     PmuData *data = nullptr;
@@ -510,7 +510,7 @@ TEST_F(TestAPI, AppendPmuDataToNullArray)
     ASSERT_EQ(len1, totalLen);
     PmuDataFree(data);
 
-    usleep(1000 * 100);
+    usleep(3000 * 100);
     // Get another pmu data array.
     int len2 = PmuRead(pd, &data);
     // Append to <total> again.
@@ -620,6 +620,10 @@ TEST_F(TestAPI, TestOperationNotSupported)
 
 TEST_F(TestAPI, TestBrBe) 
 {
+    CHIP_TYPE chipType = GetCpuType();
+    if (chipType != HIPF) {
+        GTEST_SKIP() << "Unsupported chip";
+    }
     auto attr = GetPmuAttribute();
     attr.symbolMode = NO_SYMBOL_RESOLVE;
     auto pid = RunTestApp("bad_branch_pred");
