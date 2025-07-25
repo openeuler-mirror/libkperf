@@ -499,7 +499,6 @@ private:
         attr.sample_type = GetSampleType();
         // use attr in 5.10
         attr.size = sizeof(perf_event_attr);
-        attr.sample_id_all = 1;
         PerfFileAttr fattr = {0};
         fattr.attr = attr;
         // This is the offset of event id.

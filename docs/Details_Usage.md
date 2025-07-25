@@ -1699,7 +1699,12 @@ func main() {
     time.Sleep(time.Second)
     kperf.PmuDisable(pd)
     dataVo, err := kperf.PmuRead(pd)
-    file := kperf.PmuBeginWrite("/tmp/test.data", attr)
+    file, err := kperf.PmuBeginWrite("/tmp/test.data", attr)
+    if file == nil {
+        fmt.Printf("failed to write: %v\n", err)
+        return
+    }
+
     kperf.PmuWriteData(file, dataVo)
     kperf.PmuEndWrite(file)
 }
