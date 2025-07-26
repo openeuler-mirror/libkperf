@@ -808,10 +808,10 @@ namespace KUNPENG_PMU {
                 if (!metricConfig.bdfParameter.empty()) {
                     stringstream paramValue;
                     uint16_t userBdf = 0;
-                    if (!bdf.empty()) {
-                        ConvertBdfStringToValue(bdf, userBdf);
-                    } else {
+                    if (deviceAttr.metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT && deviceAttr.metric <= PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT) {
                         ConvertBdfStringToValue(port, userBdf);
+                    } else {
+                        ConvertBdfStringToValue(bdf, userBdf);
                     }
                     paramValue << "0x" << hex << userBdf;
                     eventString += "," + metricConfig.bdfParameter + paramValue.str();
@@ -965,10 +965,10 @@ namespace KUNPENG_PMU {
         for (int i = 0; i < len; ++i) {
             std::string key = "";
             if (IsBdfMetric(attr[i].metric)) {
-                if (attr[i].bdf != nullptr) {
-                    key = std::to_string(attr[i].metric) + "_" + attr[i].bdf;
-                } else {
+                if (attr->metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT && attr->metric <= PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT) {
                     key = std::to_string(attr[i].metric) + "_" + attr[i].port;
+                } else {
+                    key = std::to_string(attr[i].metric) + "_" + attr[i].bdf;
                 }
             } else {
                 key = std::to_string(attr[i].metric);
@@ -1349,7 +1349,11 @@ namespace KUNPENG_PMU {
                 continue;
             }
             auto evtConfig = ExtractEvtStr("config", evtName);
-            devDataByBdf[data.bdf][evtConfig] = data;
+            if (metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT && metric <= PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT) {
+                devDataByBdf[data.port][evtConfig] = data;
+            } else {
+                devDataByBdf[data.bdf][evtConfig] = data;
+            }
         }
 
         for (auto &data : devDataByBdf) {
@@ -1375,7 +1379,11 @@ namespace KUNPENG_PMU {
             outData.metric = metric;
             outData.count = value;
             outData.mode = GetMetricMode(metric);
-            outData.bdf = findLenData->second.bdf;
+            if (metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT && metric <= PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT) {
+                outData.port = findLenData->second.port;
+            } else {
+                outData.bdf = findLenData->second.bdf;
+            }
             devData.push_back(outData);
         }
         return SUCCESS;
@@ -1464,10 +1472,10 @@ namespace KUNPENG_PMU {
             }
             uint16_t expectBdf;
             int ret;
-            if (devAttr.bdf != nullptr) {
-                ret = ConvertBdfStringToValue(devAttr.bdf, expectBdf);
-            } else {
+            if (devAttr.metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT && devAttr.metric <= PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT) {
                 ret = ConvertBdfStringToValue(devAttr.port, expectBdf);
+            } else {
+                ret = ConvertBdfStringToValue(devAttr.bdf, expectBdf);
             }
             if (ret != SUCCESS) {
                 return false;
@@ -1541,10 +1549,10 @@ namespace KUNPENG_PMU {
                 devData.socketId = pmuData[i].cpuTopo->socketId;
             }
             if (IsBdfMetric(devAttr.metric)) {
-                if (devAttr.bdf != nullptr) {
-                    devData.bdf = devAttr.bdf;
-                } else {
+                if (devAttr.metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT && devAttr.metric <= PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT) {
                     devData.port = devAttr.port;
+                } else {
+                    devData.bdf = devAttr.bdf;
                 }
             }
             devDataList.emplace_back(devData);
