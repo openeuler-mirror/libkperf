@@ -109,10 +109,6 @@ int KUNPENG_PMU::PerfSampler::Mmap()
 {
     int mmapLen = (SAMPLE_PAGES + 1) * SAMPLE_PAGE_SIZE;
     auto mask = mmapLen - SAMPLE_PAGE_SIZE - 1;
-    if (mask < 0) {
-        return UNKNOWN_ERROR;
-    }
-
     this->sampleMmap->prev = 0;
     this->sampleMmap->mask = static_cast<__u64>(mask);
     void *currentMap =

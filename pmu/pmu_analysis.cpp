@@ -14,6 +14,7 @@
  ******************************************************************************/
 #include <iostream>
 #include <string>
+#include <cstring>
 #include <unordered_map>
 #include <fstream>
 #include <algorithm>

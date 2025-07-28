@@ -18,7 +18,6 @@
 #include <map>
 #include <set>
 #include <string>
-#include <numa.h>
 #include <unistd.h>
 #include <dirent.h>
 #include <linux/perf_event.h>
@@ -44,7 +43,6 @@ static unsigned maxCpuNum = 0;
 static vector<unsigned> coreArray;
 
 static std::mutex pmuBdfListMtx;
-static std::mutex pmuCoreListMtx;
 static std::mutex pmuDeviceDataMtx;
 
 static const string SYS_DEVICES = "/sys/devices/";
@@ -1788,18 +1786,6 @@ int64_t PmuGetCpuFreq(unsigned core)
     return cpuFreq * 1000;
 }
 
-static void InitializeCoreArray()
-{
-    if (!coreArray.empty()) {
-        return;
-    }
-    maxCpuNum = sysconf(_SC_NPROCESSORS_CONF);
-    for (unsigned i = 0; i < maxCpuNum; ++i) {
-        coreArray.emplace_back(i);
-    }
-    return;
-}
-
 int PmuGetClusterCore(unsigned clusterId, unsigned **coreList)
 {
 #ifdef IS_X86
@@ -1807,8 +1793,6 @@ int PmuGetClusterCore(unsigned clusterId, unsigned **coreList)
     return -1;
 #else
     try {
-        lock_guard<mutex> lg(pmuCoreListMtx);
-        InitializeCoreArray();
         bool hyperThread = false;
         int err = HyperThreadEnabled(hyperThread);
         if (err != SUCCESS) {
@@ -1828,7 +1812,7 @@ int PmuGetClusterCore(unsigned clusterId, unsigned **coreList)
             return -1;
         }
 
-        *coreList = &coreArray[startCore];
+        *coreList = GetCoreList(startCore);
 
         New(SUCCESS);
         return coreNums;
@@ -1843,31 +1827,12 @@ int PmuGetClusterCore(unsigned clusterId, unsigned **coreList)
 int PmuGetNumaCore(unsigned nodeId, unsigned **coreList)
 {
     try {
-        lock_guard<mutex> lg(pmuCoreListMtx);
-        string nodeListFile = "/sys/devices/system/node/node" + to_string(nodeId) + "/cpulist";
-        ifstream in(nodeListFile);
-        if (!in.is_open()) {
+        int coreNums = GetNumaCore(nodeId, coreList);
+        if (coreNums == -1) {
             New(LIBPERF_ERR_KERNEL_NOT_SUPPORT);
-            return -1;
+        } else {
+            New(SUCCESS);
         }
-        std::string cpulist;
-        in >> cpulist;
-        auto split = SplitStringByDelimiter(cpulist, '-');
-        if (split.size() != 2) {
-            New(LIBPERF_ERR_KERNEL_NOT_SUPPORT);
-            return -1;
-        }
-        auto start = stoi(split[0]);
-        auto end = stoi(split[1]);
-        int coreNums = end - start + 1;
-        if (coreNums <= 0) {
-            New(LIBPERF_ERR_KERNEL_NOT_SUPPORT);
-            return -1;
-        }
-        InitializeCoreArray();
-        *coreList = &coreArray[start];
-
-        New(SUCCESS);
         return coreNums;
     } catch (exception &ex) {
         New(UNKNOWN_ERROR, ex.what());

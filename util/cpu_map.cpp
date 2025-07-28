@@ -16,9 +16,11 @@
 #include <string>
 #include <map>
 #include <fstream>
+#include <cstring>
 #include <unistd.h>
 #include <memory>
 #include <mutex>
+#include <dirent.h>
 #include "common.h"
 #include "pcerr.h"
 #include "cpu_map.h"
@@ -28,6 +30,7 @@ using namespace std;
 static const std::string CPU_TOPOLOGY_PACKAGE_ID = "/sys/bus/cpu/devices/cpu%d/topology/physical_package_id";
 static const std::string MIDR_EL1 = "/sys/devices/system/cpu/cpu0/regs/identification/midr_el1";
 static const std::string CPU_ONLINE_PATH = "/sys/devices/system/cpu/online";
+static const std::string NUMA_PATH = "/sys/devices/system/node";
 
 static constexpr int PATH_LEN = 256;
 static constexpr int LINE_LEN = 1024;
@@ -40,6 +43,9 @@ static map<string, CHIP_TYPE> chipMap = {{"0x00000000481fd010", HIPA},
                                          {"0x00000000480fd450", HIPE},};
 
 static std::set<int> onLineCpuIds;
+static map<int, int> cpuOfNumaNodeMap;
+static vector<unsigned> coreArray;
+static mutex pmuCoreListMtx;
 
 static inline bool ReadCpuPackageId(int coreId, CpuTopology* cpuTopo)
 {
@@ -61,6 +67,86 @@ static inline bool ReadCpuPackageId(int coreId, CpuTopology* cpuTopo)
     return true;
 }
 
+static int GetNumaNodeCount() 
+{
+    DIR *dir = opendir(NUMA_PATH.c_str());
+    if (dir == nullptr) {
+        return -1;
+    }
+
+    int numaNodeCount = 0;
+    struct dirent* entry;
+    while((entry = readdir(dir)) != nullptr) {
+        if (entry->d_type == DT_DIR && strncmp(entry->d_name, "node", 4) == 0) {
+            ++numaNodeCount;
+        }
+    }
+    closedir(dir);
+    return numaNodeCount;
+}
+
+unsigned* GetCoreList(int start) {
+    lock_guard<mutex> lg(pmuCoreListMtx);
+    if (coreArray.empty()) {
+        for (unsigned i = 0; i < MAX_CPU_NUM; ++i) {
+            coreArray.emplace_back(i);
+        }
+    }
+    return &coreArray[start];
+}
+
+int GetNumaCore(unsigned nodeId, unsigned **coreList)
+{
+    string nodeListFile = "/sys/devices/system/node/node" + to_string(nodeId) + "/cpulist";
+    ifstream in(nodeListFile);
+    if (!in.is_open()) {
+        return -1;
+    }
+    std::string cpulist;
+    in >> cpulist;
+    auto split = SplitStringByDelimiter(cpulist, '-');
+    if (split.size() != 2) {
+        return -1;
+    }
+    auto start = stoi(split[0]);
+    auto end = stoi(split[1]);
+    int coreNums = end - start + 1;
+    if (coreNums <= 0) {
+        return -1;
+    }
+    *coreList = GetCoreList(start);
+    return coreNums;
+}
+
+int GetNumaNodeOfCpu(int coreId)
+{
+    if (!cpuOfNumaNodeMap.empty()) {
+        if (cpuOfNumaNodeMap.find(coreId) != cpuOfNumaNodeMap.end()) {
+            return cpuOfNumaNodeMap[coreId];
+        } else {
+            return -1;
+        }
+    }
+
+    unsigned maxNode = GetNumaNodeCount();
+    int nodeId = -1;
+    for (int i = 0; i < maxNode; i++) {
+        unsigned *coreList = nullptr;
+        int numCore = GetNumaCore(i, &coreList);
+        if (numCore == -1) {
+            continue;
+        }
+        for (int j = 0; j < numCore; j++) {
+            int cpuId = coreList[j];
+            cpuOfNumaNodeMap[cpuId] = i;
+            if (coreId == cpuId) {
+                nodeId = i;
+            }
+        }
+    }
+    return nodeId;
+}
+
 struct CpuTopology* GetCpuTopology(int coreId)
 {
     auto cpuTopo = std::unique_ptr<CpuTopology>(new CpuTopology());
@@ -77,7 +163,7 @@ struct CpuTopology* GetCpuTopology(int coreId)
         pcerr::SetWarn(LIBPERF_ERR_FAIL_GET_CPU, "failed to obtain the socketdId for " + std::to_string(coreId) + " core.");
     }
 
-    cpuTopo->numaId = numa_node_of_cpu(coreId);
+    cpuTopo->numaId = GetNumaNodeOfCpu(coreId);
     return cpuTopo.release();
 }
 
