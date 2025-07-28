@@ -832,6 +832,7 @@ int pd = PmuDeviceOpen(devAttr, 2);
 // 开始采集
 PmuEnable(pd);
 sleep(1);
+PmuDisable(pd);
 // 读取原始信息
 PmuData *oriData = nullptr;
 int oriLen = PmuRead(pd, &oriData);
@@ -851,7 +852,7 @@ for (int i = len / 2; i < len; ++i) {
 }
 DevDataFree(devData);
 PmuDataFree(oriData);
-PmuDisable(pd);
+PmuClose(pd);
 ```
 
 ```python
@@ -942,6 +943,7 @@ int pd = PmuDeviceOpen(devAttr, 1);
 // 开始采集
 PmuEnable(pd);
 sleep(1);
+PmuDisable(pd);
 PmuData *oriData = nullptr;
 int oriLen = PmuRead(pd, &oriData);
 PmuDeviceData *devData = nullptr;
@@ -953,7 +955,7 @@ for (int i=0;i<len;++i) {
 }
 DevDataFree(devData);
 PmuDataFree(oriData);
-PmuDisable(pd);
+PmuClose(pd);
 ```
 
 ```python
@@ -1025,6 +1027,7 @@ int pd = PmuDeviceOpen(devAttr, 1);
 // 开始采集
 PmuEnable(pd);
 sleep(1);
+PmuDisable(pd);
 PmuData *oriData = nullptr;
 int oriLen = PmuRead(pd, &oriData);
 PmuDeviceData *devData = nullptr;
@@ -1036,7 +1039,7 @@ for (int i=0;i<len;++i) {
 }
 DevDataFree(devData);
 PmuDataFree(oriData);
-PmuDisable(pd);
+PmuClose(pd);
 ```
 
 ```python
@@ -1104,6 +1107,7 @@ int pd = PmuDeviceOpen(devAttr, 1);
 // 开始采集
 PmuEnable(pd);
 sleep(1);
+PmuDisable(pd);
 PmuData *oriData = nullptr;
 int oriLen = PmuRead(pd, &oriData);
 PmuDeviceData *devData = nullptr;
@@ -1115,7 +1119,7 @@ for (int i=0;i<len;++i) {
 }
 DevDataFree(devData);
 PmuDataFree(oriData);
-PmuDisable(pd);
+PmuClose(pd);
 ```
 
 ```python
@@ -1182,6 +1186,7 @@ int pd = PmuDeviceOpen(devAttr, 2);
 // 开始采集
 PmuEnable(pd);
 sleep(1);
+PmuDisable(pd);
 PmuData *oriData = nullptr;
 int oriLen = PmuRead(pd, &oriData);
 PmuDeviceData *devData = nullptr;
@@ -1195,7 +1200,7 @@ for (int i = len / 2; i < len; ++i) {
 }
 DevDataFree(devData);
 PmuDataFree(oriData);
-PmuDisable(pd);
+PmuClose(pd);
 ```
 
 ```python
