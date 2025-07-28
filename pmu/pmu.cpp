@@ -40,6 +40,8 @@ static pair<unsigned, const char**> uncoreEventPair;
 static std::set<int> onLineCpuIds;
 static string cgroupDir = "/sys/fs/cgroup/";
 
+#define REQUEST_USER_ACCESS 0x2
+
 struct PmuTaskAttr* AssignPmuTaskParam(PmuTaskType collectType, struct PmuAttr *attr);
 
 static int PmuCollectStart(const int pd)
@@ -75,12 +77,12 @@ static int CheckCpuList(unsigned numCpu, int* cpuList)
         return LIBPERF_ERR_INVALID_CPULIST;
     }
     for (int i = 0; i < numCpu; i++) {
-        if (cpuList[i] < 0 || cpuList[i] >= MAX_CPU_NUM) {
+        if (cpuList[i] < -1 || cpuList[i] >= MAX_CPU_NUM) {
             string errMsg = "Invalid cpu id: " + to_string(cpuList[i]) + ", Please check cpu config parameter.";
             New(LIBPERF_ERR_INVALID_CPULIST, errMsg);
             return LIBPERF_ERR_INVALID_CPULIST;
         }
-        if (!onLineCpus.count(cpuList[i])) {
+        if (cpuList[i] != -1 && !onLineCpus.count(cpuList[i])) {
             string errMsg = "OffLine cpu id: " + to_string(cpuList[i]);
             New(LIBPERF_ERR_INVALID_CPULIST, errMsg);
             return LIBPERF_ERR_INVALID_CPULIST;
@@ -262,9 +264,37 @@ static int CheckCollectTypeConfig(enum PmuTaskType collectType, struct PmuAttr *
     return SUCCESS;
 }
 
+static int CheckUserAccess(enum PmuTaskType collectType, struct PmuAttr *attr)
+{
+    if (!attr->enableUserAccess) {
+        return SUCCESS;
+    }
+    if (attr->numPid != 1 || attr->pidList[0] != 0) {
+        New(LIBPERF_ERR_CHECK_USER_ACCESS, "The pidList is incorrectly set!");
+        return LIBPERF_ERR_CHECK_USER_ACCESS;
+    }
+    if (attr->numCpu != 1 || attr->cpuList[0] != -1) {
+        New(LIBPERF_ERR_CHECK_USER_ACCESS, "The cpuList is incorrectly set!");
+        return LIBPERF_ERR_CHECK_USER_ACCESS;
+    }
+    if (collectType != COUNTING) {
+        New(LIBPERF_ERR_CHECK_USER_ACCESS, "User Access only supports count!");
+        return LIBPERF_ERR_CHECK_USER_ACCESS;
+    }
+    if (attr->evtAttr != nullptr) {
+        New(LIBPERF_ERR_CHECK_USER_ACCESS, "User Access doesn't support event group!");
+        return LIBPERF_ERR_CHECK_USER_ACCESS;
+    }
+    return SUCCESS;
+}
+
 static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
 {
-    auto err = CheckCpuList(attr->numCpu, attr->cpuList);
+    auto err = CheckUserAccess(collectType, attr);
+    if (err != SUCCESS) {
+        return err;
+    }
+    err = CheckCpuList(attr->numCpu, attr->cpuList);
     if (err != SUCCESS) {
         return err;
     }
@@ -952,7 +982,9 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
     if (cgroupName != nullptr) {
         taskParam->pmuEvt->cgroupName = cgroupName;
     }
-
+    if (attr->enableUserAccess) {
+        taskParam->pmuEvt->config1 = REQUEST_USER_ACCESS;
+    }
     return taskParam.release();
 }
 

@@ -105,7 +105,7 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
 {
     // Init process map.
     for (auto& proc: pidList) {
-        if (proc->tid > 0) {
+        if (proc->tid >= 0) {
             procMap[proc->tid] = proc;
         }
     }

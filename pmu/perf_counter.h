@@ -19,8 +19,11 @@
 #include <memory>
 #include <stdexcept>
 #include <linux/types.h>
+#include <stdint.h>
 #include "evt.h"
 #include "pmu_event.h"
+
+#define REQUEST_USER_ACCESS 0x2
 
 struct ReadFormat {
     __u64 value;
@@ -30,6 +33,7 @@ struct ReadFormat {
 };
 
 namespace KUNPENG_PMU {
+    static constexpr int COUNT_PAGE_SIZE = 4096;
     class PerfCounter : public PerfEvt {
     public:
         using PerfEvt::PerfEvt;
@@ -41,6 +45,7 @@ namespace KUNPENG_PMU {
         int Enable() override;
         int Disable() override;
         int Reset() override;
+        int Close() override;
 
     private:
         enum class GroupStatus
@@ -49,7 +54,8 @@ namespace KUNPENG_PMU {
             GROUP_LEADER,
             GROUP_MEMBER
         };
-
+        int Mmap();
+        int MapPerfAttrUserAccess();
         int CountValueToData(const __u64 value, const __u64 timeEnabled,
                                 const __u64 timeRunning, __u64 &accumCount, std::vector<PmuData> &data);
         int ReadSingleEvent(std::vector<PmuData> &data);
@@ -63,6 +69,8 @@ namespace KUNPENG_PMU {
         std::vector<__u64> accumCount;
         int groupFd = 0;
         GroupStatus groupStatus = GroupStatus::NO_GROUP; 
+        // reg index is stored in countMmap->base
+        std::shared_ptr<PerfMmap> countMmap = nullptr;
     };
 }  // namespace KUNPENG_PMU
 #endif

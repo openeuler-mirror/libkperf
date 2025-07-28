@@ -110,7 +110,7 @@ int KUNPENG_PMU::PerfSampler::Mmap()
     int mmapLen = (SAMPLE_PAGES + 1) * SAMPLE_PAGE_SIZE;
     auto mask = mmapLen - SAMPLE_PAGE_SIZE - 1;
     this->sampleMmap->prev = 0;
-    this->sampleMmap->mask = static_cast<__u64>(mask);
+    this->sampleMmap->mask = mask;
     void *currentMap =
             mmap(NULL, this->sampleMmap->mask + 1 + SAMPLE_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (__glibc_unlikely(currentMap == MAP_FAILED)) {

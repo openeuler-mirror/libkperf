@@ -19,6 +19,7 @@
 #include <sys/syscall.h>
 #include <cstring>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <iostream>
 #include <linux/perf_event.h>
 #include "pmu.h"
@@ -28,6 +29,8 @@
 #include "pcerr.h"
 #include "log.h"
 #include "perf_counter.h"
+#include "read_reg.h"
+#include "common.h"
 
 using namespace std;
 using namespace pcerr;
@@ -67,20 +70,96 @@ int KUNPENG_PMU::PerfCounter::Read(EventData &eventData)
     return SUCCESS;
 }
 
+namespace KUNPENG_PMU {
+static int PerfMmapReadSelf(const std::shared_ptr<PerfMmap> &countMmap, struct ReadFormat &perfCountValue)
+{
+    uint32_t seq;
+    uint32_t idx;
+    uint32_t timeMult = 0;
+    uint32_t timeShift = 0;
+    uint64_t cnt = 0;
+    uint64_t cyc = 0;
+    uint64_t timeOffset = 0;
+    uint64_t timeCycles = 0;
+    uint64_t timeMask = ~0ULL;
+    auto pc = countMmap->base;
+    if (!pc) {
+        return LIBPERF_ERR_COUNT_MMAP_IS_NULL;
+    }
+    if (!pc->cap_user_rdpmc) {
+        return LIBPERF_ERR_ENABLE_USER_ACCESS_FAILED;
+    }
+
+    do {
+        seq = ReadOnce(&pc->lock);
+        Barrier();
+
+        perfCountValue.timeEnabled = ReadOnce(&pc->time_enabled);
+        perfCountValue.timeRunning = ReadOnce(&pc->time_running);
+
+        if (pc->cap_user_rdpmc && perfCountValue.timeEnabled != perfCountValue.timeRunning) {
+            cyc = ReadTimestamp();
+            timeMult = ReadOnce(&pc->time_mult);
+            timeShift = ReadOnce(&pc->time_shift);
+            timeOffset = ReadOnce(&pc->time_offset);
+
+            if (pc->cap_user_time_short) {
+                timeCycles = ReadOnce(&pc->time_cycles);
+                timeMask = ReadOnce(&pc->time_mask);
+            }
+        }
+
+        idx = ReadOnce(&pc->index);
+        cnt = ReadOnce(&pc->offset);
+        if (pc->cap_user_rdpmc && idx) {
+            // read the reg mapped by the countMmap->base->idx
+            uint64_t eventCount = ReadPerfCounter(idx - 1);
+            uint16_t width = ReadOnce(&pc->pmc_width);
+            eventCount <<= 64 - width;
+            eventCount >>= 64 - width;
+            cnt += eventCount;
+        } else {
+            return LIBPERF_ERR_ALLOCATE_REGISTER_FAILED;
+        }
+        Barrier();
+    } while (ReadOnce(&pc->lock) != seq);
+
+    if (perfCountValue.timeEnabled != perfCountValue.timeRunning) {
+        uint64_t delta;
+        cyc = timeCycles + ((cyc - timeCycles) & timeMask);
+        delta = timeOffset + MulU64U32Shr(cyc, timeMult, timeShift);
+        perfCountValue.timeEnabled += delta;
+        if (idx) {
+            perfCountValue.timeRunning += delta;
+        }
+    }
+    perfCountValue.value = cnt;
+    return SUCCESS;
+}
+}  // namespace KUNPENG_PMU
+
 int KUNPENG_PMU::PerfCounter::ReadSingleEvent(std::vector<PmuData> &data)
 {
     ReadFormat perfCountValue;
-    int len = read(this->fd, &perfCountValue, sizeof(perfCountValue));
-    if (len < 0) {
-        New(UNKNOWN_ERROR, strerror(errno));
-        return UNKNOWN_ERROR;
+    if (this->evt->config1 & REQUEST_USER_ACCESS) {
+        int err = PerfMmapReadSelf(this->countMmap, perfCountValue);
+        if (err != SUCCESS) {
+            return err;
+        }
+    } else {
+        int len = read(this->fd, &perfCountValue, sizeof(perfCountValue));
+        if (len < 0) {
+            New(UNKNOWN_ERROR, strerror(errno));
+            return UNKNOWN_ERROR;
+        }
     }
+
     if (accumCount.empty()) {
         accumCount.assign(1, 0);
     }
-    
-    int err = CountValueToData(perfCountValue.value, perfCountValue.timeEnabled,
-                            perfCountValue.timeRunning, accumCount[0], data);
+
+    int err = CountValueToData(
+        perfCountValue.value, perfCountValue.timeEnabled, perfCountValue.timeRunning, accumCount[0], data);
     if (err != SUCCESS) {
         return err;
     }
@@ -143,9 +222,12 @@ int KUNPENG_PMU::PerfCounter::CountValueToData(const __u64 value, const __u64 ti
     // counting value (https://perf.wiki.kernel.org/index.php/Tutorial)
     double percent = 0.0;
     uint64_t increCount;
-    if ((value == accumCount) || (timeRunning == running)) {
+    if (this->evt->config1 & REQUEST_USER_ACCESS) {
+        percent = 1;
+        increCount = static_cast<uint64_t>(value - accumCount);
+    } else if ((value == accumCount) || (timeRunning == running)) {
         percent = -1;
-        increCount = 0;   
+        increCount = 0;
     } else {
         percent = static_cast<double>(timeEnabled - enabled) / static_cast<double>(timeRunning - running);
         increCount = static_cast<uint64_t>((value - accumCount)* percent);
@@ -173,7 +255,17 @@ int KUNPENG_PMU::PerfCounter::CountValueToData(const __u64 value, const __u64 ti
  */
 int KUNPENG_PMU::PerfCounter::Init(const bool groupEnable, const int groupFd, const int resetOutputFd)
 {
-    return this->MapPerfAttr(groupEnable, groupFd);
+    int err = SUCCESS;
+    if (this->evt->config1 & REQUEST_USER_ACCESS) {  // user access
+        err = this->MapPerfAttrUserAccess();
+        if (err != SUCCESS) {
+            return err;
+        }
+        err = this->Mmap();
+        return err;
+    }
+    err = this->MapPerfAttr(groupEnable, groupFd);
+    return err;
 }
 
 int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int groupFd)
@@ -251,6 +343,44 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int grou
     return SUCCESS;
 }
 
+int KUNPENG_PMU::PerfCounter::MapPerfAttrUserAccess()
+{
+    struct perf_event_attr attr;
+    memset(&attr, 0, sizeof(attr));
+    attr.size = sizeof(struct perf_event_attr);
+    attr.type = this->evt->type;
+    attr.config = this->evt->config;
+    attr.config1 = this->evt->config1;
+    this->fd = PerfEventOpen(&attr, this->pid, this->cpu, -1, 0);
+    DBG_PRINT("type: %d cpu: %d config: %llx config1: %llx myfd: %d \n",
+        attr.type,
+        this->cpu,
+        attr.config,
+        attr.config1,
+        this->fd);
+    if (__glibc_unlikely(this->fd < 0)) {
+        return MapErrno(errno);
+    }
+    return SUCCESS;
+}
+
+int KUNPENG_PMU::PerfCounter::Mmap()
+{
+    this->countMmap = std::make_shared<PerfMmap>();
+    this->countMmap->prev = 0;
+    this->countMmap->mask = -1;
+    void *currentMap =
+        mmap(NULL, COUNT_PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, this->fd, 0);
+    if (__glibc_unlikely(currentMap == MAP_FAILED)) {
+        this->countMmap->base = nullptr;
+        close(this->fd);
+        return LIBPERF_ERR_FAIL_MMAP;
+    }
+    this->countMmap->base = static_cast<struct perf_event_mmap_page *>(currentMap);
+    this->countMmap->fd = this->fd;
+    return SUCCESS;
+}
+
 /**
  * Enable
  */
@@ -285,4 +415,15 @@ int KUNPENG_PMU::PerfCounter::Reset()
         return SUCCESS;
     }
     return PerfEvt::Reset();
+}
+
+int KUNPENG_PMU::PerfCounter::Close()
+{
+    if (this->countMmap && this->countMmap->base && this->countMmap->base != MAP_FAILED) {
+        munmap(this->countMmap->base, COUNT_PAGE_SIZE);
+    }
+    if (this->fd > 0) {
+        close(this->fd);
+    }
+    return SUCCESS;
 }

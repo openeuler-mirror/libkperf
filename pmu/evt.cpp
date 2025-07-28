@@ -93,47 +93,95 @@ __u64 KUNPENG_PMU::ReadOnce(__u64 *head)
         char charHead[1];
     } pointerUnion = {.charHead = {0}};
 
-    switch (static_cast<HEAD_SIZE>(sizeof(*head))) {
-        case HEAD_SIZE::HEAD_SIZE_ONE:
-            asm volatile("ldarb %w0, %1"
-                    : "=r"(*(__u8 __attribute__((__may_alias__)) *)pointerUnion.charHead)
-                    : "Q"(*head)
-                    : "memory");
-            break;
-        case HEAD_SIZE::HEAD_SIZE_TWO:
-            asm volatile("ldarh %w0, %1"
-                    : "=r"(*(__u16 __attribute__((__may_alias__)) *)pointerUnion.charHead)
-                    : "Q"(*head)
-                    : "memory");
-            break;
-        case HEAD_SIZE::HEAD_SIZE_FOUR:
-            asm volatile("ldar %w0, %1"
-                    : "=r"(*(__u32 __attribute__((__may_alias__)) *)pointerUnion.charHead)
-                    : "Q"(*head)
-                    : "memory");
-            break;
-        case HEAD_SIZE::HEAD_SIZE_EIGHT:
 #ifdef IS_X86
-            asm volatile("mov %0, %1"
-                    : "=r"(*(__u64 __attribute__((__may_alias__)) *)pointerUnion.charHead)
-                    : "Q"(*head)
-                    : "memory");
+    asm volatile("mov %0, %1"
+                 : "=r"(*(__u64 __attribute__((__may_alias__)) *)pointerUnion.charHead)
+                 : "Q"(*head)
+                 : "memory");
 #elif defined(IS_ARM)
-            asm volatile("ldar %0, %1"
-                    : "=r"(*(__u64 __attribute__((__may_alias__)) *)pointerUnion.charHead)
-                    : "Q"(*head)
-                    : "memory");
+    asm volatile("ldar %0, %1"
+                 : "=r"(*(__u64 __attribute__((__may_alias__)) *)pointerUnion.charHead)
+                 : "Q"(*head)
+                 : "memory");
 #elif defined(IS_RISCV64)
-            asm volatile("ld %0, %1\nfence"
-                    : "=r"(*(__u64 __attribute__((__may_alias__)) *)pointerUnion.charHead)
-                    : "m"(*head)
-                    : "memory");
+    asm volatile("ld %0, %1\nfence"
+                 : "=r"(*(__u64 __attribute__((__may_alias__)) *)pointerUnion.charHead)
+                 : "m"(*head)
+                 : "memory");
 #else
-            #error "Unsupported architecture"
+#error "Unsupported architecture"
 #endif
-            break;
-        default:
-            break;
-    }
+
+    return pointerUnion.val;
+}
+
+__s64 KUNPENG_PMU::ReadOnce(__s64 *head)
+{
+    union {
+        typeof(*head) val;
+        char charHead[1];
+    } pointerUnion = {.charHead = {0}};
+
+#ifdef IS_X86
+    asm volatile("mov %0, %1"
+                 : "=r"(*(__s64 __attribute__((__may_alias__)) *)pointerUnion.charHead)
+                 : "Q"(*head)
+                 : "memory");
+#elif defined(IS_ARM)
+    asm volatile("ldar %0, %1"
+                 : "=r"(*(__s64 __attribute__((__may_alias__)) *)pointerUnion.charHead)
+                 : "Q"(*head)
+                 : "memory");
+#elif defined(IS_RISCV64)
+    asm volatile("ld %0, %1\nfence"
+                 : "=r"(*(__s64 __attribute__((__may_alias__)) *)pointerUnion.charHead)
+                 : "m"(*head)
+                 : "memory");
+#else
+#error "Unsupported architecture"
+#endif
+
+    return pointerUnion.val;
+}
+
+__u32 KUNPENG_PMU::ReadOnce(__u32 *head)
+{
+    union {
+        typeof(*head) val;
+        char charHead[1];
+    } pointerUnion = {.charHead = {0}};
+
+    asm volatile("ldar %w0, %1"
+                 : "=r"(*(__u32 __attribute__((__may_alias__)) *)pointerUnion.charHead)
+                 : "Q"(*head)
+                 : "memory");
+    return pointerUnion.val;
+}
+
+__u16 KUNPENG_PMU::ReadOnce(__u16 *head)
+{
+    union {
+        typeof(*head) val;
+        char charHead[1];
+    } pointerUnion = {.charHead = {0}};
+
+    asm volatile("ldarh %w0, %1"
+                 : "=r"(*(__u16 __attribute__((__may_alias__)) *)pointerUnion.charHead)
+                 : "Q"(*head)
+                 : "memory");
+    return pointerUnion.val;
+}
+
+__u8 KUNPENG_PMU::ReadOnce(__u8 *head)
+{
+    union {
+        typeof(*head) val;
+        char charHead[1];
+    } pointerUnion = {.charHead = {0}};
+
+    asm volatile("ldarb %w0, %1"
+                 : "=r"(*(__u8 __attribute__((__may_alias__)) *)pointerUnion.charHead)
+                 : "Q"(*head)
+                 : "memory");
     return pointerUnion.val;
 }

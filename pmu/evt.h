@@ -100,6 +100,10 @@ protected:
     bool needTryExcludeKernel;
 };
 int PerfEventOpen(struct perf_event_attr* attr, pid_t pid, int cpu, int groupFd, unsigned long flags);
+__s64 ReadOnce(__s64 *head);
 __u64 ReadOnce(__u64 *head);
+__u32 ReadOnce(__u32 *head);
+__u16 ReadOnce(__u16 *head);
+__u8 ReadOnce(__u8 *head);
 }   // namespace KUNPENG_PMU
 #endif
