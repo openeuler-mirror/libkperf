@@ -66,6 +66,41 @@ int KUNPENG_PMU::EvtList::CollectorXYArrayDoTask(std::vector<std::vector<PerfEvt
     return SUCCESS;
 }
 
+void KUNPENG_PMU::EvtList::AdaptErrInfo(int err, PerfEvtPtr perfEvt) 
+{
+    switch (err) {
+        case LIBPERF_ERR_INVALID_EVENT:
+            if (branchSampleFilter != KPERF_NO_BRANCH_SAMPLE) {
+                pcerr::SetCustomErr(err,
+                    "Invalid event:" + perfEvt->GetEvtName() +
+                        ", PMU Hardware or event type doesn't support branch stack sampling");
+            } else {
+                pcerr::SetCustomErr(
+                    err, "Invalid event:" + perfEvt->GetEvtName() + ", " + std::string{strerror(errno)});
+            }
+            break;
+        case LIBPERF_ERR_NO_PERMISSION:
+            pcerr::SetCustomErr(LIBPERF_ERR_NO_PERMISSION,
+                "Current user does not have the permission to collect the event."
+                "Switch to the root user and run the 'echo -1 > /proc/sys/kernel/perf_event_paranoid'");
+            break;
+        case LIBPERF_ERR_FAIL_MMAP:
+            if (errno == ENOMEM) {
+                pcerr::SetCustomErr(err,
+                    "The number of mmap reaches the upper limit.Execute `echo {NUM} > /proc/sys/vm/max_map_count` to "
+                    "set a bigger limit");
+            } else {
+                pcerr::SetCustomErr(err, std::string{strerror(errno)});
+            }
+            break;
+        case UNKNOWN_ERROR:
+            pcerr::SetCustomErr(err, std::string{strerror(errno)});
+            break;
+        default:
+            break;
+    }
+}
+
 int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader)
 {
     // Init process map.
@@ -103,24 +138,8 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
                     }
                     continue;
                 }
-
-                if (err == LIBPERF_ERR_INVALID_EVENT) {
-                    if (branchSampleFilter != KPERF_NO_BRANCH_SAMPLE) {
-                        pcerr::SetCustomErr(err, "Invalid event:" + perfEvt->GetEvtName() + ", PMU Hardware or event type doesn't support branch stack sampling");
-                    } else {
-                        pcerr::SetCustomErr(err, "Invalid event:" + perfEvt->GetEvtName() + ", " + std::string{strerror(errno)});
-                    }
-                }
-
-                if (err == LIBPERF_ERR_NO_PERMISSION) {
-                    pcerr::SetCustomErr(LIBPERF_ERR_NO_PERMISSION, "Current user does not have the permission to collect the event."
-                                                                   "Switch to the root user and run the 'echo -1 > /proc/sys/kernel/perf_event_paranoid'");
-                }
-
-                if (err == UNKNOWN_ERROR) {
-                    pcerr::SetCustomErr(err, std::string{strerror(errno)});
-                }
-
+                
+                this->AdaptErrInfo(err, perfEvt);
                 return err;
             }
             fdList.insert(perfEvt->GetFd());

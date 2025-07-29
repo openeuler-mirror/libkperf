@@ -15,6 +15,7 @@
 #include <vector>
 #include <unordered_map>
 #include <fstream>
+#include <cstring>
 #include <dirent.h>
 #include "pmu_event.h"
 #include "core.h"

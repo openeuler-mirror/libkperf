@@ -33,4 +33,6 @@ enum CHIP_TYPE {
 struct CpuTopology* GetCpuTopology(int coreId);
 CHIP_TYPE GetCpuType();
 std::set<int> GetOnLineCpuIds();
+unsigned* GetCoreList(int start);
+int GetNumaCore(unsigned nodeId, unsigned** coreList);
 #endif       

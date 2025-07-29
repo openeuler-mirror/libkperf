@@ -118,6 +118,7 @@ private:
     int CollectorXYArrayDoTask(std::vector<std::vector<PerfEvtPtr>>& xyArray, int task);
     void FillFields(const size_t& start, const size_t& end, CpuTopology* cpuTopo, ProcTopology* procTopo,
                     std::vector<PmuData>& pmuData);
+    void AdaptErrInfo(int err, PerfEvtPtr perfEvt);
 
     std::vector<CpuPtr> cpuList;
     std::vector<ProcPtr> pidList;

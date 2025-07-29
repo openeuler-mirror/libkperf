@@ -15,6 +15,7 @@
  ******************************************************************************/
 #include <iostream>
 #include <vector>
+#include <cstring>
 #include "pmu_list.h"
 #include "pmu_analysis.h"
 #include "pcerr.h"
