@@ -114,6 +114,15 @@ static int CheckEvtList(unsigned numEvt, char** evtList)
     return SUCCESS;
 }
 
+static int CheckGroupList(unsigned numGroup, struct EvtAttr *evtAttr)
+{
+    if (numGroup > 0 && evtAttr == nullptr) {
+        New(LIBPERF_ERR_INVALID_EVTATTR, "Invalid evtAttr list: numGroup is greater than 0, but evtAttr is null.");
+        return LIBPERF_ERR_INVALID_EVTATTR;
+    }
+    return SUCCESS;
+}
+
 static bool InvalidSampleRate(enum PmuTaskType collectType, struct PmuAttr *attr)
 {
     // When sampling, sample frequency must be less than or equal to perf_event_max_sample_rate.
@@ -267,6 +276,11 @@ static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
     if (err != SUCCESS) {
         return err;
     }
+    err = CheckGroupList(attr->numGroup, attr->evtAttr);
+    if (err != SUCCESS) {
+        return err;
+    }
+
     err = CheckCollectTypeConfig(collectType, attr);
     if (err != SUCCESS) {
         return err;
@@ -972,9 +986,11 @@ struct PmuTaskAttr* AssignPmuTaskParam(enum PmuTaskType collectType, struct PmuA
             return taskParam;
         }
         for (int i = 0; i < attr->numCgroup; ++i) {
+            // when the numEvt > numGroup, set groupId=-1 for other events
+            int groupId = i >= attr->numGroup? -1 : attr->evtAttr[i].groupId;
             std::string cgroupName(attr->cgroupNameList[i]);
             for (int j = 0; j < attr->numEvt; ++j) {
-                struct PmuTaskAttr* current = AssignTaskParam(collectType, attr, attr->evtList[j], attr->evtAttr[j].groupId, cgroupName.c_str(), cgroupFds[cgroupName]);
+                struct PmuTaskAttr* current = AssignTaskParam(collectType, attr, attr->evtList[j], groupId, cgroupName.c_str(), cgroupFds[cgroupName]);
                 if (current == nullptr) {
                     return nullptr;
                 }
@@ -987,7 +1003,8 @@ struct PmuTaskAttr* AssignPmuTaskParam(enum PmuTaskType collectType, struct PmuA
             return taskParam;
         }
         for (int i = 0; i < attr->numEvt; ++i) {
-            struct PmuTaskAttr* current = AssignTaskParam(collectType, attr, attr->evtList[i], attr->evtAttr[i].groupId, nullptr, -1);
+            int groupId = i >= attr->numGroup? -1 : attr->evtAttr[i].groupId;
+            struct PmuTaskAttr* current = AssignTaskParam(collectType, attr, attr->evtList[i], groupId, nullptr, -1);
             if (current == nullptr) {
                 return nullptr;
             }

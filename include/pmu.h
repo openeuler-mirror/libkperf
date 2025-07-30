@@ -129,6 +129,9 @@ struct PmuAttr {
     // the same group id is the a event group. 
     // Note: if the group id value is -1, it indicates that the event is not grouped.
     struct EvtAttr *evtAttr;
+    // Length of evtAttr list.
+    // when numEvt > numGroup, the other events will not set to any group.
+    unsigned numGroup;
 
     union {
         // Sample period, only available for SAMPLING and SPE_SAMPLING.

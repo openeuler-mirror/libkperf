@@ -32,6 +32,8 @@ func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error)
     ELF_DWARF 既支持ELF数据采集，也支持行号解析
   * CallStack
     是否采集调用栈，默认不采集，只取栈顶数据
+  * BlockedSample
+    是否执行blocked Sample采样
   * DataFilter C.enum_SpeFilter
     * TS_ENABLE           使能通用计时器
     * PA_ENABLE           采集物理地址

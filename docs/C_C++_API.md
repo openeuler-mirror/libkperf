@@ -21,6 +21,8 @@
     采集cpu核的个数
   * struct EvtAttr *evtAttr
     事件分组列表，和evtList搭配使用，同组事件需要使用相同数字表示，不同组事件使用不同的数字代表，如果数字为-1，则不参与事件分组
+  * unsigned numGroup
+    参与分组的事件个数
   * union
     unsigned period  采样周期，仅支持SAMPLING和SPE_SAMPLING模式
     unsigned freq    采样频率，仅支持SAMPLING模式
