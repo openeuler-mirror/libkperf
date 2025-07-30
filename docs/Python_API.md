@@ -33,6 +33,8 @@ kperf.open(collector_type: kperf.PmuTaskType, pmu_attr: kperf.PmuAttr)
     RESOLVE_ELF_DWARF = 2 既支持ELF数据采集，也支持行号解析
   * callStack
     是否采集调用栈，默认不采集，只取栈顶数据
+  * blockedSample
+    是否执行blocked Sample采样
   * dataFilter
     * SPE_FILTER_NONE = 0
     * TS_ENABLE = 1 << 0  使能通用计时器

@@ -303,6 +303,7 @@ kperf.close(pd)
 ```go
 // go代码示例
 import "libkperf/kperf"
+import "fmt"
 import "time"
 
 func main() {
@@ -683,12 +684,14 @@ perf stat -e "{inst_retired,inst_spec,cycles}","{inst_retired,cycles}"
 
 // 指定5个事件，因为inst_retired和cycles会重复出现在多个指标中，所以需要重复指定事件。
 char *evtList[5] = {"inst_retired", "inst_spec", "cycles", "inst_retired", "cycles"};
-// 指定事件分组编号，前三个事件为一组，后两个事件为一组。
+// 指定事件分组编号，前三个事件为一组，后两个事件为一组。设置groupId=-1表示对应事件不参与分组。
+// 当事件数量numEvt超过指定事件分组数量numGroup时，超过分组数量的事件的groupId默认为-1，即不参与分组。
 EvtAttr groupId[5] = {1,1,1,2,2};
 PmuAttr attr = {0};
 attr.evtList = evtList;
 attr.numEvt = 5;
 attr.evtAttr = groupId;
+attr.numGroup = 5;
 int pd = PmuOpen(COUNTING, &attr);
 PmuEnable(pd);
 sleep(1);

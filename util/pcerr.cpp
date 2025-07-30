@@ -60,6 +60,7 @@ namespace pcerr {
             {LIBPERF_ERR_NOT_SUPPORT_PMU_FILE, "writing perf.data is not supported"},
             {LIBPERF_ERR_INVALID_PMU_FILE, "invalid pmu file handler"},
             {LIBPERF_ERR_OPEN_INVALID_FILE, "failed to open file"},
+            {LIBPERF_ERR_INVALID_EVTATTR, "invalid evtAttr list"},
     };
     static std::unordered_map<int, std::string> warnMsgs = {
             {LIBPERF_WARN_CTXID_LOST, "Some SPE context packets are not found in the traces."},

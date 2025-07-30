@@ -70,9 +70,10 @@ class CtypesPmuAttr(ctypes.Structure):
         int* pidList;                   // pid list
         unsigned numPid;                // length of pid list
         int* cpuList;                   // cpu id list
-        int numCpu;                // length of cpu id list
+        unsigned numCpu;                // length of cpu id list
 
         struct EvtAttr *evtAttr;        // events group id info
+        unsigned numGroup               // length of evtAttr
 
         union {
             unsigned period;            // sample period
@@ -100,6 +101,7 @@ class CtypesPmuAttr(ctypes.Structure):
         ('cpuList',       ctypes.POINTER(ctypes.c_int)),
         ('numCpu',        ctypes.c_uint),
         ('evtAttr',       ctypes.POINTER(CtypesEvtAttr)),
+        ('numGroup',      ctypes.c_uint),
         ('sampleRate',    SampleRateUnion),
         ('useFreq',       ctypes.c_uint, 1),
         ('excludeUser',   ctypes.c_uint, 1),
@@ -168,10 +170,12 @@ class CtypesPmuAttr(ctypes.Structure):
             self.sampleRate.freq = ctypes.c_uint(sampleRate)
 
         if evtAttr:
-            numEvtAttr = len(evtAttr)
-            self.evtAttr = (CtypesEvtAttr * numEvtAttr)(*[CtypesEvtAttr(evt) for evt in evtAttr])
+            numGroup = len(evtAttr)
+            self.evtAttr = (CtypesEvtAttr * numGroup)(*[CtypesEvtAttr(evt) for evt in evtAttr])
+            self.numGroup = ctypes.c_uint(numGroup)
         else:
             self.evtAttr = None
+            self.numGroup = ctypes.c_uint(0)
         
         if cgroupNameList:
             numCgroup = len(cgroupNameList)
@@ -297,17 +301,23 @@ class PmuAttr(object):
             self.c_pmu_attr.numPid = ctypes.c_uint(0)
 
     @property
+    def numGroup(self):
+        return self.c_pmu_attr.numGroup
+
+    @property
     def evtAttr(self):
-        return [self.c_pmu_attr.evtAttr[i] for i in range(len(self.c_pmu_attr.evtAttr))]
+        return [self.c_pmu_attr.evtAttr[i] for i in range(self.numGroup)]
 
     @evtAttr.setter
     def evtAttr(self, evtAttr):
         if evtAttr:
-            numEvtAttr = len(evtAttr)
-            self.c_pmu_attr.evtAttr = (CtypesEvtAttr * numEvtAttr)(*[CtypesEvtAttr(evt) for evt in evtAttr])
+            numGroup = len(evtAttr)
+            self.c_pmu_attr.evtAttr = (CtypesEvtAttr * numGroup)(*[CtypesEvtAttr(evt) for evt in evtAttr])
+            self.c_pmu_attr.numGroup = ctypes.c_uint(numGroup)
         else:
             self.c_pmu_attr.evtAttr = None
-    
+            self.c_pmu_attr.numGroup = ctypes.c_uint(0)
+
     @property
     def numCpu(self):
         return self.c_pmu_attr.numCpu
