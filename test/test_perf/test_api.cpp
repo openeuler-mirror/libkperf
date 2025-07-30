@@ -33,7 +33,6 @@ public:
 
         // Create a simple process.
         demoPid = RunTestApp(exePath);
-        cout << "pid: " << demoPid << endl;
     }
 
     static void TearDownTestCase()
@@ -226,6 +225,9 @@ TEST_F(TestAPI, SampleOnlyElf)
 
 TEST_F(TestAPI, SpeNoSymbol)
 {
+    if (!HasSpeDevice()) {
+        GTEST_SKIP();
+    }
     auto attr = GetSpeAttribute();
     attr.symbolMode = NO_SYMBOL_RESOLVE;
     pd = PmuOpen(SPE_SAMPLING, &attr);
@@ -240,6 +242,9 @@ TEST_F(TestAPI, SpeNoSymbol)
 
 TEST_F(TestAPI, SpeInitSuccess)
 {
+    if (!HasSpeDevice()) {
+        GTEST_SKIP();
+    }
     auto attr = GetSpeAttribute();
     pd = PmuOpen(SPE_SAMPLING, &attr);
     ASSERT_TRUE(pd != -1);
@@ -247,6 +252,9 @@ TEST_F(TestAPI, SpeInitSuccess)
 
 TEST_F(TestAPI, SpeCollectSuccess)
 {
+    if (!HasSpeDevice()) {
+        GTEST_SKIP();
+    }
     auto attr = GetSpeAttribute();
     pd = PmuOpen(SPE_SAMPLING, &attr);
     ASSERT_TRUE(pd != -1);
@@ -256,6 +264,9 @@ TEST_F(TestAPI, SpeCollectSuccess)
 
 TEST_F(TestAPI, SpeReadSuccess)
 {
+    if (!HasSpeDevice()) {
+        GTEST_SKIP();
+    }
     auto attr = GetSpeAttribute();
     pd = PmuOpen(SPE_SAMPLING, &attr);
     int ret = PmuCollect(pd, 3000, collectInterval);
@@ -321,6 +332,9 @@ TEST_F(TestAPI, SampleCollectBadPd)
 
 TEST_F(TestAPI, SpeInitBusy)
 {
+    if (!HasSpeDevice()) {
+        GTEST_SKIP();
+    }
     auto attr = GetSpeAttribute();
     pd = PmuOpen(SPE_SAMPLING, &attr);
     ASSERT_TRUE(pd != -1);
@@ -344,6 +358,9 @@ TEST_F(TestAPI, SampleSystem)
 
 TEST_F(TestAPI, SpeSystem)
 {
+    if (!HasSpeDevice()) {
+        GTEST_SKIP();
+    }
     auto attr = GetSpeAttribute();
     attr.pidList = nullptr;
     attr.numPid = 0;
@@ -405,12 +422,10 @@ TEST_F(TestAPI, TestRaiseNumFd)
     auto pid = RunTestApp("test_12threads");
     attr.pidList[0] = pid;
     attr.numPid = 1;
-    std::cout << "pid:" << attr.pidList[0] << std::endl;
     sleep(1); // Wait for all threads to start
     int numChildTid = 0;
     int* childTidList = GetChildTid(attr.pidList[0], &numChildTid);
     int numCpu = attr.cpuList == nullptr ? sysconf(_SC_NPROCESSORS_ONLN) : attr.numCpu;
-    std::cout << "required fd:" << numCpu * numChildTid << std::endl;
 
     unsigned long setNumFd = numCpu * numChildTid - 100;
     struct rlimit currentlim;
@@ -418,12 +433,6 @@ TEST_F(TestAPI, TestRaiseNumFd)
     struct rlimit rlim {
             .rlim_cur = setNumFd, .rlim_max = currentlim.rlim_max,
     };
-    if (setrlimit(RLIMIT_NOFILE, &rlim) == 0) {
-        std::cout << "setrlimit rlim_cur:" << setNumFd << std::endl;
-    } else {
-        std::cout << "currentlim rlim_cur:" << currentlim.rlim_cur << std::endl;
-        std::cout << "currentlim rlim_max:" << currentlim.rlim_max << std::endl;
-    }
 
     int pd = PmuOpen(SAMPLING, &attr);
     std::cout << "pd:" << pd << std::endl;
@@ -434,7 +443,6 @@ TEST_F(TestAPI, TestRaiseNumFd)
     // When (execution)
     struct PmuData* pmuData = nullptr;
     int len = PmuRead(pd, &pmuData);
-    std::cout << "len:" << len << std::endl;
 
     // Then (verification)
     ASSERT_GT(len, 0);
@@ -596,6 +604,9 @@ TEST_F(TestAPI, TestShortChild)
 
 TEST_F(TestAPI, TestSPEEventGroup)
 {
+    if (!HasSpeDevice()) {
+        GTEST_SKIP();
+    }
     auto attr = GetSpeAttribute();
     unsigned numEvt = 16;
     struct EvtAttr groupId[numEvt] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13, 13, 13};

@@ -35,6 +35,7 @@
 const std::string TRACE_EVENT_PATH = "/sys/kernel/tracing/events/";
 const std::string TRACE_DEBUG_EVENT_PATH = "/sys/kernel/debug/tracing/events/";
 const std::string PERF_EVENT_PARANOID_PATH = "/proc/sys/kernel/perf_event_paranoid";
+const std::string SYS_DEVICE_PATH = "/sys/bus/event_source/devices/";
 
 inline bool IsValidIp(unsigned long ip)
 {

@@ -29,7 +29,7 @@ static std::unordered_map<std::string, std::unordered_map<string, uint64_t>> unC
 
 static int GetDeviceType(const string &devName)
 {
-    string typePath = "/sys/devices/" + devName + "/type";
+    string typePath = SYS_DEVICE_PATH + devName + "/type";
     std::string realPath = GetRealPath(typePath);
     if (!IsValidPath(realPath)) {
         return -1;
@@ -47,7 +47,7 @@ static int GetDeviceType(const string &devName)
 static std::vector<int> GetCpuMask(const string &devName)
 {
     std::vector<int> maskList;
-    string maskPath = "/sys/devices/" + devName + "/cpumask";
+    string maskPath = SYS_DEVICE_PATH + devName + "/cpumask";
     std::string realPath = GetRealPath(maskPath);
     if (!IsValidPath(realPath)) {
         return maskList;
@@ -100,7 +100,7 @@ static int64_t GetUncoreEventConfig(const char* pmuName)
     auto findSlash = strName.find('/');
     string devName = strName.substr(0, findSlash);
     string evtName = strName.substr(devName.size() + 1, strName.size() - 1 - (devName.size() + 1));
-    string evtPath = "/sys/devices/" + devName + "/events/" + evtName;
+    string evtPath = SYS_DEVICE_PATH + devName + "/events/" + evtName;
     std::string realPath = GetRealPath(evtPath);
     if (!IsValidPath(realPath)) {
         return -1;
@@ -157,7 +157,7 @@ int FillUncoreFields(const char* pmuName, PmuEvt *evt)
 // Read the config params bitfiled from /sys/devices/<devName>/format
 static std::unordered_map<std::string, UncoreConfigBitFiled> ReadConfigFormatFiles(const string &devName)
 {
-    string formatPath = "/sys/devices/" + devName + "/format";
+    string formatPath = SYS_DEVICE_PATH + devName + "/format";
     std::string realPath = GetRealPath(formatPath);
     if (!IsValidPath(realPath)) {
         return {};
@@ -225,7 +225,7 @@ static std::unordered_map<std::string, UncoreConfigBitFiled> ReadConfigFormatFil
 
 static std::pair<string, string> ReadSupportEvtValue(const string &devName, const string &evtName)
 {
-    string evtPath = "/sys/devices/" + devName + "/events/" + evtName;
+    string evtPath = SYS_DEVICE_PATH + devName + "/events/" + evtName;
     std::string realPath = GetRealPath(evtPath);
     if (!IsValidPath(realPath)) {
         return {};

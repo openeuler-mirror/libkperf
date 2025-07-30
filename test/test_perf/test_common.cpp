@@ -20,6 +20,7 @@
 #include <fstream>
 #include <sstream>
 #include "process_map.h"
+#include "common.h"
 #include "test_common.h"
 using namespace std;
 
@@ -32,7 +33,9 @@ pid_t RunTestApp(const string &name)
         // Bind test_perf to cpu 0 and bind test app to cpu 1.
         cpu_set_t mask;
         CPU_ZERO(&mask);
-        CPU_SET(1, &mask);
+        for (int i = 1;i < 16; ++i) {
+            CPU_SET(i, &mask);
+        }
         sched_setaffinity(0, sizeof(mask), &mask);
         setpgid(0, 0);
         string fullPath = string(dirname(myDir)) + "/case/" + name;
@@ -87,8 +90,11 @@ bool FoundAllTids(PmuData *data, int len, pid_t pid)
 vector<pid_t> GetChildPid(pid_t pid)
 {
     string childPath = "/proc/" + to_string(pid) + "/task/" + to_string(pid) + "/children";
-    ifstream in(childPath);
     vector<pid_t> ret;
+    ifstream in(childPath);
+    if (!in.is_open()) {
+	return ret;
+    }
     while (!in.eof()) {
         string pidStr;
         in >> pidStr;
@@ -237,3 +243,15 @@ bool HasEvent(PmuData *data, int len, std::string evt)
     }
     return false;
 }
+
+bool HasSpeDevice()
+{
+    auto devices = ListDirectoryEntries("/sys/devices");
+    for (auto &dev : devices) {
+        if (dev == "arm_spe_0") {
+            return true;
+	}
+    }
+    return false;
+}
+

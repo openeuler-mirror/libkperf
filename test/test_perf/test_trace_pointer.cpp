@@ -13,11 +13,18 @@
  * Description: test for trace pointer event.
  ******************************************************************************/
 #include "test_common.h"
+#include "common.h"
 
 using namespace std;
 
 class TestTraceRaw : public testing::Test {
 public:
+    void SetUp() {
+        if (GetTraceEventDir() == "") {
+            GTEST_SKIP();
+        }
+    }
+
     void TearDown() {
         if (appPid != 0) {
             KillApp(appPid);

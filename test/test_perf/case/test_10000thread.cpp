@@ -38,7 +38,7 @@ void *ThreadFunc(void *data)
 
 int main()
 {
-    const int threadNum = 100000;
+    const int threadNum = 10000;
     pthread_t threads[threadNum];
     for (int i = 0; i < threadNum; i++)
     {
@@ -54,6 +54,5 @@ int main()
         void *retval;
         pthread_join(threads[i], &retval);
     }
-    cout << "compilte" << endl;
     return 0;
 }

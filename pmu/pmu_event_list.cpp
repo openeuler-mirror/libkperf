@@ -32,7 +32,6 @@ using EvtQueryer = function<const char**(unsigned*)>;
 
 static const string SLASH = "/";
 static const string COLON = ":";
-static const string SYS_DEVICES = "/sys/devices/";
 static const string EVENT_DIR = "/events/";
 
 static std::mutex pmuEventListMtx;
@@ -51,7 +50,7 @@ static void GetEventName(const string& devName, vector<const char*>& eventList)
 {
     DIR* dir;
     struct dirent* entry;
-    auto path = SYS_DEVICES + devName + EVENT_DIR;
+    auto path = SYS_DEVICE_PATH + devName + EVENT_DIR;
     dir = opendir(path.c_str());
     if (dir == nullptr) {
         return;
@@ -148,12 +147,12 @@ const char** QueryUncoreEvent(unsigned *numEvt)
     }
     DIR* dir;
     struct dirent* entry;
-    dir = opendir(SYS_DEVICES.c_str());
+    dir = opendir(SYS_DEVICE_PATH.c_str());
     if (dir == nullptr) {
         return nullptr;
     }
     while ((entry = readdir(dir)) != nullptr) {
-        if (entry->d_type != DT_DIR) {
+        if (entry->d_type != DT_DIR && entry->d_type != DT_LNK) {
             continue;
         }
         string folderName = entry->d_name;

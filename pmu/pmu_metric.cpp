@@ -45,7 +45,6 @@ static vector<unsigned> coreArray;
 static std::mutex pmuBdfListMtx;
 static std::mutex pmuDeviceDataMtx;
 
-static const string SYS_DEVICES = "/sys/devices/";
 static const string SYS_BUS_PCI_DEVICES = "/sys/bus/pci/devices";
 static const string SYS_IOMMU_DEVICES = "/sys/class/iommu";
 static const string SYS_CPU_INFO_PATH = "/sys/devices/system/cpu/cpu";
@@ -388,11 +387,11 @@ namespace KUNPENG_PMU {
         if (!uncoreRawDeviceList.empty()) {
             return SUCCESS;
         }
-        if (!ExistPath(SYS_DEVICES) || !IsDirectory(SYS_DEVICES)) {
+        if (!ExistPath(SYS_DEVICE_PATH) || !IsDirectory(SYS_DEVICE_PATH)) {
             New(LIBPERF_ERR_QUERY_EVENT_LIST_FAILED, "Query uncore evtlist falied!");
             return LIBPERF_ERR_QUERY_EVENT_LIST_FAILED;
         }
-        vector<string> entries = ListDirectoryEntries(SYS_DEVICES);
+        vector<string> entries = ListDirectoryEntries(SYS_DEVICE_PATH);
         for (const auto& entry : entries) {
             for (auto devPrefix : supportedDevicePrefixes) {
                 if (entry.find(devPrefix) == 0) {
@@ -507,15 +506,15 @@ namespace KUNPENG_PMU {
     // build map: EP bdf number -> bus
     static int GeneratePcieBusToBdfMap(unordered_map<string, string>& pcieBdfToBus)
     {
-        if (!ExistPath(SYS_DEVICES) || !IsDirectory(SYS_DEVICES)) {
+        if (!ExistPath(SYS_DEVICE_PATH) || !IsDirectory(SYS_DEVICE_PATH)) {
             New(LIBPERF_ERR_QUERY_EVENT_LIST_FAILED, "Query uncore evtlist falied!");
             return LIBPERF_ERR_QUERY_EVENT_LIST_FAILED;
         }
-        vector<string> entries = ListDirectoryEntries(SYS_DEVICES);
+        vector<string> entries = ListDirectoryEntries(SYS_DEVICE_PATH);
         for (const auto& entry : entries) {
             if (entry.find("pci0000:") == 0) {
                 string bus = entry.substr(strlen("pci0000:"));
-                FindAllSubBdfDevice(SYS_DEVICES + "/" + entry, bus, pcieBdfToBus);
+                FindAllSubBdfDevice(SYS_DEVICE_PATH + "/" + entry, bus, pcieBdfToBus);
             }
         }
         return SUCCESS;
@@ -555,20 +554,20 @@ namespace KUNPENG_PMU {
         }
         auto classifiedDevices = ClassifyDevicesByPrefix(pcieConfig.devicePrefix, pcieConfig.subDeviceName, pcieConfig.splitPosition);
         if (classifiedDevices.empty()) {
-            New(LIBPERF_ERR_NOT_SUPPORT_PCIE_COUNTING, "No pcie pmu device is not exist in the " + SYS_DEVICES);
+            New(LIBPERF_ERR_NOT_SUPPORT_PCIE_COUNTING, "No pcie pmu device is not exist in the " + SYS_DEVICE_PATH);
             return LIBPERF_ERR_NOT_SUPPORT_PCIE_COUNTING;
         }
         for (const auto& device : classifiedDevices) {
             const auto& pcieNuma = device.first;
             const auto& pciePmus = device.second;
             for (auto& pciePmu : pciePmus) {
-                string bdfBusPath = SYS_DEVICES + "/" + pciePmu + "/bus";
+                string bdfBusPath = SYS_DEVICE_PATH + "/" + pciePmu + "/bus";
                 if (!ExistPath(bdfBusPath)) {
                     New(LIBPERF_ERR_NOT_SUPPORT_PCIE_COUNTING, "pcie pmu bus file is empty");
                     return LIBPERF_ERR_NOT_SUPPORT_PCIE_COUNTING;
                 }
-                string bdfMinPath = SYS_DEVICES + "/" + pciePmu + "/bdf_min";
-                string bdfMaxPath = SYS_DEVICES + "/" + pciePmu + "/bdf_max";
+                string bdfMinPath = SYS_DEVICE_PATH + "/" + pciePmu + "/bdf_min";
+                string bdfMaxPath = SYS_DEVICE_PATH + "/" + pciePmu + "/bdf_max";
 
                 string bdfBusStr = ReadFileContent(bdfBusPath);
                 int bus = 0;

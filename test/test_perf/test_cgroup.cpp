@@ -56,6 +56,8 @@ protected:
         PmuAttr attr = {0};
         attr.evtList = evtList;
         attr.numEvt = numEvt;
+        attr.freq = 1000;
+        attr.useFreq = 1;
         attr.symbolMode = RESOLVE_ELF_DWARF;
         return attr;
     }
@@ -151,6 +153,9 @@ TEST_F(TestCgroup, TestCgroupSampling)
 
 TEST_F(TestCgroup, TestCgroupSPE)
 {
+    if (!HasSpeDevice()) {
+        GTEST_SKIP();
+    }
     cgroupPath += "/cgroupSPE";
     ASSERT_EQ(mkdir(cgroupPath.c_str(), 0755), 0);
     const string cgroupProc = cgroupPath + "/cgroup.procs";

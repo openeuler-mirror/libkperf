@@ -256,10 +256,6 @@ TEST_F(TestGroup, TestSamplingNoEventGroup)
     char *evtList[numEvt] = {"r11", "r3"};
     attr.evtList = evtList;
 
-    int cpuList[1] = {1};
-    attr.cpuList = cpuList;
-    attr.numCpu = 1;
-
     struct EvtAttr groupId[numEvt] = {1, 2};
     attr.evtAttr = groupId;
 
@@ -280,9 +276,6 @@ TEST_F(TestGroup, TestSamplingEventGroup)
     char *evtList[numEvt] = {"r11", "r3"};
     attr.evtList = evtList;
 
-    int cpuList[1] = {1};
-    attr.cpuList = cpuList;
-    attr.numCpu = 1;
     struct EvtAttr groupId[numEvt] = {2, 2};
     attr.evtAttr = groupId;
 
@@ -303,9 +296,6 @@ TEST_F(TestGroup, TestSamplingEventGroupHasUncore)
     char *evtList[numEvt] = {"hisi_sccl1_ddrc/flux_rd/", "r3"};
     attr.evtList = evtList;
 
-    int cpuList[1] = {1};
-    attr.cpuList = cpuList;
-    attr.numCpu = 1;
     struct EvtAttr groupId[numEvt] = {2, 2};
     attr.evtAttr = groupId;
 

@@ -19,6 +19,12 @@ using namespace std;
 
 class TestSPE : public testing::Test {
 public:
+    void SetUp() {
+        if (!HasSpeDevice()) {
+            GTEST_SKIP();
+        }
+    }
+
     void TearDown() {
         if (appPid != 0) {
             KillApp(appPid);
