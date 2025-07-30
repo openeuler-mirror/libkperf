@@ -107,7 +107,10 @@ union KUNPENG_PMU::PerfEvent *KUNPENG_PMU::PerfSampler::SampleReadEvent()
 
 int KUNPENG_PMU::PerfSampler::Mmap()
 {
-    int mmapLen = (SAMPLE_PAGES + 1) * SAMPLE_PAGE_SIZE;
+    // <samplePages> determines size of ring buffer on each core.
+    // For normal sampling, size of each packet is around 0x38;For brbe sampling, size of each packet is around 0x330 which requires more buffer size.
+    int samplePages = branchSampleFilter == KPERF_NO_BRANCH_SAMPLE ? DEFAULT_SAMPLE_PAGES : BRBE_SAMPLE_PAGES;
+    int mmapLen = (samplePages + 1) * SAMPLE_PAGE_SIZE;
     auto mask = mmapLen - SAMPLE_PAGE_SIZE - 1;
     this->sampleMmap->prev = 0;
     this->sampleMmap->mask = static_cast<__u64>(mask);
