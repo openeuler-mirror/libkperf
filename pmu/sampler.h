@@ -34,7 +34,8 @@ namespace KUNPENG_PMU {
     };
 
     static constexpr int SAMPLE_PAGE_SIZE = 4096;
-    static constexpr int SAMPLE_PAGES = 128;
+    static constexpr int DEFAULT_SAMPLE_PAGES = 128;
+    static constexpr int BRBE_SAMPLE_PAGES = 1024;
 
     class PerfSampler : public PerfEvt {
     public:

@@ -45,4 +45,7 @@ bool CheckDataPid(PmuData *data, int len, int pid);
 // Check whether at least one event name of data is <evt>.
 bool HasEvent(PmuData *data, int len, std::string evt);
 
+// Check whether there is arm_spe_0 device.
+bool HasSpeDevice();
+
 #endif

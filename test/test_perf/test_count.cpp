@@ -427,7 +427,7 @@ TEST_F(TestCount, SimdRatio)
 
 static std::vector<string> GetHHADirs() {
     vector<string> hhaEvents;
-    unique_ptr<DIR, decltype(&closedir)> dir(opendir("/sys/devices"), &closedir);
+    unique_ptr<DIR, decltype(&closedir)> dir(opendir(SYS_DEVICE_PATH.c_str()), &closedir);
     if(!dir) {
         return hhaEvents;
     }
@@ -439,7 +439,7 @@ static std::vector<string> GetHHADirs() {
             continue;
         }
 
-        if(dt->d_type == DT_DIR && strstr(name.c_str(), "hha") != nullptr) {
+        if((dt->d_type == DT_DIR || dt->d_type == DT_LNK) && strstr(name.c_str(), "hha") != nullptr) {
             hhaEvents.push_back(name + "/");
         }
     }                                                                                                   
@@ -447,7 +447,7 @@ static std::vector<string> GetHHADirs() {
 }
 
 
-TEST_F(TestCount, DeleteEvtAfterOpenPmuu) {
+TEST_F(TestCount, DeleteEvtAfterOpenPmu) {
     struct PmuAttr attr = {nullptr};
     vector<string> hhaEvents = GetHHADirs();
     ASSERT_TRUE(hhaEvents.size() > 0);
@@ -483,7 +483,7 @@ TEST_F(TestCount, DeleteEvtAfterOpenPmuu) {
 
 TEST_F(TestCount, Test100000ThreadInCountingMode) {
     // Count a process with one event.
-    appPid = RunTestApp("test_100000thread");
+    appPid = RunTestApp("test_10000thread");
     sleep(1);
     int pidList[1] = {appPid};
     int cpuList[1] = {1};

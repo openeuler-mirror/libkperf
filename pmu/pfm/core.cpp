@@ -1124,8 +1124,7 @@ std::string GetPmuDevicePath()
         return pmuDevice;
     }
 
-    static const string DEVICE_PATH = "/sys/bus/event_source/devices/";
-    DIR *dir = opendir(DEVICE_PATH.c_str());
+    DIR *dir = opendir(SYS_DEVICE_PATH.c_str());
     if (dir == nullptr) {
         return "";
     }
@@ -1134,7 +1133,7 @@ std::string GetPmuDevicePath()
 #ifdef IS_X86
         // look for devices like /sys/bus/event_source/devices/cpu/events
         if (strcmp(dent->d_name, "cpu") == 0) {
-            pmuDevice = DEVICE_PATH + dent->d_name;
+            pmuDevice = SYS_DEVICE_PATH + dent->d_name;
             break;
         }
 #else
@@ -1144,9 +1143,9 @@ std::string GetPmuDevicePath()
 
         // look for devices like /sys/bus/event_source/devices/armv8_pmuv3_0/cpus.
         // Refer to function <is_arm_pmu_core> in kernel.
-        string armPmuPath = DEVICE_PATH + dent->d_name + "/cpus";
+        string armPmuPath = SYS_DEVICE_PATH + dent->d_name + "/cpus";
         if (ExistPath(armPmuPath)) {
-            pmuDevice = DEVICE_PATH + dent->d_name;
+            pmuDevice = SYS_DEVICE_PATH + dent->d_name;
             break;
         }
 #endif
