@@ -81,6 +81,8 @@ kperf.open(collector_type: kperf.PmuTaskType, pmu_attr: kperf.PmuAttr)
     采集cgroup的名称列表
   * numCgroup;
     采集cgroup的个数
+  * enableUserAccess
+    是否直接读取寄存器，仅支持COUNTING模式
 * 返回值是int值
   fd > 0 成功初始化
   fd == -1 初始化失败，可通过 kperf.error()查看错误信息

@@ -76,6 +76,10 @@ void SetBlockedSample(struct PmuAttr* attr, unsigned blockedSample) {
 	attr->blockedSample = blockedSample;
 }
 
+void SetEnableUserAccess(struct PmuAttr* attr, unsigned enableUserAccess) {
+	attr->enableUserAccess = enableUserAccess;
+}
+
 struct PmuData* IPmuRead(int fd, int* len) {
 	struct PmuData* pmuData = NULL;
 	*len = PmuRead(fd, &pmuData);
@@ -340,6 +344,7 @@ type PmuAttr struct {
 	BranchSampleFilter uint64          // if the filter mode is set, branch_sample_stack data is collected in sampling mode
 	BlockedSample bool                 // This indicates whether the blocked sample mode is enabled. In this mode, both on Cpu and off Cpu data is collected
 	CgroupNameList []string            // cgroup name list, if not user cgroup function, this field will be nullptr.if use cgroup function,use the cgroup name in the cgroupList to apply all event in the Event list
+	EnableUserAccess bool              // enable user access counting for current process
 }
 
 type CpuTopology struct {
@@ -581,6 +586,10 @@ func ToCPmuAttr(attr PmuAttr) (*C.struct_PmuAttr, int) {
 
 	if attr.SymbolMode > 0 {
 		cAttr.symbolMode = attr.SymbolMode
+	}
+
+	if attr.EnableUserAccess {
+		C.SetEnableUserAccess(cAttr, C.uint(1))
 	}
 
 	return cAttr, 0

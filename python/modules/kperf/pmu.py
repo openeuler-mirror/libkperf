@@ -283,7 +283,8 @@ class PmuAttr(_libkperf.PmuAttr):
                  minLatency = 0,
                  includeNewFork = False,
                  branchSampleFilter = 0,
-                 cgroupNameList = None):
+                 cgroupNameList = None,
+                 enableUserAccess = False):
         super(PmuAttr, self).__init__(
             evtList=evtList,
             pidList=pidList,
@@ -301,7 +302,8 @@ class PmuAttr(_libkperf.PmuAttr):
             minLatency=minLatency,
             includeNewFork=includeNewFork,
             branchSampleFilter=branchSampleFilter,
-            cgroupNameList=cgroupNameList
+            cgroupNameList=cgroupNameList,
+            enableUserAccess=enableUserAccess,
         )
 
 
