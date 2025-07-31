@@ -150,11 +150,12 @@ __u32 KUNPENG_PMU::ReadOnce(__u32 *head)
         typeof(*head) val;
         char charHead[1];
     } pointerUnion = {.charHead = {0}};
-
+#if defined(IS_ARM)
     asm volatile("ldar %w0, %1"
                  : "=r"(*(__u32 __attribute__((__may_alias__)) *)pointerUnion.charHead)
                  : "Q"(*head)
                  : "memory");
+#endif
     return pointerUnion.val;
 }
 
@@ -164,11 +165,12 @@ __u16 KUNPENG_PMU::ReadOnce(__u16 *head)
         typeof(*head) val;
         char charHead[1];
     } pointerUnion = {.charHead = {0}};
-
+#if defined(IS_ARM)
     asm volatile("ldarh %w0, %1"
                  : "=r"(*(__u16 __attribute__((__may_alias__)) *)pointerUnion.charHead)
                  : "Q"(*head)
                  : "memory");
+#endif
     return pointerUnion.val;
 }
 
@@ -178,10 +180,11 @@ __u8 KUNPENG_PMU::ReadOnce(__u8 *head)
         typeof(*head) val;
         char charHead[1];
     } pointerUnion = {.charHead = {0}};
-
+#if defined(IS_ARM)
     asm volatile("ldarb %w0, %1"
                  : "=r"(*(__u8 __attribute__((__may_alias__)) *)pointerUnion.charHead)
                  : "Q"(*head)
                  : "memory");
+#endif
     return pointerUnion.val;
 }
