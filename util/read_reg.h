@@ -32,7 +32,9 @@ static uint64_t ReadTimestamp(void)
 #ifndef Barrier
 static inline void Barrier()
 {
+#if defined(IS_ARM)
     asm volatile("" : : : "memory");
+#endif
 }
 #endif
 

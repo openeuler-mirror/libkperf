@@ -16,14 +16,17 @@
 
 uint64_t ReadPmccntr()
 {
-    uint64_t val;
+    uint64_t val = 0;
+#if defined(__aarch64__)
     asm volatile("mrs %0, pmccntr_el0" : "=r"(val));
+#endif
     return val;
 }
 
 uint64_t ReadPmevcntr(int idx)
 {
     uint64_t val = 0;
+#if defined(__aarch64__)
     switch (idx) {
         case 0:
             asm volatile("mrs %0, pmevcntr0_el0" : "=r"(val));
@@ -121,7 +124,7 @@ uint64_t ReadPmevcntr(int idx)
         default:
             break;
     }
-
+#endif
     return val;
 }
 
@@ -139,7 +142,9 @@ uint64_t ReadPerfCounter(int idx)
 
 uint64_t ReadCntvct()
 {
-    uint64_t val;
+    uint64_t val = 0;
+#if defined(__aarch64__)
     asm volatile("mrs %0, cntvct_el0" : "=r"(val));
+#endif
     return val;
 }
