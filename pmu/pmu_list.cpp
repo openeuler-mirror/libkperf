@@ -944,7 +944,7 @@ namespace KUNPENG_PMU {
                     SetWarn(LIBPERF_WARN_FAIL_GET_PROC, "process not found: " + std::to_string(childTidList[j]));
                     continue;
                 }
-                procTopo->isMain = masterPid == procTopo->tid;
+                procTopo->isMain = (masterPid == procTopo->tid || masterPid == 0);
                 foundProc = true;
                 DBG_PRINT("Add to proc map: %d\n", childTidList[j]);
                 procTopoList.emplace_back(shared_ptr<ProcTopology>(procTopo, FreeProcTopo));

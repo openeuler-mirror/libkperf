@@ -119,6 +119,9 @@ struct ProcTopology *GetProcTopology(pid_t pid)
 {
     unique_ptr<ProcTopology, void (*)(ProcTopology *)> procTopo(new ProcTopology{0}, FreeProcTopo);
     procTopo->tid = pid;
+    if (pid == 0) {
+        return procTopo.release();
+    }
     try {
         // Get tgid, i.e., process id.
         procTopo->pid = GetTgid(pid);
@@ -201,6 +204,12 @@ bool GetChildTidRecursive(const char *dirPath, int **childTidList, int *count)
 int *GetChildTid(int pid, int *numChild)
 {
     int *childTidList = nullptr;
+    if (pid == 0) {
+        childTidList = new int[1];
+        childTidList[0] = 0;
+        *numChild = 1;
+        return childTidList;
+    }
     char dirPath[PATH_LEN];
     if (snprintf(dirPath, sizeof(dirPath), "/proc/%d/task", pid) < 0) {
         return nullptr;

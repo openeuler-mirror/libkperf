@@ -166,7 +166,7 @@ struct PerfRecordExit {
 
 struct PerfMmap {
     struct perf_event_mmap_page* base;
-    __u64 mask;
+    int mask;
     int fd;
     __u64 prev;
     __u64 start;

@@ -61,6 +61,10 @@ namespace pcerr {
             {LIBPERF_ERR_INVALID_PMU_FILE, "invalid pmu file handler"},
             {LIBPERF_ERR_OPEN_INVALID_FILE, "failed to open file"},
             {LIBPERF_ERR_INVALID_EVTATTR, "invalid evtAttr list"},
+            {LIBPERF_ERR_COUNT_MMAP_IS_NULL, "Count mmap page is null!"},
+            {LIBPERF_ERR_ENABLE_USER_ACCESS_FAILED, "Enable user access failed!"},
+            {LIBPERF_ERR_ALLOCATE_REGISTER_FAILED, "Allocate register failed!"},
+            {LIBPERF_ERR_CHECK_USER_ACCESS, "Check user access failed!"}
     };
     static std::unordered_map<int, std::string> warnMsgs = {
             {LIBPERF_WARN_CTXID_LOST, "Some SPE context packets are not found in the traces."},

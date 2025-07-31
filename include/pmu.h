@@ -173,6 +173,9 @@ struct PmuAttr {
     // if use cgroup function. use the cgroup name in the cgroupNamelist to apply all events in the Event list
     char** cgroupNameList;
     unsigned numCgroup;
+
+    // enable user access counting for current process
+    unsigned enableUserAccess : 1;
 };
 
 enum PmuTraceType {
