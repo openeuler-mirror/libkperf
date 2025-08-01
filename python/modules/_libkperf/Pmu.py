@@ -116,6 +116,7 @@ class CtypesPmuAttr(ctypes.Structure):
         ('branchSampleFilter', ctypes.c_ulong),
         ('cgroupNameList', ctypes.POINTER(ctypes.c_char_p)),
         ('numCgroup',     ctypes.c_uint),
+        ('enableUserAccess', ctypes.c_uint, 1)
     ]
 
     def __init__(self,
@@ -137,6 +138,7 @@ class CtypesPmuAttr(ctypes.Structure):
                  branchSampleFilter=0,
                  cgroupNameList=None,
                  numCgroup=0,
+                 enableUserAccess=False,
                  *args, **kw):
         super(CtypesPmuAttr, self).__init__(*args, **kw)
 
@@ -198,6 +200,7 @@ class CtypesPmuAttr(ctypes.Structure):
         self.callStack = callStack
         self.blockedSample = blockedSample
         self.includeNewFork = includeNewFork
+        self.enableUserAccess = enableUserAccess
 
 
 class PmuAttr(object):
@@ -220,7 +223,8 @@ class PmuAttr(object):
                  minLatency=0,
                  includeNewFork=False,
                  branchSampleFilter=0,
-                 cgroupNameList=None):
+                 cgroupNameList=None,
+                 enableUserAccess=False):
 
         self.__c_pmu_attr = CtypesPmuAttr(
             evtList=evtList,
@@ -239,8 +243,17 @@ class PmuAttr(object):
             minLatency=minLatency,
             includeNewFork=includeNewFork,
             branchSampleFilter=branchSampleFilter,
-            cgroupNameList=cgroupNameList
+            cgroupNameList=cgroupNameList,
+            enableUserAccess=enableUserAccess
         )
+
+    @property
+    def enableUserAccess(self):
+        return bool(self.c_pmu_attr.enableUserAccess)
+
+    @enableUserAccess.setter
+    def enableUserAccess(self, enableUserAccess):
+        self.c_pmu_attr.enableUserAccess = int(enableUserAccess)
 
     @property
     def c_pmu_attr(self):

@@ -43,6 +43,30 @@ def test_event_counting():
     kperf.disable(pd)  # Ensure PMU is disabled after the test
     kperf.close(pd)  # Close the PMU descriptor
 
+def test_user_access_counting():
+    evtList = ["cycles"]
+    pidList = [0]
+    cpuList = [-1]
+    pmu_attr = kperf.PmuAttr(evtList=evtList, pidList=pidList, cpuList=cpuList, enableUserAccess=True)
+    pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
+    if pd == -1:
+        pytest.fail(f"Failed to open PMU: {kperf.error()}")
+    kperf.enable(pd)
+    evtMap = read_event_counts(pd)
+    for _ in range(3):
+        i = 10000
+        while i > 0:
+            i = i - 1
+        evtMap = read_event_counts(pd)
+        assert len(evtMap) > 0, "No event counts were captured"
+        for evt, count in evtMap.items():
+            assert isinstance(evt, str), f"Invalid event name: {evt}"
+            assert isinstance(count, int), f"Invalid count for event {evt}: {count}"
+        for evt, count in evtMap.items():
+            print(f"evt:{evt} count:{count}")
+    kperf.disable(pd)
+    kperf.close(pd)
+
 if __name__ == '__main__':
     # 提示用户使用pytest 运行测试文件
     print("This is a pytest script. Run it using the 'pytest' command.")

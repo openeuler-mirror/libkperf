@@ -78,6 +78,8 @@ func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error)
     采集cgroup的名称列表
   * int numCgroup;
     采集cgroup的个数
+  * EnableUserAccess bool
+    是否直接读取寄存器，仅支持COUNTING模式
 
 * 返回值是int,error, 如果error不等于nil，则返回的int值为对应采集任务ID
 

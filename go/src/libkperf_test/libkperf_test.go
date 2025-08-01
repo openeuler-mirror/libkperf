@@ -31,6 +31,37 @@ func TestCount(t *testing.T) {
 	kperf.PmuClose(fd)
 }
 
+func TestUserAccessCount(t *testing.T) {
+	attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, SymbolMode:kperf.ELF, PidList:[]int{0}, CpuList:[]int{-1}, EnableUserAccess:true}
+	fd, err := kperf.PmuOpen(kperf.COUNT, attr)
+	if err != nil {
+		t.Fatalf("kperf pmuopen counting failed, expect err is nil, but is %v", err)
+	}
+	kperf.PmuEnable(fd)
+	dataVo, err := kperf.PmuRead(fd)
+	if err != nil {
+		t.Fatalf("kperf pmuread failed, expect err is nil, but is %v", err)
+	}
+	for i, n := 0, 3; i < n; i++ {
+		j := 0;
+		for k := 0; k < 1000000000; k++ {
+			j = j + 1
+		}
+		dataVo, err = kperf.PmuRead(fd)
+		if err != nil {
+			t.Fatalf("kperf pmuread failed, expect err is nil, but is %v", err)
+		}
+		for _, o := range dataVo.GoData {
+			t.Logf("================================Get Counting data success================================")
+			t.Logf("count base info comm=%v, evt=%v, pid=%v, tid=%v, coreId=%v, numaId=%v, sockedId=%v", o.Comm, o.Evt, o.Pid, o.Tid, o.CpuTopo.CoreId, o.CpuTopo.NumaId, o.CpuTopo.SocketId)
+			t.Logf("count info count=%v, countPercent=%v", o.Count, o.CountPercent)
+		}
+		kperf.PmuDataFree(dataVo)
+	}
+	kperf.PmuDisable(fd)
+	kperf.PmuClose(fd)
+}
+
 func TestSample(t *testing.T) {
 	attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, SymbolMode:kperf.ELF_DWARF, CallStack:true, SampleRate: 1000, UseFreq:true}
 	fd, err := kperf.PmuOpen(kperf.SAMPLE, attr)
