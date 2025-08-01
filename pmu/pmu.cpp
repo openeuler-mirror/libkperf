@@ -17,6 +17,7 @@
 #include <fstream>
 #include <unistd.h>
 #include <linux/perf_event.h>
+#include <linux/version.h>
 #include <cstring>
 #include "common.h"
 #include "pfm.h"
@@ -268,6 +269,10 @@ static int CheckUserAccess(enum PmuTaskType collectType, struct PmuAttr *attr)
 {
     if (!attr->enableUserAccess) {
         return SUCCESS;
+    }
+    if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)) {
+        New(LIBPERF_ERR_CHECK_USER_ACCESS, "Pmuv3 is supported after linux-kernel-v6.6");
+        return LIBPERF_ERR_CHECK_USER_ACCESS;
     }
     if (attr->numPid != 1 || attr->pidList[0] != 0) {
         New(LIBPERF_ERR_CHECK_USER_ACCESS, "The pidList is incorrectly set!");
