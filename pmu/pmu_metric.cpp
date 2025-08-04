@@ -45,6 +45,7 @@ static vector<unsigned> coreArray;
 static std::mutex pmuBdfListMtx;
 static std::mutex pmuDeviceDataMtx;
 
+static const string SYS_DEVICES = "/sys/devices";
 static const string SYS_BUS_PCI_DEVICES = "/sys/bus/pci/devices";
 static const string SYS_IOMMU_DEVICES = "/sys/class/iommu";
 static const string SYS_CPU_INFO_PATH = "/sys/devices/system/cpu/cpu";
@@ -506,15 +507,15 @@ namespace KUNPENG_PMU {
     // build map: EP bdf number -> bus
     static int GeneratePcieBusToBdfMap(unordered_map<string, string>& pcieBdfToBus)
     {
-        if (!ExistPath(SYS_DEVICE_PATH) || !IsDirectory(SYS_DEVICE_PATH)) {
+        if (!ExistPath(SYS_DEVICES) || !IsDirectory(SYS_DEVICES)) {
             New(LIBPERF_ERR_QUERY_EVENT_LIST_FAILED, "Query uncore evtlist falied!");
             return LIBPERF_ERR_QUERY_EVENT_LIST_FAILED;
         }
-        vector<string> entries = ListDirectoryEntries(SYS_DEVICE_PATH);
+        vector<string> entries = ListDirectoryEntries(SYS_DEVICES);
         for (const auto& entry : entries) {
             if (entry.find("pci0000:") == 0) {
                 string bus = entry.substr(strlen("pci0000:"));
-                FindAllSubBdfDevice(SYS_DEVICE_PATH + "/" + entry, bus, pcieBdfToBus);
+                FindAllSubBdfDevice(SYS_DEVICES + "/" + entry, bus, pcieBdfToBus);
             }
         }
         return SUCCESS;
