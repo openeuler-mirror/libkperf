@@ -22,6 +22,7 @@
 #include <sys/mman.h>
 #include <iostream>
 #include <linux/perf_event.h>
+#include <linux/version.h>
 #include "pmu.h"
 #include "linked_list.h"
 #include "pfm_event.h"
@@ -73,6 +74,7 @@ int KUNPENG_PMU::PerfCounter::Read(EventData &eventData)
 namespace KUNPENG_PMU {
 static int PerfMmapReadSelf(const std::shared_ptr<PerfMmap> &countMmap, struct ReadFormat &perfCountValue)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
     uint32_t seq;
     uint32_t idx;
     uint32_t timeMult = 0;
@@ -134,6 +136,7 @@ static int PerfMmapReadSelf(const std::shared_ptr<PerfMmap> &countMmap, struct R
         }
     }
     perfCountValue.value = cnt;
+#endif
     return SUCCESS;
 }
 }  // namespace KUNPENG_PMU
