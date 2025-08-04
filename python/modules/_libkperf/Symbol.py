@@ -76,8 +76,8 @@ class CtypesSymbol(ctypes.Structure):
 
 class Symbol:
 
-    __slots__ = ['__c_sym']
-
+    __slots__ = ['__c_sym','__module', '__symbolName', '__mangleName', '__fileName']
+ 
     def __init__(self,
                  addr= 0,
                  module= '',
@@ -116,7 +116,9 @@ class Symbol:
 
     @property
     def module(self):
-        return self.c_sym.module.decode(UTF_8)
+        if not self.__module:
+            self.__module = self.c_sym.module.decode(UTF_8)
+        return self.__module
 
     @module.setter
     def module(self, module):
@@ -124,7 +126,9 @@ class Symbol:
 
     @property
     def symbolName(self):
-        return self.c_sym.symbolName.decode(UTF_8)
+        if not self.__symbolName:
+            self.__symbolName = self.c_sym.symbolName.decode(UTF_8)
+        return self.__symbolName
 
     @symbolName.setter
     def symbolName(self, symbolName):
@@ -132,7 +136,9 @@ class Symbol:
     
     @property
     def mangleName(self):
-        return self.c_sym.mangleName.decode(UTF_8)
+        if not self.__mangleName:
+            self.__mangleName = self.c_sym.mangleName.decode(UTF_8)
+        return self.__mangleName
 
     @mangleName.setter
     def mangleName(self, mangleName):
@@ -140,7 +146,9 @@ class Symbol:
 
     @property
     def fileName(self):
-        return self.c_sym.fileName.decode(UTF_8)
+        if not self.__fileName:
+            self.__fileName = self.c_sym.fileName.decode(UTF_8)
+        return  self.__fileName
 
     @fileName.setter
     def fileName(self, fileName):
@@ -190,6 +198,10 @@ class Symbol:
     def from_c_sym(cls, c_sym):
         symbol = cls()
         symbol.__c_sym = c_sym
+        symbol.__module = None
+        symbol.__symbolName = None
+        symbol.__mangleName = None
+        symbol.__fileName = None
         return symbol
 
 
@@ -215,12 +227,12 @@ CtypesStack._fields_ = [
 
 class Stack(object):
 
-    __slots__ = ['__c_stack']
+    __slots__ = ['__c_stack', '__symbol', '__next', '__prev']
 
-    def __init__(self,
+    def __init__(self, 
                  symbol= None,
-                 next = None,
-                 prev = None,
+                 next= None,
+                 prev= None,
                  count= 0):
         self.__c_stack = CtypesStack(
             symbol=symbol.c_sym if symbol else None,
@@ -235,7 +247,9 @@ class Stack(object):
 
     @property
     def symbol(self):
-        return Symbol.from_c_sym(self.c_stack.symbol.contents) if self.c_stack.symbol else None
+        if not self.__symbol:
+            self.__symbol = Symbol.from_c_sym(self.c_stack.symbol.contents) if self.c_stack.symbol else None
+        return self.__symbol
 
     @symbol.setter
     def symbol(self, symbol):
@@ -244,7 +258,9 @@ class Stack(object):
 
     @property
     def next(self):
-        return self.from_c_stack(self.c_stack.next.contents) if self.c_stack.next else None
+        if not self.__next:
+            self.__next = self.from_c_stack(self.c_stack.next.contents) if self.c_stack.next else None
+        return self.__next
 
     @next.setter
     def next(self, next):
@@ -253,7 +269,9 @@ class Stack(object):
 
     @property
     def prev(self):
-        return self.from_c_stack(self.c_stack.prev.contents) if self.c_stack.prev else None
+        if not self.__prev:
+            self.__prev = self.from_c_stack(self.c_stack.prev.contents) if self.c_stack.prev else None
+        return self.__prev
 
     @prev.setter
     def prev(self, prev):
@@ -271,6 +289,9 @@ class Stack(object):
     def from_c_stack(cls, c_stack):
         stack = cls()
         stack.__c_stack = c_stack
+        stack.__symbol = None
+        stack.__next = None
+        stack.__prev = None
         return stack
 
 

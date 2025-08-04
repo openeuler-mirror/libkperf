@@ -1287,7 +1287,7 @@ class CtypesPmuData(ctypes.Structure):
 
 
 class ImplPmuData:
-    __slots__ = ['__c_pmu_data']
+    __slots__ = ['__c_pmu_data', '__stack', '__cpuTopo', '__ext', '__rawData']
 
     def __init__(self,
                  stack=None,
@@ -1329,7 +1329,9 @@ class ImplPmuData:
 
     @property
     def stack(self):
-        return Stack.from_c_stack(self.c_pmu_data.stack.contents) if self.c_pmu_data.stack else None
+        if not self.__stack:
+            self.__stack = Stack.from_c_stack(self.c_pmu_data.stack.contents) if self.c_pmu_data.stack else None
+        return self.__stack
 
     @stack.setter
     def stack(self, stack):
@@ -1385,7 +1387,9 @@ class ImplPmuData:
 
     @property
     def cpuTopo(self):
-        return CpuTopology.from_c_cpu_topo(self.c_pmu_data.cpuTopo.contents) if self.c_pmu_data.cpuTopo else None
+        if not self.__cpuTopo:
+            self.__cpuTopo = CpuTopology.from_c_cpu_topo(self.c_pmu_data.cpuTopo.contents) if self.c_pmu_data.cpuTopo else None
+        return self.__cpuTopo
 
     @cpuTopo.setter
     def cpuTopo(self, cpuTopo):
@@ -1425,11 +1429,15 @@ class ImplPmuData:
         
     @property
     def ext(self):
-        return PmuDataExt.from_pmu_data_ext(self.c_pmu_data.ext.contents) if self.c_pmu_data.ext else None
+        if not self.__ext:
+            self.__ext = PmuDataExt.from_pmu_data_ext(self.c_pmu_data.ext.contents) if self.c_pmu_data.ext else None
+        return self.__ext
 
     @property
     def rawData(self):
-        return SampleRawData.from_sample_raw_data(self.c_pmu_data.rawData) if self.c_pmu_data.rawData else None
+        if not self.__rawData:
+            self.__rawData = SampleRawData.from_sample_raw_data(self.c_pmu_data.rawData) if self.c_pmu_data.rawData else None
+        return self.__rawData
 
     @ext.setter
     def ext(self, ext):
@@ -1447,6 +1455,10 @@ class ImplPmuData:
     def from_c_pmu_data(cls, c_pmu_data):
         pmu_data = cls()
         pmu_data.__c_pmu_data = c_pmu_data
+        pmu_data.__stack = None
+        pmu_data.__ext = None
+        pmu_data.__cpuTopo = None
+        pmu_data.__rawData = None
         return pmu_data
 
 
