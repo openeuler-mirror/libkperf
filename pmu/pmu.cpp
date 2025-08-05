@@ -987,6 +987,7 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
     if (cgroupName != nullptr) {
         taskParam->pmuEvt->cgroupName = cgroupName;
     }
+    taskParam->pmuEvt->enableUserAccess = attr->enableUserAccess;
     if (attr->enableUserAccess) {
         taskParam->pmuEvt->config1 = REQUEST_USER_ACCESS;
     }

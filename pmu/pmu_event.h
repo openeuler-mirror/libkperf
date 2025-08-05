@@ -51,6 +51,7 @@ struct PmuEvt {
     unsigned includeNewFork : 1; // count new fork tid
     int cgroupFd;
     std::string cgroupName;
+    unsigned enableUserAccess : 1; // avoid uncore (config1 & 0x2)  == 0x2
 };
 
 namespace KUNPENG_PMU {

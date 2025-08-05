@@ -144,7 +144,7 @@ static int PerfMmapReadSelf(const std::shared_ptr<PerfMmap> &countMmap, struct R
 int KUNPENG_PMU::PerfCounter::ReadSingleEvent(std::vector<PmuData> &data)
 {
     ReadFormat perfCountValue;
-    if (this->evt->config1 & REQUEST_USER_ACCESS) {
+    if (this->evt->enableUserAccess) {
         int err = PerfMmapReadSelf(this->countMmap, perfCountValue);
         if (err != SUCCESS) {
             return err;
@@ -225,7 +225,7 @@ int KUNPENG_PMU::PerfCounter::CountValueToData(const __u64 value, const __u64 ti
     // counting value (https://perf.wiki.kernel.org/index.php/Tutorial)
     double percent = 0.0;
     uint64_t increCount;
-    if (this->evt->config1 & REQUEST_USER_ACCESS) {
+    if (this->evt->enableUserAccess) {
         percent = 1;
         increCount = static_cast<uint64_t>(value - accumCount);
     } else if ((value == accumCount) || (timeRunning == running)) {
@@ -259,7 +259,7 @@ int KUNPENG_PMU::PerfCounter::CountValueToData(const __u64 value, const __u64 ti
 int KUNPENG_PMU::PerfCounter::Init(const bool groupEnable, const int groupFd, const int resetOutputFd)
 {
     int err = SUCCESS;
-    if (this->evt->config1 & REQUEST_USER_ACCESS) {  // user access
+    if (this->evt->enableUserAccess) {  // user access
         err = this->MapPerfAttrUserAccess();
         if (err != SUCCESS) {
             return err;
