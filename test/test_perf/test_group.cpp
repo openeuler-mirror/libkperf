@@ -131,6 +131,7 @@ TEST_F(TestGroup, TestCountingEventGroup)
 
     struct EvtAttr groupId[numEvt] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13, 13, 13};
     attr.evtAttr = groupId;
+    attr.numGroup = numEvt;
 
     int pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd != -1);
@@ -147,6 +148,38 @@ TEST_F(TestGroup, TestCountingEventGroup)
     ASSERT_NEAR(data[14].countPercent, data[15].countPercent, 0.0001);
 }
 
+TEST_F(TestGroup, TestEventGroupLessGroupId)
+{
+    auto attr = GetPmuAttribute();
+    unsigned numEvt = 16;
+    attr.numEvt = numEvt;
+    char *evtList[numEvt] = {"r3", "r1", "r14", "r4", "r12", "r5", "r25", "r2", 
+                            "r26", "r2d", "r17", "r11", "r8", "r22", "r24", "r10"};
+    attr.evtList = evtList;
+
+    struct EvtAttr groupId[13] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 11, 11};
+    attr.evtAttr = groupId;
+    attr.numGroup = 13;
+
+    int pd = PmuOpen(COUNTING, &attr);
+    ASSERT_TRUE(pd != -1);
+    int ret = PmuCollect(pd, 100, collectInterval);
+    ASSERT_EQ(ret, SUCCESS);
+
+    int len = PmuRead(pd, &data);
+    EXPECT_TRUE(data != nullptr);
+    ASSERT_EQ(len, numEvt);
+    ASSERT_TRUE(CheckDataEventList(data, len, evtList));
+
+    ASSERT_TRUE(data[12].groupId == 11);
+    ASSERT_TRUE(data[13].groupId == -1);
+    ASSERT_TRUE(data[14].groupId == -1);
+    ASSERT_TRUE(data[15].groupId == -1);
+    ASSERT_NE(data[13].countPercent, data[14].countPercent);
+    ASSERT_NE(data[13].countPercent, data[15].countPercent);
+    ASSERT_NE(data[14].countPercent, data[15].countPercent);
+}
+
 TEST_F(TestGroup, TestCountingEventGroupAllUncore)
 {
     auto attr = GetPmuAttribute();
@@ -156,9 +189,9 @@ TEST_F(TestGroup, TestCountingEventGroupAllUncore)
                             "r26", "r2d", "r17", "r11", 
                             "hisi_sccl1_ddrc2/flux_rd/", "hisi_sccl1_ddrc0/flux_wr/", "hisi_sccl1_hha2/rx_wbi/", "hisi_sccl1_hha3/bi_num/"};
     attr.evtList = evtList;
-
     struct EvtAttr groupId[numEvt] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13, 13, 13};
     attr.evtAttr = groupId;
+    attr.numGroup = numEvt;
     int pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd == -1);
 }
@@ -175,6 +208,7 @@ TEST_F(TestGroup, TestCountingEventGroupHasAggregateUncore)
 
     struct EvtAttr groupId[numEvt] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13};
     attr.evtAttr = groupId;
+    attr.numGroup = numEvt;
     int pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd != -1);
     int ret = PmuCollect(pd, 100, collectInterval);
@@ -198,6 +232,8 @@ TEST_F(TestGroup, TestCountingEventGroupHasAggregateUncoreEnd)
 
     struct EvtAttr groupId[numEvt] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13};
     attr.evtAttr = groupId;
+    attr.numGroup = numEvt;
+
     int pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd != -1);
     int ret = PmuCollect(pd, 100, collectInterval);
@@ -221,6 +257,7 @@ TEST_F(TestGroup, TestCountingEventGroupAllAggregateUncore)
 
     struct EvtAttr groupId[numEvt] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13};
     attr.evtAttr = groupId;
+    attr.numGroup = numEvt;
     int pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd == -1);
 }
@@ -237,6 +274,8 @@ TEST_F(TestGroup, TestCountingEventGroupHasUncore)
 
     struct EvtAttr groupId[numEvt] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13, 13, 13};
     attr.evtAttr = groupId;
+    attr.numGroup = numEvt;
+
     int pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd != -1);
     int ret = PmuCollect(pd, 100, collectInterval);
@@ -258,6 +297,7 @@ TEST_F(TestGroup, TestSamplingNoEventGroup)
 
     struct EvtAttr groupId[numEvt] = {1, 2};
     attr.evtAttr = groupId;
+    attr.numGroup = numEvt;
 
     int pd = PmuOpen(SAMPLING, &attr);
     ASSERT_TRUE(pd!= -1);
@@ -278,6 +318,7 @@ TEST_F(TestGroup, TestSamplingEventGroup)
 
     struct EvtAttr groupId[numEvt] = {2, 2};
     attr.evtAttr = groupId;
+    attr.numGroup = numEvt;
 
     int pd = PmuOpen(SAMPLING, &attr);
     ASSERT_TRUE(pd != -1);
@@ -298,6 +339,7 @@ TEST_F(TestGroup, TestSamplingEventGroupHasUncore)
 
     struct EvtAttr groupId[numEvt] = {2, 2};
     attr.evtAttr = groupId;
+    attr.numGroup = numEvt;
 
     int pd = PmuOpen(SAMPLING, &attr);
     ASSERT_TRUE(pd == -1);
@@ -317,6 +359,7 @@ TEST_F(TestGroup, TestEvtGroupForkNewThread)
     attr.includeNewFork = 1;
     struct EvtAttr groupId[numEvt] = {2, 2};
     attr.evtAttr = groupId;
+    attr.numGroup = numEvt;
 
     int pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd != -1);

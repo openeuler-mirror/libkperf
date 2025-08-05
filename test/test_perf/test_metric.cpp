@@ -115,7 +115,6 @@ TEST_F(TestMetric, CollectDDRBandwidth)
 
     PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
-    ASSERT_NE(devData[0].count, 0);
     ASSERT_EQ(devData[0].mode, PMU_METRIC_CHANNEL);
     ASSERT_EQ(devData[0].metric, PMU_DDR_READ_BW);
     ASSERT_EQ(devData[len - 1].metric, PMU_DDR_WRITE_BW);

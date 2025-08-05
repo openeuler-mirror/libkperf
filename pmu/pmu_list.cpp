@@ -689,6 +689,7 @@ namespace KUNPENG_PMU {
         auto parentMap = parentEventMap.at(pd);
         unordered_map<string, PmuData> dataMap;
         vector<string> dataMapKeys;
+        set<string> statSubEvents;
         for (auto& pmuData: evData) {
             auto parentName = parentMap.at(pmuData.evt);
             if (strcmp(parentName, pmuData.evt) == 0) {
@@ -711,8 +712,11 @@ namespace KUNPENG_PMU {
                 dataMap[parentName].cpuTopo = nullptr;
                 dataMapKeys.push_back(parentName);
             } else {
-                dataMap.at(parentMap.at(pmuData.evt)).count += pmuData.count;
+                if (statSubEvents.find(pmuData.evt) == statSubEvents.end()) {
+                    dataMap.at(parentMap.at(pmuData.evt)).count += pmuData.count;
+                }
             }
+            statSubEvents.insert(pmuData.evt);
         }
         // if aggregate event is the last event in eventList
         for (auto& key: dataMapKeys) {
