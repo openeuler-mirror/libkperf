@@ -31,7 +31,7 @@ namespace SOFTWARE_EVENT {
             KUNPENG_PMU::COMMON::ALIGNMENT_FAULTS,
             {
                     PERF_TYPE_SOFTWARE,
-                    PERF_COUNT_HW_STALLED_CYCLES_FRONTEND,
+                    PERF_COUNT_SW_ALIGNMENT_FAULTS,
                     KUNPENG_PMU::COMMON::ALIGNMENT_FAULTS
             }
     };
@@ -40,7 +40,7 @@ namespace SOFTWARE_EVENT {
             KUNPENG_PMU::COMMON::BPF_OUTPUT,
             {
                     PERF_TYPE_SOFTWARE,
-                    0xa,
+                    PERF_COUNT_SW_BPF_OUTPUT,
                     KUNPENG_PMU::COMMON::BPF_OUTPUT
             }
     };
@@ -50,7 +50,7 @@ namespace SOFTWARE_EVENT {
             KUNPENG_PMU::COMMON::CONTEXT_SWITCHES,
             {
                     PERF_TYPE_SOFTWARE,
-                    PERF_COUNT_HW_CACHE_MISSES,
+                    PERF_COUNT_SW_CONTEXT_SWITCHES,
                     KUNPENG_PMU::COMMON::CONTEXT_SWITCHES
             }
     };
@@ -59,7 +59,7 @@ namespace SOFTWARE_EVENT {
             KUNPENG_PMU::COMMON::CS,
             {
                     PERF_TYPE_SOFTWARE,
-                    PERF_COUNT_HW_CACHE_MISSES,
+                    PERF_COUNT_SW_CONTEXT_SWITCHES,
                     KUNPENG_PMU::COMMON::CS
             }
     };
@@ -78,7 +78,7 @@ namespace SOFTWARE_EVENT {
             KUNPENG_PMU::COMMON::CPU_MIGRATIONS,
             {
                     PERF_TYPE_SOFTWARE,
-                    PERF_COUNT_HW_BRANCH_INSTRUCTIONS,
+                    PERF_COUNT_SW_CPU_MIGRATIONS,
                     KUNPENG_PMU::COMMON::CPU_MIGRATIONS
             }
     };
@@ -87,7 +87,7 @@ namespace SOFTWARE_EVENT {
             KUNPENG_PMU::COMMON::MIGRATIONS,
             {
                     PERF_TYPE_SOFTWARE,
-                    PERF_COUNT_HW_BRANCH_INSTRUCTIONS,
+                    PERF_COUNT_SW_CPU_MIGRATIONS,
                     KUNPENG_PMU::COMMON::MIGRATIONS
             }
     };
@@ -96,7 +96,7 @@ namespace SOFTWARE_EVENT {
             KUNPENG_PMU::COMMON::DUMMY,
             {
                     PERF_TYPE_SOFTWARE,
-                    PERF_COUNT_HW_REF_CPU_CYCLES,
+                    PERF_COUNT_SW_DUMMY,
                     KUNPENG_PMU::COMMON::DUMMY
             }
     };
@@ -105,7 +105,7 @@ namespace SOFTWARE_EVENT {
             KUNPENG_PMU::COMMON::EMULATION_FAULTS,
             {
                     PERF_TYPE_SOFTWARE,
-                    PERF_COUNT_HW_STALLED_CYCLES_BACKEND,
+                    PERF_COUNT_SW_EMULATION_FAULTS,
                     KUNPENG_PMU::COMMON::EMULATION_FAULTS
             }
     };
@@ -114,7 +114,7 @@ namespace SOFTWARE_EVENT {
             KUNPENG_PMU::COMMON::MAJOR_FAULTS,
             {
                     PERF_TYPE_SOFTWARE,
-                    PERF_COUNT_HW_BUS_CYCLES,
+                    PERF_COUNT_SW_PAGE_FAULTS_MAJ,
                     KUNPENG_PMU::COMMON::MAJOR_FAULTS
             }
     };
@@ -123,7 +123,7 @@ namespace SOFTWARE_EVENT {
             KUNPENG_PMU::COMMON::MINOR_FAULTS,
             {
                     PERF_TYPE_SOFTWARE,
-                    PERF_COUNT_HW_BRANCH_MISSES,
+                    PERF_COUNT_SW_PAGE_FAULTS_MIN,
                     KUNPENG_PMU::COMMON::MINOR_FAULTS
             }
     };
@@ -132,7 +132,7 @@ namespace SOFTWARE_EVENT {
             KUNPENG_PMU::COMMON::PAGE_FAULTS,
             {
                     PERF_TYPE_SOFTWARE,
-                    PERF_COUNT_HW_CACHE_REFERENCES,
+                    PERF_COUNT_SW_PAGE_FAULTS,
                     KUNPENG_PMU::COMMON::PAGE_FAULTS
             }
     };
@@ -141,7 +141,7 @@ namespace SOFTWARE_EVENT {
             KUNPENG_PMU::COMMON::FAULTS,
             {
                     PERF_TYPE_SOFTWARE,
-                    PERF_COUNT_HW_CACHE_REFERENCES,
+                    PERF_COUNT_SW_PAGE_FAULTS,
                     KUNPENG_PMU::COMMON::FAULTS
             }
     };
@@ -151,7 +151,7 @@ namespace SOFTWARE_EVENT {
             KUNPENG_PMU::COMMON::TASK_CLOCK,
             {
                     PERF_TYPE_SOFTWARE,
-                    PERF_COUNT_HW_INSTRUCTIONS,
+                    PERF_COUNT_SW_TASK_CLOCK,
                     KUNPENG_PMU::COMMON::TASK_CLOCK
             }
     };
