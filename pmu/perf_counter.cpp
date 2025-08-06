@@ -115,7 +115,7 @@ static int PerfMmapReadSelf(const std::shared_ptr<PerfMmap> &countMmap, struct R
         cnt = ReadOnce(&pc->offset);
         if (pc->cap_user_rdpmc && idx) {
             // read the reg mapped by the countMmap->base->idx
-            uint64_t eventCount = ReadPerfCounter(idx - 1);
+            int64_t eventCount = ReadPerfCounter(idx - 1);
             uint16_t width = ReadOnce(&pc->pmc_width);
             eventCount <<= 64 - width;
             eventCount >>= 64 - width;
