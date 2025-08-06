@@ -380,6 +380,9 @@ int KUNPENG_PMU::PerfCounter::Mmap()
         return LIBPERF_ERR_FAIL_MMAP;
     }
     this->countMmap->base = static_cast<struct perf_event_mmap_page *>(currentMap);
+    if (this->countMmap->base->index == 0) {
+        return LIBPERF_ERR_COUNTER_INDEX_IS_ZERO;
+    }
     this->countMmap->fd = this->fd;
     return SUCCESS;
 }

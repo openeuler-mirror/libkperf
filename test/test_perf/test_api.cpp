@@ -14,6 +14,7 @@
  ******************************************************************************/
 #include <thread>
 #include <sys/resource.h>
+#include <linux/version.h>
 #include "util_time.h"
 #include "process_map.h"
 #include "common.h"
@@ -733,5 +734,36 @@ TEST_F(TestAPI, InvalidCgroupNameListSPE)
     attr.cgroupNameList = cgroupName;
     attr.numCgroup = 2;
     auto pd = PmuOpen(SPE_SAMPLING, &attr);
+    ASSERT_EQ(pd, -1);
+}
+
+TEST_F(TestAPI, InvalidUserAccessAttr)
+{
+    if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)) {
+        GTEST_SKIP();
+    }
+    PmuAttr attr = {0};
+    attr.enableUserAccess = 1;
+    char *evtList[1];
+    evtList[0] = (char *)"cycles";
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+    int pidList[1] = {0};
+    attr.pidList = pidList;
+    attr.numPid = 1;
+    int cpuList[1] = {-1};
+    attr.cpuList = cpuList;
+    attr.numCpu = 1;
+    auto pd = PmuOpen(COUNTING, &attr);
+    ASSERT_NE(pd, -1);
+    PmuClose(pd);
+    pd = PmuOpen(SAMPLING, &attr);
+    ASSERT_EQ(pd, -1);
+    pidList[0] = 999;
+    pd = PmuOpen(COUNTING, &attr);
+    ASSERT_EQ(pd, -1);
+    pidList[0] = 0;
+    cpuList[0] = 2;
+    pd = PmuOpen(COUNTING, &attr);
     ASSERT_EQ(pd, -1);
 }
