@@ -145,6 +145,12 @@ int KUNPENG_PMU::PerfCounter::ReadSingleEvent(std::vector<PmuData> &data)
 {
     ReadFormat perfCountValue;
     if (this->evt->enableUserAccess) {
+        if (!this->isCollect) {
+            // To keep consistency with read(fd) while the counting is disabled, 
+            // we should return the value we last read as we can't access the register now.
+            CountValueToData(this->accumCount[0], this->enabled, this->running, this->accumCount[0], data);
+            return SUCCESS;
+        }
         int err = PerfMmapReadSelf(this->countMmap, perfCountValue);
         if (err != SUCCESS) {
             return err;
@@ -354,6 +360,7 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttrUserAccess()
     attr.type = this->evt->type;
     attr.config = this->evt->config;
     attr.config1 = this->evt->config1;
+    attr.disabled = 1;
     this->fd = PerfEventOpen(&attr, this->pid, this->cpu, -1, 0);
     DBG_PRINT("type: %d cpu: %d config: %llx config1: %llx myfd: %d \n",
         attr.type,
@@ -364,6 +371,7 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttrUserAccess()
     if (__glibc_unlikely(this->fd < 0)) {
         return MapErrno(errno);
     }
+    this->groupFd = -1;
     return SUCCESS;
 }
 
@@ -380,9 +388,6 @@ int KUNPENG_PMU::PerfCounter::Mmap()
         return LIBPERF_ERR_FAIL_MMAP;
     }
     this->countMmap->base = static_cast<struct perf_event_mmap_page *>(currentMap);
-    if (this->countMmap->base->index == 0) {
-        return LIBPERF_ERR_COUNTER_INDEX_IS_ZERO;
-    }
     this->countMmap->fd = this->fd;
     return SUCCESS;
 }
@@ -401,6 +406,10 @@ int KUNPENG_PMU::PerfCounter::Enable()
     if (err != SUCCESS) {
         return err;
     }
+    if (this->evt->enableUserAccess && this->countMmap->base->index == 0) {
+        return LIBPERF_ERR_COUNTER_INDEX_IS_ZERO;
+    }
+    this->isCollect = true;
     this->accumCount.clear();
     this->enabled = 0;
     this->running = 0;
@@ -412,7 +421,11 @@ int KUNPENG_PMU::PerfCounter::Disable()
     if (groupFd != -1) {
         return SUCCESS;
     }
-    return PerfEvt::Disable();
+    int err = PerfEvt::Disable();
+    if (err == SUCCESS) {
+        this->isCollect = false;
+    }
+    return err;
 }
 
 int KUNPENG_PMU::PerfCounter::Reset()
