@@ -93,6 +93,9 @@ void KUNPENG_PMU::EvtList::AdaptErrInfo(int err, PerfEvtPtr perfEvt)
                 pcerr::SetCustomErr(err, std::string{strerror(errno)});
             }
             break;
+        case LIBPERF_ERR_COUNTER_INDEX_IS_ZERO:
+            pcerr::SetCustomErr(err, "There are too many open events. No registers are available.");
+            break;
         case UNKNOWN_ERROR:
             pcerr::SetCustomErr(err, std::string{strerror(errno)});
             break;
