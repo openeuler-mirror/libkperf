@@ -71,6 +71,7 @@ namespace KUNPENG_PMU {
         GroupStatus groupStatus = GroupStatus::NO_GROUP; 
         // reg index is stored in countMmap->base
         std::shared_ptr<PerfMmap> countMmap = nullptr;
+        bool isCollect{false};
     };
 }  // namespace KUNPENG_PMU
 #endif
