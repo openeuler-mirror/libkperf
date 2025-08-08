@@ -131,6 +131,161 @@ pid 4156 tid 4158 count 64574 evt branch-misses
 ...
 ```
 
+#### User Access Counting
+
+部分core事件支持直接读取寄存器的方式采集计数。libkperf限制此特性在内核v6.6之后支持。需要执行`sudo sysctl kernel/perf_user_access=1`开启。
+
+通过此方式采集计数时，需要设置:
+- attr.enableUserAccess=1
+- pidList[1]={0}
+- cpuList[1]={-1}
+
+且只能采集当前进程。推荐使用此方法对细粒度的代码片段进行事件计数采集。
+
+以下为完整示例：
+<details>
+    <summary>点击查看C++代码示例</summary>
+
+```c++
+#include <stdio.h>
+#include <cstring>
+#include "pcerrc.h"
+#include "pmu.h"
+
+int main() {
+    PmuAttr attr = {0};
+    attr.enableUserAccess = 1;
+
+    char *evtList[2];
+    evtList[0] = "cycles";
+    evtList[1] = "branch-misses";
+    attr.numEvt = 2;
+    attr.evtList = evtList;
+
+    int pidList[1] = {0};
+    attr.pidList = pidList;
+    attr.numPid = 1;
+    int cpuList[1] = {-1}; 
+    attr.cpuList = cpuList;
+    attr.numCpu = 1;
+
+    int pd = PmuOpen(COUNTING, &attr);
+    if (pd == -1) {
+        printf("PmuOpen failed : %s\n", Perror());
+        PmuClose(pd);
+        return 0;
+    }
+    int err = PmuEnable(pd);
+    if (err != SUCCESS) {
+        printf("PmuEnable failed: %s\n", Perror());
+        PmuClose(pd);
+        return 0;
+    }
+    PmuData *data = nullptr;
+    int len = PmuRead(pd, &data);
+    for (int i = 0; i < 2; i++) {
+        int k = 1e8;
+        while (k > 0) {
+            k--;
+        }
+        PmuDataFree(data);
+        len = PmuRead(pd, &data);
+        if (len > 0) {
+            for (int j = 0; j < len; j++) {
+                printf("event:%s pid=%d tid=%d cpu=%d count=%llu\n",data[j].evt,data[j].pid,data[j].tid,data[j].cpu,data[j].count);
+            }
+        } else {
+            printf("%s\n", Perror());
+        }
+    }
+    PmuDisable(pd);
+    PmuClose(pd);
+    return 0;
+}
+```
+
+</details>
+
+<details>
+    <summary>点击查看Python代码示例</summary>
+
+```python
+import kperf
+
+evtList = ["cycles"]
+pidList = [0]
+cpuList = [-1]
+pmu_attr = kperf.PmuAttr(evtList=evtList, pidList=pidList, cpuList=cpuList, enableUserAccess=True)
+pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
+if pd == -1:
+    print(kperf.error())
+    exit(1)
+err = kperf.enable(pd)
+if err != 0:
+    print(kperf.error())
+    exit(1)
+pmu_data = kperf.read(pd)
+for _ in range(3):
+    i = 10000
+    while i > 0:
+        i = i - 1
+    pmu_data = kperf.read(pd)
+    assert len(pmu_data) > 0, "No read data"
+    for data in pmu_data.iter:
+        print(f"cpu {data.cpu} count {data.count} evt {data.evt}")
+kperf.disable(pd)
+kperf.close(pd)
+```
+
+</details>
+
+<details>
+    <summary>点击查看Go代码示例</summary>
+
+```go
+import "libkperf/kperf"
+import "fmt"
+import "time"
+
+func main() {
+    attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, SymbolMode:kperf.ELF, PidList:[]int{0}, CpuList:[]int{-1}, EnableUserAccess:true}
+	fd, err := kperf.PmuOpen(kperf.COUNT, attr)
+	if err != nil {
+		fmt.Printf("perf user access counting open failed : %v\n", err)
+        return
+	}
+	err := kperf.PmuEnable(fd)
+    if err != nil {
+        fmt.Printf("PmuEnable failed: %v", err)
+        return
+    }
+	dataVo, err := kperf.PmuRead(fd)
+	if err != nil {
+		fmt.Printf("PmuRead failed: %v", err)
+        return
+	}
+	for i, n := 0, 3; i < n; i++ {
+		j := 0;
+		for k := 0; k < 1000000; k++ {
+			j = j + 1
+		}
+		dataVo, err = kperf.PmuRead(fd)
+		if err != nil {
+			fmt.Printf("PmuRead failed: %v", err)
+            return
+		}
+		for _, o := range dataVo.GoData {
+			fmt.Printf("evt=%v count=%v\n", o.Evt, o.Count)
+		}
+		kperf.PmuDataFree(dataVo)
+	}
+	kperf.PmuDisable(fd)
+	kperf.PmuClose(fd)
+}
+```
+
+</details>
+
 ### Sampling
 libkperf提供Sampling模式，类似于perf record的如下命令：
 ```
