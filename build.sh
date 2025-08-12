@@ -20,6 +20,7 @@ PROJECT_DIR=$(realpath "${CURRENT_DIR}")
 BUILD_DIR=${PROJECT_DIR}/_build
 THIRD_PARTY=${PROJECT_DIR}/third_party/
 INSTALL_PATH=${PROJECT_DIR}/output/
+BPF_DIR=${PROJECT_DIR}/pmu/bpf
 BUILD_TYPE=Release
 # Python module are not compiled by default.
 PYTHON=false
@@ -27,6 +28,8 @@ PYTHON=false
 INCLUDE_TEST=false
 # Go support, copy so and head files
 GO=false
+# Bpf mode for counting
+BPF=false
 
 source ${PROJECT_DIR}/build/common.sh
 
@@ -66,11 +69,19 @@ for arg in "$@"; do
         go=*)
             GO="${arg#*=}"
             ;;
+        bpf=*)
+            BPF="${arg#*=}"
+            ;;
     esac
 done
 
 if [[ "$INCLUDE_TEST" == "true" ]]; then
     build_googletest $THIRD_PARTY
+fi
+
+if [[ "$BPF" == "true" ]]; then
+    build_libbpf $THIRD_PARTY
+    build_skel_files $BPF_DIR $THIRD_PARTY
 fi
 
 function build_elfin() {
@@ -110,6 +121,7 @@ build_libkperf()
         "-DGO=${GO}"
         "-DCMAKE_INSTALL_PREFIX=${INSTALL_PATH}"
         "-DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
+        "-DBPF=${BPF}"
     )
     if [ ! -z ${PYTHON_EXE} ];then
          CMAKE_ARGS+=("-DPYTHON_KPERF=${PYTHON_EXE}")

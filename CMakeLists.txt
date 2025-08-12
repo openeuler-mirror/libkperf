@@ -60,4 +60,7 @@ if (INCLUDE_TEST)
     add_subdirectory(test)
 endif()
 
+option(BPF "Enable BPF mode" OFF)
+message(STATUS "BPF support: ${BPF}")
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS True)

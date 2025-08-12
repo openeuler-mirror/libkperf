@@ -13,6 +13,9 @@
 # Description: Partial methods for building scripts.
 set -e
 
+export BPF_CLANG="clang"
+export BPF_TOOL="bpftool"
+
 cpu_core_num=$(($(nproc)-1))
 
 if [ "$cpu_core_num" -eq 0 ];then
@@ -76,4 +79,48 @@ function execute_binary() {
         echo "执行命令: $command"
         eval "$command"
     done
+}
+
+function build_libbpf() {
+  local open_source_dir=$1
+  local cmake_target_dir=$1/bpf
+  if [ -d "${cmake_target_dir}" ];then
+    echo ${cmake_target_dir} "is exist"
+    return
+  else
+    echo ${cmake_target_dir} "is not exist"
+  fi
+  pushd "$open_source_dir/libbpf/src"
+  make -j ${cpu_core_num}
+  make install DESTDIR=$open_source_dir/local/bpf
+  echo "install log path: $cmake_target_dir"
+}
+
+function build_skel_files() {
+  command -v $BPF_CLANG &> /dev/null || error_exit "Error: $BPF_CLANG not found. Please install LLVM/Clang."
+  command -v $BPF_TOOL &> /dev/null || error_exit "Error: $BPF_TOOL not found. Please install bpftool."
+  
+  local bpf_file_dir=$1
+  local bpf_lib_dir=$2
+  bpftool btf dump file /sys/kernel/btf/vmlinux format c > "${bpf_lib_dir}local/bpf/vmlinux.h"
+  if [ -s "${bpf_lib_dir}local/bpf/vmlinux.h" ]; then
+      echo "The kernel header file generated."
+  else
+      echo "Generate vmlinux.h file failed."
+  fi
+
+  for bpf_src in "${bpf_file_dir}"/*.bpf.c; do
+    [ -f "$bpf_src" ] || continue
+    src_name=$(basename "${bpf_src%.bpf.c}")
+    obj_path="${bpf_file_dir}/${src_name}.bpf.o"
+    skel_path="${bpf_file_dir}/${src_name}.skel.h"
+
+    echo "compile: $src_name"
+    clang -I${bpf_lib_dir}local -g -O2 -target bpf -c "$bpf_src" -o "$obj_path"
+    [ -s "$obj_path" ] || { echo "Error: The obj file was not generated."; exit 1; }
+    bpftool gen skeleton "$obj_path" > "$skel_path"
+    [ -s "$skel_path" ] || { echo "Error: The skeleton file was not generated."; exit 1; }
+    grep -q 'struct bpf_prog' "$skel_path" || { echo "Error: invalid skeleton format."; exit 1; }
+    echo "generate: ${src_name}.skel.h"
+  done
 }
