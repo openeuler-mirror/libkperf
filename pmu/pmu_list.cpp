@@ -260,8 +260,8 @@ namespace KUNPENG_PMU {
             sortedPmuData.emplace_back(std::move(pmuData[indices[i]]));
             sortedSampleIps.emplace_back(std::move(sampleIps[indices[i]]));
         }
-        pmuData = std::move(sortedPmuData);
-        sampleIps = std::move(sortedSampleIps);
+        pmuData = sortedPmuData;
+        sampleIps = sortedSampleIps;
     }
 
     void HandleBlockData(std::vector<PmuData>& pmuData, std::vector<PerfSampleIps>& sampleIps,
