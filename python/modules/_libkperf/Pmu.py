@@ -1740,6 +1740,19 @@ def PmuStop(pd):
     c_PmuStop(c_pd)
 
 
+def PmuExit(pd):
+    """
+    void PmuExit(int pd);
+    """
+    c_PmuExit = kperf_so.PmuExit
+    c_PmuExit.argtypes = [ctypes.c_int]
+    c_PmuExit.restype = None
+
+    c_pd = ctypes.c_int(pd)
+
+    c_PmuExit(c_pd)
+
+
 def PmuDataFree(pmuData):
     """
     void PmuDataFree(struct PmuData* pmuData);
@@ -2237,6 +2250,7 @@ __all__ = [
     'PmuEnable',
     'PmuDisable',
     'PmuStop',
+    'PmuExit',
     'PmuRead',
     'PmuClose',
     'PmuDumpData',

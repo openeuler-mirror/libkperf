@@ -38,6 +38,7 @@ namespace KUNPENG_PMU {
     std::mutex PmuList::dataEvtGroupListMtx;
     std::mutex PmuList::dataListMtx;
     std::mutex PmuList::dataParentMtx;
+    std::mutex PmuList::analysisStatusMtx;
 
     int PmuList::CheckRlimit(const unsigned fdNum)
     {
@@ -596,6 +597,9 @@ namespace KUNPENG_PMU {
         auto symMode = symModeList[eventData.pd];
         // Parse dwarf and elf info of each pid and get stack trace for each pmu data.
         for (size_t i = 0; i < eventData.data.size(); ++i) {
+            if (GetAnalysisStatus(eventData.pd) == STOP_RESOLVE) {
+                break;
+            }
             auto& pmuData = eventData.data[i];
             auto& ipsData = eventData.sampleIps[i];
             if (symMode == RESOLVE_ELF) {
@@ -635,6 +639,9 @@ namespace KUNPENG_PMU {
 
         auto& eventData = userDataList[iPmuData];
         for (size_t i = 0; i < eventData.data.size(); ++i) {
+            if (GetAnalysisStatus(eventData.pd) == STOP_RESOLVE) {
+                break;
+            }
             auto& pmuData = eventData.data[i];
             auto& ipsData = eventData.sampleIps[i];
             if (pmuData.stack == nullptr) {
@@ -732,7 +739,7 @@ namespace KUNPENG_PMU {
         }
 
         auto& evData = dataList[pd];
-        auto pData = evData.data.data();
+        
         if (GetTaskType(pd) == COUNTING) {
             std::vector<PmuData> newPmuData;
             AggregateUncoreData(pd, evData.data, newPmuData);
@@ -751,6 +758,7 @@ namespace KUNPENG_PMU {
                 auto symMode = symModeList[evData.pd];
                 HandleBlockData(evData.data, evData.sampleIps, symMode, evData.switchData);
             }
+            auto pData = evData.data.data();
             auto inserted = userDataList.emplace(pData, move(evData));
             dataList.erase(pd);
             return inserted.first->second.data;
@@ -974,6 +982,12 @@ namespace KUNPENG_PMU {
         branchSampleFilterList[pd] = branchSampleFilter;
     }
 
+    void PmuList::SetAnalysisStatus(const int pd, const unsigned status)
+    {
+        lock_guard<mutex> lg(analysisStatusMtx);
+        analysisStatusList[pd] = status;
+    }
+
     SymbolMode PmuList::GetSymbolMode(const unsigned pd)
     {
         lock_guard<mutex> lg(dataListMtx);
@@ -986,6 +1000,11 @@ namespace KUNPENG_PMU {
         return branchSampleFilterList[pd];
     }
 
+    unsigned PmuList::GetAnalysisStatus(const int pd)
+    {
+        lock_guard<mutex> lg(analysisStatusMtx);
+        return analysisStatusList[pd];
+    }
 
     void PmuList::OpenDummyEvent(KUNPENG_PMU::PmuTaskAttr* taskParam, const unsigned pd)
     {

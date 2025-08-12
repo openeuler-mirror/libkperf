@@ -353,6 +353,12 @@ int PmuCollectV(int *pd, unsigned len, int milliseconds);
 void PmuStop(int pd);
 
 /**
+ * @brief exit the analysis phase, currently only symbol resolution is effective.
+ * @param pd
+ */
+void PmuExit(int pd);
+
+/**
  * @brief
  * Collect data.
  * Pmu data are collected starting from the last PmuEnable or PmuRead.

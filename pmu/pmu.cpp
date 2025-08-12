@@ -560,6 +560,7 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
 
             PmuList::GetInstance()->SetSymbolMode(pd, attr->symbolMode);
             PmuList::GetInstance()->SetBranchSampleFilter(pd, attr->branchSampleFilter);
+            PmuList::GetInstance()->SetAnalysisStatus(pd, GOING_RESOLVE);
             err = PmuList::GetInstance()->Register(pd, taskAttr.get());
             if (err != SUCCESS) {
                 PmuList::GetInstance()->Close(pd);
@@ -885,6 +886,11 @@ void PmuClose(int pd)
     } catch (exception& ex) {
         New(UNKNOWN_ERROR, ex.what());
     }
+}
+
+void PmuExit(int pd)
+{
+    return PmuList::GetInstance()->SetAnalysisStatus(pd, STOP_RESOLVE);
 }
 
 static struct PmuEvt* GetPmuEvent(const char* pmuName, int collectType)

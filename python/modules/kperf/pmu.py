@@ -440,6 +440,15 @@ def close(pd):
     return _libkperf.PmuClose(pd)
 
 
+def exit(pd):
+    """
+    Close task with id <pd>.
+    After PmuExit is called, the parsing symbol phase will be halted.
+    :param pd: task id
+    """
+    return _libkperf.PmuExit(pd)
+
+
 def dump(pmuData, filepath, dump_dwf):
     """
     /**
@@ -622,6 +631,7 @@ __all__ = [
     'read',
     'stop',
     'close',
+    'exit',
     'dump',
     'get_field',
     'get_field_exp',
