@@ -25,6 +25,11 @@
 
 namespace KUNPENG_PMU {
 
+enum AnalysisStatus {
+    STOP_RESOLVE=0,      // stop resolving data
+    GOING_RESOLVE=1      // go resolving data
+};
+
 struct PmuTaskAttr {
     int numCpu;                     // number of cpu to be collected
     int* cpuList;                   // list of core ids to be collected
@@ -67,8 +72,10 @@ public:
     void FreeData(PmuData* pmuData);
     int GetTaskType(const int pd) const;
     int GetBlockedSampleState(const int pd) const;
+
     void SetSymbolMode(const int pd, const SymbolMode &mode);
     void SetBranchSampleFilter(const int pd, const unsigned long& branchSampleFilter);
+    void SetAnalysisStatus(const int pd, const unsigned status);
 
     int NewPd();
 
@@ -128,6 +135,7 @@ private:
     void AggregateUncoreData(const unsigned pd, const std::vector<PmuData> &evData, std::vector<PmuData> &newEvData);
     std::vector<PmuData>& GetPreviousData(const unsigned pd);
     SymbolMode GetSymbolMode(const unsigned pd);
+    unsigned GetAnalysisStatus(const int pd);
     unsigned long GetBranchSampleFilter(const unsigned pd);
     void FillPidList(PmuTaskAttr* taskParam, const unsigned pd);
     void OpenDummyEvent(PmuTaskAttr* taskParam, const unsigned pd);
@@ -138,6 +146,7 @@ private:
     static std::mutex dataListMtx;
     static std::mutex dataEvtGroupListMtx;
     static std::mutex dataParentMtx;
+    static std::mutex analysisStatusMtx;
     std::unordered_map<unsigned, std::vector<std::shared_ptr<EvtList>>> pmuList;
     // Key: pd
     // Value: PmuData List.
@@ -178,6 +187,9 @@ private:
     // Key: pd
     // Value: branchSampleFilter
     std::unordered_map<unsigned, unsigned long> branchSampleFilterList;
+    // Key: pd
+    // Value: analysis status
+    std::unordered_map<unsigned, volatile unsigned> analysisStatusList;
 };
 }   // namespace KUNPENG_PMU
 #endif
