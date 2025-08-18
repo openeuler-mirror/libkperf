@@ -4,3 +4,6 @@
 [submodule "googletest"]
 	path = third_party/googletest
 	url = https://gitee.com/mirrors/googletest.git
+[submodule "third_party/libbpf"]
+	path = third_party/libbpf
+	url = https://gitee.com/mirrors/libbpf.git
