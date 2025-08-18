@@ -10,8 +10,8 @@
  * See the Mulan PSL v2 for more details.
  * Author: Mr.Gan
  * Create: 2024-04-03
- * Description: implementations for reading performance counters and initializing counting logic in
- * the KUNPENG_PMU namespace.
+ * Description: implementations for reading performance counters and initializing counting logic
+ * of PerfCounterDefault in the KUNPENG_PMU namespace.
  ******************************************************************************/
 #include <climits>
 #include <poll.h>
@@ -29,7 +29,7 @@
 #include "pmu_event.h"
 #include "pcerr.h"
 #include "log.h"
-#include "perf_counter.h"
+#include "perf_counter_default.h"
 #include "read_reg.h"
 #include "common.h"
 
@@ -53,7 +53,7 @@ struct GroupReadFormat {
  * Right now we do not implement grouping logic, thus we ignore the
  * PERF_FORMAT_ID section for now
  */
-int KUNPENG_PMU::PerfCounter::Read(EventData &eventData)
+int KUNPENG_PMU::PerfCounterDefault::Read(EventData &eventData)
 {
     if (__glibc_unlikely(this->fd < 0)) {
         this->accumCount.clear();
@@ -141,7 +141,7 @@ static int PerfMmapReadSelf(const std::shared_ptr<PerfMmap> &countMmap, struct R
 }
 }  // namespace KUNPENG_PMU
 
-int KUNPENG_PMU::PerfCounter::ReadSingleEvent(std::vector<PmuData> &data)
+int KUNPENG_PMU::PerfCounterDefault::ReadSingleEvent(std::vector<PmuData> &data)
 {
     ReadFormat perfCountValue;
     if (this->evt->enableUserAccess) {
@@ -178,7 +178,7 @@ int KUNPENG_PMU::PerfCounter::ReadSingleEvent(std::vector<PmuData> &data)
     return SUCCESS;
 }
 
-int KUNPENG_PMU::PerfCounter::ReadGroupEvents(std::vector<PmuData> &data)
+int KUNPENG_PMU::PerfCounterDefault::ReadGroupEvents(std::vector<PmuData> &data)
 {
     // Fixme:
     // In current class, we do not know how many events in group.
@@ -219,7 +219,7 @@ int KUNPENG_PMU::PerfCounter::ReadGroupEvents(std::vector<PmuData> &data)
     return SUCCESS;
 }
 
-int KUNPENG_PMU::PerfCounter::CountValueToData(const __u64 value, const __u64 timeEnabled,
+int KUNPENG_PMU::PerfCounterDefault::CountValueToData(const __u64 value, const __u64 timeEnabled,
                                                 const __u64 timeRunning, __u64 &accumCount, vector<PmuData> &data)
 {
     if (value < accumCount || timeEnabled < enabled || timeRunning < running) {
@@ -262,7 +262,7 @@ int KUNPENG_PMU::PerfCounter::CountValueToData(const __u64 value, const __u64 ti
 /**
  * Initialize counting
  */
-int KUNPENG_PMU::PerfCounter::Init(const bool groupEnable, const int groupFd, const int resetOutputFd)
+int KUNPENG_PMU::PerfCounterDefault::Init(const bool groupEnable, const int groupFd, const int resetOutputFd)
 {
     int err = SUCCESS;
     if (this->evt->enableUserAccess) {  // user access
@@ -277,7 +277,7 @@ int KUNPENG_PMU::PerfCounter::Init(const bool groupEnable, const int groupFd, co
     return err;
 }
 
-int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int groupFd)
+int KUNPENG_PMU::PerfCounterDefault::MapPerfAttr(const bool groupEnable, const int groupFd)
 {
     /**
      * For now, we only implemented the logic for CORE type events. Support for UNCORE PMU events will be
@@ -352,7 +352,7 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int grou
     return SUCCESS;
 }
 
-int KUNPENG_PMU::PerfCounter::MapPerfAttrUserAccess()
+int KUNPENG_PMU::PerfCounterDefault::MapPerfAttrUserAccess()
 {
     struct perf_event_attr attr;
     memset(&attr, 0, sizeof(attr));
@@ -375,7 +375,7 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttrUserAccess()
     return SUCCESS;
 }
 
-int KUNPENG_PMU::PerfCounter::Mmap()
+int KUNPENG_PMU::PerfCounterDefault::Mmap()
 {
     this->countMmap = std::make_shared<PerfMmap>();
     this->countMmap->prev = 0;
@@ -395,7 +395,7 @@ int KUNPENG_PMU::PerfCounter::Mmap()
 /**
  * Enable
  */
-int KUNPENG_PMU::PerfCounter::Enable()
+int KUNPENG_PMU::PerfCounterDefault::Enable()
 {
     if (groupFd != -1) {
         // Only group leader should use ioctl to enable, disable or reset,
@@ -416,7 +416,7 @@ int KUNPENG_PMU::PerfCounter::Enable()
     return SUCCESS;
 }
 
-int KUNPENG_PMU::PerfCounter::Disable()
+int KUNPENG_PMU::PerfCounterDefault::Disable()
 {
     if (groupFd != -1) {
         return SUCCESS;
@@ -428,7 +428,7 @@ int KUNPENG_PMU::PerfCounter::Disable()
     return err;
 }
 
-int KUNPENG_PMU::PerfCounter::Reset()
+int KUNPENG_PMU::PerfCounterDefault::Reset()
 {
     if (groupFd != -1) {
         return SUCCESS;
@@ -436,7 +436,7 @@ int KUNPENG_PMU::PerfCounter::Reset()
     return PerfEvt::Reset();
 }
 
-int KUNPENG_PMU::PerfCounter::Close()
+int KUNPENG_PMU::PerfCounterDefault::Close()
 {
     if (this->countMmap && this->countMmap->base && this->countMmap->base != MAP_FAILED) {
         munmap(this->countMmap->base, COUNT_PAGE_SIZE);
