@@ -166,9 +166,9 @@ void StoreThreadId(int** childTidList, int* count, const char* entryName)
     }
 }
 
-bool GetChildTidRecursive(const char *dirPath, int **childTidList, int *count)
+bool GetChildTidRecursive(const std::string& dirPath, int **childTidList, int *count)
 {
-    DIR *dir = opendir(dirPath);
+    DIR *dir = opendir(dirPath.c_str());
     if (!dir) {
         return false;
     }
@@ -186,14 +186,6 @@ bool GetChildTidRecursive(const char *dirPath, int **childTidList, int *count)
                 // Store the thread ID in the array
                 StoreThreadId(childTidList, count, entry->d_name);
             }
-
-            char path[PATH_LEN];
-            if (snprintf(path, sizeof(path), "%s/%s", dirPath, entry->d_name) < 0) {
-                continue;
-            }
-
-            // Continue recursively
-            GetChildTidRecursive(path, childTidList, count);
         }
     }
 
@@ -210,10 +202,7 @@ int *GetChildTid(int pid, int *numChild)
         *numChild = 1;
         return childTidList;
     }
-    char dirPath[PATH_LEN];
-    if (snprintf(dirPath, sizeof(dirPath), "/proc/%d/task", pid) < 0) {
-        return nullptr;
-    }
+    std::string dirPath = "/proc/" + std::to_string(pid) + "/task";
     *numChild = 0;
     if (!GetChildTidRecursive(dirPath, &childTidList, numChild)) {
         if (childTidList) {
@@ -224,4 +213,3 @@ int *GetChildTid(int pid, int *numChild)
     }
     return childTidList;
 }
-
