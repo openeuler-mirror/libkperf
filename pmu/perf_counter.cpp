@@ -331,16 +331,7 @@ int KUNPENG_PMU::PerfCounter::MapPerfAttr(const bool groupEnable, const int grou
         attr.read_format |= PERF_FORMAT_GROUP;
         this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, flags);
     } else {
-#ifdef IS_X86
-        if (this->evt->pmuType == KUNPENG_PMU::UNCORE_TYPE && !StartWith(this->evt->name, "cpu/")) {
-            this->fd = PerfEventOpen(&attr, -1, this->cpu, groupFd, flags);
-#else
-        if (this->evt->pmuType == KUNPENG_PMU::UNCORE_TYPE && !StartWith(this->evt->name, "armv8_")) {
-            this->fd = PerfEventOpen(&attr, -1, this->cpu, groupFd, 0);
-#endif
-        } else {
-            this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, flags);
-        }
+        this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, flags);
         groupStatus = GroupStatus::NO_GROUP;
     }
     this->groupFd = groupFd;
