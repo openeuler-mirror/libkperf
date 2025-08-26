@@ -22,7 +22,7 @@
 #include <linux/types.h>
 #include <mutex>
 #include "cpu_map.h"
-#include "perf_counter.h"
+#include "perf_counter_default.h"
 #include "pmu.h"
 #include "process_map.h"
 #include "sampler.h"
@@ -63,16 +63,15 @@ public:
         this->prevStat = OPEN;
         this->evtStat = OPEN;
     }
-    int Init(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader);
-    int Pause();
-    int Close();
-    int Start();
-    int Enable();
-    int Stop();
-    int Reset();
-    int Read(EventData &eventData);
-
-    void SetGroupInfo(const EventGroupInfo &grpInfo);
+    virtual ~EvtList() = default;
+    virtual int Init(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader) = 0;
+    virtual int Pause() = 0;
+    virtual int Close() = 0;
+    virtual int Start() = 0;
+    virtual int Enable() = 0;
+    virtual int Stop() = 0;
+    virtual int Reset() = 0;
+    virtual int Read(EventData &eventData) = 0;
 
     void SetTimeStamp(const int64_t& timestamp)
     {
@@ -109,37 +108,48 @@ public:
         return pmuEvt->blockedSample;
     }
 
-    void AddNewProcess(pid_t pid, const bool groupEnable, const std::shared_ptr<EvtList> evtLeader);
-    void ClearExitFd();
-private:
-    using PerfEvtPtr = std::shared_ptr<KUNPENG_PMU::PerfEvt>;
-    
-    int CollectorDoTask(PerfEvtPtr collector, int task);
-    int CollectorXYArrayDoTask(std::vector<std::vector<PerfEvtPtr>>& xyArray, int task);
-    void FillFields(const size_t& start, const size_t& end, CpuTopology* cpuTopo, ProcTopology* procTopo,
-                    std::vector<PmuData>& pmuData);
-    void AdaptErrInfo(int err, PerfEvtPtr perfEvt);
+    virtual void SetGroupInfo(const EventGroupInfo &grpInfo) = 0;
+    virtual void AddNewProcess(pid_t pid, const bool groupEnable, const std::shared_ptr<EvtList> evtLeader) = 0;
 
+protected:
+    using PerfEvtPtr = std::shared_ptr<KUNPENG_PMU::PerfEvt>;
     std::vector<CpuPtr> cpuList;
     std::vector<ProcPtr> pidList;
     std::vector<ProcPtr> unUsedPidList;
     std::set<int> noProcList;
     std::shared_ptr<PmuEvt> pmuEvt;
     int groupId; // event group id
-    std::vector<std::vector<std::shared_ptr<PerfEvt>>> xyCounterArray;
-    std::shared_ptr<PerfEvt> MapPmuAttr(int cpu, int pid, PmuEvt* pmuEvent);
     unsigned int numCpu = 0;
     unsigned int numPid = 0;
     std::set<int> fdList;
     int64_t ts = 0;
+    std::vector<std::vector<std::shared_ptr<PerfEvt>>> xyCounterArray;
     std::unordered_map<pid_t, ProcPtr> procMap;
     SymbolMode symMode = NO_SYMBOL_RESOLVE;
     unsigned long branchSampleFilter = KPERF_NO_BRANCH_SAMPLE;
     int prevStat;
     int evtStat;
     std::mutex mutex;
-    // Fixme: decouple group event with normal event, use different classes to implement Read and Init.
-    std::unique_ptr<EventGroupInfo> groupInfo = nullptr;
+
+    int CollectorDoTask(PerfEvtPtr collector, int task)
+    {
+        switch (task) {
+            case START:
+                return collector->Start();
+            case PAUSE:
+                return collector->Pause();
+            case DISABLE:
+                return collector->Disable();
+            case ENABLE:
+                return collector->Enable();
+            case RESET:
+                return collector->Reset();
+            case CLOSE:
+                return collector->Close();
+            default:
+                return UNKNOWN_ERROR;
+        }
+    }
 };
 
 struct EventGroupInfo {

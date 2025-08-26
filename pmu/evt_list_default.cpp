@@ -21,36 +21,11 @@
 #include "pcerr.h"
 #include "log.h"
 #include "common.h"
-#include "evt_list.h"
+#include "evt_list_default.h"
 
 using namespace std;
 
-int KUNPENG_PMU::EvtList::CollectorDoTask(PerfEvtPtr collector, int task)
-{
-    switch (task) {
-        case START:
-            return collector->Start();
-        case PAUSE:
-            return collector->Pause();
-        case DISABLE:
-            return collector->Disable();
-        case ENABLE:
-            return collector->Enable();
-        case RESET:
-            return collector->Reset();
-        case CLOSE: {
-            auto ret = collector->Close();
-            if (ret == SUCCESS) {
-                fdList.erase(collector->GetFd());
-            }
-            return ret;
-        }
-        default:
-            return UNKNOWN_ERROR;
-    }
-}
-
-int KUNPENG_PMU::EvtList::CollectorXYArrayDoTask(std::vector<std::vector<PerfEvtPtr>>& xyArray, int task)
+int KUNPENG_PMU::EvtListDefault::CollectorXYArrayDoTask(std::vector<std::vector<PerfEvtPtr>>& xyArray, int task)
 {
     std::unique_lock<std::mutex> lock(mutex);
     for (auto row: xyArray) {
@@ -66,7 +41,7 @@ int KUNPENG_PMU::EvtList::CollectorXYArrayDoTask(std::vector<std::vector<PerfEvt
     return SUCCESS;
 }
 
-void KUNPENG_PMU::EvtList::AdaptErrInfo(int err, PerfEvtPtr perfEvt) 
+void KUNPENG_PMU::EvtListDefault::AdaptErrInfo(int err, PerfEvtPtr perfEvt) 
 {
     switch (err) {
         case LIBPERF_ERR_INVALID_EVENT:
@@ -104,7 +79,7 @@ void KUNPENG_PMU::EvtList::AdaptErrInfo(int err, PerfEvtPtr perfEvt)
     }
 }
 
-int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader)
+int KUNPENG_PMU::EvtListDefault::Init(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader)
 {
     // Init process map.
     for (auto& proc: pidList) {
@@ -127,7 +102,8 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
             }
             perfEvt->SetSymbolMode(symMode);
             perfEvt->SetBranchSampleFilter(branchSampleFilter);
-            int groupFd = groupEnable && evtLeader ? evtLeader->xyCounterArray[row][col]->GetFd():-1;
+            auto evtleaderDefault = std::dynamic_pointer_cast<EvtListDefault>(evtLeader);
+            int groupFd = groupEnable && evtleaderDefault ? evtleaderDefault->xyCounterArray[row][col]->GetFd():-1;
             int err = perfEvt->Init(groupEnable, groupFd, resetOutPutFd);
             if (err == LIBPERF_ERR_NO_PERMISSION && !this->pmuEvt->excludeKernel && !this->pmuEvt->excludeUser && GetParanoidVal() > 1) {
                 perfEvt->SetNeedTryExcludeKernel(true);
@@ -157,22 +133,22 @@ int KUNPENG_PMU::EvtList::Init(const bool groupEnable, const std::shared_ptr<Evt
     return SUCCESS;
 }
 
-int KUNPENG_PMU::EvtList::Start()
+int KUNPENG_PMU::EvtListDefault::Start()
 {
     return CollectorXYArrayDoTask(this->xyCounterArray, START);
 }
 
-int KUNPENG_PMU::EvtList::Enable()
+int KUNPENG_PMU::EvtListDefault::Enable()
 {
     return CollectorXYArrayDoTask(this->xyCounterArray, ENABLE);
 }
 
-int KUNPENG_PMU::EvtList::Stop()
+int KUNPENG_PMU::EvtListDefault::Stop()
 {
     return CollectorXYArrayDoTask(this->xyCounterArray, STOP);
 }
 
-int KUNPENG_PMU::EvtList::Close()
+int KUNPENG_PMU::EvtListDefault::Close()
 {
     auto ret = CollectorXYArrayDoTask(this->xyCounterArray, CLOSE);
     if (ret != SUCCESS) {
@@ -183,20 +159,21 @@ int KUNPENG_PMU::EvtList::Close()
     return SUCCESS;
 }
 
-int KUNPENG_PMU::EvtList::Reset()
+int KUNPENG_PMU::EvtListDefault::Reset()
 {
     return CollectorXYArrayDoTask(this->xyCounterArray, RESET);
 }
 
-void KUNPENG_PMU::EvtList::FillFields(
-        const size_t& start, const size_t& end, CpuTopology* cpuTopo, ProcTopology* procTopo, vector<PmuData>& data)
+void KUNPENG_PMU::EvtListDefault::FillFields(
+        size_t start, size_t end, CpuTopology* cpuTopo, ProcTopology* procTopo, vector<PmuData>& data)
 {
     for (auto i = start; i < end; ++i) {
         data[i].cpuTopo = cpuTopo;
         if (groupInfo && pmuEvt->collectType == COUNTING && i - start > 0) {
             // For group events, PmuData are all read by event leader,
             // and then some PmuData elements should be related to group members.
-            data[i].evt = groupInfo->evtGroupChildList[i-start-1]->pmuEvt->name.c_str();
+            std::shared_ptr<EvtListDefault> child = std::dynamic_pointer_cast<EvtListDefault>(groupInfo->evtGroupChildList[i-start-1]);
+            data[i].evt = child->pmuEvt->name.c_str();
         } else {
             // For no group events or group leader.
             data[i].evt = this->pmuEvt->name.c_str();
@@ -211,7 +188,7 @@ void KUNPENG_PMU::EvtList::FillFields(
     }
 }
 
-int KUNPENG_PMU::EvtList::Read(EventData &eventData)
+int KUNPENG_PMU::EvtListDefault::Read(EventData &eventData)
 {
 
     std::unique_lock<std::mutex> lg(mutex);
@@ -256,16 +233,16 @@ int KUNPENG_PMU::EvtList::Read(EventData &eventData)
     return SUCCESS;
 }
 
-int KUNPENG_PMU::EvtList::Pause()
+int KUNPENG_PMU::EvtListDefault::Pause()
 {
     return CollectorXYArrayDoTask(this->xyCounterArray, PAUSE);
 }
 
-std::shared_ptr<KUNPENG_PMU::PerfEvt> KUNPENG_PMU::EvtList::MapPmuAttr(int cpu, int pid, PmuEvt* pmuEvent)
+std::shared_ptr<KUNPENG_PMU::PerfEvt> KUNPENG_PMU::EvtListDefault::MapPmuAttr(int cpu, int pid, PmuEvt* pmuEvent)
 {
     switch (pmuEvent->collectType) {
         case (COUNTING):
-            return std::make_shared<KUNPENG_PMU::PerfCounter>(cpu, pid, pmuEvent, procMap);
+            return std::make_shared<KUNPENG_PMU::PerfCounterDefault>(cpu, pid, pmuEvent, procMap);
         case (SAMPLING):
             return std::make_shared<KUNPENG_PMU::PerfSampler>(cpu, pid, pmuEvent, procMap);
         case (SPE_SAMPLING):
@@ -275,7 +252,7 @@ std::shared_ptr<KUNPENG_PMU::PerfEvt> KUNPENG_PMU::EvtList::MapPmuAttr(int cpu, 
     };
 }
 
-void KUNPENG_PMU::EvtList::AddNewProcess(pid_t pid, const bool groupEnable, const std::shared_ptr<EvtList> evtLeader)
+void KUNPENG_PMU::EvtListDefault::AddNewProcess(pid_t pid, const bool groupEnable, const std::shared_ptr<EvtList> evtLeader)
 {
     if (pid <= 0 || evtStat == CLOSE || evtStat == STOP) {
         return;
@@ -300,7 +277,8 @@ void KUNPENG_PMU::EvtList::AddNewProcess(pid_t pid, const bool groupEnable, cons
         int err = 0;
         if (groupEnable) {
             int sz = this->pidList.size();
-            auto groupFd = evtLeader?evtLeader->xyCounterArray[row][sz - 1]->GetFd():-1;
+            std::shared_ptr<EvtListDefault> evtLeaderDefault = std::dynamic_pointer_cast<EvtListDefault>(evtLeader);
+            auto groupFd = evtLeaderDefault?evtLeaderDefault->xyCounterArray[row][sz - 1]->GetFd():-1;
             err = perfEvt->Init(groupEnable, groupFd, -1);
         } else {
             err = perfEvt->Init(groupEnable, -1, -1);
@@ -339,7 +317,7 @@ void KUNPENG_PMU::EvtList::AddNewProcess(pid_t pid, const bool groupEnable, cons
     }
 }
 
-void KUNPENG_PMU::EvtList::ClearExitFd()
+void KUNPENG_PMU::EvtListDefault::ClearExitFd()
 {
     if (this->pidList.size() == 1 && this->pidList[0]->tid == -1) {
         return;
@@ -390,7 +368,7 @@ void KUNPENG_PMU::EvtList::ClearExitFd()
     noProcList.clear();
 }
 
-void KUNPENG_PMU::EvtList::SetGroupInfo(const EventGroupInfo &grpInfo)
+void KUNPENG_PMU::EvtListDefault::SetGroupInfo(const EventGroupInfo &grpInfo)
 {
     this->groupInfo = unique_ptr<EventGroupInfo>(new EventGroupInfo(grpInfo));
 }

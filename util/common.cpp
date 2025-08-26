@@ -160,18 +160,6 @@ bool StartWith(const std::string& str, const std::string& prefix)
     return str.substr(0, prefix.size()) == prefix;
 }
 
-int CheckCgroupV2()
-{
-    const char *mnt = "/sys/fs/cgroup";
-    struct statfs stbuf;
-
-    if (statfs(mnt, &stbuf) < 0) {
-        return -1;
-    }
-
-    return (stbuf.f_type == CGROUP2_SUPER_MAGIC);
-}
-
 bool ConvertStrToInt(const std::string &intValStr, int32_t &val)
 {
     try {
@@ -192,4 +180,29 @@ int GetParanoidVal()
         }
     }
     return INT32_MAX;
+}
+
+static int CheckCgroupV2()
+{
+    const char *mnt = "/sys/fs/cgroup";
+    struct statfs stbuf;
+
+    if (statfs(mnt, &stbuf) < 0) {
+        return -1;
+    }
+
+    return (stbuf.f_type == CGROUP2_SUPER_MAGIC);
+}
+
+std::string GetCgroupPath(const std::string& cgroupName) {
+    std::string cgroupRootPath = "/sys/fs/cgroup/";
+    int cgroupIsV2 = CheckCgroupV2();
+    if (cgroupIsV2) {
+        cgroupRootPath += cgroupName;
+    } else if (cgroupIsV2 == 0) {
+        cgroupRootPath += "perf_event/" + cgroupName;
+    } else {
+        return "";
+    }
+    return cgroupRootPath;
 }

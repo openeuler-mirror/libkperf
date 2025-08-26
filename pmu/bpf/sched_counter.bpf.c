@@ -56,7 +56,8 @@ struct {
 } filter SEC(".maps");
 
 SEC("raw_tp/sched_switch")
-int BPF_PROG(on_switch) {
+int BPF_PROG(on_switch)
+{
     __u32 pid;
     __u32 zero=0;
     __u32 *accum_key;
@@ -99,7 +100,8 @@ int BPF_PROG(on_switch) {
 }
 
 SEC("tp_btf/task_newtask")
-int BPF_PROG(on_newtask, struct task_struct *task, __u64 clone_flags){
+int BPF_PROG(on_newtask, struct task_struct *task, __u64 clone_flags)
+{
     long err;
     __u32 new_pid;
     __u32 parent_pid;
@@ -115,6 +117,6 @@ int BPF_PROG(on_newtask, struct task_struct *task, __u64 clone_flags){
     }
 
     bpf_map_update_elem(&filter, &new_pid, accum_key, BPF_NOEXIST);
-    bpf_printk("new pid: %d parent: %d add child: %ld accum_key: %ld\n", new_pid, parent_pid, new_pid, *accum_key);
+    bpf_printk("new pid: %d parent: %d accum_key: %ld\n", new_pid, parent_pid, *accum_key);
     return 0;
 }

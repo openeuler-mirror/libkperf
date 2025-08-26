@@ -23,55 +23,18 @@
 #include "evt.h"
 #include "pmu_event.h"
 
-#define REQUEST_USER_ACCESS 0x2
-
-struct ReadFormat {
-    __u64 value;
-    __u64 timeEnabled;
-    __u64 timeRunning;
-    __u64 id;
-};
-
 namespace KUNPENG_PMU {
-    static constexpr int COUNT_PAGE_SIZE = 4096;
     class PerfCounter : public PerfEvt {
     public:
         using PerfEvt::PerfEvt;
-        ~PerfCounter()
-        {}
-        int Init(const bool groupEnable, const int groupFd, const int resetOutputFd) override;
-        int Read(EventData &eventData) override;
-        int MapPerfAttr(const bool groupEnable, const int groupFd) override;
-        int Enable() override;
-        int Disable() override;
-        int Reset() override;
-        int Close() override;
-
-    private:
-        enum class GroupStatus
-        {
-            NO_GROUP,
-            GROUP_LEADER,
-            GROUP_MEMBER
-        };
-        int Mmap();
-        int MapPerfAttrUserAccess();
-        int CountValueToData(const __u64 value, const __u64 timeEnabled,
-                                const __u64 timeRunning, __u64 &accumCount, std::vector<PmuData> &data);
-        int ReadSingleEvent(std::vector<PmuData> &data);
-        int ReadGroupEvents(std::vector<PmuData> &data);
-
-	    // Accumulated pmu count, time enabled and time running.
-	    __u64 enabled = 0;
-	    __u64 running = 0;
-        // For group events, <accumCount> is the accum counts of all members.
-        // For normal events, <accumCount> has only one element.
-        std::vector<__u64> accumCount;
-        int groupFd = 0;
-        GroupStatus groupStatus = GroupStatus::NO_GROUP; 
-        // reg index is stored in countMmap->base
-        std::shared_ptr<PerfMmap> countMmap = nullptr;
-        bool isCollect{false};
+        virtual ~PerfCounter() = default;
+        virtual int Init(const bool groupEnable, const int groupFd, const int resetOutputFd) = 0;
+        virtual int Read(EventData &eventData) = 0;
+        virtual int MapPerfAttr(const bool groupEnable, const int groupFd) =0;
+        virtual int Enable() = 0;
+        virtual int Disable() = 0;
+        virtual int Reset() = 0;
+        virtual int Close() = 0;
     };
 }  // namespace KUNPENG_PMU
 #endif

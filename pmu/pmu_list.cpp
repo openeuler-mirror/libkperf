@@ -28,6 +28,10 @@
 #include "pmu_event_list.h"
 #include "pmu_list.h"
 #include "pfm_event.h"
+#include "evt_list_default.h"
+#ifdef BPF_ENABLED
+    #include "bpf/evt_list_bpf.h"
+#endif
 
 using namespace std;
 using namespace pcerr;
@@ -86,10 +90,19 @@ namespace KUNPENG_PMU {
                 return err;
             }
             fdNum += CalRequireFd(cpuTopoList.size(), procTopoList.size(), taskParam->pmuEvt->collectType);
-            std::shared_ptr<EvtList> evtList =
-                    std::make_shared<EvtList>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt, pmuTaskAttrHead->groupId);
-            evtList->SetBranchSampleFilter(GetBranchSampleFilter(pd));
-            InsertEvtList(pd, evtList);
+        #ifdef BPF_ENABLED
+            if (taskParam->pmuEvt->enableBpf) {
+                std::shared_ptr<EvtListBpf> evtList =
+                        std::make_shared<EvtListBpf>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt, pmuTaskAttrHead->groupId);
+                InsertEvtList(pd, evtList);
+            } else
+        #endif
+            {
+                std::shared_ptr<EvtListDefault> evtList =
+                std::make_shared<EvtListDefault>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt, pmuTaskAttrHead->groupId);
+                evtList->SetBranchSampleFilter(GetBranchSampleFilter(pd));
+                InsertEvtList(pd, evtList);
+            }
             pmuTaskAttrHead = pmuTaskAttrHead->next;
         }
 
@@ -99,9 +112,12 @@ namespace KUNPENG_PMU {
             return symbolErrNo;
         }
 
-        auto err = CheckRlimit(fdNum);
-        if (err != SUCCESS) {
-            return err;
+        int err;
+        if (!taskParam->pmuEvt->enableBpf) {  // in bpf mode, cpuSize * proSize whill exceed rlimit
+            err = CheckRlimit(fdNum);
+            if (err != SUCCESS) {
+                return err;
+            }
         }
 
         err = Init(pd);
@@ -738,7 +754,6 @@ namespace KUNPENG_PMU {
         }
 
         auto& evData = dataList[pd];
-        
         if (GetTaskType(pd) == COUNTING) {
             std::vector<PmuData> newPmuData;
             AggregateUncoreData(pd, evData.data, newPmuData);

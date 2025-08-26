@@ -52,6 +52,8 @@ struct PmuEvt {
     int cgroupFd;
     std::string cgroupName;
     unsigned enableUserAccess : 1; // avoid uncore (config1 & 0x2)  == 0x2
+    unsigned numEvent;           // pmu event number for bpf cgroup init
+    unsigned enableBpf : 1;      // enable bpf mode in counting mode
 };
 
 namespace KUNPENG_PMU {

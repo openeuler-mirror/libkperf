@@ -102,8 +102,8 @@ function build_skel_files() {
   
   local bpf_file_dir=$1
   local bpf_lib_dir=$2
-  bpftool btf dump file /sys/kernel/btf/vmlinux format c > "${bpf_lib_dir}local/bpf/vmlinux.h"
-  if [ -s "${bpf_lib_dir}local/bpf/vmlinux.h" ]; then
+  bpftool btf dump file /sys/kernel/btf/vmlinux format c > "${bpf_lib_dir}local/bpf/usr/include/bpf/vmlinux.h"
+  if [ -s "${bpf_lib_dir}local/bpf/usr/include/bpf/vmlinux.h" ]; then
       echo "The kernel header file generated."
   else
       echo "Generate vmlinux.h file failed."
@@ -116,7 +116,7 @@ function build_skel_files() {
     skel_path="${bpf_file_dir}/${src_name}.skel.h"
 
     echo "compile: $src_name"
-    clang -I${bpf_lib_dir}local -g -O2 -target bpf -c "$bpf_src" -o "$obj_path"
+    clang -I${bpf_lib_dir}local/bpf/usr/include -g -O2 -target bpf -c "$bpf_src" -o "$obj_path"
     [ -s "$obj_path" ] || { echo "Error: The obj file was not generated."; exit 1; }
     bpftool gen skeleton "$obj_path" > "$skel_path"
     [ -s "$skel_path" ] || { echo "Error: The skeleton file was not generated."; exit 1; }
