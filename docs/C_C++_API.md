@@ -89,6 +89,8 @@
     采集cgroup的个数
   * unsigned enableUserAccess
     是否直接读取寄存器，仅支持COUNTING模式
+  * unsigned enableBpf
+    是否基于BPF采集，仅支持COUNTING模式
 
 * 返回值 > 0   初始化成功
   返回值 = -1 初始化失败，可通过Perror()查看错误信息

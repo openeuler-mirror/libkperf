@@ -767,3 +767,33 @@ TEST_F(TestAPI, InvalidUserAccessAttr)
     pd = PmuOpen(COUNTING, &attr);
     ASSERT_EQ(pd, -1);
 }
+
+TEST_F(TestAPI, InvalidBpfAttr)
+{
+    PmuAttr attr = {0};
+    char *evtList[1];
+    evtList[0] = (char *)"cycles";
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+    int pidList[1] = {0};
+    attr.pidList = pidList;
+    attr.numPid = 1;
+#ifdef BPF_ENABLED
+    attr.enableBpf = 1;
+    pd = PmuOpen(COUNTING, &attr);
+    ASSERT_NE(pd, -1);
+    pd = PmuOpen(SAMPLING, &attr);
+    ASSERT_EQ(pd, -1);
+    EvtAttr groupId[1] = {1};
+    attr.evtAttr = groupId;
+    attr.numGroup = 1;
+    pd = PmuOpen(COUNTING, &attr);
+    ASSERT_EQ(pd, -1);
+#else
+    pd = PmuOpen(COUNTING, &attr);
+    ASSERT_NE(pd, -1);
+    attr.enableBpf = 1;
+    pd = PmuOpen(COUNTING, &attr);
+    ASSERT_EQ(pd, -1);
+#endif
+}
