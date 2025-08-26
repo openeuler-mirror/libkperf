@@ -80,16 +80,22 @@ class CtypesPmuAttr(ctypes.Structure):
             unsigned freq;              // sample frequency
         };
         unsigned useFreq : 1;
-        unsigned excludeUser : 1;     // don't count user
-        unsigned excludeKernel : 1;   //  don't count kernel
+        unsigned excludeUser : 1;       // don't count user
+        unsigned excludeKernel : 1;     //  don't count kernel
         enum SymbolMode symbolMode;     // refer to comments of SymbolMode
-        unsigned callStack : 1;   //  collect complete call stack
-        unsigned blockedSample : 1;   //  enable blocked sample
+        unsigned callStack : 1;         //  collect complete call stack
+        unsigned blockedSample : 1;     //  enable blocked sample
         // SPE related fields.
         enum SpeFilter dataFilter;      // spe data filter
         enum SpeEventFilter evFilter;   // spe event filter
-        unsigned long minLatency;       // collect only samples with latency or higher
-        unsigned includeNewFork : 1;  // include new fork thread
+
+        unsigned long minLatency;         // collect only samples with latency or higher
+        unsigned includeNewFork : 1;      // include new fork thread
+        unsigned long branchSampleFilter; // if the filter mode is set, branch_sample_stack data is collected in sampling mode
+        char** cgroupNameList;            // cgroup list
+        unsigned numCgroup;               // length of cgroup list
+        unsigned enableUserAccess : 1;    // enable user access counting for current process
+        unsigned enableBpf : 1;           // enable bpf mode for counting
     };
     """
 
@@ -116,7 +122,8 @@ class CtypesPmuAttr(ctypes.Structure):
         ('branchSampleFilter', ctypes.c_ulong),
         ('cgroupNameList', ctypes.POINTER(ctypes.c_char_p)),
         ('numCgroup',     ctypes.c_uint),
-        ('enableUserAccess', ctypes.c_uint, 1)
+        ('enableUserAccess', ctypes.c_uint, 1),
+        ('enableBpf',        ctypes.c_uint, 1)
     ]
 
     def __init__(self,
@@ -139,6 +146,7 @@ class CtypesPmuAttr(ctypes.Structure):
                  cgroupNameList=None,
                  numCgroup=0,
                  enableUserAccess=False,
+                 enableBpf=False,
                  *args, **kw):
         super(CtypesPmuAttr, self).__init__(*args, **kw)
 
@@ -201,7 +209,7 @@ class CtypesPmuAttr(ctypes.Structure):
         self.blockedSample = blockedSample
         self.includeNewFork = includeNewFork
         self.enableUserAccess = enableUserAccess
-
+        self.enableBpf = enableBpf
 
 class PmuAttr(object):
     __slots__ = ['__c_pmu_attr']
@@ -224,7 +232,8 @@ class PmuAttr(object):
                  includeNewFork=False,
                  branchSampleFilter=0,
                  cgroupNameList=None,
-                 enableUserAccess=False):
+                 enableUserAccess=False,
+                 enableBpf=False):
 
         self.__c_pmu_attr = CtypesPmuAttr(
             evtList=evtList,
@@ -244,7 +253,8 @@ class PmuAttr(object):
             includeNewFork=includeNewFork,
             branchSampleFilter=branchSampleFilter,
             cgroupNameList=cgroupNameList,
-            enableUserAccess=enableUserAccess
+            enableUserAccess=enableUserAccess,
+            enableBpf=enableBpf
         )
 
     @property
@@ -254,6 +264,14 @@ class PmuAttr(object):
     @enableUserAccess.setter
     def enableUserAccess(self, enableUserAccess):
         self.c_pmu_attr.enableUserAccess = int(enableUserAccess)
+
+    @property
+    def enableBpf(self):
+        return bool(self.c_pmu_attr.enableBpf)
+
+    @enableBpf.setter
+    def enableBpf(self, enableBpf):
+        self.c_pmu_attr.enableBpf = int(enableBpf)
 
     @property
     def c_pmu_attr(self):

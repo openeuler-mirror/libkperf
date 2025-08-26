@@ -80,6 +80,8 @@ func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error)
     采集cgroup的个数
   * EnableUserAccess bool
     是否直接读取寄存器，仅支持COUNTING模式
+  * EnableBpf bool
+    是否基于BPF采集，仅支持COUNTING模式
 
 * 返回值是int,error, 如果error不等于nil，则返回的int值为对应采集任务ID
 

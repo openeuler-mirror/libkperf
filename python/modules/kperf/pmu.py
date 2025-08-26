@@ -263,8 +263,13 @@ class PmuAttr(_libkperf.PmuAttr):
         # SPE related fields:
         dataFilter: spe data filter. Refer to comments of SpeFilter.
         evFilter: spe event filter. Refer to comments of SpeEventFilter.
+
         minLatency: collect only samples with latency or higher.
         includeNewFork: In count mode, enable it you can get the new child thread count, default is disabled.
+        branchSampleFilter: if the filter mode is set, branch_sample_stack data is collected in sampling mode
+        cgroupNameList: cgroup name list, can not assigned with pidList.
+        enableUserAccess: In count mode, enable read the register directly to collect data
+        enableBpf: In count mode, enable bpf to collect data.
     """
     def __init__(self,
                  evtList = None, 
@@ -284,7 +289,8 @@ class PmuAttr(_libkperf.PmuAttr):
                  includeNewFork = False,
                  branchSampleFilter = 0,
                  cgroupNameList = None,
-                 enableUserAccess = False):
+                 enableUserAccess = False,
+                 enableBpf = False):
         super(PmuAttr, self).__init__(
             evtList=evtList,
             pidList=pidList,
@@ -304,6 +310,7 @@ class PmuAttr(_libkperf.PmuAttr):
             branchSampleFilter=branchSampleFilter,
             cgroupNameList=cgroupNameList,
             enableUserAccess=enableUserAccess,
+            enableBpf=enableBpf,
         )
 
 

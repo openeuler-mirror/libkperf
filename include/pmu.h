@@ -176,7 +176,7 @@ struct PmuAttr {
 
     // enable user access counting for current process
     unsigned enableUserAccess : 1;
-    // enable bpf mode for counting 
+    // enable bpf mode for counting
     unsigned enableBpf : 1;
 };
 
