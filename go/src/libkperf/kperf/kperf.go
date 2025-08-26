@@ -80,6 +80,10 @@ void SetEnableUserAccess(struct PmuAttr* attr, unsigned enableUserAccess) {
 	attr->enableUserAccess = enableUserAccess;
 }
 
+void SetEnableBpf(struct PmuAttr* attr, unsigned enableBpf) {
+	attr->enableBpf = enableBpf;
+}
+
 struct PmuData* IPmuRead(int fd, int* len) {
 	struct PmuData* pmuData = NULL;
 	*len = PmuRead(fd, &pmuData);
@@ -345,6 +349,7 @@ type PmuAttr struct {
 	BlockedSample bool                 // This indicates whether the blocked sample mode is enabled. In this mode, both on Cpu and off Cpu data is collected
 	CgroupNameList []string            // cgroup name list, if not user cgroup function, this field will be nullptr.if use cgroup function,use the cgroup name in the cgroupList to apply all event in the Event list
 	EnableUserAccess bool              // enable user access counting for current process
+	EnableBpf bool                     // enable bpf mode for counting
 }
 
 type CpuTopology struct {
@@ -590,6 +595,10 @@ func ToCPmuAttr(attr PmuAttr) (*C.struct_PmuAttr, int) {
 
 	if attr.EnableUserAccess {
 		C.SetEnableUserAccess(cAttr, C.uint(1))
+	}
+
+	if attr.EnableBpf {
+		C.SetEnableBpf(cAttr, C.uint(1))
 	}
 
 	return cAttr, 0

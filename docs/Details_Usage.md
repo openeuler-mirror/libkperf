@@ -248,8 +248,8 @@ import "fmt"
 import "time"
 
 func main() {
-    attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, SymbolMode:kperf.ELF, PidList:[]int{0}, CpuList:[]int{-1}, EnableUserAccess:true}
-	fd, err := kperf.PmuOpen(kperf.COUNT, attr)
+    attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, PidList:[]int{0}, CpuList:[]int{-1}, EnableUserAccess:true}
+    fd, err := kperf.PmuOpen(kperf.COUNT, attr)
 	if err != nil {
 		fmt.Printf("perf user access counting open failed : %v\n", err)
         return
@@ -280,6 +280,124 @@ func main() {
 		kperf.PmuDataFree(dataVo)
 	}
 	kperf.PmuDisable(fd)
+	kperf.PmuClose(fd)
+}
+```
+
+</details>
+
+#### Bpf Counting
+
+多线程或cgroup采集场景下消耗大量文件资源描述符，同时较多的上下文切换会导致应用性能劣化。libkperf提供基于内核bpf的counting模式采集功能，此特性在内核v5.10版本后支持。
+
+使用该模式采集，请确保内核选项CONFIG_DEBUG_INFO_BTF开启。编译libkperf时需添加'bpf=true'选项启动clang和bpftool工具编译bpf程序，并设置:
+- attr.enableBpf=1
+- pidList或cgroupNameList不为空
+
+以采集进程为例，以下为完整示例：
+<details>
+    <summary>点击查看C++代码示例</summary>
+
+```c++
+#include <stdio.h>
+#include <cstring>
+#include "pcerrc.h"
+#include "pmu.h"
+
+int main() {
+    PmuAttr attr = {0};
+    attr.enableBpf = 1;
+
+    char *evtList[2];
+    evtList[0] = "cycles";
+    evtList[1] = "branch-misses";
+    attr.numEvt = 2;
+    attr.evtList = evtList;
+
+    int pid = 1;
+    int pidList[1] = {pid};  // 该pid值替换成对应需要采集应用的pid
+    attr.pidList = pidList;
+    attr.numPid = 1;
+
+    int pd = PmuOpen(COUNTING, &attr);
+    if (pd == -1) {
+        printf("PmuOpen failed : %s\n", Perror());
+        PmuClose(pd);
+        return 0;
+    }
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+    PmuData *data = nullptr;
+    int len = PmuRead(pd, &data);
+    if (len <= 0) {
+        printf("%s\n", Perror());
+    }
+    for (int i = 0; i < len; i++) {
+        printf("event:%s pid=%d tid=%d cpu=%d count=%llu\n",data[i].evt,data[i].pid,data[i].tid,data[i].cpu,data[i].count);
+    }
+    PmuDataFree(data);
+    PmuClose(pd);
+    return 0;
+}
+```
+
+</details>
+
+<details>
+    <summary>点击查看Python代码示例</summary>
+
+```python
+import kperf
+import time
+
+evtList = ["cycles", "branch-misses"]
+pidList = [1] # 该pid值替换成对应需要采集应用的pid
+pmu_attr = kperf.PmuAttr(evtList=evtList, pidList=pidList, enableBpf=True)
+pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
+if pd == -1:
+    print(kperf.error())
+    exit(1)
+kperf.enable(pd)
+time.sleep(1)
+kperf.disable(pd)
+pmu_data = kperf.read(pd)
+for data in pmu_data.iter:
+    print(f"cpu {data.cpu} evt {data.evt} count {data.count}")
+```
+
+</details>
+
+<details>
+    <summary>点击查看Go代码示例</summary>
+
+```go
+import "libkperf/kperf"
+import "fmt"
+import "time"
+
+func main() {
+    pidList := []int{1} // 该pid值替换成对应需要采集应用的pid
+    attr := kperf.PmuAttr{EvtList:[]string{"cycles", "branch-misses"}, PidList: pidList, EnableBpf: true}
+	fd, err := kperf.PmuOpen(kperf.COUNT, attr)
+	if err != nil {
+		fmt.Printf("kperf pmuopen sample failed, expect err is nil, but is %v\n", err)
+        return
+	}
+
+	kperf.PmuEnable(fd)
+	time.Sleep(time.Second)
+	kperf.PmuDisable(fd)
+
+	dataVo, err := kperf.PmuRead(fd)
+	if err != nil {
+		fmt.Printf("kperf pmuread failed, expect err is nil, but is %v\n", err)
+        return
+	}
+    for _, o := range dataVo.GoData {
+        fmt.Printf("cpu=%v evt=%v count=%v\n", o.Cpu, o.Evt, o.Count)
+    }
+	kperf.PmuDataFree(dataVo)
 	kperf.PmuClose(fd)
 }
 ```
