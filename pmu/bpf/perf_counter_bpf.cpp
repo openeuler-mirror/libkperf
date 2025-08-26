@@ -309,13 +309,7 @@ static uint64_t ReadCgroupId(const string &cgroupName)
         uint64_t cgroup_id;
     } handle;
     int mount_id;
-    std::string fullCgroupPath = "/sys/fs/cgroup/";
-    int cgroupIsV2 = CheckCgroupV2();
-    if (cgroupIsV2) {
-        fullCgroupPath += cgroupName;
-    } else if (cgroupIsV2 == 0) {
-        fullCgroupPath += "perf_event/" + cgroupName;
-    }
+    std::string fullCgroupPath = GetCgroupPath(cgroupName);
     handle.fh.handle_bytes = sizeof(handle.cgroup_id);
     if (name_to_handle_at(AT_FDCWD, fullCgroupPath.c_str(), &handle.fh, &mount_id, 0) < 0) {
         return -1;

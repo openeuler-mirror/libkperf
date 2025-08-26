@@ -31,12 +31,9 @@ enum AnalysisStatus {
 };
 
 struct PmuTaskAttr {
-    int numCpu;                     // number of cpu to be collected
-    int* cpuList;                   // list of core ids to be collected
-                                    // list length has to be as the same as numCpu
-    int numPid;                     // number of (parent) processes  to be collected
-    int* pidList;                   // list of pids(tids) to be collected
-                                    // list length has to be as the same as numPid
+    std::vector<int> cpuList;        // list of core ids to be collected
+    std::vector<int> pidList;        // list of pids(tids) to be collected   
+
     std::shared_ptr<PmuEvt> pmuEvt;     // which pmu to be collected
 
     int groupId;                   // event group id
@@ -83,6 +80,7 @@ public:
     void StoreSplitData(unsigned pd, std::pair<unsigned, char**>& previousEventList,
                         std::unordered_map<std::string, char*>& eventSplitMap);
     bool IsAllPidExit(const unsigned pd);
+    void FillPidList(const unsigned pd, unsigned numPid, int* pidList);
     int ResolvePmuDataSymbol(struct PmuData* iPmuData);
 
     std::vector<PerfEvent> GetMetaData(PmuData* pmuData) const;
@@ -137,7 +135,6 @@ private:
     SymbolMode GetSymbolMode(const unsigned pd);
     unsigned GetAnalysisStatus(const int pd);
     unsigned long GetBranchSampleFilter(const unsigned pd);
-    void FillPidList(PmuTaskAttr* taskParam, const unsigned pd);
     void OpenDummyEvent(PmuTaskAttr* taskParam, const unsigned pd);
     void EraseDummyEvent(const unsigned pd);
     int InitSymbolRecordModule(const unsigned pd, PmuTaskAttr* taskParam);

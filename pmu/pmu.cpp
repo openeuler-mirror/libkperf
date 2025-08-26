@@ -39,7 +39,6 @@ static unordered_map<unsigned, bool> runningStatus;
 static SafeHandler<unsigned> pdMutex;
 static pair<unsigned, const char**> uncoreEventPair;
 static std::set<int> onLineCpuIds;
-static string cgroupDir = "/sys/fs/cgroup/";
 
 #define REQUEST_USER_ACCESS 0x2
 
@@ -187,15 +186,12 @@ static int CheckCgroupNameList(unsigned numCgroup, char** cgroupName)
         New(LIBPERF_ERR_INVALID_CGROUP_LIST, "Invalid cgroup name list: numCgroup is greater than 0, but cgroupNameList is null");
         return LIBPERF_ERR_INVALID_CGROUP_LIST;
     }
-    int cgroupIsV2 = CheckCgroupV2();
-    if (cgroupIsV2 == -1) {
-        New(LIBPERF_ERR_INVALID_CGROUP_LIST, "The cgroup mount does not exist or has no permission to access");
-        return LIBPERF_ERR_INVALID_CGROUP_LIST;
-    } else if (!cgroupIsV2) {  // cgroup v1
-        cgroupDir += "perf_event/";
-    }
     for (unsigned i = 0; i < numCgroup; i++) {
-        std::string cgroupPath = cgroupDir + string(cgroupName[i]);
+        std::string cgroupPath = GetCgroupPath(cgroupName[i]);
+        if (cgroupPath.empty()) {
+            New(LIBPERF_ERR_INVALID_CGROUP_LIST, "The cgroup mount does not exist or has no permission to access");
+            return LIBPERF_ERR_INVALID_CGROUP_LIST;
+        }
         int cgroupFd = open(cgroupPath.c_str(), O_RDONLY);
         if (cgroupFd < 0) {
             New(LIBPERF_ERR_OPEN_INVALID_FILE, "open " + cgroupPath + " failed.");
@@ -538,8 +534,6 @@ static void PmuTaskAttrFree(PmuTaskAttr *taskAttr)
 {
     auto node = taskAttr;
     while (node) {
-        delete[] node->pidList;
-        delete[] node->cpuList;
         auto current = node;
         node = node->next;
         current->pmuEvt = nullptr;
@@ -587,6 +581,7 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
                 break;
             }
 
+            PmuList::GetInstance()->FillPidList(pd, copiedAttr.numPid, copiedAttr.pidList);
             PmuList::GetInstance()->SetSymbolMode(pd, attr->symbolMode);
             PmuList::GetInstance()->SetBranchSampleFilter(pd, attr->branchSampleFilter);
             PmuList::GetInstance()->SetAnalysisStatus(pd, GOING_RESOLVE);
@@ -930,47 +925,36 @@ static struct PmuEvt* GetPmuEvent(const char* pmuName, int collectType)
 static void PrepareCpuList(PmuAttr *attr, PmuTaskAttr *taskParam, PmuEvt* pmuEvt)
 {
     if (!pmuEvt->cpuMaskList.empty()) {
-        taskParam->numCpu = pmuEvt->cpuMaskList.size();
-        taskParam->cpuList = new int[pmuEvt->cpuMaskList.size()];
-        for(int i = 0; i < pmuEvt->cpuMaskList.size(); i++) {
-            taskParam->cpuList[i] = pmuEvt->cpuMaskList[i];
+        for (int i : pmuEvt->cpuMaskList) {
+            taskParam->cpuList.push_back(i);
         }
+        taskParam->pidList.clear();
+        taskParam->pidList.push_back(-1);
     } else if (attr->cpuList == nullptr && attr->pidList != nullptr && pmuEvt->collectType == COUNTING) {
         if(attr->enableBpf) {
             // collect data from all system cores in bpf mode
-            taskParam->numCpu = MAX_CPU_NUM;
-            taskParam->cpuList = new int[MAX_CPU_NUM];
             for(int i = 0; i < MAX_CPU_NUM; i++) {
-                taskParam->cpuList[i] = i;
+                taskParam->cpuList.push_back(i);
             }
-        } else {
+        } else { 
             // For counting with pid list for system wide, open fd with cpu -1 and specific pid.
-            taskParam->numCpu = 1;
-            taskParam->cpuList = new int[taskParam->numCpu];
-            taskParam->cpuList[0] = -1;
+            taskParam->cpuList.push_back(-1);
         }
     } else if (attr->cpuList == nullptr) {
         // For null cpulist, open fd with cpu 0,1,2...max_cpu
         const set<int> &onLineCpus = GetOnLineCpuIds();
-        int cpuNum = onLineCpus.size();
-        taskParam->numCpu = cpuNum;
-        taskParam->cpuList = new int[cpuNum];
-        int i = 0;
         for (const auto &cpuId : onLineCpus) {
-            taskParam->cpuList[i] = cpuId;
-            i++;
+            taskParam->cpuList.push_back(cpuId);
         }
     } else {
-        taskParam->numCpu = attr->numCpu;
-        taskParam->cpuList = new int[attr->numCpu];
         for (int i = 0; i < attr->numCpu; i++) {
-            taskParam->cpuList[i] = attr->cpuList[i];
+            taskParam->cpuList.push_back(attr->cpuList[i]);
         }
     }
 }
 
 int GetCgroupFd(std::string& cgroupName) {
-    std::string cgroupPath = cgroupDir + cgroupName;
+    std::string cgroupPath = GetCgroupPath(cgroupName);
     int cgroupFd = open(cgroupPath.c_str(), O_RDONLY);
     if (cgroupFd < 0) {
         New(LIBPERF_ERR_OPEN_INVALID_FILE, "open " + cgroupPath + " failed.");
@@ -985,10 +969,8 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
     /**
      * Assign pids to collect
      */
-    taskParam->numPid = attr->numPid;
-    taskParam->pidList = new int[attr->numPid];
     for (int i = 0; i < attr->numPid; i++) {
-        taskParam->pidList[i] = attr->pidList[i];
+        taskParam->pidList.push_back(attr->pidList[i]);
     }
 
     PmuEvt* pmuEvt = nullptr;

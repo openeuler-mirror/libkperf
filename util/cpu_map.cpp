@@ -43,9 +43,11 @@ static map<string, CHIP_TYPE> chipMap = {{"0x00000000481fd010", HIPA},
                                          {"0x00000000480fd450", HIPE},};
 
 static std::set<int> onLineCpuIds;
-static map<int, int> cpuOfNumaNodeMap;
 static vector<unsigned> coreArray;
+static vector<vector<unsigned>> numaCoreLists;
+static unordered_map<unsigned, unsigned> cpuOfNumaNodeMap;
 static mutex pmuCoreListMtx;
+static bool cpuNumaMapInit = false;
 
 static inline bool ReadCpuPackageId(int coreId, CpuTopology* cpuTopo)
 {
@@ -67,7 +69,7 @@ static inline bool ReadCpuPackageId(int coreId, CpuTopology* cpuTopo)
     return true;
 }
 
-static int GetNumaNodeCount() 
+static int GetNumaNodeCount()
 {
     DIR *dir = opendir(NUMA_PATH.c_str());
     if (dir == nullptr) {
@@ -95,56 +97,67 @@ unsigned* GetCoreList(int start) {
     return &coreArray[start];
 }
 
+static void InitialzeCpuOfNumaList()
+{
+    lock_guard<mutex> lock(pmuCoreListMtx);
+    if (cpuNumaMapInit) {
+        return;
+    }
+    unsigned maxNode = GetNumaNodeCount();
+    numaCoreLists.resize(maxNode);
+    for (unsigned nodeId = 0; nodeId < maxNode; ++nodeId) {
+        std::string nodeListFile = "/sys/devices/system/node/node" + to_string(nodeId) + "/cpulist";
+        ifstream in(nodeListFile);
+        if (!in.is_open()) {
+            continue;
+        }
+        std::string cpulist;
+        getline(in, cpulist);
+        in.close();
+        vector<unsigned> cores;
+        auto rangeList = SplitStringByDelimiter(cpulist, ',');
+        for (const auto& range : rangeList) {
+            auto split = SplitStringByDelimiter(range, '-');
+            if (split.size() == 1) {
+                auto cpu = stoi(split[0]);
+                cores.push_back(cpu);
+                cpuOfNumaNodeMap[cpu] = nodeId;
+            } else if (split.size() == 2) {
+                auto start = stoul(split[0]);
+                auto end = stoul(split[1]);
+                for (auto i = start; i <= end; ++i) {
+                    cores.push_back(i);
+                    cpuOfNumaNodeMap[i] = nodeId;
+                }
+            }
+        }
+        numaCoreLists[nodeId] = move(cores);
+    }
+    cpuNumaMapInit = true;
+}
+
 int GetNumaCore(unsigned nodeId, unsigned **coreList)
 {
-    string nodeListFile = "/sys/devices/system/node/node" + to_string(nodeId) + "/cpulist";
-    ifstream in(nodeListFile);
-    if (!in.is_open()) {
+    if (!cpuNumaMapInit) {
+        InitialzeCpuOfNumaList();
+    }
+
+    if (nodeId >= numaCoreLists.size() || numaCoreLists[nodeId].empty()) {
         return -1;
     }
-    std::string cpulist;
-    in >> cpulist;
-    auto split = SplitStringByDelimiter(cpulist, '-');
-    if (split.size() != 2) {
-        return -1;
-    }
-    auto start = stoi(split[0]);
-    auto end = stoi(split[1]);
-    int coreNums = end - start + 1;
-    if (coreNums <= 0) {
-        return -1;
-    }
-    *coreList = GetCoreList(start);
-    return coreNums;
+
+    *coreList = numaCoreLists[nodeId].data();
+    return numaCoreLists[nodeId].size();
 }
 
 int GetNumaNodeOfCpu(int coreId)
 {
-    if (!cpuOfNumaNodeMap.empty()) {
-        if (cpuOfNumaNodeMap.find(coreId) != cpuOfNumaNodeMap.end()) {
-            return cpuOfNumaNodeMap[coreId];
-        } else {
-            return -1;
-        }
+    if (!cpuNumaMapInit) {
+        InitialzeCpuOfNumaList();
     }
 
-    unsigned maxNode = GetNumaNodeCount();
-    int nodeId = -1;
-    for (int i = 0; i < maxNode; i++) {
-        unsigned *coreList = nullptr;
-        int numCore = GetNumaCore(i, &coreList);
-        if (numCore == -1) {
-            continue;
-        }
-        for (int j = 0; j < numCore; j++) {
-            int cpuId = coreList[j];
-            cpuOfNumaNodeMap[cpuId] = i;
-            if (coreId == cpuId) {
-                nodeId = i;
-            }
-        }
-    }
-    return nodeId;
+    auto it = cpuOfNumaNodeMap.find(coreId);
+    return (it != cpuOfNumaNodeMap.end()) ? it->second : -1;
 }
 
 struct CpuTopology* GetCpuTopology(int coreId)

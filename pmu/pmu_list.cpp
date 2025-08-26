@@ -60,7 +60,6 @@ namespace KUNPENG_PMU {
 
     int PmuList::Register(const int pd, PmuTaskAttr* taskParam)
     {
-        this->FillPidList(taskParam, pd);
         /* Use libpfm to get the basic config for this pmu event */
         struct PmuTaskAttr* pmuTaskAttrHead = taskParam;
         // Init collect type for pmu data,
@@ -932,15 +931,15 @@ namespace KUNPENG_PMU {
     int PmuList::PrepareCpuTopoList(
             const unsigned& pd, PmuTaskAttr* pmuTaskAttrHead, std::vector<CpuPtr>& cpuTopoList)
     {
-        for (int i = 0; i < pmuTaskAttrHead->numCpu; i++) {
-            if (pmuTaskAttrHead->pmuEvt->collectType == SPE_SAMPLING && IsCpuInList(pmuTaskAttrHead->cpuList[i])) {
+        for (int cpuId : pmuTaskAttrHead->cpuList) {
+            if (pmuTaskAttrHead->pmuEvt->collectType == SPE_SAMPLING && IsCpuInList(cpuId)) {
                 // For SPE sampling, one core can only be used by one pd.
                 // Therefore, check if core is in sampling.
                 return LIBPERF_ERR_DEVICE_BUSY;
             }
-            struct CpuTopology* cpuTopo = GetCpuTopology(pmuTaskAttrHead->cpuList[i]);
+            struct CpuTopology* cpuTopo = GetCpuTopology(cpuId);
             if (pmuTaskAttrHead->pmuEvt->collectType == SPE_SAMPLING) {
-                AddSpeCpu(pd, pmuTaskAttrHead->cpuList[i]);
+                AddSpeCpu(pd, cpuId);
             }
             cpuTopoList.emplace_back(shared_ptr<CpuTopology>(cpuTopo));
         }
@@ -949,16 +948,16 @@ namespace KUNPENG_PMU {
 
     int PmuList::PrepareProcTopoList(PmuTaskAttr* pmuTaskAttrHead, std::vector<ProcPtr>& procTopoList) const
     {
-        if (pmuTaskAttrHead->numPid == 0) {
+        if (pmuTaskAttrHead->pidList.empty() || (pmuTaskAttrHead->pidList.size() == 1 && pmuTaskAttrHead->pidList[0] == -1)) {
             struct ProcTopology* procTopo = GetProcTopology(-1);
             if (procTopo == nullptr) {
                 New(LIBPERF_ERR_FAIL_GET_PROC);
                 return LIBPERF_ERR_FAIL_GET_PROC;
             }
             procTopoList.emplace_back(unique_ptr<ProcTopology, void (*)(ProcTopology*)>(procTopo, FreeProcTopo));
+            return SUCCESS;
         }
-        for (int i = 0; i < pmuTaskAttrHead->numPid; i++) {
-            int masterPid = pmuTaskAttrHead->pidList[i];
+        for (int masterPid : pmuTaskAttrHead->pidList) {
             int numChild = 0;
             int* childTidList = GetChildTid(masterPid, &numChild);
             if (childTidList == nullptr) {
@@ -978,7 +977,7 @@ namespace KUNPENG_PMU {
             }
             delete[] childTidList;
             if (!foundProc) {
-                New(LIBPERF_ERR_FAIL_GET_PROC, "process not found: " + std::to_string(pmuTaskAttrHead->pidList[i]));
+                New(LIBPERF_ERR_FAIL_GET_PROC, "process not found: " + std::to_string(masterPid));
                 return LIBPERF_ERR_FAIL_GET_PROC;
             }
         }
@@ -1029,7 +1028,7 @@ namespace KUNPENG_PMU {
         if (taskParam->pmuEvt->collectType != COUNTING) {
             return;
         }
-        if (taskParam->numPid <= 0) {
+        if (taskParam->pidList.empty()) {
             return;
         }
         auto* dummyEvent = new DummyEvent(GetEvtList(pd), ppidList.at(pd), GetDataEvtGroupList(pd));
@@ -1037,11 +1036,11 @@ namespace KUNPENG_PMU {
         dummyList[pd] = dummyEvent;
     }
 
-    void PmuList::FillPidList(KUNPENG_PMU::PmuTaskAttr* taskParam, const unsigned int pd)
+    void PmuList::FillPidList(const unsigned pd, unsigned numPid, int *pidList)
     {
         std::vector<pid_t> ppids;
-        for (int i = 0; i < taskParam->numPid; i++) {
-            ppids.push_back(taskParam->pidList[i]);
+        for (int i = 0; i < numPid; i++) {
+            ppids.push_back(pidList[i]);
         }
         ppidList[pd] = ppids;
     }

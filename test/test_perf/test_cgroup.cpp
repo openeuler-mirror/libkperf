@@ -22,7 +22,7 @@ using namespace std;
 
 class TestCgroup : public testing::Test {
 public:
-    string cgroupPath;
+    string testCgroupPath;
 
     void SetUp()
     {
@@ -30,9 +30,9 @@ public:
         demoPid = RunTestApp(exePath);
 
         // Set cgroup directory path.
-        cgroupPath = "/sys/fs/cgroup";
-        if(!CheckCgroupV2()) {  // cgroup v1
-            cgroupPath += "/perf_event";
+        testCgroupPath = GetCgroupPath(::testing::UnitTest::GetInstance()->current_test_info()->name());
+        if (testCgroupPath.empty()) {
+            FAIL() << "Cgroup Path does not exist: " << testCgroupPath;
         }
     }
 
@@ -47,7 +47,12 @@ public:
         for (int i = 0; i< pdNums; ++i) {
             PmuClose(pds[i]);
         }
-        rmdir(cgroupPath.c_str());
+        std::ofstream ofs(testCgroupPath + "/cgroup.procs");
+        if (ofs.is_open()) {
+            ofs << "";
+            ofs.close();
+        }
+        rmdir(testCgroupPath.c_str());
     }
 
 protected:
@@ -83,11 +88,10 @@ const string TestCgroup::expectFilename = "simple.cpp";
 
 TEST_F(TestCgroup, ValidCgroupName)
 {
-    cgroupPath += "/testcgroup";
-    ASSERT_EQ(mkdir(cgroupPath.c_str(), 0755), 0);
+    ASSERT_EQ(mkdir(testCgroupPath.c_str(), 0755), 0) << strerror(errno);
     auto attr = GetPmuAttribute();
     char* cgroupName[1];
-    cgroupName[0] = (char*)"testcgroup";
+    cgroupName[0] = (char*)"ValidCgroupName";
     attr.cgroupNameList = cgroupName;
     attr.numCgroup = 1;
     auto pd = PmuOpen(SAMPLING, &attr);
@@ -95,19 +99,14 @@ TEST_F(TestCgroup, ValidCgroupName)
 }
 
 TEST_F(TestCgroup, TestCgroupCounting) {
-    cgroupPath += "/cgroupCounting";
-    ASSERT_EQ(mkdir(cgroupPath.c_str(), 0755), 0);
-    const string cgroupProc = cgroupPath + "/cgroup.procs";
-    ofstream ofs(cgroupProc);
-    ASSERT_TRUE(ofs.is_open());
+    ASSERT_EQ(mkdir(testCgroupPath.c_str(), 0755), 0) << strerror(errno);
+    ofstream ofs(testCgroupPath + "/cgroup.procs");
     ofs << demoPid;
-    ofs.flush();
-    ASSERT_FALSE(ofs.fail());
     ofs.close();
 
     auto attr = GetPmuAttribute();
     char* cgroupName[1];
-    cgroupName[0] = (char*)"cgroupCounting";
+    cgroupName[0] = (char*)"TestCgroupCounting";
     attr.cgroupNameList = cgroupName;
     attr.numCgroup = 1;
 
@@ -117,19 +116,14 @@ TEST_F(TestCgroup, TestCgroupCounting) {
     ASSERT_EQ(ret, SUCCESS);
     int len = PmuRead(pd, &data);
     ASSERT_GT(len, 0);
-    ASSERT_STREQ(data[0].cgroupName, "cgroupCounting");
+    ASSERT_STREQ(data[0].cgroupName, "TestCgroupCounting");
 }
 
 TEST_F(TestCgroup, TestCgroupSampling)
 {
-    cgroupPath += "/cgroupSampling";
-    ASSERT_EQ(mkdir(cgroupPath.c_str(), 0755), 0);
-    const string cgroupProc = cgroupPath + "/cgroup.procs";
-    ofstream ofs(cgroupProc);
-    ASSERT_TRUE(ofs.is_open());
+    ASSERT_EQ(mkdir(testCgroupPath.c_str(), 0755), 0) << strerror(errno);
+    ofstream ofs(testCgroupPath + "/cgroup.procs");
     ofs << demoPid;
-    ofs.flush();
-    ASSERT_FALSE(ofs.fail());
     ofs.close();
 
     auto attr = GetPmuAttribute();
@@ -138,7 +132,7 @@ TEST_F(TestCgroup, TestCgroupSampling)
     attr.evFilter = SPE_EVENT_RETIRED;
     attr.minLatency = 0x40;
     char* cgroupName[1];
-    cgroupName[0] = (char*)"cgroupSampling";
+    cgroupName[0] = (char*)"TestCgroupSampling";
     attr.cgroupNameList = cgroupName;
     attr.numCgroup = 1;
 
@@ -147,7 +141,7 @@ TEST_F(TestCgroup, TestCgroupSampling)
     int ret = PmuCollect(pd, 5000, collectInterval);
     int len = PmuRead(pd, &data);
     ASSERT_GT(len, 0);
-    ASSERT_STREQ(data[0].cgroupName, "cgroupSampling");
+    ASSERT_STREQ(data[0].cgroupName, "TestCgroupSampling");
     ASSERT_GT(data[0].period, 0);
 }
 
@@ -156,21 +150,16 @@ TEST_F(TestCgroup, TestCgroupSPE)
     if (!HasSpeDevice()) {
         GTEST_SKIP();
     }
-    cgroupPath += "/cgroupSPE";
-    ASSERT_EQ(mkdir(cgroupPath.c_str(), 0755), 0);
-    const string cgroupProc = cgroupPath + "/cgroup.procs";
-    ofstream ofs(cgroupProc);
-    ASSERT_TRUE(ofs.is_open());
+    ASSERT_EQ(mkdir(testCgroupPath.c_str(), 0755), 0) << strerror(errno);
+    ofstream ofs(testCgroupPath + "/cgroup.procs");
     ofs << demoPid;
-    ofs.flush();
-    ASSERT_FALSE(ofs.fail());
     ofs.close();
 
     auto attr = GetPmuAttribute();
     attr.dataFilter = LOAD_FILTER;
     attr.period = 8192;
     char* cgroupName[1];
-    cgroupName[0] = (char*)"cgroupSPE";
+    cgroupName[0] = (char*)"TestCgroupSPE";
     attr.cgroupNameList = cgroupName;
     attr.numCgroup = 1;
 
@@ -179,6 +168,6 @@ TEST_F(TestCgroup, TestCgroupSPE)
     int ret = PmuCollect(pd, 5000, collectInterval);
     int len = PmuRead(pd, &data);
     ASSERT_GT(len, 0);
-    ASSERT_STREQ(data[0].cgroupName, "cgroupSPE");
+    ASSERT_STREQ(data[0].cgroupName, "TestCgroupSPE");
     ASSERT_GT(data[0].period, 0);
 }
