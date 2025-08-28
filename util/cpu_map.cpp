@@ -40,7 +40,8 @@ static map<string, CHIP_TYPE> chipMap = {{"0x00000000481fd010", HIPA},
                                          {"0x00000000480fd020", HIPB},
                                          {"0x00000000480fd030", HIPC},
                                          {"0x00000000480fd220", HIPF},
-                                         {"0x00000000480fd450", HIPE},};
+                                         {"0x00000000480fd450", HIPE},
+                                         {"0x00000000480fd060", HIPG}};
 
 static std::set<int> onLineCpuIds;
 static vector<unsigned> coreArray;
