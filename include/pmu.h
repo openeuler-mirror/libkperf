@@ -707,12 +707,13 @@ typedef void* PmuFile;
  * @brief Begin to write PmuData list to perf.data file.
  *        It is a simplified perf.data only include basic fields for perf sample,
  *        including id, tid, pid, addr and branch stack.
- *        It also includes sample like mmap, mmap2, comm, fork.
+ *        It also includes sample like mmap, mmap2, comm, fork and one feature section(build id).
  * @param path path of perf.data
  * @param pattr PmuAttr of collection task
+ * @param addIdHdr add sample id for Non PERF_RECORD_SAMPLE samples
  * @return a handle of file to write. If error, return NULL and check Perrorno.
  */
-PmuFile PmuBeginWrite(const char *path, const struct PmuAttr *pattr);
+PmuFile PmuBeginWrite(const char *path, const struct PmuAttr *pattr, const int addIdHdr);
 
 /**
  * @brief Write PmuData list to file.

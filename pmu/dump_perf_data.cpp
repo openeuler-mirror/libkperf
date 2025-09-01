@@ -87,7 +87,7 @@ struct PerfSample {
 
 class PerfDataDumper {
 public:
-    PerfDataDumper(const char *path) :path(path){
+    PerfDataDumper(const char *path, const bool addIdHdr) :path(path), addIdHdr(addIdHdr){
     }
     ~PerfDataDumper() = default;
 
@@ -127,7 +127,9 @@ public:
             return LIBPERF_ERR_OPEN_INVALID_FILE;
         }
         // Calculate essential id header size, used for synthesized events.
-        idHdrSize = GetIdHeaderSize();
+        if (addIdHdr) {
+            idHdrSize = GetIdHeaderSize();
+        }
 
         // Start to write perf.data, refer to perf_session__write_header in linux.
 
@@ -619,6 +621,7 @@ private:
     }
 
     unsigned idHdrSize = 0;
+    bool addIdHdr = false;
     const char *path = nullptr;
     PerfFileHeader ph = {0};
     int fd = 0;
@@ -631,10 +634,10 @@ private:
 
 map<PmuFile, unique_ptr<PerfDataDumper>> dumpers;
 
-PmuFile PmuBeginWrite(const char *path, const PmuAttr *pattr)
+PmuFile PmuBeginWrite(const char *path, const PmuAttr *pattr, const int addIdHdr)
 {
     try {
-        unique_ptr<PerfDataDumper> dumper(new PerfDataDumper(path));
+        unique_ptr<PerfDataDumper> dumper(new PerfDataDumper(path, addIdHdr));
         int err = dumper->Start(pattr);
         if (err != SUCCESS) {
             New(err);
