@@ -620,7 +620,7 @@ private:
 
     unsigned idHdrSize = 0;
     const char *path = nullptr;
-    PerfFileHeader ph = {0};
+    PerfFileHeader ph = {};
     int fd = 0;
     map<string, long> evt2id;
     set<string> modules;
