@@ -421,9 +421,6 @@ int KUNPENG_PMU::PerfCounterDefault::Disable()
 
 int KUNPENG_PMU::PerfCounterDefault::Reset()
 {
-    if (groupFd != -1) {
-        return SUCCESS;
-    }
     return PerfEvt::Reset();
 }
 

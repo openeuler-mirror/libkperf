@@ -337,7 +337,6 @@ int main() {
         printf("event:%s pid=%d tid=%d cpu=%d count=%llu\n",data[i].evt,data[i].pid,data[i].tid,data[i].cpu,data[i].count);
     }
     PmuDataFree(data);
-    PmuDisable(pd);
     PmuClose(pd);
     return 0;
 }
