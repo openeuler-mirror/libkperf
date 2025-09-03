@@ -47,6 +47,7 @@ struct Param {
     unsigned duration = UINT32_MAX;
     unsigned freq = 4000;
     unsigned interval = 1000; // ms
+    bool addIdHdr;
 };
 
 int64_t GetTime()
@@ -84,6 +85,7 @@ static void PrintHelp()
     std::cerr << "Options:\n";
     std::cerr << "      -e <event1>,<event2>        event list. default: cycles\n";
     std::cerr << "      -b                          whether to use brbe.\n";
+    std::cerr << "      --sample-id                 add sample id for Non PERF_RECORD_SAMPLE samples, mostly used for autofdo-0.19.\n";
     std::cerr << "      -o <path>                   output file path. default: ./libkperf.data\n";
     std::cerr << "      -d <count>                  count of reading: default: UINT32_MAX\n";
     std::cerr << "      -I <milliseconds>           interval for reading buffer. unit: ms. default: 1000\n";
@@ -106,6 +108,7 @@ static int ToInt(const char *str)
 static Param ParseArgs(int argc, char** argv)
 {
     Param param;
+    param.addIdHdr = false;
     bool inCmd = false;
     for (int i = 1; i < argc; ++i) {
         if (inCmd) {
@@ -134,6 +137,8 @@ static Param ParseArgs(int argc, char** argv)
             ++i;
         } else if (strcmp(argv[i], "-v") == 0) {
             verbose = true;
+        } else if (strcmp(argv[i], "--sample-id") == 0) {
+            param.addIdHdr = true;
         } else {
             PrintHelp();
             exit(0);
@@ -235,7 +240,7 @@ int Collect(const Param &param)
         FreeEvtList(evtlist, param.events.size());
         return Perrorno();
     }
-    file = PmuBeginWrite(param.dataPath.c_str(), &attr);
+    file = PmuBeginWrite(param.dataPath.c_str(), &attr, param.addIdHdr);
     if (file == NULL) {
         FreeEvtList(evtlist, param.events.size());
         return Perrorno();
