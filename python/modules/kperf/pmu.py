@@ -593,8 +593,8 @@ def close_cpu_freq_sampling():
 def read_cpu_freq_detail():
     return _libkperf.PmuReadCpuFreqDetail()
 
-def begin_write(path, pattr):
-    return _libkperf.PmuBeginWrite(path, pattr)
+def begin_write(path, pattr, addIdHdr):
+    return _libkperf.PmuBeginWrite(path, pattr, addIdHdr)
 
 def write_data(file, data):
     return _libkperf.PmuWriteData(file, data)

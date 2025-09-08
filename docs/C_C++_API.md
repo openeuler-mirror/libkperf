@@ -316,7 +316,7 @@
 ### void PmuCloseCpuFreqSampling();
 关闭cpu频率采集
 
-### PmuFile PmuBeginWrite(const char *path, const struct PmuAttr *pattr);
+### PmuFile PmuBeginWrite(const char *path, const struct PmuAttr *pattr, const int addIdHdr);
 用于把性能数据输出为perf.data格式的文件。该函数用于初始化该文件。  
 目前该文件只支持SAMPLING模式，只支持基本信息的输出，比如id, tid, pid, addr，也包含brbe的数据。
 * path: 文件路径
