@@ -2219,7 +2219,7 @@ def PmuCloseCpuFreqSampling():
     c_PmuCloseCpuFreqSampling = kperf_so.PmuCloseCpuFreqSampling
     c_PmuCloseCpuFreqSampling()
 
-def PmuBeginWrite(path, pattr):
+def PmuBeginWrite(path, pattr, addIdHdr):
     """
     PmuFile PmuBeginWrite(const char *path, const PmuAttr *pattr)
     """
@@ -2228,8 +2228,9 @@ def PmuBeginWrite(path, pattr):
     c_func.restype = ctypes.c_void_p
 
     c_filepath = ctypes.c_char_p(path.encode(UTF_8))
+    c_addIdHdr = ctypes.c_int(addIdHdr)
 
-    return c_func(c_filepath, ctypes.byref(pattr.c_pmu_attr))
+    return c_func(c_filepath, ctypes.byref(pattr.c_pmu_attr), c_addIdHdr)
 
 def PmuWriteData(file, data):
     """
