@@ -29,30 +29,6 @@ void KUNPENG_PMU::PerfMmapReadDone(PerfMmap &map)
     map.prev = ReadOnce(&base->data_head);
 }
 
-int KUNPENG_PMU::MmapInit(PerfMmap &sampleMmap)
-{
-    struct perf_event_mmap_page *base = (struct perf_event_mmap_page *)sampleMmap.base;
-    __u64 head = ReadOnce(&base->data_head);
-    __u64 prev = sampleMmap.prev;
-    unsigned long size;
-
-    sampleMmap.start = sampleMmap.overwrite ? head : prev;
-    sampleMmap.end = sampleMmap.overwrite ? prev : head;
-
-    if (__glibc_unlikely((sampleMmap.end - sampleMmap.start) < sampleMmap.flush)) {
-        return -EAGAIN;
-    }
-
-    size = sampleMmap.end - sampleMmap.start;
-    if (size > (unsigned long)(sampleMmap.mask) + 1) {
-        if (!sampleMmap.overwrite) {
-            sampleMmap.prev = head;
-            PerfMmapConsume(sampleMmap);
-        }
-    }
-    return 0;
-}
-
 void CopyDataInWhileLoop(KUNPENG_PMU::PerfMmap& map, __u64 offset, unsigned char* data, __u64 len)
 {
     /*

@@ -53,7 +53,6 @@ std::vector<std::string> SplitStringByDelimiter(const std::string& str, char del
 int RaiseNumFd(uint64_t numFd);
 bool ExistPath(const std::string& filePath);
 std::string GetTraceEventDir();
-bool StartWith(const std::string& str, const std::string& prefix);
 bool ConvertStrToInt(const std::string& intValStr, int32_t& val);
 int GetParanoidVal();
 std::string GetCgroupPath(const std::string& cgroupName);

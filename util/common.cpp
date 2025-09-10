@@ -85,17 +85,6 @@ std::string ReadFileContent(const std::string& filePath)
     return content;
 }
 
-int ConvertHexStrToInt(const std::string& hexStr, uint64_t& bus)
-{
-    try {
-        bus = stoul(hexStr, nullptr, 16);
-    } catch (const std::exception& e) {
-        pcerr::New(LIBPERF_ERR_NOT_SUPPORT_PCIE_COUNTING, "hexStr: " + hexStr + " is invalid");
-        return LIBPERF_ERR_NOT_SUPPORT_PCIE_COUNTING;
-    }
-    return SUCCESS;
-}
-
 int RaiseNumFd(uint64_t numFd)
 {
     unsigned long extra = 50;
@@ -150,14 +139,6 @@ std::string GetTraceEventDir()
         return TRACE_DEBUG_EVENT_PATH;
     }
     return "";
-}
-
-bool StartWith(const std::string& str, const std::string& prefix)
-{
-    if (str.size() < prefix.size()) {
-        return false;
-    }
-    return str.substr(0, prefix.size()) == prefix;
 }
 
 bool ConvertStrToInt(const std::string &intValStr, int32_t &val)

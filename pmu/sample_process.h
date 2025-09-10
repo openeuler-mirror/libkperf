@@ -50,7 +50,6 @@
 
 namespace KUNPENG_PMU {
 
-    int MmapInit(PerfMmap& sampleMmap);
     union PerfEvent* ReadEvent(PerfMmap& map);
     int RingbufferReadInit(PerfMmap& map);
     inline void PerfMmapConsume(PerfMmap& map)
