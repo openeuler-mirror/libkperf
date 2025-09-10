@@ -352,6 +352,9 @@ int KUNPENG_PMU::PerfSampler::Read(EventData &eventData)
     }
     auto cnt = eventData.data.size();
     this->ReadRingBuffer(eventData);
+    if (__glibc_unlikely(Perrorno() == LIBPERF_ERR_BUFFER_CORRUPTED)) {
+        return Perrorno();
+    }
     if (this->pid == -1) {
         FillComm(cnt, eventData.data.size(), eventData.data);
     }

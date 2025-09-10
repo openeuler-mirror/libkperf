@@ -359,7 +359,7 @@ static void ParseContextSwitch(PerfEventSampleContextSwitch *contextSample, Cont
     }
 }
 
-void Spe::CoreDummyData(struct SpeCoreContext *context, struct ContextSwitchData *data, int size, int pageSize)
+int Spe::CoreDummyData(struct SpeCoreContext *context, struct ContextSwitchData *data, int size, int pageSize)
 {
     uint64_t maxNum = size / sizeof(struct ContextSwitchData);
     uint64_t num = 1;
@@ -373,6 +373,9 @@ void Spe::CoreDummyData(struct SpeCoreContext *context, struct ContextSwitchData
     while ((dataTail < dataHead) && (num < maxNum)) {
         uint64_t off = dataTail % mpage->data_size;
         struct perf_event_header *header = (struct perf_event_header *)(ringBuf + off);
+        if (__glibc_unlikely(header->size == 0)) {
+            return LIBPERF_ERR_BUFFER_CORRUPTED;
+        }
 
         if (header->type == PERF_RECORD_MMAP) {
             struct PerfRecordMmap *sample = (struct PerfRecordMmap *)header;
@@ -430,6 +433,7 @@ void Spe::CoreDummyData(struct SpeCoreContext *context, struct ContextSwitchData
 
     mpage->data_tail = mpage->data_head;
     MB();
+    return SUCCESS;
 }
 
 static void SetTidByTimestamp(struct ContextSwitchData *dummyData, int *dummyIdx, struct SpeRecord *buf,
@@ -559,7 +563,11 @@ int Spe::SpeReadData(struct SpeContext *context, struct SpeRecord *buf, int size
 {
     int remainSize = size;
     int dummySize = context->dummyMmapSize;
-    CoreDummyData(context->coreCtxes, dummyData, dummySize, context->pageSize);
+    int err = CoreDummyData(context->coreCtxes, dummyData, dummySize, context->pageSize);
+    if (err != SUCCESS) {
+        New(err);
+        return -1;
+    }
     CoreSpeData(context->coreCtxes, dummyData, buf, &remainSize, cpu);
     return size - remainSize;
 }
@@ -658,7 +666,7 @@ int Spe::Read()
         pidRecords[rec->tid].push_back(rec);
     }
     status |= READ;
-    if (Perrorno() == LIBPERF_ERR_KERNEL_NOT_SUPPORT) {
+    if (Perrorno() == LIBPERF_ERR_KERNEL_NOT_SUPPORT || Perrorno() == LIBPERF_ERR_BUFFER_CORRUPTED) {
         return Perrorno();
     }
     return SUCCESS;
