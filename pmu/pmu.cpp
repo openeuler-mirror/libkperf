@@ -545,6 +545,10 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
 {
     SetWarn(SUCCESS);
     New(SUCCESS);
+    if (attr == nullptr) {
+        New(LIBPERF_ERR_NULL_POINTER, "PmuAttr cannot be null");
+        return -1;
+    }
     PmuAttr copiedAttr = *attr;
     pair<unsigned, char**> previousEventList = {0, nullptr};
     try {
@@ -1112,12 +1116,19 @@ static void DumpStack(ofstream &out, Stack *stack, int dumpDwf)
 int PmuDumpData(struct PmuData *pmuData, unsigned len, char *filepath, int dumpDwf)
 {
     SetWarn(SUCCESS);
+    if (filepath == nullptr) {
+        New(LIBPERF_ERR_NULL_POINTER, "filepath cannot be null");
+        return -1;
+    }
     ofstream out(filepath, ios_base::app);
     if (!out.is_open()) {
         New(LIBPERF_ERR_PATH_INACCESSIBLE, "cannot access: " + string(filepath));
         return -1;
     }
-
+    if (pmuData == nullptr) {
+        New(LIBPERF_ERR_NULL_POINTER, "PmuData cannot be null");
+        return -1;
+    }
     for (unsigned i = 0; i < len; ++i) {
         auto &data = pmuData[i];
         if (data.comm) {

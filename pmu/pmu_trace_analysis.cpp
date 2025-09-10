@@ -184,6 +184,10 @@ int PmuTraceOpen(enum PmuTraceType traceType, struct PmuTraceAttr *traceAttr)
     return -1;
 #else 
     SetWarn(SUCCESS);
+    if (traceAttr == nullptr) {
+        New(LIBPERF_ERR_NULL_POINTER, "PmuTraceAttr cannot be null");
+        return -1;
+    }
     auto err = CheckTraceAttr(traceType, traceAttr);
     if (err != SUCCESS) {
         return -1;

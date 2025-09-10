@@ -636,6 +636,11 @@ map<PmuFile, unique_ptr<PerfDataDumper>> dumpers;
 
 PmuFile PmuBeginWrite(const char *path, const PmuAttr *pattr, const int addIdHdr)
 {
+    if (pattr == nullptr) {
+        New(LIBPERF_ERR_NULL_POINTER, "PmuAttr cannot be null");
+        return NULL;
+    }
+
     try {
         unique_ptr<PerfDataDumper> dumper(new PerfDataDumper(path, addIdHdr));
         int err = dumper->Start(pattr);
