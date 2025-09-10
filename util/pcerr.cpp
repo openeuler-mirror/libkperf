@@ -66,7 +66,8 @@ namespace pcerr {
             {LIBPERF_ERR_ALLOCATE_REGISTER_FAILED, "Allocate register failed!"},
             {LIBPERF_ERR_CHECK_USER_ACCESS, "Check user access failed!"},
             {LIBPERF_ERR_INVALID_BPF_PARAM, "check bpf mode failed"},
-            {LIBPERF_ERR_BPF_ACT_FAILED, "failed to execute bpf obj action"}
+            {LIBPERF_ERR_BPF_ACT_FAILED, "failed to execute bpf obj action"},
+            {LIBPERF_ERR_NULL_POINTER, "the input pointer cannot be null"}
     };
     static std::unordered_map<int, std::string> warnMsgs = {
             {LIBPERF_WARN_CTXID_LOST, "Some SPE context packets are not found in the traces."},
