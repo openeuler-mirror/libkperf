@@ -357,24 +357,6 @@ unsigned long SymbolUtils::SymStoul(const std::string& addrStr)
     }
 }
 
-std::string SymbolUtils::RealPath(const std::string& filePath)
-{
-    char buff[PATH_MAX] = {0};
-    if (realpath(filePath.c_str(), buff)) {
-        return std::string{buff};
-    } else {
-        return std::string{};
-    }
-}
-
-bool SymbolUtils::IsValidPath(const std::string& filePath)
-{
-    if (filePath.empty()) {
-        return false;
-    }
-    return true;
-}
-
 bool SymbolUtils::IsNumber(const std::string& str)
 {
     for (int i = 0; i < str.length(); i++) {
