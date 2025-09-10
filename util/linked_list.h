@@ -32,14 +32,6 @@ ListNode* CreateNode()
     return newNode;
 }
 
-// Function to add a node at the head of the linked list
-template <typename ListNode>
-void addHead(ListNode** head, ListNode* newNode)
-{
-    newNode->next = *head;
-    *head = newNode;
-}
-
 // Function to add a node at the tail of the linked list
 template <typename ListNode>
 void AddTail(ListNode** head, ListNode** newNode)
