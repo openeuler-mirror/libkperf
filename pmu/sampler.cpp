@@ -253,6 +253,9 @@ int KUNPENG_PMU::PerfSampler::Read(vector<PmuData> &data, std::vector<PerfSample
     }
     auto cnt = data.size();
     this->ReadRingBuffer(data, sampleIps);
+    if (__glibc_unlikely(Perrorno() == LIBPERF_ERR_BUFFER_CORRUPTED)) {
+        return Perrorno();
+    }
     if (this->pid == -1) {
         FillComm(cnt, data.size(), data);
     }

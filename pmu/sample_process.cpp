@@ -16,12 +16,14 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include "pcerrc.h"
+#include "pcerr.h"
 #include "evt.h"
 #include "sample_process.h"
 
 #define PAGE_SIZE (sysconf(_SC_PAGESIZE))
 #define MB() asm volatile("dmb ish" ::: "memory")
 static constexpr int MAX_DATA_SIZE = 8192;
+using namespace pcerr;
 #define PerfRingbufferSmpStoreRelease(p, v)                                                       \
     ({                                                                                            \
         union {                                                                                   \
@@ -102,6 +104,10 @@ static inline union KUNPENG_PMU::PerfEvent *PerfMmapRead(KUNPENG_PMU::PerfMmap &
 
         event = (union KUNPENG_PMU::PerfEvent *)&data[*startPointer & map.mask];
         size = event->header.size;
+        if (__glibc_unlikely(size == 0)) {
+            New(LIBPERF_ERR_BUFFER_CORRUPTED);
+            return nullptr;
+        }
 
         if (__glibc_unlikely(size < sizeof(event->header) || diff < size)) {
             return nullptr;
