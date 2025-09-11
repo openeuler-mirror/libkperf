@@ -210,7 +210,7 @@ public:
 
 private:
     int SpeReadData(struct SpeContext *context, struct SpeRecord *buf, int size);
-    void CoreDummyData(struct SpeCoreContext *context, struct ContextSwitchData *data, int size, int pageSize);
+    int CoreDummyData(struct SpeCoreContext *context, struct ContextSwitchData *data, int size, int pageSize);
     void UpdateProcMap(__u32 ppid, __u32 pid);
 
     const unsigned short NONE = 0;
