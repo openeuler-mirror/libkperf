@@ -26,6 +26,7 @@
 #include "cpu_map.h"
 #include "pfm_event.h"
 #include "pmu_event.h"
+#include "pmu_event_list.h"
 #include "pmu.h"
 #include "pcerr.h"
 #include "pfm.h"
@@ -93,7 +94,7 @@ static const std::unordered_map<int, EvtRetriever> EvtMap{
 static bool CheckEventInList(enum PmuEventType eventType, const char *pmuName)
 {
     unsigned numEvt;
-    auto eventList = PmuEventList(eventType, &numEvt);
+    auto eventList = PmuEventList(eventType, &numEvt, false);
     if (eventList == nullptr) {
         return false;
     }

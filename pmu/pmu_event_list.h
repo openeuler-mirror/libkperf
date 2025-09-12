@@ -16,5 +16,5 @@
 #define PMU_EVENT_LIST_H
 
 void PmuEventListFree();
-
+const char** PmuEventList(enum PmuEventType eventType, unsigned *numEvt, bool eventNeedCheck);
 #endif // PMU_EVENT_LIST_H
