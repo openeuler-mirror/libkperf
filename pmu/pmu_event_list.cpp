@@ -100,6 +100,24 @@ static void GetTraceSubFolder(const std::string& traceFolder, const string& devN
     closedir(dir);
 }
 
+static bool PerfEventSupported(__u64 type, __u64 config)
+{
+    perf_event_attr attr{};
+    memset(&attr, 0, sizeof(attr));
+    attr.size = sizeof(struct perf_event_attr);
+    attr.type = type;
+    attr.config = config;
+    attr.disabled = 1;
+    attr.inherit = 1;
+    attr.read_format = PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING | PERF_FORMAT_ID;
+    int fd = KUNPENG_PMU::PerfEventOpen(&attr, -1, 0, -1, 0);
+    if (fd < 0 && errno == ENOENT) {
+        return false;
+    }
+    close(fd);
+    return true;
+}
+
 const char** QueryCoreEvent(unsigned *numEvt)
 {
     if (!coreEventList.empty()) {
@@ -109,6 +127,9 @@ const char** QueryCoreEvent(unsigned *numEvt)
     auto coreEventMap = KUNPENG_PMU::CORE_EVENT_MAP.at(GetCpuType());
     for (auto& pair : coreEventMap) {
         auto eventName = pair.first;
+        if (!PerfEventSupported(pair.second.type, pair.second.config)) {
+            continue;
+        }
         char* eventNameCopy = new char[eventName.length() + 1];
         strcpy(eventNameCopy, eventName.c_str());
         coreEventList.emplace_back(eventNameCopy);
