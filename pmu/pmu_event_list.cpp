@@ -28,7 +28,7 @@
 
 using namespace pcerr;
 using namespace std;
-using EvtQueryer = function<const char**(unsigned*)>;
+using EvtQueryer = function<const char**(unsigned*, bool eventCheck)>;
 
 static const string SLASH = "/";
 static const string COLON = ":";
@@ -45,6 +45,7 @@ static vector<const char*> supportDevPrefixs = {"hisi", "smmuv3", "hns3", "armv8
 static vector<const char*> uncoreEventList;
 static vector<const char*> traceEventList;
 static vector<const char*> coreEventList;
+static vector<const char*> checkCoreEventList;
 
 static void GetEventName(const string& devName, vector<const char*>& eventList)
 {
@@ -118,49 +119,67 @@ static bool PerfEventSupported(__u64 type, __u64 config)
     return true;
 }
 
-const char** QueryCoreEvent(unsigned *numEvt)
+const char **GetCoreEventList(unsigned *numEvt, bool eventCheck)
 {
-    if (!coreEventList.empty()) {
+    if (eventCheck) {
+        *numEvt = checkCoreEventList.size();
+        return checkCoreEventList.data();
+    }
+    *numEvt = coreEventList.size();
+    return coreEventList.data(); 
+}
+
+const char** QueryCoreEvent(unsigned *numEvt, bool eventCheck)
+{
+    if (!coreEventList.empty() && !eventCheck) {
         *numEvt = coreEventList.size();
         return coreEventList.data();
     }
+
+    if (!checkCoreEventList.empty() && eventCheck) {
+        *numEvt = checkCoreEventList.size();
+        return checkCoreEventList.data();
+    }
+
     auto coreEventMap = KUNPENG_PMU::CORE_EVENT_MAP.at(GetCpuType());
     for (auto& pair : coreEventMap) {
         auto eventName = pair.first;
-        if (!PerfEventSupported(pair.second.type, pair.second.config)) {
-            continue;
-        }
         char* eventNameCopy = new char[eventName.length() + 1];
         strcpy(eventNameCopy, eventName.c_str());
-        coreEventList.emplace_back(eventNameCopy);
+        if (eventCheck && PerfEventSupported(pair.second.type, pair.second.config)) {
+            checkCoreEventList.emplace_back(eventNameCopy);
+        } else {
+            coreEventList.emplace_back(eventNameCopy);
+        }
     }
     DIR* dir;
     struct dirent* entry;
     auto pmuDevPath = GetPmuDevicePath();
     if (pmuDevPath.empty()) {
-        *numEvt = coreEventList.size();
-        return coreEventList.data(); 
+        return GetCoreEventList(numEvt, eventCheck);
     }
     string path = pmuDevPath + "/events/";
     dir = opendir(path.c_str());
     if (dir == nullptr) {
-        *numEvt = coreEventList.size();
-        return coreEventList.data();
+        return GetCoreEventList(numEvt, eventCheck);
     }
     while ((entry = readdir(dir)) != nullptr) {
         if (entry->d_type == DT_REG) {
             string evtName = entry->d_name;
             char* eventNameCopy = new char[evtName.length() + 1];
             strcpy(eventNameCopy, evtName.c_str());
-            coreEventList.emplace_back(eventNameCopy);
+            if (eventCheck) {
+                checkCoreEventList.emplace_back(eventNameCopy);
+            } else {
+                coreEventList.emplace_back(eventNameCopy);
+            }
         }
     }
     closedir(dir);
-    *numEvt = coreEventList.size();
-    return coreEventList.data();
+    return GetCoreEventList(numEvt, eventCheck);
 }
 
-const char** QueryUncoreEvent(unsigned *numEvt)
+const char** QueryUncoreEvent(unsigned *numEvt, bool eventCheck)
 {
     if (!uncoreEventList.empty()) {
         *numEvt = uncoreEventList.size();
@@ -189,7 +208,7 @@ const char** QueryUncoreEvent(unsigned *numEvt)
     return uncoreEventList.data();
 }
 
-const char** QueryTraceEvent(unsigned *numEvt)
+const char** QueryTraceEvent(unsigned *numEvt, bool eventCheck)
 {
 #ifdef IS_X86
     *numEvt = 0;
@@ -228,11 +247,11 @@ const char** QueryTraceEvent(unsigned *numEvt)
 #endif
 }
 
-const char** QueryAllEvent(unsigned *numEvt) {
+const char** QueryAllEvent(unsigned *numEvt, bool eventCheck) {
     unsigned coreNum, uncoreNum, traceNum;
-    const char** coreList = QueryCoreEvent(&coreNum);
-    const char** uncoreList = QueryUncoreEvent(&uncoreNum);
-    const char** traceList = QueryTraceEvent(&traceNum);
+    const char** coreList = QueryCoreEvent(&coreNum, eventCheck);
+    const char** uncoreList = QueryUncoreEvent(&uncoreNum, eventCheck);
+    const char** traceList = QueryTraceEvent(&traceNum, eventCheck);
 
     unsigned totalSize = 0;
     if (coreList != nullptr) {
@@ -271,7 +290,7 @@ static const unordered_map<int, EvtQueryer> QueryMap{
         {PmuEventType::ALL_EVENT, QueryAllEvent},
 };
 
-const char** PmuEventList(enum PmuEventType eventType, unsigned *numEvt)
+const char** PmuEventList(enum PmuEventType eventType, unsigned *numEvt, bool eventNeedCheck) 
 {
     lock_guard<mutex> lg(pmuEventListMtx);
     SetWarn(SUCCESS);
@@ -281,12 +300,17 @@ const char** PmuEventList(enum PmuEventType eventType, unsigned *numEvt)
         return nullptr;
     }
     try {
-        eventList = QueryMap.at(eventType)(numEvt);
+        eventList = QueryMap.at(eventType)(numEvt, eventNeedCheck);
     } catch (...) {
         New(LIBPERF_ERR_QUERY_EVENT_LIST_FAILED, "Query event failed.");
         return nullptr;
     }
     return eventList;
+}
+
+const char** PmuEventList(enum PmuEventType eventType, unsigned *numEvt)
+{
+    return PmuEventList(eventType, numEvt, true);
 }
 
 static void PmuEventListFreeSingle(vector<const char*>& eventList)
@@ -302,6 +326,7 @@ void PmuEventListFree()
 {
     lock_guard<mutex> lg(pmuEventListMtx);
     PmuEventListFreeSingle(coreEventList);
+    PmuEventListFreeSingle(checkCoreEventList);     
     PmuEventListFreeSingle(uncoreEventList);
     PmuEventListFreeSingle(traceEventList);
     New(SUCCESS);
