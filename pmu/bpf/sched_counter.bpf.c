@@ -1,23 +1,12 @@
-/******************************************************************************
- * Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
- * libkperf licensed under the Mulan PSL v2.
- * You can use this software according to the terms and conditions of the Mulan PSL v2.
- * You may obtain a copy of Mulan PSL v2 at:
- *     http://license.coscl.org.cn/MulanPSL2
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR
- * PURPOSE.
- * See the Mulan PSL v2 for more details.
- * Author: Wu
- * Create: 2025-08-10
- * Description: the bpf program for ordinary or multi-thread program collecting in counting mode
- ******************************************************************************/
+// SPDX-License-Identifier: GPL-2.0
+// Copyright (c) 2021 Facebook
+
 #include <bpf/vmlinux.h>
 #include <bpf/bpf_core_read.h>
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_helpers.h>
 
-char LICENSE[] SEC("license") = "GPL";
+char LICENSE[] SEC("license") = "Dual BSD/GPL";
 
 #define MAX_ENTRIES 102400
 
