@@ -71,6 +71,9 @@ void KUNPENG_PMU::EvtListDefault::AdaptErrInfo(int err, PerfEvtPtr perfEvt)
         case LIBPERF_ERR_COUNTER_INDEX_IS_ZERO:
             pcerr::SetCustomErr(err, "There are too many open events. No registers are available.");
             break;
+        case LIBPERF_ERR_OPEN_INVALID_FILE:
+            pcerr::SetCustomErr(err, "The kernel cannot find the corresponding file or directory when loading the event: " +perfEvt->GetEvtName());
+            break;
         case UNKNOWN_ERROR:
             pcerr::SetCustomErr(err, std::string{strerror(errno)});
             break;

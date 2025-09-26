@@ -28,10 +28,6 @@
 #include "symbol.h"
 
 namespace KUNPENG_PMU {
-    struct MmapParam {
-        int prot;
-        __u64 mask;
-    };
 
     static constexpr int SAMPLE_PAGE_SIZE = 4096;
     static constexpr int DEFAULT_SAMPLE_PAGES = 128;
