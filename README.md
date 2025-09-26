@@ -65,12 +65,25 @@ bash build.sh install_path=/path/to/install build_type=debug
 
 如果想要编译python包：
 ```shell
-bash build.sh install_path=/path/to/install python=true
+bash build.sh install_path=/path/to/install python=true 
+```
+
+假如环境中包含多个python版本，需要指定要安装的python解释器
+```shell
+bash build.sh python=true python_exe=$(which python3)
 ```
 
 安装后若需要卸载python库， 可以执行下述命令
 ```shell
 python3 -m pip uninstall -y libkperf
+```
+
+python模块运行时报错若类似如下
+OSERROR: /usr/lib/python3.9/site-packages/_libkperf/libsym.so: cannot open shared object file: No such file or directory
+python安装setuptool版本不适配问题导致安装失败，目前可采用降级的方式解决
+```shell
+python3 -m pip uninstall setuptools
+python3 -m pip install setuptools=58
 ```
 
 想要编译go的包

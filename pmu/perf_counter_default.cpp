@@ -36,7 +36,6 @@
 using namespace std;
 using namespace pcerr;
 
-static constexpr int MAX_ATTR_SIZE = 120;
 
 struct GroupReadFormat {
     __u64 nr;

@@ -84,10 +84,23 @@ To build a python package:
 bash build.sh install_path=/path/to/install python=true
 ```
 
+If the environment contains multiple Python versions, you need to specify the Python interpreter to be installed
+```shell
+bash build.sh python=true python_exe=$(which python3)
+```
+
 To uninstall python package:
 
 ```shell
 python3 -m pip uninstall -y libkperf
+```
+
+If a Python module runtime error similar to the following is reported:
+OSERROR: /usr/lib/python3.9/site-packages/_libkperf/libsym.so: cannot open shared object file: No such file or directory
+The Python installation fails due to an incompatible setuptool version. This can be resolved by downgrading.
+```shell
+python3 -m pip uninstall setuptools
+python3 -m pip install setuptools=58
 ```
 
 TO build a Go package:

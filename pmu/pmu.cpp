@@ -38,7 +38,6 @@ using namespace std;
 static unordered_map<unsigned, bool> runningStatus;
 static SafeHandler<unsigned> pdMutex;
 static pair<unsigned, const char**> uncoreEventPair;
-static std::set<int> onLineCpuIds;
 
 #define REQUEST_USER_ACCESS 0x2
 
@@ -1194,4 +1193,3 @@ struct SampleRawField *PmuGetFieldExp(struct SampleRawData *rawData, const char 
     return rt;
 #endif
 }
-

@@ -24,13 +24,6 @@
 #include "spe_sampler.h"
 #include "pcerr.h"
 
-#define MB() asm volatile("dsb sy");
-#define rmb() asm volatile("dsb ld");
-#define wmb() asm volatile("dsb st");
-
-static constexpr int CYCLES_FREQ = 100;
-static constexpr int SPE_PERIOD = 100;
-
 using namespace std;
 
 namespace KUNPENG_PMU {

@@ -22,14 +22,7 @@
 #include "pcerrc.h"
 #include "evt.h"
 
-enum class HEAD_SIZE {
-    HEAD_SIZE_ONE = 1,
-    HEAD_SIZE_TWO = 2,
-    HEAD_SIZE_FOUR = 4,
-    HEAD_SIZE_EIGHT = 8,
-};
 
-static constexpr double CUT_OFF_PERCENT = 0.05;
 int KUNPENG_PMU::PerfEventOpen(struct perf_event_attr *attr, pid_t pid, int cpu, int groupFd, unsigned long flags)
 {
     return syscall(__NR_perf_event_open, attr, pid, cpu, groupFd, flags);

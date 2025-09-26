@@ -20,6 +20,8 @@ namespace KUNPENG_PMU {
     {
         switch (sysErr) {
             case EPERM:
+            case ENOENT:
+                return LIBPERF_ERR_OPEN_INVALID_FILE;
             case EACCES:
                 return LIBPERF_ERR_NO_PERMISSION;
             case EBUSY:

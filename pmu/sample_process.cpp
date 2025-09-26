@@ -21,8 +21,6 @@
 #include "sample_process.h"
 
 #define PAGE_SIZE (sysconf(_SC_PAGESIZE))
-#define MB() asm volatile("dmb ish" ::: "memory")
-static constexpr int MAX_DATA_SIZE = 8192;
 
 using namespace pcerr;
 

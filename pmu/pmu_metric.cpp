@@ -39,9 +39,6 @@ using namespace std;
 using namespace pcerr;
 using IdxMap = unordered_map<int, map<int, int>>;
 
-static unsigned maxCpuNum = 0;
-static vector<unsigned> coreArray;
-
 static std::mutex pmuBdfListMtx;
 static std::mutex pmuDeviceDataMtx;
 
