@@ -364,11 +364,30 @@ namespace KUNPENG_PMU {
         METRIC_CONFIG::HHA_CROSS_SOCKET,
     };
 
-    static const map<CHIP_TYPE, double> L3_CLOCK_NS {{CHIP_TYPE::HIPB, 0.3448275862}};
+    static const map<PmuDeviceMetric, UncoreDeviceConfig> HIP_G_UNCORE_METRIC_MAP {
+        METRIC_CONFIG::DDR_READ_BW_B,
+        METRIC_CONFIG::DDR_WRITE_BW_B,
+        METRIC_CONFIG::L3_TRAFFIC,
+        METRIC_CONFIG::L3_MISS,
+        METRIC_CONFIG::L3_REF,
+        METRIC_CONFIG::PCIE_RX_MRD_BW,
+        METRIC_CONFIG::PCIE_RX_MWR_BW,
+        METRIC_CONFIG::PCIE_TX_MRD_BW,
+        METRIC_CONFIG::PCIE_TX_MWR_BW,
+        METRIC_CONFIG::PCIE_RX_MRD_LAT,
+        METRIC_CONFIG::PCIE_RX_MWR_LAT,
+        METRIC_CONFIG::PCIE_TX_MRD_LAT,
+        METRIC_CONFIG::SMMU_TRAN,
+        METRIC_CONFIG::HHA_CROSS_NUMA,
+        METRIC_CONFIG::HHA_CROSS_SOCKET,
+    };
+
+    static const map<CHIP_TYPE, double> L3_CLOCK_NS {{CHIP_TYPE::HIPB, 0.3448275862}, {CHIP_TYPE::HIPG, 0.4255319148}};
 
     const UNCORE_METRIC_MAP UNCORE_METRIC_CONFIG_MAP = {
         {CHIP_TYPE::HIPA, HIP_A_UNCORE_METRIC_MAP},
         {CHIP_TYPE::HIPB, HIP_B_UNCORE_METRIC_MAP},
+        {CHIP_TYPE::HIPG, HIP_G_UNCORE_METRIC_MAP},
     };
 
     static const map<PmuDeviceMetric, UncoreDeviceConfig> GetDeviceMtricConfig()
@@ -1230,9 +1249,16 @@ namespace KUNPENG_PMU {
         {9, {{0, 4}, {2, 5}, {3, 6}, {5, 7}}},
     };
 
-    static unordered_map<int, IdxMap> DDRC_CHANNEL_MAP = {
-        {HIPA, DDRC_CHANNEL_MAP_HIPA},
-        {HIPB, DDRC_CHANNEL_MAP_HIPB},
+    static IdxMap DDRC_CHANNEL_MAP_HIPG = {
+            {0, {{0, 0}, {1, 1}, {2, 2}, {3, 3}, {4, 4}, {5, 5}}},
+            {1, {{0, 6}, {1, 7}, {2, 8}, {3, 9}, {4, 10}, {5, 11}}},
+    };
+
+    static unordered_map<int, IdxMap>
+        DDRC_CHANNEL_MAP = {
+            {HIPA, DDRC_CHANNEL_MAP_HIPA},
+            {HIPB, DDRC_CHANNEL_MAP_HIPB},
+            {HIPG, DDRC_CHANNEL_MAP_HIPG},
     };
 
     static int ParseDDRIdx(const string &devName, const string prefix)
@@ -1271,6 +1297,16 @@ namespace KUNPENG_PMU {
             }
         }
         return false;
+    }
+
+    static int GetClusterWidth(bool hyperThread)
+    {
+        int width = hyperThread ? 8 : 4;
+        int cpuType = GetCpuType();
+        if (cpuType == HIPG) {
+            width = hyperThread ? 16 : 8;
+        }
+        return width;
     }
 
     struct channelKeyHash {
@@ -1504,7 +1540,7 @@ namespace KUNPENG_PMU {
                 New(err);
                 return err;
             }
-            clusterWidth = hyperThreadEnabled ? 8 : 4;
+            clusterWidth = GetClusterWidth(hyperThreadEnabled);
         }
         for (unsigned i = 0; i < len; ++i) {
             string evt = pmuData[i].evt;
@@ -1796,7 +1832,8 @@ int PmuGetClusterCore(unsigned clusterId, unsigned **coreList)
             New(err);
             return -1;
         }
-        int coreNums = hyperThread ? 8 : 4;
+
+        int coreNums = GetClusterWidth(hyperThread);
         unsigned startCore = clusterId * coreNums;
 
         if (startCore >= MAX_CPU_NUM) {
