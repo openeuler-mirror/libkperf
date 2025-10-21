@@ -31,6 +31,7 @@ struct SpeDataExt {
 	unsigned long va;    // virtual address
 	unsigned long event; // event id, which is a bit map of mixed events, event bit is defined in SPE_EVENTS.
 	unsigned short lat; // latency, Number of cycles between the time when an operation is dispatched and the time when the operation is executed.
+	unsigned short source; // data source, used to record the source of data accessed by a load operation.
 };
 
 struct MetricDataExt {
@@ -105,6 +106,7 @@ void IPmuGetSpeDataExt(struct PmuData* data, struct SpeDataExt* speExt) {
 		speExt->va = data->ext->va;
 		speExt->event = data->ext->event;
 		speExt->lat = data->ext->lat;
+		speExt->source = data->ext->source;
 	}
 }
 
@@ -219,6 +221,24 @@ var (
 	SPE_EVENT_L1DMISS C.enum_SpeEventFilter = C.SPE_EVENT_L1DMISS
 	SPE_EVENT_TLB_WALK C.enum_SpeEventFilter = C.SPE_EVENT_TLB_WALK
 	SPE_EVENT_MISPREDICTED C.enum_SpeEventFilter = C.SPE_EVENT_MISPREDICTED
+)
+
+// spe data source hit, used for determining data source type
+var (
+    HIP_PEER_CPU           uint16	= 0
+    HIP_PEER_CPU_HITM      uint16	= 1
+    HIP_L3                 uint16	= 2
+    HIP_L3_HITM            uint16   = 3
+    HIP_PEER_CLUSTER  	   uint16   = 4
+    HIP_PEER_CLUSTER_HITM  uint16 	= 5
+    HIP_REMOTE_SOCKET      uint16 	= 6
+    HIP_REMOTE_SOCKET_HITM uint16 	= 7
+    HIP_LOCAL_MEM          uint16 	= 8
+    HIP_REMOTE_MEM         uint16 	= 9
+    HIP_NC_DEV             uint16 	= 13
+    HIP_L2                 uint16 	= 16
+    HIP_L2_HITM            uint16 	= 17
+    HIP_L1                 uint16 	= 18
 )
 
 // branch sample type, for pmuAttr.BranchSampleFilter
@@ -363,6 +383,7 @@ type SpeDataExt struct {
 	Va uint64		   // virtual address
 	Event uint64       // event id, which is a bit map of mixed events, events bits 
 	Lat uint16         // latency, Number of cycles between the time when an operation is dispatched and the time when the operation is executed
+	Source uint16      // data source, used to record the source of data accessed by a load operation.
 }
 
 type BranchSampleRecord struct {
@@ -1295,7 +1316,7 @@ func transferCPmuDataToGoData(cPmuData *C.struct_PmuData, dataLen int, fd int) [
 func (data *PmuData) appendSpeExt(pmuData C.struct_PmuData) {
 	speDataExt := C.struct_SpeDataExt{}
 	C.IPmuGetSpeDataExt(&pmuData, &speDataExt)
-	data.SpeExt = SpeDataExt{Pa:uint64(speDataExt.pa), Va: uint64(speDataExt.va), Event: uint64(speDataExt.event), Lat: uint16(speDataExt.lat)}
+	data.SpeExt = SpeDataExt{Pa:uint64(speDataExt.pa), Va: uint64(speDataExt.va), Event: uint64(speDataExt.event), Lat: uint16(speDataExt.lat), Source: uint16(speDataExt.source)}
 }
 
 func (data *PmuData) appendSymbols(pmuData C.struct_PmuData) {

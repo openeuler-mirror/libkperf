@@ -72,6 +72,21 @@ class SpeEvent:
     SPE_EV_PARTIAL_PRED = 1 << 17
     SPE_EV_EMPTY_PRED   = 1 << 18
 
+class HitDataSource:
+    HIP_PEER_CPU            = 0
+    HIP_PEER_CPU_HITM       = 1
+    HIP_L3                  = 2
+    HIP_L3_HITM             = 3
+    HIP_PEER_CLUSTER        = 4
+    HIP_PEER_CLUSTER_HITM   = 5
+    HIP_REMOTE_SOCKET       = 6
+    HIP_REMOTE_SOCKET_HITM  = 7
+    HIP_LOCAL_MEM           = 8
+    HIP_REMOTE_MEM          = 9
+    HIP_NC_DEV              = 13
+    HIP_L2                  = 16
+    HIP_L2_HITM             = 17
+    HIP_L1                  = 18
 
 class BranchSampleFilter:
     KPERF_NO_BRANCH_SAMPLE         = 0
@@ -609,6 +624,7 @@ __all__ = [
     'SpeFilter',
     'SpeEventFilter',
     'SpeEvent',
+    'HitDataSource',
     'SymbolMode',
     'PmuAttr',
     'PmuDeviceMetric',
