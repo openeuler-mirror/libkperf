@@ -74,6 +74,7 @@ static uint8_t* Get0B01Pkt(uint16_t header, struct SpePacket *pkt, uint8_t *buf)
         pkt->type = SpePacketType::SPE_PACKET_DATA_SOURCE;
         buf += sizeof(uint8_t);
         pkt->payloadSize = 1 << ((header & 0b110000) >> 4);
+        SetPktPayload(pkt, buf);
         buf += pkt->payloadSize;
     } else if ((header >> 2) == 0b011001) {
         pkt->type = SpePacketType::SPE_PACKET_CONTEXT;
@@ -216,6 +217,11 @@ static void DecodeTimestampPkt(struct SpePacket *pkt, struct SpeRecord *record)
     record->timestamp = pkt->payload;
 }
 
+static void DecodeDataSrcPkt(struct SpePacket *pkt, struct SpeRecord *record)
+{
+    record->source = pkt->payload;
+}
+
 static void DecodePkt(struct SpePacket *pkt, struct SpeRecord *record)
 {
     switch (pkt->type) {
@@ -229,6 +235,7 @@ static void DecodePkt(struct SpePacket *pkt, struct SpeRecord *record)
             DecodeCounterPkt(pkt, record);
             break;
         case SpePacketType::SPE_PACKET_DATA_SOURCE:
+            DecodeDataSrcPkt(pkt, record);
             break;
         case SpePacketType::SPE_PACKET_END:
             break;
@@ -253,6 +260,7 @@ SpeRecord *SpeGetRecord(uint8_t *buf, uint8_t *end, struct SpeRecord *rec, int *
 
     rec->pid = -1;
     rec->tid = -1;
+    rec->source = -1;
     while (buf < end) {
         if (*remainSize < 1) {
             break;
@@ -265,6 +273,7 @@ SpeRecord *SpeGetRecord(uint8_t *buf, uint8_t *end, struct SpeRecord *rec, int *
             *remainSize -= 1;
             rec->pid = -1;
             rec->tid = -1;
+            rec->source = -1;
         }
     }
 

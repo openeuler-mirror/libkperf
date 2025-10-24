@@ -218,6 +218,23 @@ enum SPE_EVENTS {
     SPE_EV_EMPTY_PRED   = 1 << 18,
 };
 
+enum HIP_DATA_SOURCE {
+    HIP_PEER_CPU            = 0,
+    HIP_PEER_CPU_HITM       = 1,
+    HIP_L3                  = 2,
+    HIP_L3_HITM             = 3,
+    HIP_PEER_CLUSTER        = 4,
+    HIP_PEER_CLUSTER_HITM   = 5,
+    HIP_REMOTE_SOCKET       = 6,
+    HIP_REMOTE_SOCKET_HITM  = 7,
+    HIP_LOCAL_MEM           = 8,
+    HIP_REMOTE_MEM          = 9,
+    HIP_NC_DEV              = 13,
+    HIP_L2                  = 16,
+    HIP_L2_HITM             = 17,
+    HIP_L1                  = 18,
+};
+
 struct BranchSampleRecord {
     unsigned long fromAddr;
     unsigned long toAddr;
@@ -233,6 +250,7 @@ struct PmuDataExt {
             unsigned long va;    // virtual address
             unsigned long event; // event id, which is a bit map of mixed events, event bit is defined in SPE_EVENTS.
             unsigned short lat; // latency, Number of cycles between the time when an operation is dispatched and the time when the operation is executed.
+            unsigned short source; // data source, used to record the source of data accessed by a load operation.
         };
 
         struct {

@@ -109,7 +109,7 @@ func TestSpe(t *testing.T) {
 	for _, o := range dataVo.GoData {
 		t.Logf("================================Get Spe data success================================")
 		t.Logf("spe base info comm=%v, evt=%v, pid=%v, tid=%v, coreId=%v, numaId=%v, sockedId=%v", o.Comm, o.Evt, o.Pid, o.Tid, o.CpuTopo.CoreId, o.CpuTopo.NumaId, o.CpuTopo.SocketId)
-		t.Logf("spe ext info pa=%v, va=%v, event=%v, latency=%v", o.SpeExt.Pa, o.SpeExt.Va, o.SpeExt.Event, o.SpeExt.Lat)
+		t.Logf("spe ext info pa=%v, va=%v, event=%v, latency=%v, source=%v", o.SpeExt.Pa, o.SpeExt.Va, o.SpeExt.Event, o.SpeExt.Lat, o.SpeExt.Source)
 		for _, s := range o.Symbols {
 			t.Logf("symbol info module=%v, symbolName=%v, mangleName=%v, addr=%#x, lineNum=%v fileName=%v", s.Module, s.SymbolName, s.MangleName, s.Addr, s.LineNum, s.FileName)
 		}
