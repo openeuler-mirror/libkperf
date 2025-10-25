@@ -618,6 +618,7 @@ struct PmuDataExt {
     unsigned long va;               // virtual address
     unsigned long event;            // event id, which is a bit map of mixed events, event bit is defined in SPE_EVENTS.
     unsigned short lat; // latency, Number of cycles between the time when an operation is dispatched and the time when the operation is executed.
+    unsigned short source;          // data source, used to record the source of data accessed by a load operation, it can distinguish whether false sharing occurs.
 };
 ```
 其中，物理地址pa需要在启用PA_ENABLE的情况下才能采集。
@@ -638,6 +639,25 @@ enum SPE_EVENTS {
     SPE_EV_ALIGNMENT    = 1 << 11,
     SPE_EV_PARTIAL_PRED = 1 << 17,
     SPE_EV_EMPTY_PRED   = 1 << 18,
+};
+```
+对于PmuDataExt中的source字段，以下记录不同加载或存储操作对应的bit值
+```c++
+enum HIP_DATA_SOURCE {
+    HIP_PEER_CPU            = 0,
+    HIP_PEER_CPU_HITM       = 1,
+    HIP_L3                  = 2,
+    HIP_L3_HITM             = 3,
+    HIP_PEER_CLUSTER        = 4,
+    HIP_PEER_CLUSTER_HITM   = 5,
+    HIP_REMOTE_SOCKET       = 6,
+    HIP_REMOTE_SOCKET_HITM  = 7,
+    HIP_LOCAL_MEM           = 8,
+    HIP_REMOTE_MEM          = 9,
+    HIP_NC_DEV              = 13,
+    HIP_L2                  = 16,
+    HIP_L2_HITM             = 17,
+    HIP_L1                  = 18,
 };
 ```
 ### 获取符号信息
@@ -1989,4 +2009,41 @@ func main() {
     kperf.PmuWriteData(file, dataVo)
     kperf.PmuEndWrite(file)
 }
+```
+
+
+### 通过pmu_datasrc定位falsesharing问题
+```shell
+cd example
+g++ -o pmu_datasrc pmu_datasrc.cpp -L ../output/lib -I ../output/include -lsym -lkperf
+cd case
+gcc -o falsesharing_demo -g falsesharing_demo.c -lpthread
+./pmu_datasrc -d 2 case/falsesharing_demo
+# 如果数据结果中带有HITM标志则表示对应的加载操作发生了虚假共享。
+# HIP_PEER_CPU            = 0,
+# HIP_PEER_CPU_HITM       = 1,
+# HIP_L3                  = 2,
+# HIP_L3_HITM             = 3,
+# HIP_PEER_CLUSTER        = 4,
+# HIP_PEER_CLUSTER_HITM   = 5,
+# HIP_REMOTE_SOCKET       = 6,
+# HIP_REMOTE_SOCKET_HITM  = 7,
+# HIP_LOCAL_MEM           = 8,
+# HIP_REMOTE_MEM          = 9,
+# HIP_NC_DEV              = 13,
+# HIP_L2                  = 16,
+# HIP_L2_HITM             = 17,
+# HIP_L1                  = 18,
+HIP_H2_HITM 190
+    |——4009cc sum_a(void*)+0x1c8 /home/test/libkperf/example/case/falsesharing_long.c:33 [77]
+    |——400bbc inc_b(void*)+0x1cc /home/test/libkperf/example/case/falsesharing_long.c:59 [70]
+    |——400bbc sum_a(void*)+0x1b8 /home/test/libkperf/example/case/falsesharing_long.c:32 [27]
+    |——400bbc inc_b(void*)+0x1bc /home/test/libkperf/example/case/falsesharing_long.c:58 [16]
+HIP_L1 1952
+    |——400bd0 inc_b(void*)+0x1e0 /home/test/libkperf/example/case/falsesharing_long.c:57 [491]
+    |——4009e0 sum_a(void*)+0x1dc /home/test/libkperf/example/case/falsesharing_long.c:31 [489]
+    |——4009bc sum_a(void*)+0x1b8 /home/test/libkperf/example/case/falsesharing_long.c:32 [352]
+    |——400bac inc_b(void*)+0x1bc /home/test/libkperf/example/case/falsesharing_long.c:58 [349]
+    |——4009cc sum_a(void*)+0x1c8 /home/test/libkperf/example/case/falsesharing_long.c:33 [151]
+    |——400bbc inc_b(void*)+0x1cc /home/test/libkperf/example/case/falsesharing_long.c:59 [114]
 ```
