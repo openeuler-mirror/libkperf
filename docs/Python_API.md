@@ -166,6 +166,8 @@ pd为kperf.open返回值
     * pa  物理地址
     * va  虚拟地址
     * event  事件ID
+    * lat 调度操作到执行操作的周期数
+    * source 记录加载或存储操作的数据来源
     * branchRecords brbe数据
         * iter brbe数据迭代器
         * len  brbe数据长度

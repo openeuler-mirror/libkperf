@@ -155,6 +155,8 @@
         * unsigned long pa  物理地址
         * unsigned long va  虚拟地址
         * unsigned long event  事件ID
+        * unsigned short lat 调度操作到执行操作的周期数
+        * unsigned short source 记录加载或存储操作的数据来源
         * unsigned short branchRecords brbe数据
       * struct
         * unsigned long nr  branchRecords的数量
@@ -321,6 +323,7 @@
 目前该文件只支持SAMPLING模式，只支持基本信息的输出，比如id, tid, pid, addr，也包含brbe的数据。
 * path: 文件路径
 * pattr: 采集任务的PmuAttr
+* addIdHdr: 为属于非PERF_RECORD_SAMPLE采样的ID
 * 返回值: 文件句柄，用于下面两个API的调用
 
 ### int PmuWriteData(PmuFile file, struct PmuData *data, int len);

@@ -162,6 +162,7 @@ func PmuRead(fd int) (PmuDataVo, error)
     * Va uint64	   虚拟地址
     * Event uint64  混合事件的比特位
     * Lat uint16    调度操作到执行操作的周期数
+    * Source uint16 记录加载或存储操作的数据来源
   * cgroupName cgroup名称
 
 ```go
