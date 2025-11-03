@@ -40,6 +40,8 @@ static SafeHandler<unsigned> pdMutex;
 static pair<unsigned, const char**> uncoreEventPair;
 
 #define REQUEST_USER_ACCESS 0x2
+#define HARD_WARE_METRIC 0x1
+#define SAMPLING_RECORD_PERIOD 4000
 
 struct PmuTaskAttr* AssignPmuTaskParam(PmuTaskType collectType, struct PmuAttr *attr);
 
@@ -223,10 +225,6 @@ static int CheckCollectTypeConfig(enum PmuTaskType collectType, struct PmuAttr *
         return LIBPERF_ERR_INVALID_BLOCKED_SAMPLE;
     }
     if (collectType == SAMPLING) {
-        if (attr->freq == 0) {
-            New(LIBPERF_ERR_INVALID_EVTLIST, "Invalid frequency or period in PmuAttr.");
-            return LIBPERF_ERR_INVALID_EVTLIST;
-        }
         if (attr->blockedSample == 0 && attr->evtList == nullptr) {
             New(LIBPERF_ERR_INVALID_EVTLIST, "In sampling mode without blocked sample, the event list cannot be null.");
             return LIBPERF_ERR_INVALID_EVTLIST;
@@ -387,39 +385,6 @@ static void CopyAttrData(PmuAttr* newAttr, PmuAttr* inputAttr, enum PmuTaskType 
     }
     newAttr->evtList = newEvtList;
     newAttr->numEvt = inputAttr->numEvt;
-
-    // If the event group ID is not enabled, set the groupId to -1. It indicates that the event is not grouped.
-    if ((collectType == SAMPLING || collectType == COUNTING) && inputAttr->evtAttr == nullptr) {
-        struct EvtAttr *evtAttr = new struct EvtAttr[newAttr->numEvt];
-        // handle event group id. -1 means that it doesn't run event group feature.
-        for (int i = 0; i < newAttr->numEvt; ++i) {
-            evtAttr[i].groupId = -1;
-        }
-        newAttr->evtAttr = evtAttr;
-    }
-}
-
-static bool FreeEvtAttr(struct PmuAttr *attr)
-{
-    if (attr->evtAttr == nullptr) {
-        return SUCCESS;
-    }
-    bool flag = false;
-    int notGroupId = -1;
-    for (int i = 0; i < attr->numEvt; ++i) {
-        if (attr->evtAttr[i].groupId != notGroupId ) {
-            flag = true;
-            break;
-        }
-    }
-
-    // when the values of groupId are all -1, the applied memory is released.
-    if (!flag) {
-        delete[] attr->evtAttr;
-        attr->evtAttr = nullptr;
-    }
-
-    return SUCCESS;
 }
 
 static void FreeEvtList(unsigned evtNum, char** evtList)
@@ -503,7 +468,11 @@ static unsigned GenerateSplitList(unordered_map<string, char*>& eventSplitMap, v
     // according to the origin eventList, generate the new eventList and new eventAttrList
     for (int i = 0; i < attr->numEvt; ++i) {
         auto evt = attr->evtList[i];
-        auto evtAttr = attr->evtAttr[i];
+        EvtAttr evtAttr = {-1, 0, false, false};
+        if (attr->evtAttr != nullptr && i < attr->numGroup) {
+            auto inputAttr = attr->evtAttr[i];
+            evtAttr = {inputAttr.groupId, inputAttr.period, inputAttr.excludeUser, inputAttr.excludeKernel};
+        }
 
         // If the event is in the split list, it means that it is not a child event of the aggregate event
         // and direct add events to the new eventList and new eventAttrList
@@ -566,7 +535,6 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
             vector<char *> newEvtlist;
             vector<struct EvtAttr> newEvtAttrList;
             auto numEvt = GenerateSplitList(eventSplitMap, newEvtlist, &copiedAttr, newEvtAttrList);
-            FreeEvtAttr(&copiedAttr);
             copiedAttr.numEvt = numEvt;
             copiedAttr.evtList = newEvtlist.data();
             copiedAttr.evtAttr = newEvtAttrList.data();
@@ -966,7 +934,28 @@ int GetCgroupFd(std::string& cgroupName) {
     return cgroupFd;
 }
 
-static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *attr, const char* evtName, const int groupId, const char* cgroupName, int cgroupFd)
+static EvtAttr ResolveEvtAttrParams(struct PmuAttr *attr, int index) {
+    // numEvt must be greater than numGroup.The excludeUser, excluderKernel,and period attributes in PmuAttr have higher priority than those in EvtAttr. 
+    int groupId = index >= attr->numGroup? -1 : attr->evtAttr[index].groupId;
+
+    bool excludeKernel = index >= attr->numGroup ? false : attr->evtAttr[index].excludeKernel;
+    excludeKernel = attr->excludeKernel ? true : excludeKernel;
+
+    bool excludeUser = index >= attr->numGroup ? false : attr->evtAttr[index].excludeUser;
+    excludeUser = attr->excludeUser ? true : excludeUser;
+
+    unsigned period = index >= attr->numGroup ? SAMPLING_RECORD_PERIOD : attr->evtAttr[index].period;
+    period = attr->period ? attr->period : period;
+
+    if (!period) {
+        period = SAMPLING_RECORD_PERIOD;
+    }
+
+    EvtAttr evtAttrDto = {groupId, period, excludeUser, excludeKernel};
+    return evtAttrDto;
+}
+
+static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *attr, const char* evtName, EvtAttr &evtAttrDto, const char* cgroupName, int cgroupFd)
 {
     unique_ptr<PmuTaskAttr, void (*)(PmuTaskAttr*)> taskParam(CreateNode<struct PmuTaskAttr>(), PmuTaskAttrFree);
     /**
@@ -1002,13 +991,13 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
      */
     PrepareCpuList(attr, taskParam.get(), pmuEvt);
 
-    taskParam->groupId = groupId;
+    taskParam->groupId = evtAttrDto.groupId;
 
     taskParam->pmuEvt = shared_ptr<PmuEvt>(pmuEvt, PmuEvtFree);
     taskParam->pmuEvt->useFreq = attr->useFreq;
-    taskParam->pmuEvt->period = attr->period;
-    taskParam->pmuEvt->excludeKernel = attr->excludeKernel;
-    taskParam->pmuEvt->excludeUser = attr->excludeUser;
+    taskParam->pmuEvt->period = evtAttrDto.period;
+    taskParam->pmuEvt->excludeKernel = evtAttrDto.excludeKernel;
+    taskParam->pmuEvt->excludeUser = evtAttrDto.excludeUser;
     taskParam->pmuEvt->callStack = attr->callStack;
     taskParam->pmuEvt->blockedSample = attr->blockedSample;
     taskParam->pmuEvt->includeNewFork = attr->includeNewFork;
@@ -1019,6 +1008,10 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
     taskParam->pmuEvt->enableUserAccess = attr->enableUserAccess;
     if (attr->enableUserAccess) {
         taskParam->pmuEvt->config1 = REQUEST_USER_ACCESS;
+    }
+    taskParam->pmuEvt->enableHwMetric = attr->enableHwMetric;
+    if (attr->enableHwMetric) {
+        taskParam->pmuEvt->config2 = HARD_WARE_METRIC;
     }
     taskParam->pmuEvt->numEvent = attr->numEvt;
     taskParam->pmuEvt->enableBpf = attr->enableBpf;
@@ -1051,15 +1044,15 @@ struct PmuTaskAttr* AssignPmuTaskParam(enum PmuTaskType collectType, struct PmuA
         if (collectType == SPE_SAMPLING) {
             std::string cgroupName(attr->cgroupNameList[0]);
             // evtList is nullptr, cannot loop over evtList.
-            taskParam = AssignTaskParam(collectType, attr, nullptr, 0, cgroupName.c_str(), cgroupFds[cgroupName]);
+            EvtAttr evtAttrDto = {0, attr->period, attr->excludeUser, attr->excludeKernel};
+            taskParam = AssignTaskParam(collectType, attr, nullptr, evtAttrDto, cgroupName.c_str(), cgroupFds[cgroupName]);
             return taskParam;
         }
         for (int i = 0; i < attr->numCgroup; ++i) {
-            // when the numEvt > numGroup, set groupId=-1 for other events
-            int groupId = i >= attr->numGroup? -1 : attr->evtAttr[i].groupId;
             std::string cgroupName(attr->cgroupNameList[i]);
             for (int j = 0; j < attr->numEvt; ++j) {
-                struct PmuTaskAttr* current = AssignTaskParam(collectType, attr, attr->evtList[j], groupId, cgroupName.c_str(), cgroupFds[cgroupName]);
+                EvtAttr evtAttrDto = ResolveEvtAttrParams(attr, j);
+                struct PmuTaskAttr* current = AssignTaskParam(collectType, attr, attr->evtList[j], evtAttrDto, cgroupName.c_str(), cgroupFds[cgroupName]);
                 if (current == nullptr) {
                     return nullptr;
                 }
@@ -1068,12 +1061,13 @@ struct PmuTaskAttr* AssignPmuTaskParam(enum PmuTaskType collectType, struct PmuA
         }
     } else {
         if (collectType == SPE_SAMPLING) {
-            taskParam = AssignTaskParam(collectType, attr, nullptr, 0, nullptr, -1);
+            EvtAttr evtAttrDto = {-1, attr->period, attr->excludeUser, attr->excludeKernel};
+            taskParam = AssignTaskParam(collectType, attr, nullptr, evtAttrDto, nullptr, -1);
             return taskParam;
         }
         for (int i = 0; i < attr->numEvt; ++i) {
-            int groupId = i >= attr->numGroup? -1 : attr->evtAttr[i].groupId;
-            struct PmuTaskAttr* current = AssignTaskParam(collectType, attr, attr->evtList[i], groupId, nullptr, -1);
+            EvtAttr evtAttrDto = ResolveEvtAttrParams(attr, i);
+            struct PmuTaskAttr* current = AssignTaskParam(collectType, attr, attr->evtList[i], evtAttrDto, nullptr, -1);
             if (current == nullptr) {
                 return nullptr;
             }

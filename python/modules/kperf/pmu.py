@@ -240,6 +240,20 @@ class PmuDeviceData(_libkperf.PmuDeviceData):
     """
     pass
 
+class EvtAttr(_libkperf.EvtAttr):
+    def __init__(self, groupId=0,
+                       period=0,
+                       excludeUser=False,
+                       excludeKernel=False):
+        super(EvtAttr, self).__init__(
+            groupId=groupId,
+            period=period,
+            excludeUser=excludeUser,
+            excludeKernel=excludeKernel
+        )
+
+
+
 class PmuAttr(_libkperf.PmuAttr):
     """
     Args:
@@ -627,6 +641,7 @@ __all__ = [
     'HitDataSource',
     'SymbolMode',
     'PmuAttr',
+    'EvtAttr',
     'PmuDeviceMetric',
     'PmuDeviceAttr',
     'PmuBdfType',

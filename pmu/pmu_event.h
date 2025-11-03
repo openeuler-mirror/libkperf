@@ -54,6 +54,7 @@ struct PmuEvt {
     unsigned enableUserAccess : 1; // avoid uncore (config1 & 0x2)  == 0x2
     unsigned numEvent;           // pmu event number for bpf cgroup init
     unsigned enableBpf : 1;      // enable bpf mode in counting mode
+    unsigned enableHwMetric : 1; // enable hw_metric=1 in sampling mode
 };
 
 namespace KUNPENG_PMU {
