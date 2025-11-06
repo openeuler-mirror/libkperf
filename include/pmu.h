@@ -94,6 +94,9 @@ enum BranchSampleFilter {
 
 struct EvtAttr {
     int groupId;
+    unsigned period;
+    unsigned excludeUser : 1;
+    unsigned excludeKernel : 1;
 };
 
 struct PmuAttr {
@@ -178,6 +181,8 @@ struct PmuAttr {
     unsigned enableUserAccess : 1;
     // enable bpf mode for counting
     unsigned enableBpf : 1;
+    // enable hw metric
+    unsigned enableHwMetric : 1;
 };
 
 enum PmuTraceType {

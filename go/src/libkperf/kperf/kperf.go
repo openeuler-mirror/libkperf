@@ -85,6 +85,10 @@ void SetEnableBpf(struct PmuAttr* attr, unsigned enableBpf) {
 	attr->enableBpf = enableBpf;
 }
 
+void SetEnableHwMetric(struct PmuAttr* attr, unsigned enableHwMetric) {
+	attr->enableHwMetric = enableHwMetric;
+}
+
 struct PmuData* IPmuRead(int fd, int* len) {
 	struct PmuData* pmuData = NULL;
 	*len = PmuRead(fd, &pmuData);
@@ -172,6 +176,14 @@ size_t GetPmuAttrSize() {
 
 size_t GetPmuTraceAttrSize() {
 	return sizeof(struct PmuTraceAttr);
+}
+
+void SetExcludeUserForEvt(struct EvtAttr* attr, unsigned excludeUser) {
+	attr->excludeUser = excludeUser;
+}
+
+void SetExcludeKernelForEvt(struct EvtAttr* attr, unsigned excludeKernel) {
+	attr->excludeKernel = excludeKernel;
 }
 
 */
@@ -350,11 +362,18 @@ var (
 	
 var fdModeMap map[int]C.enum_PmuTaskType = make(map[int]C.enum_PmuTaskType)
 
+type EvtAttr struct {
+	GroupId int         // group id
+	Period  uint32      // sample period
+	ExcludeUser bool    // excluder user config 
+	ExcludeKernel bool  // excluder kernel config
+}
+
 type PmuAttr struct {
 	EvtList []string                   // evt list
 	PidList []int                      // process id list
 	CpuList []int                      // cpu id list
-	EvtAttr []int                      // group id list
+	EvtAttr []EvtAttr                  // evtAttr list
 	SampleRate uint32                  // sample rate, if useFreq=true, set the freq=SampleRate
 	UseFreq bool                       // Use sample frequency or not, if set to true, used frequency, otherwise, used period
 	ExcludeUser bool                   // Don't count user
@@ -370,6 +389,7 @@ type PmuAttr struct {
 	CgroupNameList []string            // cgroup name list, if not user cgroup function, this field will be nullptr.if use cgroup function,use the cgroup name in the cgroupList to apply all event in the Event list
 	EnableUserAccess bool              // enable user access counting for current process
 	EnableBpf bool                     // enable bpf mode for counting
+	EnableHwMetric bool                // enable hw metric 
 }
 
 type CpuTopology struct {
@@ -564,8 +584,17 @@ func ToCPmuAttr(attr PmuAttr) (*C.struct_PmuAttr, int) {
 	evtAttrLen := len(attr.EvtAttr)
 	if evtAttrLen > 0 {
 		evtAttrList := make([]C.struct_EvtAttr, evtAttrLen)
-		for i, groupId := range attr.EvtAttr {
-			evtAttrList[i] = C.struct_EvtAttr{C.int(groupId)}
+		for i, o := range attr.EvtAttr {
+			evtAttrList[i] = C.struct_EvtAttr{}
+			evtAttrList[i].groupId = C.int(o.GroupId)
+			evtAttrList[i].period = C.uint32_t(o.Period)
+			if o.ExcludeKernel {
+				C.SetExcludeKernelForEvt(&evtAttrList[i], C.uint(1))
+			}
+
+			if o.ExcludeUser {
+				C.SetExcludeUserForEvt(&evtAttrList[i], C.uint(1))
+			}
 		}
 		cAttr.evtAttr = &evtAttrList[0]
 		cAttr.numGroup = C.uint32_t(evtAttrLen)
@@ -620,6 +649,10 @@ func ToCPmuAttr(attr PmuAttr) (*C.struct_PmuAttr, int) {
 
 	if attr.EnableBpf {
 		C.SetEnableBpf(cAttr, C.uint(1))
+	}
+
+	if attr.EnableHwMetric {
+		C.SetEnableHwMetric(cAttr, C.uint(1))
 	}
 
 	return cAttr, 0

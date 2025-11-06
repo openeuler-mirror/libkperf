@@ -31,17 +31,32 @@ class CtypesEvtAttr(ctypes.Structure):
         int groupId;
     };
     """
-    _fields_ = [('groupId', ctypes.c_int)]
+    _fields_ = [
+        ('groupId', ctypes.c_int),
+        ('period',  ctypes.c_uint),
+        ('excludeUser',   ctypes.c_uint, 1),
+        ('excludeKernel', ctypes.c_uint, 1)
+    ]
 
-    def __init__(self, groupId=0, *args, **kw):
+    def __init__(self, groupId=0,
+                       period=0,
+                       excludeUser=False,
+                       excludeKernel=False,
+                       *args, **kw):
         super(CtypesEvtAttr, self).__init__(*args, **kw)
         self.groupId = ctypes.c_int(groupId)
+        self.period = ctypes.c_uint(period)
+        self.excludeUser = excludeUser
+        self.excludeKernel = excludeKernel
 
 class EvtAttr:
     __slots__ = ['__c_evt_attr']
 
-    def __init__(self, groupId=0):
-        self.__c_evt_attr = CtypesEvtAttr(groupId)
+    def __init__(self, groupId=0,
+                       period=0,
+                       excludeUser=False,
+                       excludeKernel=False):
+        self.__c_evt_attr = CtypesEvtAttr(groupId, period, excludeUser, excludeKernel)
 
     @property
     def c_evt_attr(self):
@@ -54,6 +69,22 @@ class EvtAttr:
     @groupId.setter
     def groupId(self, groupId):
         self.c_evt_attr.groupId = ctypes.c_int(groupId)
+    
+    @property
+    def excludeUser(self):
+        return bool(self.c_evt_attr.excludeUser)
+
+    @excludeUser.setter
+    def excludeUser(self, excludeUser):
+        self.c_evt_attr.excludeUser = int(excludeUser)
+
+    @property
+    def excludeKernel(self):
+        return bool(self.c_evt_attr.excludeKernel)
+
+    @excludeKernel.setter
+    def excludeKernel(self, excludeKernel):
+        self.c_evt_attr.excludeKernel = int(excludeKernel)
 
     @classmethod
     def from_c_evt_attr(cls, c_evt_attr):
@@ -123,7 +154,8 @@ class CtypesPmuAttr(ctypes.Structure):
         ('cgroupNameList', ctypes.POINTER(ctypes.c_char_p)),
         ('numCgroup',     ctypes.c_uint),
         ('enableUserAccess', ctypes.c_uint, 1),
-        ('enableBpf',        ctypes.c_uint, 1)
+        ('enableBpf',        ctypes.c_uint, 1),
+        ('enableHwMetric', ctypes.c_uint, 1),
     ]
 
     def __init__(self,
@@ -147,6 +179,7 @@ class CtypesPmuAttr(ctypes.Structure):
                  numCgroup=0,
                  enableUserAccess=False,
                  enableBpf=False,
+                 enableHwMetric=False,
                  *args, **kw):
         super(CtypesPmuAttr, self).__init__(*args, **kw)
 
@@ -181,7 +214,7 @@ class CtypesPmuAttr(ctypes.Structure):
 
         if evtAttr:
             numGroup = len(evtAttr)
-            self.evtAttr = (CtypesEvtAttr * numGroup)(*[CtypesEvtAttr(evt) for evt in evtAttr])
+            self.evtAttr = (CtypesEvtAttr * numGroup)(*[evt.c_evt_attr for evt in evtAttr])
             self.numGroup = ctypes.c_uint(numGroup)
         else:
             self.evtAttr = None
@@ -210,6 +243,7 @@ class CtypesPmuAttr(ctypes.Structure):
         self.includeNewFork = includeNewFork
         self.enableUserAccess = enableUserAccess
         self.enableBpf = enableBpf
+        self.enableHwMetric = enableHwMetric
 
 class PmuAttr(object):
     __slots__ = ['__c_pmu_attr']
@@ -233,7 +267,8 @@ class PmuAttr(object):
                  branchSampleFilter=0,
                  cgroupNameList=None,
                  enableUserAccess=False,
-                 enableBpf=False):
+                 enableBpf=False,
+                 enableHwMetric=False):
 
         self.__c_pmu_attr = CtypesPmuAttr(
             evtList=evtList,
@@ -254,7 +289,8 @@ class PmuAttr(object):
             branchSampleFilter=branchSampleFilter,
             cgroupNameList=cgroupNameList,
             enableUserAccess=enableUserAccess,
-            enableBpf=enableBpf
+            enableBpf=enableBpf,
+            enableHwMetric=enableHwMetric,
         )
 
     @property
@@ -272,6 +308,14 @@ class PmuAttr(object):
     @enableBpf.setter
     def enableBpf(self, enableBpf):
         self.c_pmu_attr.enableBpf = int(enableBpf)
+    
+    @property
+    def enableHwMetric(self):
+        return bool(self.c_pmu_attr.enableHwMetric)
+
+    @enableHwMetric.setter
+    def enableHwMetric(self, enableHwMetric):
+        self.c_pmu_attr.enableHwMetric = int(enableHwMetric)
 
     @property
     def c_pmu_attr(self):

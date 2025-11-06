@@ -394,6 +394,10 @@ struct PmuEvt* GetUncoreEvent(const char* pmuName, int collectType)
         delete pmuEvtPtr;
         return nullptr;
     }
+    // if it starts with armv8_pmuv3_0, it is a core event.
+    if (strstr(pmuName, "armv8_pmuv3_0")) {
+        pmuEvtPtr->pmuType = CORE_TYPE;
+    }
     return pmuEvtPtr;
 }
 

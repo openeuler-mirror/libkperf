@@ -43,6 +43,7 @@ int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupEnable, const int grou
     memset(&attr, 0, sizeof(attr));
     attr.type = this->evt->type;
     attr.config = this->evt->config;
+    attr.config2 = this->evt->config2;
     attr.size = sizeof(struct perf_event_attr);
     attr.sample_type = PERF_SAMPLE_IP | PERF_SAMPLE_TID | PERF_SAMPLE_TIME | PERF_SAMPLE_CALLCHAIN | PERF_SAMPLE_ID |
                        PERF_SAMPLE_CPU | PERF_SAMPLE_PERIOD | PERF_SAMPLE_IDENTIFIER | PERF_SAMPLE_RAW;
