@@ -296,6 +296,9 @@ int KUNPENG_PMU::PerfCounterDefault::MapPerfAttr(const bool groupEnable, const i
     attr.disabled = 1;
     attr.inherit = 1;
 
+    attr.exclude_kernel = this->evt->excludeKernel;
+    attr.exclude_user = this->evt->excludeUser;
+
     /**
      * if no permission try setting exclude_kernel=1.
      */
