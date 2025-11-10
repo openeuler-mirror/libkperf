@@ -50,7 +50,7 @@ void *inc_b(void*)
     }
 
     if (CPU_ISSET(cpu_num, &get)) {
-        printf("sum_a is running in %d cpu_id: %d\n", get, cpu_num);
+        printf("inc_b is running in %d cpu_id: %d\n", get, cpu_num);
     }
 
     int s = 0;
