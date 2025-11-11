@@ -52,11 +52,12 @@ static std::map<uint16_t, std::string> HIP_STR_MAP = {
     {HIP_L1, "HIP_L1"},
 };
 
-const char* SHORT_OPS = "p:d:h";
+const char* SHORT_OPS = "p:d:c:h";
 const struct option LONG_OPS[] = 
 {
     {"pid", required_argument, nullptr, 'p'},
     {"duration", required_argument, nullptr, 'd'},
+    {"cgroupName", required_argument, nullptr, 'c'},
     {"help", required_argument, nullptr, 'h'},
     {nullptr, required_argument, nullptr, 0},
 };
@@ -86,7 +87,7 @@ int ExecCommand(std::vector<std::string>& comms)
     return -1;
 }
 
-int ParseArgv(int argc, char** argv, int& pid, int& duration, bool& isLaunch)
+int ParseArgv(int argc, char** argv, int& pid, int& duration, bool& isLaunch, char** cgroupName)
 {
     int longIndex;
     int ret;
@@ -110,6 +111,10 @@ int ParseArgv(int argc, char** argv, int& pid, int& duration, bool& isLaunch)
                     std::cout << "duration is number, can't be: " << optarg << std::endl;
                     return -1;
                 }
+                break;
+            case 'c':
+                curIndex += 2;
+                *cgroupName = optarg;
                 break;
             case 'h':
                 curIndex += 2;
@@ -150,38 +155,67 @@ int main(int argc, char** argv)
     int pid = -1;
     int duration = 10;
     bool isLaunch = false;
+    char* cgroupName = nullptr;
 
-    int err = ParseArgv(argc, argv, pid, duration, isLaunch);
+    int err = ParseArgv(argc, argv, pid, duration, isLaunch, &cgroupName);
     if (err == -1) {
         return -1;
     }
 
-    if (pid == -1) {
+    if (pid == -1 && cgroupName == nullptr) {
         std::cout << "usage pmu_datasrc -d 2 -p 10001 or pmu_datasrc -d 2 /home/test/falsesharing_demo" << std::endl;
         return -1;
     }
 
+    if (pid > 0 && cgroupName != nullptr) {
+        if (isLaunch) {
+            kill(pid, 9);
+        }
+        std::cout << "Cannot specify both cgroup and pid. Please use only one" << std::endl;
+        return -1;
+    }
+
     PmuAttr attr = {0};
-    int pidList[1];
-    pidList[0] = pid;
-    attr.pidList = pidList;
-    attr.numPid = 1;
-    attr.period = 1024;
+    if (cgroupName != nullptr) {
+        char* cgroupNameList[1] = {cgroupName};
+        attr.cgroupNameList = cgroupNameList;
+        attr.numCgroup = 1; 
+    } else {
+        int pidList[1];
+        pidList[0] = pid;
+        attr.pidList = pidList;
+        attr.numPid = 1;
+    }
+    attr.period = 256;
     attr.dataFilter = SPE_DATA_ALL;
     attr.evFilter = SPE_EVENT_RETIRED;
     attr.symbolMode = SymbolMode::RESOLVE_ELF_DWARF;
+   
 
     int pd = PmuOpen(SPE_SAMPLING, &attr);
     if (pd == -1) {
+        if (isLaunch) {
+            kill(pid, 9);
+        }
         std::cout << "kperf pmu open spe failed, err is: " << Perror() << std::endl;
         return -1;
     }
-    PmuEnable(pd);
-    sleep(duration);
-    PmuDisable(pd);
-
+    
+    int num = duration * 10;
     PmuData* data = nullptr;
-    int len = PmuRead(pd, &data);
+    int len = 0;
+    for (int i = 0; i < num; i++) {
+        PmuEnable(pd);
+        usleep(100 * 1000);
+        PmuDisable(pd);
+        PmuData* fromData = nullptr;
+        PmuRead(pd, &fromData);
+        int curLen = PmuAppendData(fromData, &data);
+        if (curLen) {
+            len = curLen;
+        }
+    }
+
     std::map<uint16_t, int> sourceList;
     std::map<uint16_t, std::map<std::string, int>> sourceSymList;
 

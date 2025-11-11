@@ -14,7 +14,6 @@
  ******************************************************************************/
 #ifndef CPU_MAP_H
 #define CPU_MAP_H
-#include <numa.h>
 #include <set>
 #include <unordered_map>
 #include "pmu.h"

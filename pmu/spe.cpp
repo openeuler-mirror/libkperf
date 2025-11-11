@@ -36,7 +36,7 @@ constexpr unsigned SPE_RECORD_MAX = 100000;
 constexpr unsigned BUFF_SIZE = 64;
 /* Should align to 2^n size in pages */
 constexpr unsigned RING_BUF_SIZE = 64 * 1024;
-constexpr unsigned AUX_BUF_SIZE = 256 * 1024;
+constexpr unsigned AUX_BUF_SIZE = 256 * 1024 * 4;
 
 
 struct AuxContext {
