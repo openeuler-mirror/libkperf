@@ -171,19 +171,14 @@ static void PrintHotSpotTitle(int length) {
               << std::setw(18) << "End Addr"
               << std::setw(18) << "Length";
     }
-    if (dataCollect) {
-        std::cout << std::setw(20) << "l2dcache refill"
-              << std::setw(15) << "l2 dcache";
-        std::cout  << std::setw(15) << "Cycles"
-              << std::setw(12) << "Ratio(%)"
-              << "\n";
-    } else {
-        std::cout << std::setw(20) << "l2 icache refill"
-              << std::setw(15) << "l2 icache"
-              << std::setw(15) << "Cycles"
-              << std::setw(12) << "Ratio(%)"
-              << "\n";
-    }
+
+    std::string refill = dataCollect ? "l2dcache refill" : "l2 icache refill";
+    std::string cache  = dataCollect ? "l2 dcache"       : "l2 icache";
+    std::cout << std::setw(20) << refill
+          << std::setw(15) << cache
+          << std::setw(15) << "Cycles"
+          << std::setw(12) << "Ratio(%)"
+          << "\n";
     std::cout << std::string(length, '-') << "\n";
 }
 
@@ -240,73 +235,71 @@ static void PrintOutputPaths(const FileSet &fs)
         std::cout << "Bolt file: " << GetFullPath(fs.l2iCachePath) << "\n";
     }
 }
-
 static void PrintHotSpot(std::vector<HotspotFunc>& hotSpotData)
 {
-    std::map<int, FileSet> files;  // pid, file set
+    std::map<int, std::vector<HotspotFunc>> grouped;  // grouping by pid
+    for (auto& hs : hotSpotData) {
+        grouped[hs.data.pid].push_back(hs);
+    }
+
     std::string timeStr = GetTimeStr();
+    int length = instStat ? 145 : 180;
 
-    int length = instStat? 145 : 180;
-    if (dataCollect) {
-        length += 35;
-    }
-    PrintHotSpotTitle(length);
+    for (auto& kv : grouped) {
+        int pid = kv.first;
+        auto& funcs = kv.second;
 
-    bool longName = false;
-    for (const auto& hs : hotSpotData) {
-        auto *callFunc = FindValidNode(hs.data.stack);
-        std::string funcName = ProcessSymbol(callFunc->symbol);
-        std::string fullFuncName = ProcessFunctionString(funcName);
-        if (!longName && funcName.size() > 48) {
-            int halfLen = 48 / 2 - 1;
-            int startPos = funcName.size() - 48 + halfLen + 3;
-            funcName = funcName.substr(0, halfLen) + "..." + funcName.substr(startPos);
-        }
-        std::cout << std::left;
-        if (instStat) {
-            std::cout << std::hex  << std::setw(20) << callFunc->symbol->addr << std::dec
-                    << std::setw(50) << funcName
-                    << std::setw(15) << hs.data.pid;
-        } else {
-            unsigned long beginAddr = callFunc->symbol->codeMapAddr - callFunc->symbol->offset;
-            unsigned long funcLength = callFunc->symbol->codeMapEndAddr == 0 ?
-                                        0 : callFunc->symbol->codeMapEndAddr - beginAddr;
-            std::cout << std::setw(50) << funcName
-                    << std::setw(12) << hs.data.pid
-                    << std::setw(18) << std::hex << beginAddr
-                    << std::setw(18) << std::hex << callFunc->symbol->codeMapEndAddr
-                    << std::setw(18) << std::hex << funcLength << std::dec;
+        PrintHotSpotTitle(length);
+
+        FileSet fs;
+        fs.enabled = !dataCollect && (boltType != BoltOption::NONE);
+        if (fs.enabled) {
+            InitOutputFiles(fs, pid, timeStr);
         }
 
-        auto &fs = files[hs.data.pid];
-        if (!fs.cyclesFile.is_open() && !fs.enabled) {
-            fs.enabled = !dataCollect && (boltType != BoltOption::NONE);
-            if (fs.enabled) {
-                InitOutputFiles(fs, hs.data.pid, timeStr);
+        bool longName = false;
+        for (const auto& hs : funcs) {
+            auto* callFunc = FindValidNode(hs.data.stack);
+            std::string funcName = ProcessSymbol(callFunc->symbol);
+            std::string fullFuncName = ProcessFunctionString(funcName);
+
+            if (!longName && funcName.size() > 48) {
+                int halfLen = 48 / 2 - 1;
+                int startPos = funcName.size() - 48 + halfLen + 3;
+                funcName = funcName.substr(0, halfLen) + "..." + funcName.substr(startPos);
+            }
+
+            std::cout << std::left;
+            if (instStat) {
+                std::cout << std::hex << std::setw(20) << callFunc->symbol->addr << std::dec
+                          << std::setw(50) << funcName
+                          << std::setw(15) << pid;
+            } else {
+                unsigned long beginAddr = callFunc->symbol->codeMapAddr - callFunc->symbol->offset;
+                unsigned long funcLength = callFunc->symbol->codeMapEndAddr == 0 ?
+                                           0 : callFunc->symbol->codeMapEndAddr - beginAddr;
+                std::cout << std::setw(50) << funcName
+                          << std::setw(12) << pid
+                          << std::setw(18) << std::hex << beginAddr
+                          << std::setw(18) << std::hex << callFunc->symbol->codeMapEndAddr
+                          << std::setw(18) << std::hex << funcLength << std::dec;
+            }
+
+            std::cout << std::setw(20) << hs.l2RefillPeriod
+                      << std::setw(15) << hs.l2AccessPeriod
+                      << std::setw(15) << hs.cyclesPeriod
+                      << std::setw(12) << GetPeriodPercent(pid, hs.cyclesPeriod) << "\n";
+
+            if (!dataCollect) {
+                WriteOutputRecords(fs, fullFuncName, callFunc->symbol->offset, hs);
             }
         }
 
-        if (dataCollect) {
-            std::cout << std::setw(20) << hs.l2RefillPeriod
-                << std::setw(15) << hs.l2AccessPeriod;
-            std::cout << std::setw(15) << hs.cyclesPeriod
-                << std::setw(12) << GetPeriodPercent(hs.data.pid, hs.cyclesPeriod) << "\n";
-        } else {
-            std::cout << std::setw(20) << hs.l2RefillPeriod
-                << std::setw(15) << hs.l2AccessPeriod
-                << std::setw(15) << hs.cyclesPeriod
-                << std::setw(12) << GetPeriodPercent(hs.data.pid, hs.cyclesPeriod) << "\n";
-            WriteOutputRecords(fs, fullFuncName, callFunc->symbol->offset, hs);
+        std::cout << std::string(length, '_') << "\n";
+        if (!dataCollect && fs.enabled) {
+            PrintOutputPaths(fs);
         }
-    }
-    std::cout << std::string(length, '_') << "\n";
-    // output the file list
-    if (!dataCollect) {
-        for (const auto &kv : files) {
-            if (kv.second.enabled) {
-                PrintOutputPaths(kv.second);
-            }
-        }
+        std::cout << "\n";
     }
 }
 
