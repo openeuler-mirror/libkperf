@@ -16,8 +16,12 @@ func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error)
     采集的进程id列表
   * CpuList []int
     指定的使用cpu核采集列表，默认采集所有逻辑核
-  * EvtAttr []int
-    事件分组列表，和evtList搭配使用，同组事件需要使用相同数字表示，不同组事件使用不同的数字代表，如果数字为-1，则不参与事件分组
+  * EvtAttr []EvtAttr
+    用于对各事件做单独属性定义
+    * GroupId 事件分组ID，同组事件需要使用相同数字表示，不同组事件使用不同的数字代表，如果数字为-1，则不参与事件分组
+    * Period 如果PmuAttr中useFreq=True则为采样频率，否则为采样间隔
+    * ExcludeUser 排除对用户态数据的采集
+    * ExcludeKernel 排除对内核态数据的采集
   * SampleRate uint32
     采样频率，可通过/proc/sys/kernel/perf_event_max_sample_rate调整最大的采样频率
   * UseFreq bool

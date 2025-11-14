@@ -17,7 +17,11 @@ kperf.open(collector_type: kperf.PmuTaskType, pmu_attr: kperf.PmuAttr)
   * cpuList
     指定的使用cpu核采集列表，默认采集所有逻辑核
   * evtAttr
-    事件分组列表，和evtList搭配使用，同组事件需要使用相同数字表示，不同组事件使用不同的数字代表，如果数字为-1，则不参与事件分组
+    用于对各事件做单独属性定义
+    * groupId 事件分组ID，同组事件需要使用相同数字表示，不同组事件使用不同的数字代表，如果数字为-1，则不参与事件分组
+    * period 如果PmuAttr中useFreq=True则为采样频率，否则为采样间隔
+    * excludeUser 排除对用户态数据的采集
+    * excludeKernel 排除对内核态数据的采集
   * sampleRate
     采样频率，可通过/proc/sys/kernel/perf_event_max_sample_rate调整最大的采样频率
   * useFreq
