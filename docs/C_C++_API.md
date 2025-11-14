@@ -20,7 +20,11 @@
   * unsigned numCpu
     采集cpu核的个数
   * struct EvtAttr *evtAttr
-    事件分组列表，和evtList搭配使用，同组事件需要使用相同数字表示，不同组事件使用不同的数字代表，如果数字为-1，则不参与事件分组
+    用于对各事件做单独属性定义的列表
+    * groupId 事件分组ID，同组事件需要使用相同数字表示，不同组事件使用不同的数字代表，如果数字为-1，则不参与事件分组
+    * period 如果PmuAttr中useFreq=True则为采样频率，否则为采样间隔
+    * excludeUser 排除对用户态数据的采集
+    * excludeKernel 排除对内核态数据的采集
   * unsigned numGroup
     参与分组的事件个数
   * union
@@ -157,7 +161,6 @@
         * unsigned long event  事件ID
         * unsigned short lat 调度操作到执行操作的周期数
         * unsigned short source 记录加载或存储操作的数据来源
-        * unsigned short branchRecords brbe数据
       * struct
         * unsigned long nr  branchRecords的数量
         * struct BranchSampleRecord *branchRecords  branch指针数组

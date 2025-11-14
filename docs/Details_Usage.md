@@ -979,11 +979,11 @@ perf stat -e "{inst_retired,inst_spec,cycles}","{inst_retired,cycles}"
 char *evtList[5] = {"inst_retired", "inst_spec", "cycles", "inst_retired", "cycles"};
 // 指定事件分组编号，前三个事件为一组，后两个事件为一组。设置groupId=-1表示对应事件不参与分组。
 // 当事件数量numEvt超过指定事件分组数量numGroup时，超过分组数量的事件的groupId默认为-1，即不参与分组。
-EvtAttr groupId[5] = {1,1,1,2,2};
+EvtAttr attrList[5] = {{1},{1},{1},{2},{2}};
 PmuAttr attr = {0};
 attr.evtList = evtList;
 attr.numEvt = 5;
-attr.evtAttr = groupId;
+attr.evtAttr = attrList;
 attr.numGroup = 5;
 int pd = PmuOpen(COUNTING, &attr);
 PmuEnable(pd);
@@ -1010,7 +1010,7 @@ from collections import defaultdict
 
 evtList = ["inst_retired", "inst_spec", "cycles", "inst_retired", "cycles"]
 # 指定事件分组编号，前三个事件为一组，后两个事件为一组。
-evtAttrList = [1,1,1,2,2]
+evtAttrList = [kperf.EvtAttr(1),kperf.EvtAttr(1),kperf.EvtAttr(1),kperf.EvtAttr(2),kperf.EvtAttr(2)]
 pmu_attr = kperf.PmuAttr(evtList=evtList, evtAttr = evtAttrList)
 pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
 kperf.enable(pd)
@@ -1036,7 +1036,7 @@ import "time"
 
 func main() {
     evtList := []string{"inst_retired", "inst_spec", "cycles", "inst_retired", "cycles"}
-    evtAttrList := []int{1,1,1,2,2}
+    evtAttrList := []kperf.EvtAttr{kperf.EvtAttr{1,0,false,false},kperf.EvtAttr{1,0,false,false},kperf.EvtAttr{1,0,false,false},kperf.EvtAttr{2,0,false,false},kperf.EvtAttr{2,0,false,false}}
     attr := kperf.PmuAttr{EvtList: evtList, EvtAttr: evtAttrList}
     pd, err := kperf.PmuOpen(kperf.COUNT, attr)
     if err != nil {
