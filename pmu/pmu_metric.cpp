@@ -1873,3 +1873,76 @@ int PmuGetNumaCore(unsigned nodeId, unsigned **coreList)
         return -1;
     }
 }
+
+static map<PmuHwMetric, vector<char*>> HW_METRIC_MAP = {
+    {PmuHwMetric::PMU_HWM_CPI, {"armv8_pmuv3_0/inst_retired/", "armv8_pmuv3_0/cpu_cycles/"}},
+    {PmuHwMetric::PMU_HWM_CACHE_MISS, {"cache-references", "cache-misses"}},
+    {PmuHwMetric::PMU_HWM_L3_CACHE_MISS, {"LLC-loads", "LLC-load-misses"}},
+    {PmuHwMetric::PMU_HWM_L2D_CACHE_MISS, {"armv8_pmuv3_0/l2d_cache/", "armv8_pmuv3_0/l2d_cache_refill/"}},
+    {PmuHwMetric::PMU_HWM_L1_DCACHE_MISS, {"L1-dcache-loads", "L1-dcache-load-misses"}},
+    {PmuHwMetric::PMU_HWM_L1_ICACHE_LOAD_MISS, {"L1-icache-loads", "L1-icache-load-misses"}},
+    {PmuHwMetric::PMU_HWM_DTLB_LOAD_MISS, {"dTLB-loads", "dTLB-load-misses"}},
+    {PmuHwMetric::PMU_HWM_ITLD_LOAD_MISS, {"iTLB-loads", "iTLB-load-misses"}},
+    {PmuHwMetric::PMU_HWM_BRACH_LOADS_MISS, {"branch-loads", "branch-load-misses"}},
+};
+
+int PmuOpenWithHWMetric(struct PmuHwMetricAttr *hwMetricAttr) {
+#ifdef IS_X86
+    New(LIBPERF_ERR_INTERFACE_NOT_SUPPORT_X86);
+    return -1;
+#else
+    if (!hwMetricAttr->thresholdList) {
+        New(LIBPERF_ERR_INVALID_HWMETRIC_ATTR, "Invalid threshold which must can't be nullptr");
+        return -1;
+    }
+
+    if (!hwMetricAttr->basePeriodList) {
+        New(LIBPERF_ERR_INVALID_HWMETRIC_ATTR, "Invalid base period which can't be nullptr");
+        return -1;
+    }
+
+    std::vector<PmuHwMetric> metricList;
+    unsigned long metricTmp = 0;
+
+    for (const auto &item : HW_METRIC_MAP) {
+        auto oneMetric = static_cast<unsigned long>(item.first);
+        if (hwMetricAttr->metric & oneMetric) {
+            metricTmp |= oneMetric;
+            metricList.push_back(item.first);
+        }
+    }
+
+    if (metricTmp != hwMetricAttr->metric) {
+        New(LIBPERF_ERR_INVALID_HWMETRIC_ATTR, "Invalid metric not found in HwMetric");
+        return -1;
+    }
+
+    PmuAttr attr = {0};
+    char *evtList[metricList.size() * 2];
+    EvtAttr evtAttr[metricList.size() * 2];
+    for (int i = 0; i < metricList.size(); i++) {
+        evtList[2 * i] = HW_METRIC_MAP[metricList[i]][0];
+        evtList[2 * i + 1] = HW_METRIC_MAP[metricList[i]][1];
+        auto dstPeriod = static_cast<unsigned>(hwMetricAttr->basePeriodList[i] * hwMetricAttr->thresholdList[i]);
+        int groupId = i + 1;
+        evtAttr[2 * i] = {groupId, hwMetricAttr->basePeriodList[i], false, false};
+        evtAttr[2 * i + 1] = {groupId, dstPeriod, false, false};
+    }
+    attr.numEvt = metricList.size() * 2;
+    attr.numGroup = metricList.size() * 2;
+
+    int pidList[1];
+    if (hwMetricAttr->pid > 0) {
+        pidList[0] = static_cast<int>(hwMetricAttr->pid);
+        attr.pidList = pidList;
+        attr.numPid = 1;
+    }
+
+    attr.evtAttr = evtAttr;
+    attr.evtList = evtList;
+
+    attr.enableHwMetric = 1;
+    int pd = PmuOpen(SAMPLING, &attr);
+    return pd;
+#endif
+}

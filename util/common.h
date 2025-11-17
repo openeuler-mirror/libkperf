@@ -36,6 +36,7 @@ const std::string TRACE_EVENT_PATH = "/sys/kernel/tracing/events/";
 const std::string TRACE_DEBUG_EVENT_PATH = "/sys/kernel/debug/tracing/events/";
 const std::string PERF_EVENT_PARANOID_PATH = "/proc/sys/kernel/perf_event_paranoid";
 const std::string SYS_DEVICE_PATH = "/sys/bus/event_source/devices/";
+const std::string KERNEL_CONFIG_BASE_PATH = "/boot/config-";
 
 inline bool IsValidIp(unsigned long ip)
 {
@@ -56,5 +57,6 @@ std::string GetTraceEventDir();
 bool ConvertStrToInt(const std::string& intValStr, int32_t& val);
 int GetParanoidVal();
 std::string GetCgroupPath(const std::string& cgroupName);
+bool CheckCurKernelConfig(const std::string& configName);
 
 #endif  // LIBKPROF_COMMON_H

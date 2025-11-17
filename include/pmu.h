@@ -753,6 +753,27 @@ int PmuWriteData(PmuFile file, struct PmuData *data, int len);
  */
 void PmuEndWrite(PmuFile file);
 
+enum PmuHwMetric {
+    PMU_HWM_CPI = 1 << 0,
+    PMU_HWM_CACHE_MISS = 1 << 1,
+    PMU_HWM_L3_CACHE_MISS = 1 << 2,
+    PMU_HWM_L2D_CACHE_MISS = 1 << 3,
+    PMU_HWM_L1_DCACHE_MISS = 1 << 4,
+    PMU_HWM_L1_ICACHE_LOAD_MISS = 1 << 5,
+    PMU_HWM_DTLB_LOAD_MISS = 1 << 6,
+    PMU_HWM_ITLD_LOAD_MISS = 1 << 7,
+    PMU_HWM_BRACH_LOADS_MISS = 1 << 8,
+};
+
+struct PmuHwMetricAttr {
+    unsigned long metric;
+    unsigned* basePeriodList;
+    double* thresholdList;
+    unsigned pid;
+};
+
+int PmuOpenWithHWMetric(struct PmuHwMetricAttr* hwMetricAttr);
+
 #pragma GCC visibility pop
 #ifdef __cplusplus
 }

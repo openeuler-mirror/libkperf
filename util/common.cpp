@@ -22,6 +22,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <sys/resource.h>
+#include <sys/utsname.h>
 #include <sys/stat.h>
 #include <climits>
 #include <sys/vfs.h>
@@ -186,4 +187,28 @@ std::string GetCgroupPath(const std::string& cgroupName) {
         return "";
     }
     return cgroupRootPath;
+}
+
+bool CheckCurKernelConfig(const std::string& configName)
+{
+    std::string configPath;
+    struct utsname buff;
+    if (uname(&buff) == 0) {
+        configPath = KERNEL_CONFIG_BASE_PATH + buff.release;
+    } else {
+        return false;
+    }
+
+    std::ifstream configFile(configPath.c_str());
+    if (!configFile.is_open()) {
+        return false;
+    }
+
+    std::string line;
+    while(getline(configFile, line)) {
+        if (line.find(configName) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
 }

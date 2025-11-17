@@ -310,6 +310,24 @@ static int CheckBpfMode(enum PmuTaskType collectType, struct PmuAttr *attr)
     return SUCCESS;
 }
 
+static int CheckHwMetric(enum PmuTaskType collectType, struct PmuAttr* attr) {
+    if (!attr->enableHwMetric) {
+        return SUCCESS;
+    }
+
+    if (collectType != SAMPLING) {
+        New(LIBPERF_ERR_NOT_SUPPORT_HWMETRIC, "just sampling mode support hw metric");
+        return LIBPERF_ERR_NOT_SUPPORT_HWMETRIC;
+    }
+
+    if (!CheckCurKernelConfig("CONFIG_HISILICON_HW_METRIC=y")) {
+        New(LIBPERF_ERR_NOT_SUPPORT_HWMETRIC, "Current kernel can't support hw metric, Please upgrade the kernel version to 6.6.0-108");
+        return LIBPERF_ERR_NOT_SUPPORT_HWMETRIC;
+    }
+
+    return SUCCESS;
+}
+
 static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
 {
     auto err = CheckUserAccess(collectType, attr);
@@ -360,6 +378,12 @@ static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
         New(err);
         return err;
     }
+
+    err = CheckHwMetric(collectType, attr);
+    if (err != SUCCESS) {
+        return err;
+    }
+
     return SUCCESS;
 }
 

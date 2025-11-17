@@ -177,6 +177,33 @@ class PmuDeviceMetric:
     # Collect rate of cross-socket operations received by HHA.
     PMU_HHA_CROSS_SOCKET = 15
 
+class PmuHwMetric:
+    PMU_HWM_CPI = 1 << 0
+    PMU_HWM_CACHE_MISS = 1 << 1
+    PMU_HWM_L3_CACHE_MISS = 1 << 2
+    PMU_HWM_L2D_CACHE_MISS = 1 << 3
+    PMU_HWM_L1_DCACHE_MISS = 1 << 4
+    PMU_HWM_L1_ICACHE_LOAD_MISS = 1 << 5
+    PMU_HWM_DTLB_LOAD_MISS = 1 << 6
+    PMU_HWM_ITLD_LOAD_MISS = 1 << 7
+    PMU_HWM_BRACH_LOADS_MISS = 1 << 8
+
+class PmuHwMetricAttr(_libkperf.PmuHwMetricAttr):
+    """
+    struct PmuHwMetricAttr {
+        enum PmuHwMetric metric;
+        unsigned basePeriod;
+        double threshold;
+    };
+    """
+    def __init__(self, metric, basePeriodList=None, thresholdList=None, pid=0):
+        super(PmuHwMetricAttr, self).__init__(
+            metric=metric,
+            basePeriodList=basePeriodList,
+            thresholdList=thresholdList,
+            pid=pid
+        )
+
 class PmuDeviceAttr(_libkperf.PmuDeviceAttr):
     """
     struct PmuDeviceAttr {
@@ -631,6 +658,9 @@ def write_data(file, data):
 def end_write(file):
     return _libkperf.PmuEndWrite(file)
 
+def pmu_open_with_hw_metric(pmu_hw_metric_attr):
+    return _libkperf.PmuOpenWithHWMetric(pmu_hw_metric_attr)
+
 __all__ = [
     'PmuTaskType',
     'PmuEventType',
@@ -687,5 +717,8 @@ __all__ = [
     'resolvePmuDataSymbol',
     'begin_write',
     'write_data',
-    'end_write'
+    'end_write',
+    'PmuHwMetric',
+    'PmuHwMetricAttr',
+    'pmu_open_with_hw_metric',
 ]
