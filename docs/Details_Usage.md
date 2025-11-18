@@ -2034,11 +2034,11 @@ gcc -o falsesharing_demo -g falsesharing_demo.c -lpthread
 # HIP_L2                  = 16,
 # HIP_L2_HITM             = 17,
 # HIP_L1                  = 18,
-HIP_H2_HITM 190
+HIP_L2_HITM 190
     |——4009cc sum_a(void*)+0x1c8 /home/test/libkperf/example/case/falsesharing_long.c:33 [77]
     |——400bbc inc_b(void*)+0x1cc /home/test/libkperf/example/case/falsesharing_long.c:59 [70]
-    |——400bbc sum_a(void*)+0x1b8 /home/test/libkperf/example/case/falsesharing_long.c:32 [27]
-    |——400bbc inc_b(void*)+0x1bc /home/test/libkperf/example/case/falsesharing_long.c:58 [16]
+    |——4009bc sum_a(void*)+0x1b8 /home/test/libkperf/example/case/falsesharing_long.c:32 [27]
+    |——400bac inc_b(void*)+0x1bc /home/test/libkperf/example/case/falsesharing_long.c:58 [16]
 HIP_L1 1952
     |——400bd0 inc_b(void*)+0x1e0 /home/test/libkperf/example/case/falsesharing_long.c:57 [491]
     |——4009e0 sum_a(void*)+0x1dc /home/test/libkperf/example/case/falsesharing_long.c:31 [489]
