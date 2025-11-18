@@ -122,7 +122,7 @@ void ComputeRacePc(const ulong mypc, const map<ulong, int> &vas,
                 if (otherPc.pc == mypc) {
                     continue;
                 }
-                if (va - otherVa <= CACHE_LINE || otherVa - va <= CACHE_LINE) {
+                if (va - otherVa < CACHE_LINE || otherVa - va < CACHE_LINE) {
     	            VaItem otherRacePc;
 	                otherRacePc.pc = otherPc.pc;
 	                otherRacePc.cnt = vaItemPair.second.cnt;
