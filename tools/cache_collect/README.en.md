@@ -1,21 +1,24 @@
 # Cache Collect Tool
-### 描述
-该工具用于收集 Go 程序的 L2I Cache 和 L2D Cache 信息。
-1. 从函数和指令两个角度生成热点统计数据。
-2. 报告每个进程的 L2I Cache 未命中率、L2D Cache 未命中率以及 IPC（每周期指令数）。
+### Description
+This tool is designed to collect L2I cache, l2D cache information of go program.
 
-在 L2I Cache 收集模式下，可以将对应数据输出为 BOLT 格式的 txt 文件到工作目录。 格式如下：
-```
-1 [funcName] [offset] [number]
-```
-其中：funcName为函数名，offset为指令地址偏移量，number为采样到的次数
+1. It generates statistics of hotspots from the function and instruction perspectives. 
 
-### 构建
-1. 构建 libkperf 工具：
+2. It reports the L2I cache miss ratio, L2D cache miss ratio, and IPC (Instructions Per Cycle) for each process.
+
+In L2I cache collect mode, the corresponding data can be output as a txt file for BOLT in the work directory.
+```
+Format: 1 [funcName] [offset] [number]
+```
+[number] is the sample count for [funcName] at [offset]
+
+### Build
+Build the libkperf tool first:
 ```
 bash build.sh
 ```
-2. 构建cache collect工具：
+
+then:
 ```
 cd tools/cache_collect
 mkdir build && cd build
@@ -23,38 +26,36 @@ cmake ..
 make
 ```
 
-### 运行
-使用 ./cache_collect --help/-h 查看帮助信息。
+### Run
+Use './cache_collect --help/-h' to view the help information.
 
 ```
-  用法: ./cache_collect --pid/-p <pid> [选项]
+  Usage: ./cache_collect --pid/-p <pid> [options]
 
-  必选参数:
-    --pid/-p <pid>           : 目标进程 ID，可用 ',' 分隔多个 ID
-
-  可选参数:
-    --duration/-d <秒>       : 设置热点收集时间，单位：秒，默认：10
-    --level/-l <级别>        : 设置为 'inst' 时输出指令级汇总，默认：以函数级别汇总
-    --mode/-m <模式>         : 设置为 'dcache' 采集L2D Cache数据，默认：采集L2I Cache数据
-    --interval/-i <毫秒>     : 读取环形缓冲区的间隔，单位：毫秒，默认：1000
-    --frequency/-f <频率>    : 采样频率，默认：1000
-    --bolt/-b <选项>         : 生成 BOLT 格式输出文件，仅在默认模式下使用。选项包括：'cycles'、'l2i_cache'、'l2i_cache_refill' 或 'all'。
-    --summary/-s <秒>        : 设置汇总比例和 IPC 收集的时间，单位：秒，默认：5
-
-  命令示例:
+  Required:
+    --pid/-p <pid>           : Target process ID(s). Multiple IDs can be separated by ','
+  Optional:
+    --duration/-d <seconds>  : Set collection time of hotspots. Unit: s, default: 10
+    --level/-l <level>       : Set to 'inst' for instruction-level summary. Default: function-level summary
+    --mode/-m <mode>         : Set to 'dcache' to collect L2D cache data. Default: L2I cache data
+    --interval/-i <ms>       : Interval for reading the ring buffer. Unit: ms, default: 1000
+    --frequency/-f <freq>    : Sampling frequency, default: 1000
+    --bolt/-b <option>       : Generate BOLT format output file. Options: 'cycles', 'l2i_cache', 'l2i_cache_refill', or 'all'. Only for default mode.
+    --summary/-s <seconds>   : Set collection time of summary ratio and IPC collection. Unit: s, default: 5
+  Examples:
     ./cache_collect -p 125785 -d 10 -l inst -m dcache -i 2000
     ./cache_collect -p 125785,143789 -m dcache -f 4000 -b cycles
 ```
 
-### 示例
-当前目录: /home/test/libkperf/tools/cache_collect/build
-#### 函数级别统计:
-命令:
+### Example
+pwd: /home/test/libkperf/tools/cache_collect/build
+#### The function level:
+command:
 ```
 ./cache_collect -p 1630278 -b all
 ```
 
-输出结果:
+The output results is:
 ```
 ====================================================================================================================================================================================
                                                                     HOTSPOT FUNC
@@ -84,7 +85,7 @@ Pid             l2 icache Miss Rate      l2 dcache Miss Rate       IPC
 ----------------------------------------------------------------------
 ```
 
-Bolt文件'1630278_20251106_160118_cycles.txt'的内容:
+The content of '1630278_20251106_160118_cycles.txt' is:
 ```
 no_lbr cycles:
 1 main.addSub/1 20 5352
@@ -97,13 +98,13 @@ no_lbr cycles:
 1 runtime.sysmon/1 e4 2
 ```
 
-#### 指令级别统计:
-命令:
+#### The instruction level:
+command:
 ```
 ./cache_collect -p 1630278 -l inst -b cycles
 ```
 
-输出结果:
+The output results is:
 ```
 =================================================================================================================================================
                                                                     HOTSPOT INST
@@ -129,7 +130,7 @@ Bolt file: /home/test/libkperf/tools/cache_collect/build/1630278_20251106_161435
 ...
 ```
 
-Bolt文件的内容:
+The content of bolt file is :
 ```
 no_lbr cycles:
 1 main.addSubFuse/1 20 1768

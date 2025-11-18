@@ -17,6 +17,7 @@
 
 #include <string>
 #include <vector>
+#include <climits>
 #include <unistd.h>
 
 enum class BoltOption {
@@ -29,10 +30,10 @@ enum class BoltOption {
 
 class CollectArgs {
 public:
-    unsigned long duration = 10;
-    unsigned long summaryTime = 5;
-    unsigned frequency = 1000;
-    unsigned interval = 1000;
+    int duration = 10;
+    int summaryTime = 5;
+    int frequency = 1000;
+    int interval = 1000;
     bool enableData = false;
     bool enableInst = false;
     BoltOption boltOption = BoltOption::NONE;
@@ -43,7 +44,8 @@ public:
 
 private:
     std::string pidList;
-    void ParsePidList();
+    bool ParsePidList();
+    bool ParsePositiveIntArg(const char* arg, const std::string& paramName, int& outValue, int minValue = 1);
     BoltOption ParseBoltOption(const std::string& value);
 };
 #endif

@@ -172,7 +172,7 @@ static void PrintHotSpotTitle(int length) {
               << std::setw(18) << "Length";
     }
 
-    std::string refill = dataCollect ? "l2dcache refill" : "l2 icache refill";
+    std::string refill = dataCollect ? "l2 dcache refill" : "l2 icache refill";
     std::string cache  = dataCollect ? "l2 dcache"       : "l2 icache";
     std::cout << std::setw(20) << refill
           << std::setw(15) << cache
