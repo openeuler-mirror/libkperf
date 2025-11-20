@@ -621,7 +621,7 @@ func ToCPmuAttr(attr PmuAttr) (*C.struct_PmuAttr, int) {
 			}
 		}
 		cAttr.evtAttr = &evtAttrList[0]
-		cAttr.numGroup = C.uint32_t(evtAttrLen)
+		cAttr.numEvtAttr = C.uint32_t(evtAttrLen)
 	}
 
 	if attr.UseFreq {

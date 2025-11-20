@@ -298,11 +298,11 @@ class PmuAttr(_libkperf.PmuAttr):
             If both <cpuList> and <pidList> are NULL, all processes on all cores will be monitored.
             If <cpuList> is NULL and <pidList> is not NULL, specified processes on all cores will be monitored.
             if both <cpuList> and <pidList> are not NULL, specified processes on specified cores will be monitored.
-        evtAttr: event group id attributes.
-            if not use event group function, this field will be NULL.
-            if use event group function. please confirm the event group id with eveList is one by one.
-            the same group id is the a event group. 
-            Note: if the group id value is -1, it indicates that the event is not grouped.
+        evtAttr: list of individual attributes of the event
+            groupId: the same group id is the a event group. 
+            excludeUser: this event doesn't count user.
+            excludeKernel: this event doesn't count kernel.
+            period: sample period of the event
         sampleRate: sample time enum.
             period enum: Sample period, only available for SAMPLING and SPE_SAMPLING.
             freq enum: Sample frequency, only available for SAMPLING.

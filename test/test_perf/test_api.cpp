@@ -784,9 +784,9 @@ TEST_F(TestAPI, InvalidBpfAttr)
     ASSERT_NE(pd, -1);
     pd = PmuOpen(SAMPLING, &attr);
     ASSERT_EQ(pd, -1);
-    EvtAttr groupId[1] = {1};
-    attr.evtAttr = groupId;
-    attr.numGroup = 1;
+    EvtAttr evtAttr[1] = {1};
+    attr.evtAttr = evtAttr;
+    attr.numEvtAttr = 1;
     pd = PmuOpen(COUNTING, &attr);
     ASSERT_EQ(pd, -1);
 #else
