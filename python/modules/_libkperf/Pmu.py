@@ -2303,6 +2303,69 @@ def PmuEndWrite(file):
 
     return c_func(file)
 
+class CtypesPmuHwMetricAttr(ctypes.Structure):
+    """
+    struct PmuDeviceAttr {
+        enum PmuHwMetric metric;
+        unsigned basePeriod;
+        double threshold;
+    };
+    """
+    _fields_ = [
+        ('metric', ctypes.c_ulong),
+        ('basePeriodList', ctypes.POINTER(ctypes.c_uint)),
+        ('thresholdList', ctypes.POINTER(ctypes.c_double)),
+        ('pid', ctypes.c_uint),
+    ]
+    
+    def __init__(self,
+                metric=0,
+                basePeriodList=None,
+                thresholdList=None,
+                pid=0,
+                *args, **kw):
+        super(CtypesPmuHwMetricAttr, self).__init__(*args, **kw)
+
+        self.metric = ctypes.c_ulong(metric)
+        if basePeriodList:
+            numPeriod = len(basePeriodList)
+            self.basePeriodList = (ctypes.c_uint * numPeriod)(*basePeriodList)
+        else:
+            self.basePeriodList = None
+        
+        if thresholdList:
+            numThreshold = len(thresholdList)
+            self.thresholdList = (ctypes.c_double * numThreshold)(*thresholdList)
+        else:
+            self.thresholdList = None
+
+        self.pid = ctypes.c_uint(pid)
+
+class PmuHwMetricAttr:
+    __slots__ = ['__c_hw_metric_attr']
+
+    def __init__(self,
+                 metric=0,
+                 basePeriodList=None,
+                 thresholdList=None,
+                 pid=0):
+        self.__c_hw_metric_attr = CtypesPmuHwMetricAttr(
+            metric=metric,
+            basePeriodList=basePeriodList,
+            thresholdList=thresholdList,
+            pid=pid
+        )
+
+    @property
+    def c_hw_metric_attr(self):
+        return self.__c_hw_metric_attr
+
+def PmuOpenWithHWMetric(hwMetricAttr):
+    c_PmuOpenWithHWMetric = kperf_so.PmuOpenWithHWMetric
+    c_PmuOpenWithHWMetric.argtypes = [ctypes.POINTER(CtypesPmuHwMetricAttr)]
+    c_PmuOpenWithHWMetric.restype = ctypes.c_int
+    return c_PmuOpenWithHWMetric(ctypes.byref(hwMetricAttr.c_hw_metric_attr))
+
 __all__ = [
     'CtypesEvtAttr',
     'EvtAttr',
@@ -2356,5 +2419,7 @@ __all__ = [
     'ResolvePmuDataSymbol',
     'PmuBeginWrite',
     'PmuWriteData',
-    'PmuEndWrite'
+    'PmuEndWrite',
+    'PmuOpenWithHWMetric',
+    'PmuHwMetricAttr',
 ]

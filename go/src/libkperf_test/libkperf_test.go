@@ -412,3 +412,24 @@ func TestCgroupNameList(t *testing.T) {
 	kperf.PmuDataFree(dataVo)
 	kperf.PmuClose(fd)
 }
+
+func TestHwMetric(t *testing.T) {
+	metric := kperf.PMU_HWM_CPI | kperf.PMU_HWM_L3_CACHE_MISS
+	attr := kperf.PmuHwMetricAttr{Metric:metric, BasePeriodList:[]uint32{1000000, 100000}, ThresholdList:[]float64{0.8, 0.2}}
+	pd, err := kperf.PmuOpenWithHwMetric(attr)
+	if err != nil {
+		t.Fatalf("kperf PmuOpenWithHwMetric failed, expect err is nil, but is %v", err)
+	}
+	kperf.PmuEnable(pd)
+	time.Sleep(time.Second)
+	kperf.PmuDisable(pd)
+
+	dataVo, err := kperf.PmuRead(pd)
+	if err != nil {
+		t.Fatalf("kperf PmuRead failed, expect err is nil, but is %v", err)
+	}
+
+	for _, o := range dataVo.GoData {
+		t.Logf("sample base info comm=%v,pid=%v,tid=%v,evt=%v, period=%v,hw_metric=1", o.Comm,o.Pid,o.Tid,o.Evt, o.Period)
+	}
+}

@@ -178,6 +178,10 @@ size_t GetPmuTraceAttrSize() {
 	return sizeof(struct PmuTraceAttr);
 }
 
+size_t GetPmuHwMetricAttrSize() {
+	return sizeof(struct PmuHwMetricAttr);
+}
+
 void SetExcludeUserForEvt(struct EvtAttr* attr, unsigned excludeUser) {
 	attr->excludeUser = excludeUser;
 }
@@ -359,7 +363,20 @@ var (
     PMU_METRIC_BDF C.enum_PmuMetricMode  = C.PMU_METRIC_BDF
 	PMU_METRIC_CHANNEL C.enum_PmuMetricMode  = C.PMU_METRIC_CHANNEL
 )
-	
+
+// PmuHwMetric
+var (
+	PMU_HWM_CPI uint64 = 1 << 0
+	PMU_HWM_CACHE_MISS uint64 = 1 << 1
+	PMU_HWM_L3_CACHE_MISS uint64 = 1 << 2
+	PMU_HWM_L2D_CACHE_MISS uint64 = 1 << 3
+	PMU_HWM_L1_DCACHE_MISS uint64 = 1 << 4
+	PMU_HWM_L1_ICACHE_LOAD_MISS uint64 = 1 << 5
+	PMU_HWM_DTLB_LOAD_MISS uint64 = 1 << 6
+	PMU_HWM_ITLD_LOAD_MISS uint64 = 1 << 7
+	PMU_HWM_BRACH_LOADS_MISS uint64 = 1 << 8
+)
+
 var fdModeMap map[int]C.enum_PmuTaskType = make(map[int]C.enum_PmuTaskType)
 
 type EvtAttr struct {
@@ -512,6 +529,13 @@ type PmuCpuFreqDetail struct {
 	MinFreq uint64  // minimum frequency of core
 	MaxFreq uint64  // maximum frequency of core
 	AvgFreq uint64  // average frequency of core
+}
+
+type PmuHwMetricAttr struct {
+	Metric uint64
+    BasePeriodList []uint32
+    ThresholdList []float64
+	Pid uint32
 }
 
 func FreePmuAttr(attr *C.struct_PmuAttr) {
@@ -1434,4 +1458,41 @@ func PmuWriteData(file C.PmuFile, dataVo PmuDataVo) error {
 // brief End to write file.
 func PmuEndWrite(file C.PmuFile) {
 	C.PmuEndWrite(file)
+}
+
+// pmu open with hw_metric
+func PmuOpenWithHwMetric(hwMetricAttr PmuHwMetricAttr) (int, error) {
+	attrSize := C.GetPmuHwMetricAttrSize()
+	ptr := C.malloc(C.size_t(int(attrSize)))
+	if ptr == nil {
+		return -1, errors.New("malloc failed")
+	}
+	defer C.free(ptr)
+	C.memset(ptr, 0, attrSize)
+	cAttr := (*C.struct_PmuHwMetricAttr)(ptr)
+	cAttr.metric = C.ulong(hwMetricAttr.Metric)
+
+	basePeriodLen := len(hwMetricAttr.BasePeriodList)
+	if basePeriodLen > 0 {
+		periodList := make([]C.uint, basePeriodLen)
+		for i, period := range(hwMetricAttr.BasePeriodList) {
+			periodList[i] = C.uint(period)
+		}
+		cAttr.basePeriodList = &periodList[0]
+	}
+
+	thresholdLen := len(hwMetricAttr.ThresholdList)
+	if thresholdLen > 0 {
+		thresholdList := make([]C.double, thresholdLen)
+		for i, threshold := range(hwMetricAttr.ThresholdList) {
+			thresholdList[i] = C.double(threshold)
+		}
+		cAttr.thresholdList = &thresholdList[0]
+	}
+	cAttr.pid = C.uint(hwMetricAttr.Pid)
+	taskId := C.PmuOpenWithHWMetric(cAttr)
+	if int(taskId) == -1 {
+		return -1, errors.New(C.GoString(C.Perror()))
+	}
+	return int(taskId), nil
 }

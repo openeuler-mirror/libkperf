@@ -13,6 +13,7 @@
  * Description: Unit test for metric.
  ******************************************************************************/
 #include "test_common.h"
+#include "common.h"
 #include "cpu_map.h"
 #include <dirent.h>
 
@@ -368,5 +369,39 @@ TEST_F(TestMetric, GetMetricPcieLatency)
     }
     DevDataFree(devData);
     PmuDataFree(oriData);
+    PmuClose(pd);
+}
+
+TEST_F(TestMetric, TestHwMetric)
+{
+    CHIP_TYPE chipType = GetCpuType();
+    if (chipType != HIPG) {
+        GTEST_SKIP() << "Unsupported chip";
+    }
+
+    if (!CheckCurKernelConfig("CONFIG_HISILICON_HW_METRIC=y")) {
+        GTEST_SKIP() << "Current kernel can't support hw metric";
+    }
+
+    double thresholdList[2] = {0.8, 0.2};
+    unsigned basePeriodList[2] = {1000000, 100000};
+    PmuHwMetricAttr attr = {PmuHwMetric::PMU_HWM_CPI | PMU_HWM_L3_CACHE_MISS, basePeriodList, thresholdList, 0};
+    int pd = PmuOpenWithHWMetric(&attr);
+    ASSERT_NE(pd, -1);
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+    PmuData* oriData = nullptr;
+    int oriLen = PmuRead(pd, &oriData);
+    ASSERT_NE(oriLen, -1);
+    for (int i = 0; i < oriLen; i++) {
+        if (strstr(oriData[i].evt, "cpu_cycles")) {
+            ASSERT_EQ(oriData[i].period, 800000);
+        }
+
+        if (strstr(oriData[i].evt, "LLC-load-misses")) {
+            ASSERT_EQ(oriData[i].period, 20000);
+        }
+    }
     PmuClose(pd);
 }
