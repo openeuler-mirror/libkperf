@@ -45,6 +45,9 @@ v1.0:
 最低依赖gcc版本：
 - gcc-4.8.5 和 glibc-2.17
 
+最高支持gcc版本：
+- gcc-12.2.0 和 glibc-2.36
+
 最低依赖python版本：
 - python-3.6
 

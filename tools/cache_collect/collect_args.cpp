@@ -15,6 +15,9 @@
 #include <iostream>
 #include <getopt.h>
 #include <sstream>
+#include <stdexcept>
+#include <vector>
+#include <cstdlib>
 #include <unordered_map>
 #include "collect_args.h"
 
@@ -34,6 +37,28 @@ BoltOption CollectArgs::ParseBoltOption(const std::string& value) {
     return BoltOption::NONE;
 }
 
+
+bool CollectArgs::ParsePositiveIntArg(const char* arg, const std::string& paramName, int& outValue, int minValue)
+{
+    try {
+        int value = std::stoul(arg);
+        if (value < minValue) {
+            std::cerr << "Error: parameter '" << paramName << "' must bigger than 0, but got " << value << ".\n";
+            return false;
+        }
+        outValue = static_cast<unsigned>(value);
+        return true;
+    } catch (const std::invalid_argument& e) {
+        std::cerr << "Error: failed to parse parameter '" << paramName << "' from argument '" << arg
+                  << "'. Reason: " << e.what() << ". Expected an integer.\n";
+        return false;
+    } catch (const std::out_of_range& e) {
+        std::cerr << "Error: parameter '" << paramName << "' value '" << arg
+                  << "' is out of valid range. Reason: " << e.what() << "\n";
+        return false;
+    }
+}
+
 bool CollectArgs::ParseOption(int argc, char* argv[])
 {
     int opt;
@@ -42,15 +67,15 @@ bool CollectArgs::ParseOption(int argc, char* argv[])
     std::string mode;
     std::string bolt;
     struct option long_options[] = {
-        {"help",      no_argument, 0, 'h'},
-        {"pid",      required_argument, 0, 'p'},
-        {"duration", required_argument, 0, 'd'},
-        {"level",    required_argument, 0, 'l'},
-        {"mode",     required_argument, 0, 'm'},
-        {"interval", required_argument, 0, 'i'},
+        {"help",      no_argument,       0, 'h'},
+        {"pid",       required_argument, 0, 'p'},
+        {"duration",  required_argument, 0, 'd'},
+        {"level",     required_argument, 0, 'l'},
+        {"mode",      required_argument, 0, 'm'},
+        {"interval",  required_argument, 0, 'i'},
         {"frequency", required_argument, 0, 'f'},
-        {"bolt", required_argument, 0, 'b'},
-        {"summary", required_argument, 0, 's'},
+        {"bolt",      required_argument, 0, 'b'},
+        {"summary",   required_argument, 0, 's'},
         {0, 0, 0, 0}
     };
 
@@ -60,10 +85,7 @@ bool CollectArgs::ParseOption(int argc, char* argv[])
                 printUsage();
                 exit(0);
             case 'd':
-                try {
-                    duration = std::stoi(optarg);
-                } catch (const std::invalid_argument& e) {
-                    std::cerr << "Not valid collecting duration: " << e.what() << "\n";
+                if (!ParsePositiveIntArg(optarg, "hotspot duration", duration)) {
                     return false;
                 }
                 break;
@@ -74,39 +96,40 @@ bool CollectArgs::ParseOption(int argc, char* argv[])
                 level = optarg;
                 if (level == "inst") {
                     enableInst = true;
+                } else {
+                    std::cerr << "Error: invalid input for --level/-l, only support 'inst'" << "\n";
+                    return false;
                 }
                 break;
             case 'm':
                 mode = optarg;
                 if (mode == "dcache") {
                     enableData = true;
+                } else {
+                    std::cerr << "Error: invalid input for --mode/-m, only support 'dcache'" << "\n";
+                    return false;
                 }
                 break;
             case 'i':
-                try {
-                    interval = std::stoi(optarg);
-                } catch (const std::invalid_argument& e) {
-                    std::cerr << "Not valid interval: " << e.what() << "\n";
+                if (!ParsePositiveIntArg(optarg, "interval", interval)) {
                     return false;
                 }
                 break;
             case 'f':
-                try {
-                    frequency = std::stoi(optarg);
-                } catch (const std::invalid_argument& e) {
-                    std::cerr << "Not valid frequency: " << e.what() << "\n";
+                if (!ParsePositiveIntArg(optarg, "frequency", frequency)) {
                     return false;
                 }
                 break;
             case 'b':
                 bolt = optarg;
                 boltOption = ParseBoltOption(bolt);
+                if (boltOption == BoltOption::NONE) {
+                    std::cerr << "Error: invalid input for --bolt/-b, only support 'cycles', 'l2i_cache', 'l2i_cache_refill', and 'all'" << "\n";
+                    return false;
+                }
                 break;
             case 's':
-                try {
-                    summaryTime = std::stoi(optarg);
-                } catch (const std::invalid_argument& e) {
-                    std::cerr << "Not valid duration for summary collecting: " << e.what() << "\n";
+                if (!ParsePositiveIntArg(optarg, "summary duration", summaryTime)) {
                     return false;
                 }
                 break;
@@ -115,22 +138,33 @@ bool CollectArgs::ParseOption(int argc, char* argv[])
                 return false;
         }
     }
-
-    if (pidList.empty()) {
-        std::cerr << "Please input --pid/-p\n";
+    if (boltOption != BoltOption::NONE && enableData == true) {
+        std::cerr << "Error: bolt file can only be set in default collection mode\n";
         return false;
     }
-    ParsePidList();
-    return true;
+    if (pidList.empty()) {
+        std::cerr << "Error: missing required parameter --pid/-p\n";
+        return false;
+    }
+    return ParsePidList();
 }
 
-void CollectArgs::ParsePidList()
+bool CollectArgs::ParsePidList()
 {
     std::stringstream ss(pidList);
     std::string pidStr;
     while (std::getline(ss, pidStr, ',')) {
-        pids.push_back(std::stoi(pidStr));
+        pid_t pid;
+        try {
+            pid = std::stoi(pidStr);
+        } catch (const std::invalid_argument& e) {
+            std::cerr << "Error: failed to parse pid from input parameter: '" << pidStr
+                    << "' .Reason: " << e.what() << ". Expected an integer.\n";
+            return false;
+        }
+        pids.push_back(pid);
     }
+    return true;
 }
 
 void CollectArgs::printUsage()

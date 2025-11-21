@@ -55,6 +55,10 @@ Minimum required GCC version:
 
 - gcc-4.8.5 and glibc-2.17.
 
+Maximum supported GCC version:
+
+- gcc-12.2.0 and glibc-2.36.
+
 Minimum required Python version:
 
 - python-3.6.
