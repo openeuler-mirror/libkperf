@@ -255,6 +255,10 @@ static int CheckCollectTypeConfig(enum PmuTaskType collectType, struct PmuAttr *
         New(LIBPERF_ERR_INVALID_CGROUP_LIST, "SPE mode only support one cgroup");
         return LIBPERF_ERR_INVALID_CGROUP_LIST;
     }
+    if (collectType == SPE_SAMPLING && (attr->minLatency > 4095 || attr->minLatency < 0)) {
+        New(LIBPERF_ERR_INVALID_MIN_LATENCY, "Invalid min_latency: value must be between 0 and 4095");
+        return LIBPERF_ERR_INVALID_MIN_LATENCY;
+    }
     return SUCCESS;
 }
 
