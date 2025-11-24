@@ -16,7 +16,9 @@
 #include <getopt.h>
 #include <sstream>
 #include <stdexcept>
-#include <vector>
+#include <algorithm>
+#include <cstring>
+#include <cctype>
 #include <cstdlib>
 #include <unordered_map>
 #include "collect_args.h"
@@ -37,9 +39,16 @@ BoltOption CollectArgs::ParseBoltOption(const std::string& value) {
     return BoltOption::NONE;
 }
 
+static bool isNumber(const char* arg) {
+    return std::all_of(arg, arg + std::strlen(arg), ::isdigit);
+}
 
 bool CollectArgs::ParsePositiveIntArg(const char* arg, const std::string& paramName, int& outValue, int minValue)
 {
+    if (!isNumber(arg)) {
+        std::cerr << "Error: parameter '" << paramName << "' must be a integer, but got '" << arg << "'.\n";
+        return false;
+    }
     try {
         int value = std::stoul(arg);
         if (value < minValue) {
@@ -48,10 +57,6 @@ bool CollectArgs::ParsePositiveIntArg(const char* arg, const std::string& paramN
         }
         outValue = static_cast<unsigned>(value);
         return true;
-    } catch (const std::invalid_argument& e) {
-        std::cerr << "Error: failed to parse parameter '" << paramName << "' from argument '" << arg
-                  << "'. Reason: " << e.what() << ". Expected an integer.\n";
-        return false;
     } catch (const std::out_of_range& e) {
         std::cerr << "Error: parameter '" << paramName << "' value '" << arg
                   << "' is out of valid range. Reason: " << e.what() << "\n";
@@ -154,12 +159,20 @@ bool CollectArgs::ParsePidList()
     std::stringstream ss(pidList);
     std::string pidStr;
     while (std::getline(ss, pidStr, ',')) {
+        if (pidStr.empty() ||
+            !std::all_of(pidStr.begin(), pidStr.end(),
+                         [](unsigned char c){ return std::isdigit(c); })) {
+            std::cerr << "Error: pid '" << pidStr
+                      << "' is not a valid integer. Expected only digits.\n";
+            return false;
+        }
+
         pid_t pid;
         try {
             pid = std::stoi(pidStr);
-        } catch (const std::invalid_argument& e) {
-            std::cerr << "Error: failed to parse pid from input parameter: '" << pidStr
-                    << "' .Reason: " << e.what() << ". Expected an integer.\n";
+        } catch (const std::out_of_range& e) {
+            std::cerr << "Error: pid '" << pidStr
+                      << "' is out of range. Reason: " << e.what() << "\n";
             return false;
         }
         pids.push_back(pid);
@@ -169,7 +182,7 @@ bool CollectArgs::ParsePidList()
 
 void CollectArgs::printUsage()
 {
-    std::cerr << "Usage: cache_collect --pid/-p <pid> [options]\n\n";
+    std::cerr << "Usage: ./cache_collect --pid/-p <pid> [options]\n\n";
 
     std::cerr << "Required:\n";
     std::cerr << "  --pid/-p <pid>           : Target process ID(s). Multiple IDs can be separated by ','\n";
@@ -182,6 +195,6 @@ void CollectArgs::printUsage()
     std::cerr << "  --bolt/-b <option>       : Generate BOLT format output file. Options: 'cycles', 'l2i_cache', 'l2i_cache_refill', or 'all'. Only for default mode\n";
     std::cerr << "  --summary/-s <seconds>   : Set collection time of summary ratio and IPC collection. Unit: s, default: 5\n\n";
     std::cerr << "Examples:\n";
-    std::cerr << "  cache_collect -p 125785 -d 10 -l inst -m dcache -i 2000\n";
-    std::cerr << "  cache_collect -p 125785,143789 -m dcache -f 4000 -b cycles\n";
+    std::cerr << "  ./cache_collect -p 125785 -d 10 -l inst -m dcache -i 2000\n";
+    std::cerr << "  ./cache_collect -p 125785,143789 -m dcache -f 4000 -b cycles\n";
 }
