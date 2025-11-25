@@ -48,15 +48,56 @@ function build_googletest(){
   echo "install log path: $cmake_target_dir"
 }
 
+# for instance.
+# test_case_exclude =("TestCount.LLCacheMissRatio TestSPE.SpeProcCollectSubProc TestSPE.SpeProcCollectTwoThreads" "")
+test_case_exclude=(
+    ""
+    ""
+)
+
+function set_hipa_exclude() {
+	test_case_exclude=(
+		"TestAPI.TestForkNewThread TestAPI.TestCpuFreqSampling TestCgroup.TestCgroupSampling \
+		 TestCount.PwritevFile TestGroup.TestEvtGroupForkNewThread TestMetric.GetCpuFreq"
+		""
+	)
+}
+
+function get_cpu_exclude() {
+	CPU_TYPE=""
+    CPU_ID=$(cat /sys/devices/system/cpu/cpu0/regs/identification/midr_el1)
+    echo "Detected CPU ID: $CPU_ID"
+    case $CPU_ID in
+        "0x00000000481fd010")
+			CPU_TYPE="HIPA"
+			set_hipa_exclude
+			;;
+		"0x00000000480fd020")
+			CPU_TYPE="HIPB"
+			;;
+		"0x00000000480fd030")
+			CPU_TYPE="HIPC"
+			;;
+		"0x00000000480fd220")
+			CPU_TYPE="HIPF"
+			;;
+		"0x00000000480fd450")
+			CPU_TYPE="HIPE"
+			;;
+		"0x00000000480fd060")
+			CPU_TYPE="HIPG"
+			;;
+		*)
+			CPU_TYPE="ELSE"
+			;;
+	esac
+	echo "CPU_TYPE: $CPU_TYPE"
+}
+
 function execute_binary() {
     test_case_dir=("test_perf" "test_symbol")
     test_case_name=("test_perf" "test_symbol")
-    # for instance.
-    # test_case_exclude =("TestCount.LLCacheMissRatio TestSPE.SpeProcCollectSubProc TestSPE.SpeProcCollectTwoThreads" "")
-    test_case_exclude=(
-        ""
-        ""
-    )
+	get_cpu_exclude
     test_prefix="$1"/_build/test/
     # 遍历数组
     for i in "${!test_case_dir[@]}"; do
