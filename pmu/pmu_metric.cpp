@@ -1929,7 +1929,7 @@ int PmuOpenWithHWMetric(struct PmuHwMetricAttr *hwMetricAttr) {
         evtAttr[2 * i + 1] = {groupId, dstPeriod, false, false};
     }
     attr.numEvt = metricList.size() * 2;
-    attr.numGroup = metricList.size() * 2;
+    attr.numEvtAttr = metricList.size() * 2;
 
     int pidList[1];
     if (hwMetricAttr->pid > 0) {

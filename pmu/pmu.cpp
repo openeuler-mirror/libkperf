@@ -117,10 +117,10 @@ static int CheckEvtList(unsigned numEvt, char** evtList)
     return SUCCESS;
 }
 
-static int CheckGroupList(unsigned numGroup, struct EvtAttr *evtAttr)
+static int CheckGroupList(unsigned numEvtAttr, struct EvtAttr *evtAttr)
 {
-    if (numGroup > 0 && evtAttr == nullptr) {
-        New(LIBPERF_ERR_INVALID_EVTATTR, "Invalid evtAttr list: numGroup is greater than 0, but evtAttr is null.");
+    if (numEvtAttr > 0 && evtAttr == nullptr) {
+        New(LIBPERF_ERR_INVALID_EVTATTR, "Invalid evtAttr list: numEvtAttr is greater than 0, but evtAttr is null.");
         return LIBPERF_ERR_INVALID_EVTATTR;
     }
     return SUCCESS;
@@ -350,7 +350,7 @@ static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
     if (err != SUCCESS) {
         return err;
     }
-    err = CheckGroupList(attr->numGroup, attr->evtAttr);
+    err = CheckGroupList(attr->numEvtAttr, attr->evtAttr);
     if (err != SUCCESS) {
         return err;
     }
@@ -497,7 +497,7 @@ static unsigned GenerateSplitList(unordered_map<string, char*>& eventSplitMap, v
     for (int i = 0; i < attr->numEvt; ++i) {
         auto evt = attr->evtList[i];
         EvtAttr evtAttr = {-1, 0, false, false};
-        if (attr->evtAttr != nullptr && i < attr->numGroup) {
+        if (attr->evtAttr != nullptr && i < attr->numEvtAttr) {
             auto inputAttr = attr->evtAttr[i];
             evtAttr = {inputAttr.groupId, inputAttr.period, inputAttr.excludeUser, inputAttr.excludeKernel};
         }
@@ -963,16 +963,16 @@ int GetCgroupFd(std::string& cgroupName) {
 }
 
 static EvtAttr ResolveEvtAttrParams(struct PmuAttr *attr, int index) {
-    // numEvt must be greater than numGroup.The excludeUser, excluderKernel,and period attributes in PmuAttr have higher priority than those in EvtAttr. 
-    int groupId = index >= attr->numGroup? -1 : attr->evtAttr[index].groupId;
+    // numEvt must be greater than numEvtAttr.The excludeUser, excluderKernel,and period attributes in PmuAttr have higher priority than those in EvtAttr. 
+    int groupId = index >= attr->numEvtAttr? -1 : attr->evtAttr[index].groupId;
 
-    bool excludeKernel = index >= attr->numGroup ? false : attr->evtAttr[index].excludeKernel;
+    bool excludeKernel = index >= attr->numEvtAttr ? false : attr->evtAttr[index].excludeKernel;
     excludeKernel = attr->excludeKernel ? true : excludeKernel;
 
-    bool excludeUser = index >= attr->numGroup ? false : attr->evtAttr[index].excludeUser;
+    bool excludeUser = index >= attr->numEvtAttr ? false : attr->evtAttr[index].excludeUser;
     excludeUser = attr->excludeUser ? true : excludeUser;
 
-    unsigned period = index >= attr->numGroup ? SAMPLING_RECORD_PERIOD : attr->evtAttr[index].period;
+    unsigned period = index >= attr->numEvtAttr ? SAMPLING_RECORD_PERIOD : attr->evtAttr[index].period;
     period = attr->period ? attr->period : period;
 
     if (!period) {

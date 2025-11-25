@@ -126,15 +126,11 @@ struct PmuAttr {
     // Length of core id list
     unsigned numCpu;
 
-    // event group id 
-    // if not use event group function, this field will be nullptr.
-    // if use event group function. please confirm the event group id with eveList is one by one.
-    // the same group id is the a event group. 
-    // Note: if the group id value is -1, it indicates that the event is not grouped.
+    // List of individual attributes of events.
     struct EvtAttr *evtAttr;
     // Length of evtAttr list.
-    // when numEvt > numGroup, the other events will not set to any group.
-    unsigned numGroup;
+    // when numEvt > numEvtAttr, the other events will not set individual attribute.
+    unsigned numEvtAttr;
 
     union {
         // Sample period, only available for SAMPLING and SPE_SAMPLING.

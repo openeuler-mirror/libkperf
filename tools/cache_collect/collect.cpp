@@ -356,7 +356,7 @@ void collectMiss(CollectArgs& args)
     attr.evtAttr = cfg.groupId.data();
     attr.evtList = cfg.evtList.data();
     attr.numEvt = cfg.baseEvents.size();
-    attr.numGroup = cfg.baseEvents.size();
+    attr.numEvtAttr = cfg.baseEvents.size();
     attr.callStack = 1;
     attr.excludeKernel = true;
     attr.symbolMode = NO_SYMBOL_RESOLVE;
@@ -471,7 +471,7 @@ void collectSummaryData(CollectArgs& args)
     attr.evtAttr = cfg.groupId.data();
     attr.evtList = cfg.evtList.data();
     attr.numEvt = cfg.baseEvents.size();
-    attr.numGroup = cfg.baseEvents.size();
+    attr.numEvtAttr = cfg.baseEvents.size();
     attr.pidList = args.pids.data();
     attr.numPid = args.pids.size();
 

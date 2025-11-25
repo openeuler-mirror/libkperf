@@ -55,9 +55,15 @@ void KUNPENG_PMU::EvtListDefault::AdaptErrInfo(int err, PerfEvtPtr perfEvt)
             }
             break;
         case LIBPERF_ERR_NO_PERMISSION:
-            pcerr::SetCustomErr(LIBPERF_ERR_NO_PERMISSION,
-                "Current user does not have the permission to collect the event."
-                "Switch to the root user and run the 'echo -1 > /proc/sys/kernel/perf_event_paranoid'");
+            if (GetParanoidVal() == -1) {
+                pcerr::SetCustomErr(LIBPERF_ERR_NO_PERMISSION,
+                    "Current user does not have the permission to collect the event."
+                    "Please Switch to the root user and try again");
+            } else {
+                pcerr::SetCustomErr(LIBPERF_ERR_NO_PERMISSION,
+                    "Current user does not have the permission to collect the event."
+                    "Switch to the root user and run the 'echo -1 > /proc/sys/kernel/perf_event_paranoid'");
+            }
             break;
         case LIBPERF_ERR_FAIL_MMAP:
             if (errno == ENOMEM) {

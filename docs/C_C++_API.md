@@ -25,8 +25,8 @@
     * period 如果PmuAttr中useFreq=True则为采样频率，否则为采样间隔
     * excludeUser 排除对用户态数据的采集
     * excludeKernel 排除对内核态数据的采集
-  * unsigned numGroup
-    参与分组的事件个数
+  * unsigned numEvtAttr
+    单独定义的事件数
   * union
     unsigned period  采样周期，仅支持SAMPLING和SPE_SAMPLING模式
     unsigned freq    采样频率，仅支持SAMPLING模式

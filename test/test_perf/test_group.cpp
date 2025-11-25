@@ -129,9 +129,9 @@ TEST_F(TestGroup, TestCountingEventGroup)
                             "r26", "r2d", "r17", "r11", "r8", "r22", "r24", "r10"};
     attr.evtList = evtList;
 
-    struct EvtAttr groupId[numEvt] = {{1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9}, {10}, {11}, {12}, {13}, {13}, {13}, {13}};
-    attr.evtAttr = groupId;
-    attr.numGroup = numEvt;
+    struct EvtAttr evtAttr[numEvt] = {{1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9}, {10}, {11}, {12}, {13}, {13}, {13}, {13}};
+    attr.evtAttr = evtAttr;
+    attr.numEvtAttr = numEvt;
 
     int pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd != -1);
@@ -157,9 +157,9 @@ TEST_F(TestGroup, TestEventGroupLessGroupId)
                             "r26", "r2d", "r17", "r11", "r8", "r22", "r24", "r10"};
     attr.evtList = evtList;
 
-    struct EvtAttr groupId[13] = {{1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9}, {10}, {11}, {11}, {11}};
-    attr.evtAttr = groupId;
-    attr.numGroup = 13;
+    struct EvtAttr evtAttr[13] = {{1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9}, {10}, {11}, {11}, {11}};
+    attr.evtAttr = evtAttr;
+    attr.numEvtAttr = 13;
 
     int pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd != -1);
@@ -189,9 +189,9 @@ TEST_F(TestGroup, TestCountingEventGroupAllUncore)
                             "r26", "r2d", "r17", "r11", 
                             "hisi_sccl1_ddrc2/flux_rd/", "hisi_sccl1_ddrc0/flux_wr/", "hisi_sccl1_hha2/rx_wbi/", "hisi_sccl1_hha3/bi_num/"};
     attr.evtList = evtList;
-    struct EvtAttr groupId[numEvt] = {{1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9}, {10}, {11}, {12}, {13}, {13}, {13}, {13}};
-    attr.evtAttr = groupId;
-    attr.numGroup = numEvt;
+    struct EvtAttr evtAttr[numEvt] = {{1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9}, {10}, {11}, {12}, {13}, {13}, {13}, {13}};
+    attr.evtAttr = evtAttr;
+    attr.numEvtAttr = numEvt;
     int pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd == -1);
 }
@@ -206,9 +206,9 @@ TEST_F(TestGroup, TestCountingEventGroupHasAggregateUncore)
                             "r22", "hisi_sccl1_ddrc/flux_rd/"};
     attr.evtList = evtList;
 
-    struct EvtAttr groupId[numEvt] = {{1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9}, {10}, {11}, {12}, {13}, {13}};
-    attr.evtAttr = groupId;
-    attr.numGroup = numEvt;
+    struct EvtAttr evtAttr[numEvt] = {{1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9}, {10}, {11}, {12}, {13}, {13}};
+    attr.evtAttr = evtAttr;
+    attr.numEvtAttr = numEvt;
     int pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd != -1);
     int ret = PmuCollect(pd, 100, collectInterval);
@@ -230,9 +230,9 @@ TEST_F(TestGroup, TestCountingEventGroupHasAggregateUncoreEnd)
                             "hisi_sccl1_ddrc/flux_rd/"};
     attr.evtList = evtList;
 
-    struct EvtAttr groupId[numEvt] = {{1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9}, {10}, {11}, {12}, {13}, {13}};
-    attr.evtAttr = groupId;
-    attr.numGroup = numEvt;
+    struct EvtAttr evtAttr[numEvt] = {{1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9}, {10}, {11}, {12}, {13}, {13}};
+    attr.evtAttr = evtAttr;
+    attr.numEvtAttr = numEvt;
 
     int pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd != -1);
@@ -253,9 +253,9 @@ TEST_F(TestGroup, TestCountingEventGroupAllAggregateUncore)
     char *evtList[numEvt] = {"hisi_sccl1_ddrc/flux_wr/", "hisi_sccl1_ddrc/flux_rd/"};
     attr.evtList = evtList;
 
-    struct EvtAttr groupId[numEvt] = {{1}, {1}};
-    attr.evtAttr = groupId;
-    attr.numGroup = numEvt;
+    struct EvtAttr evtAttr[numEvt] = {{1}, {1}};
+    attr.evtAttr = evtAttr;
+    attr.numEvtAttr = numEvt;
     int pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd == -1);
 }
@@ -270,9 +270,9 @@ TEST_F(TestGroup, TestCountingEventGroupHasUncore)
                             "r22", "r24", "hisi_sccl1_ddrc/flux_rd/", "hisi_sccl1_ddrc/flux_wr/"};
     attr.evtList = evtList;
 
-    struct EvtAttr groupId[numEvt] = {{1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9}, {10}, {11}, {12}, {13}, {13}, {13}, {13}};
-    attr.evtAttr = groupId;
-    attr.numGroup = numEvt;
+    struct EvtAttr evtAttr[numEvt] = {{1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9}, {10}, {11}, {12}, {13}, {13}, {13}, {13}};
+    attr.evtAttr = evtAttr;
+    attr.numEvtAttr = numEvt;
 
     int pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd != -1);
@@ -293,9 +293,9 @@ TEST_F(TestGroup, TestSamplingNoEventGroup)
     char *evtList[numEvt] = {"r11", "r3"};
     attr.evtList = evtList;
 
-    struct EvtAttr groupId[numEvt] = {{1}, {2}};
-    attr.evtAttr = groupId;
-    attr.numGroup = numEvt;
+    struct EvtAttr evtAttr[numEvt] = {{1}, {2}};
+    attr.evtAttr = evtAttr;
+    attr.numEvtAttr = numEvt;
 
     int pd = PmuOpen(SAMPLING, &attr);
     ASSERT_TRUE(pd!= -1);
@@ -314,9 +314,9 @@ TEST_F(TestGroup, TestSamplingEventGroup)
     char *evtList[numEvt] = {"r11", "r3"};
     attr.evtList = evtList;
 
-    struct EvtAttr groupId[numEvt] = {{2}, {2}};
-    attr.evtAttr = groupId;
-    attr.numGroup = numEvt;
+    struct EvtAttr evtAttr[numEvt] = {{2}, {2}};
+    attr.evtAttr = evtAttr;
+    attr.numEvtAttr = numEvt;
 
     int pd = PmuOpen(SAMPLING, &attr);
     ASSERT_TRUE(pd != -1);
@@ -335,9 +335,9 @@ TEST_F(TestGroup, TestSamplingEventGroupHasUncore)
     char *evtList[numEvt] = {"hisi_sccl1_ddrc/flux_rd/", "r3"};
     attr.evtList = evtList;
 
-    struct EvtAttr groupId[numEvt] = {{2}, {2}};
-    attr.evtAttr = groupId;
-    attr.numGroup = numEvt;
+    struct EvtAttr evtAttr[numEvt] = {{2}, {2}};
+    attr.evtAttr = evtAttr;
+    attr.numEvtAttr = numEvt;
 
     int pd = PmuOpen(SAMPLING, &attr);
     ASSERT_TRUE(pd == -1);
@@ -355,9 +355,9 @@ TEST_F(TestGroup, TestEvtGroupForkNewThread)
     attr.pidList[0] = pid;
     attr.numPid = 1;
     attr.includeNewFork = 1;
-    struct EvtAttr groupId[numEvt] = {{2}, {2}};
-    attr.evtAttr = groupId;
-    attr.numGroup = numEvt;
+    struct EvtAttr evtAttr[numEvt] = {{2}, {2}};
+    attr.evtAttr = evtAttr;
+    attr.numEvtAttr = numEvt;
 
     int pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd != -1);
