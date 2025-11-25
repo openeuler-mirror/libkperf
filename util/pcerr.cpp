@@ -65,6 +65,7 @@ namespace pcerr {
             {LIBPERF_ERR_ENABLE_USER_ACCESS_FAILED, "Enable user access failed!"},
             {LIBPERF_ERR_ALLOCATE_REGISTER_FAILED, "Allocate register failed!"},
             {LIBPERF_ERR_CHECK_USER_ACCESS, "Check user access failed!"},
+            {LIBPERF_ERR_COUNTER_INDEX_IS_ZERO, "Too many open events. No registers are available"},
             {LIBPERF_ERR_INVALID_BPF_PARAM, "check bpf mode failed"},
             {LIBPERF_ERR_BPF_ACT_FAILED, "failed to execute bpf obj action"},
             {LIBPERF_ERR_NULL_POINTER, "the input pointer cannot be null"},

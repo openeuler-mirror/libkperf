@@ -148,7 +148,8 @@ TEST_F(TestUserAccessCount, TestReadEvent)
             continue;
         }
         ASSERT_NE(pd, -1);
-        PmuEnable(pd);
+        int enable = PmuEnable(pd);
+        ASSERT_NE(enable, -1);
         PmuData *data = nullptr;
         int len = PmuRead(pd, &data);
         printf("==============\n");
@@ -176,7 +177,8 @@ TEST_F(TestUserAccessCount, TestReadEvent)
                 printf("%s\n", Perror());
             }
         }
-        PmuDisable(pd);
+        int disable = PmuDisable(pd);
+        ASSERT_NE(disable, -1);
         PmuClose(pd);
     }
 }
