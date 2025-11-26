@@ -287,6 +287,15 @@ static int CheckUserAccess(enum PmuTaskType collectType, struct PmuAttr *attr)
         New(LIBPERF_ERR_CHECK_USER_ACCESS, "User Access doesn't support event group!");
         return LIBPERF_ERR_CHECK_USER_ACCESS;
     }
+    std::ifstream ifs("/proc/sys/kernel/perf_user_access");
+    if (!ifs) {
+        return LIBPERF_ERR_CHECK_USER_ACCESS;
+    }
+    int val = 0;
+    if (ifs >> val && val != 1) {
+        New(LIBPERF_ERR_CHECK_USER_ACCESS, "Run 'sudo sysctl kernel/perf_user_access=1' to enable perf_user_access!");
+        return LIBPERF_ERR_CHECK_USER_ACCESS;
+    }
     return SUCCESS;
 }
 
