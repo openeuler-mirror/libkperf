@@ -49,7 +49,9 @@ public:
 
     void SetGroupInfo(const EventGroupInfo &grpInfo) override {};
     void AddNewProcess(pid_t pid, const bool groupEnable, const std::shared_ptr<EvtList> evtLeader) override {};
-
+    void ClearExitFd(std::set<int> noProcList) override {};
+    void RemoveInitErr() override {};
+    
 private:
     std::vector<std::shared_ptr<PerfEvt>> cpuCounterArray;
     std::vector<std::shared_ptr<PerfEvt>> pidCounterArray;

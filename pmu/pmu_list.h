@@ -25,6 +25,8 @@
 
 namespace KUNPENG_PMU {
 
+class DummyEvent;
+
 enum AnalysisStatus {
     STOP_RESOLVE=0,      // stop resolving data
     GOING_RESOLVE=1      // go resolving data
@@ -84,6 +86,7 @@ public:
     int ResolvePmuDataSymbol(struct PmuData* iPmuData);
 
     std::vector<PerfEvent> GetMetaData(PmuData* pmuData) const;
+    void AddNewProcess(const unsigned &pd, int pid);
 
 private:
     using ProcPtr = std::shared_ptr<ProcTopology>;
@@ -101,6 +104,7 @@ private:
     void EraseSymModeList(const unsigned pd);
     void ErasePpidList(const unsigned pd);
 
+    std::pair<bool, std::shared_ptr<EvtList>> GetEvtGroupState(const int groupId, std::shared_ptr<EvtList> evtList, groupMapPtr eventGroupInfoMap);
     int EvtInit(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader, const int pd, const std::shared_ptr<EvtList> &evtList);
     int Init(const int pd);
 
@@ -124,9 +128,11 @@ private:
     bool IsCpuInList(const int &cpu) const;
     void AddSpeCpu(const unsigned &pd, const int &cpu);
     void EraseSpeCpu(const unsigned &pd);
+    void ClearExitFd(const unsigned &pd);
+    void RemoveInitErrEvt(const unsigned &pd);
     int PrepareCpuTopoList(
         const unsigned& pd, PmuTaskAttr* pmuTaskAttrHead, std::vector<CpuPtr>& cpuTopoList);
-    int PrepareProcTopoList(PmuTaskAttr* pmuTaskAttrHead, std::vector<ProcPtr>& procTopoList) const;
+    int PrepareProcTopoList(PmuTaskAttr* pmuTaskAttrHead, std::vector<ProcPtr>& procTopoList, const int pd);
     int CheckRlimit(const unsigned fdNum);
     static unsigned CalRequireFd(unsigned cpuSize, unsigned proSize, const unsigned collectType);
     static void AggregateData(const std::vector<PmuData>& evData, std::vector<PmuData>& newEvData);
@@ -187,6 +193,8 @@ private:
     // Key: pd
     // Value: analysis status
     std::unordered_map<unsigned, volatile unsigned> analysisStatusList;
+
+    std::unordered_map<unsigned, std::vector<ProcPtr>> pmuProcList;
 };
 }   // namespace KUNPENG_PMU
 #endif

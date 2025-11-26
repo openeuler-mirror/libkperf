@@ -30,7 +30,7 @@ public:
     using ProcPtr = std::shared_ptr<ProcTopology>;
     using ProcMap = std::unordered_map<pid_t, ProcPtr>;
 
-    PerfEvt(int cpu, int pid, struct PmuEvt *evt, ProcMap &procMap) : cpu(cpu), pid(pid), evt(evt), procMap(procMap), needTryExcludeKernel(false) {}
+    PerfEvt(int cpu, int pid, struct PmuEvt *evt, ProcMap &procMap) : cpu(cpu), pid(pid), evt(evt), procMap(procMap), needTryExcludeKernel(false), initErr(false) {}
     ~PerfEvt() {}
     virtual int Start();
     virtual int Pause();
@@ -61,6 +61,10 @@ public:
         this->needTryExcludeKernel = needTryExcludeKernel;
     }
 
+    void SetInitErr(const bool initErr) {
+        this->initErr = initErr;
+    }
+
     int GetFd() const
     {
         return fd;
@@ -72,6 +76,10 @@ public:
 
     int GetCgroupFd() const {
         return evt->cgroupFd;
+    }
+
+    bool GetInitErr() const {
+        return initErr;
     }
 
     virtual bool IsMainPid() const
@@ -90,6 +98,7 @@ public:
     }
 
 protected:
+    bool initErr;
     int fd;
     int cpu;
     pid_t pid;

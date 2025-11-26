@@ -308,9 +308,10 @@ int KUNPENG_PMU::PerfCounterDefault::MapPerfAttr(const bool groupEnable, const i
 
     // support cgroup feature
     unsigned flags = 0;
+    int pid = this->pid;
     if (this->GetCgroupFd() != -1) {
         flags = PERF_FLAG_PID_CGROUP | PERF_FLAG_FD_CLOEXEC;
-        this->pid = this->GetCgroupFd();
+        pid = this->GetCgroupFd();
     }
 
     /**
@@ -331,9 +332,9 @@ int KUNPENG_PMU::PerfCounterDefault::MapPerfAttr(const bool groupEnable, const i
             groupStatus = GroupStatus::GROUP_LEADER;
         }
         attr.read_format |= PERF_FORMAT_GROUP;
-        this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, flags);
+        this->fd = PerfEventOpen(&attr, pid, this->cpu, groupFd, flags);
     } else {
-        this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, flags);
+        this->fd = PerfEventOpen(&attr, pid, this->cpu, groupFd, flags);
         groupStatus = GroupStatus::NO_GROUP;
     }
     this->groupFd = groupFd;

@@ -69,7 +69,7 @@ namespace KUNPENG_PMU {
             evtData.collectType = static_cast<PmuTaskType>(pmuTaskAttrHead->pmuEvt->collectType);
             evtData.pd = pd;
         }
-
+        
         unsigned fdNum = 0;
         while (pmuTaskAttrHead) {
             /**
@@ -80,26 +80,25 @@ namespace KUNPENG_PMU {
             if (err != SUCCESS) {
                 return err;
             }
-
             /**
              * Create process topology list
              */
             std::vector<ProcPtr> procTopoList;
-            err = PrepareProcTopoList(pmuTaskAttrHead, procTopoList);
+            err = PrepareProcTopoList(pmuTaskAttrHead, procTopoList, pd);
             if (err != SUCCESS) {
                 return err;
             }
             fdNum += CalRequireFd(cpuTopoList.size(), procTopoList.size(), taskParam->pmuEvt->collectType);
-        #ifdef BPF_ENABLED
+#ifdef BPF_ENABLED
             if (taskParam->pmuEvt->enableBpf) {
-                std::shared_ptr<EvtListBpf> evtList =
-                        std::make_shared<EvtListBpf>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt, pmuTaskAttrHead->groupId);
+                std::shared_ptr<EvtListBpf> evtList = std::make_shared<EvtListBpf>(
+                    GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt, pmuTaskAttrHead->groupId);
                 InsertEvtList(pd, evtList);
             } else
-        #endif
+#endif
             {
-                std::shared_ptr<EvtListDefault> evtList =
-                std::make_shared<EvtListDefault>(GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt, pmuTaskAttrHead->groupId);
+                std::shared_ptr<EvtListDefault> evtList = std::make_shared<EvtListDefault>(
+                    GetSymbolMode(pd), cpuTopoList, procTopoList, pmuTaskAttrHead->pmuEvt, pmuTaskAttrHead->groupId);
                 evtList->SetBranchSampleFilter(GetBranchSampleFilter(pd));
                 InsertEvtList(pd, evtList);
             }
@@ -195,6 +194,10 @@ namespace KUNPENG_PMU {
         }
         groupMapPtr eventDataEvtGroup = std::make_shared<std::unordered_map<int, EventGroupInfo>>(eventGroupInfoMap);
         InsertDataEvtGroupList(pd, eventDataEvtGroup);
+        // after init move the init err perfEvt
+        for (auto& evtList : GetEvtList(pd)) {
+            evtList->RemoveInitErr();
+        }
 
         return SUCCESS;
     }
@@ -222,6 +225,77 @@ namespace KUNPENG_PMU {
         }
         return SUCCESS;
     }
+
+    std::pair<bool, std::shared_ptr<EvtList>> PmuList::GetEvtGroupState(const int groupId, std::shared_ptr<EvtList> evtList, groupMapPtr eventGroupInfoMap)
+    {
+        if (groupId == -1 || eventGroupInfoMap == nullptr) {
+            return std::make_pair(false, nullptr);
+        }
+        // if the event is the event group leader, initialize it in the default way.
+        if (evtList == (*eventGroupInfoMap)[groupId].evtLeader) {
+            return std::make_pair(false, nullptr);
+        } else {
+            // In this case, the event group contains only some uncore events or all other events.
+            if ((*eventGroupInfoMap)[groupId].uncoreState == static_cast<UncoreState>(UncoreState::HasUncore)) {
+                return std::make_pair(false, nullptr);
+            } else {
+                return std::make_pair(true, (*eventGroupInfoMap)[groupId].evtLeader);
+            }
+        }
+    }
+
+    void PmuList::AddNewProcess(const unsigned &pd, int pid)
+    {
+        if (pid <= 0) {
+            return;
+        }
+        auto& procList = pmuProcList[pd];
+        ProcTopology* topology = GetProcTopology(pid);
+        if (topology == nullptr) {
+            return;
+        }
+        procList.emplace_back(shared_ptr<ProcTopology>(topology, FreeProcTopo));
+
+        auto eventList = GetEvtList(pd);
+        for (const auto& evtList : eventList) {
+            auto groupId = evtList->GetGroupId();
+            auto evtGroupInfo = GetEvtGroupState(groupId, evtList, GetDataEvtGroupList(pd));
+            evtList->AddNewProcess(pid, evtGroupInfo.first, evtGroupInfo.second);
+        }
+    }
+
+    void PmuList::ClearExitFd(const unsigned &pd)
+    {
+        if (pmuProcList.find(pd) == pmuProcList.end()) {
+            return;
+        }
+        auto &pidList = pmuProcList[pd];
+        if (pidList.size() == 1 && pidList[0]->tid == -1) {
+            return;
+        }
+        std::set<int> noProcList;
+        for (const auto &it : pidList) {
+            if (it->isMain) {
+                continue;
+            }
+            std::string path = "/proc/" + std::to_string(it->tid);
+            if (!ExistPath(path)) {
+                noProcList.insert(it->tid);
+            }
+        }
+
+        if (noProcList.empty()) {
+            return;
+        }
+
+        auto eventList = GetEvtList(pd);
+        for (const auto& evtList : eventList) {
+            evtList->ClearExitFd(noProcList);
+        }
+
+        noProcList.clear();
+    }
+
 
     std::vector<PmuData>& PmuList::Read(const int pd)
     {
@@ -368,6 +442,8 @@ namespace KUNPENG_PMU {
                 return err;
             }
         }
+        
+        this->ClearExitFd(pd);
 
         return SUCCESS;
     }
@@ -946,7 +1022,7 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    int PmuList::PrepareProcTopoList(PmuTaskAttr* pmuTaskAttrHead, std::vector<ProcPtr>& procTopoList) const
+    int PmuList::PrepareProcTopoList(PmuTaskAttr* pmuTaskAttrHead, std::vector<ProcPtr>& procTopoList, const int pd)
     {
         if (pmuTaskAttrHead->pidList.empty() || (pmuTaskAttrHead->pidList.size() == 1 && pmuTaskAttrHead->pidList[0] == -1)) {
             struct ProcTopology* procTopo = GetProcTopology(-1);
@@ -954,7 +1030,12 @@ namespace KUNPENG_PMU {
                 New(LIBPERF_ERR_FAIL_GET_PROC);
                 return LIBPERF_ERR_FAIL_GET_PROC;
             }
+            procTopo->isMain = true;
             procTopoList.emplace_back(unique_ptr<ProcTopology, void (*)(ProcTopology*)>(procTopo, FreeProcTopo));
+            return SUCCESS;
+        }
+        if (pmuProcList.find(pd) != pmuProcList.end()) {
+            procTopoList = pmuProcList[pd];
             return SUCCESS;
         }
         for (int masterPid : pmuTaskAttrHead->pidList) {
@@ -981,6 +1062,7 @@ namespace KUNPENG_PMU {
                 return LIBPERF_ERR_FAIL_GET_PROC;
             }
         }
+        pmuProcList[pd] = procTopoList;
         return SUCCESS;
     }
 
@@ -1031,7 +1113,7 @@ namespace KUNPENG_PMU {
         if (taskParam->pidList.empty()) {
             return;
         }
-        auto* dummyEvent = new DummyEvent(GetEvtList(pd), ppidList.at(pd), GetDataEvtGroupList(pd));
+        auto* dummyEvent = new DummyEvent(pd, ppidList.at(pd));
         dummyEvent->ObserverForkThread();
         dummyList[pd] = dummyEvent;
     }

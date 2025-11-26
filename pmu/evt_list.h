@@ -110,6 +110,8 @@ public:
 
     virtual void SetGroupInfo(const EventGroupInfo &grpInfo) = 0;
     virtual void AddNewProcess(pid_t pid, const bool groupEnable, const std::shared_ptr<EvtList> evtLeader) = 0;
+    virtual void ClearExitFd(std::set<int> noProcList) = 0;
+    virtual void RemoveInitErr() = 0;
 
 protected:
     using PerfEvtPtr = std::shared_ptr<KUNPENG_PMU::PerfEvt>;

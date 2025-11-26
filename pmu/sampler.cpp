@@ -88,13 +88,14 @@ int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupEnable, const int grou
         attr.disabled = 0;
     }
     unsigned flags = 0;
+    int pid = this->pid;
     if (this->GetCgroupFd() != -1) {
         flags = PERF_FLAG_PID_CGROUP | PERF_FLAG_FD_CLOEXEC;
-        this->pid = this->GetCgroupFd();
+        pid = this->GetCgroupFd();
     }
 
-    this->fd = PerfEventOpen(&attr, this->pid, this->cpu, groupFd, flags);
-    DBG_PRINT("pid: %d type: %d cpu: %d config: %X myfd: %d groupfd: %d\n", this->pid, attr.type, cpu, attr.config, this->fd, groupFd);
+    this->fd = PerfEventOpen(&attr, pid, this->cpu, groupFd, flags);
+    DBG_PRINT("pid: %d type: %d cpu: %d config: %X myfd: %d groupfd: %d\n", pid, attr.type, cpu, attr.config, this->fd, groupFd);
     if (__glibc_unlikely(this->fd < 0)) {
         return MapErrno(errno);
     }

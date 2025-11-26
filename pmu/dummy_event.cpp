@@ -24,9 +24,7 @@ static const int PAGE_SIZE = sysconf(_SC_PAGESIZE);
 static const int MAP_LEN = 69632;
 
 namespace KUNPENG_PMU {
-
-    ProcessForkStrategy forkStrategy;
-
+    
     DummyEvent::~DummyEvent()
     {
         dummyFlag = false;
@@ -37,26 +35,11 @@ namespace KUNPENG_PMU {
             close(it->second.first);
             munmap(it->second.second, MAP_LEN);
         }
+
+        hasDataCond.notify_all();
+
         if (consumeThread.joinable()) {
             consumeThread.join();
-        }
-    }
-
-    std::pair<bool, std::shared_ptr<EvtList>> DummyEvent::GetEvtGroupState(const int groupId, std::shared_ptr<EvtList> evtList, groupMapPtr eventGroupInfoMap)
-    {
-        if (groupId == -1 || eventGroupInfoMap == nullptr) {
-            return std::make_pair(false, nullptr);
-        }
-        // if the event is the event group leader, initialize it in the default way.
-        if (evtList == (*eventGroupInfoMap)[groupId].evtLeader) {
-            return std::make_pair(false, nullptr);
-        } else {
-            // In this case, the event group contains only some uncore events or all other events.
-            if ((*eventGroupInfoMap)[groupId].uncoreState == static_cast<UncoreState>(UncoreState::HasUncore)) {
-                return std::make_pair(false, nullptr);
-            } else {
-                return std::make_pair(true, (*eventGroupInfoMap)[groupId].evtLeader);
-            }
         }
     }
 
@@ -73,18 +56,7 @@ namespace KUNPENG_PMU {
 
         consumeThread = std::thread([this]() {
             while (dummyFlag) {
-                if (forkPidQueue.empty()) {
-                    continue;
-                }
-                std::lock_guard<std::mutex> lg(dummyMutex);
-                auto& pid = forkPidQueue.front();
-                for (const auto& evtList: evtLists) {
-                    auto groupId = evtList->GetGroupId();
-                    auto evtGroupInfo = GetEvtGroupState(groupId, evtList, eventGroupInfoMap);
-                    DummyContext ctx = {evtList, static_cast<pid_t>(pid), evtGroupInfo.first, evtGroupInfo.second};
-                    forkStrategy.DoHandler(ctx, evtGroupInfo.first, evtGroupInfo.second);
-                }
-                forkPidQueue.pop();
+                ConsumeForkQueue();
             }
         });
     }
@@ -123,6 +95,16 @@ namespace KUNPENG_PMU {
         dummyMap.insert({pid, std::make_pair(fd, fdMap)});
     }
 
+    void DummyEvent::ConsumeForkQueue() {
+        std::unique_lock<std::mutex> lg(dummyMutex);
+        if (forkPidQueue.empty()) {
+            hasDataCond.wait(lg);
+        }
+        auto &pid = forkPidQueue.front();
+        PmuList::GetInstance()->AddNewProcess(pd, pid);
+        forkPidQueue.pop();
+    }
+
     void DummyEvent::HandleDummyData()
     {
         if (dummyMap.empty()) {
@@ -148,6 +130,7 @@ namespace KUNPENG_PMU {
                 std::lock_guard<std::mutex> lg(dummyMutex);
                 if((uint8_t*)page + MAP_LEN > ringBuf + off + sizeof(KUNPENG_PMU::PerfRecordFork)) {
                     forkPidQueue.push(sample->tid);
+                    hasDataCond.notify_all();
                 }
             }
             if (header->type == PERF_RECORD_EXIT) {

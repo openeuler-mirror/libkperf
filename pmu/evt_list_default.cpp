@@ -92,11 +92,8 @@ int KUNPENG_PMU::EvtListDefault::Init(const bool groupEnable, const std::shared_
 {
     // Init process map.
     for (auto& proc: pidList) {
-        if (proc->tid >= 0) {
-            procMap[proc->tid] = proc;
-        }
+        procMap[proc->tid] = proc; 
     }
-    bool hasHappenedErr = false;
     for (unsigned int row = 0; row < numCpu; row++) {
         int resetOutPutFd = -1;
         std::vector<PerfEvtPtr> evtVec{};
@@ -112,21 +109,26 @@ int KUNPENG_PMU::EvtListDefault::Init(const bool groupEnable, const std::shared_
             perfEvt->SetSymbolMode(symMode);
             perfEvt->SetBranchSampleFilter(branchSampleFilter);
             auto evtleaderDefault = std::dynamic_pointer_cast<EvtListDefault>(evtLeader);
-            int groupFd = groupEnable && evtleaderDefault ? evtleaderDefault->xyCounterArray[row][col]->GetFd():-1;
+            int groupFd = -1;
+            if (groupEnable && evtleaderDefault) {
+                // if leader initErr should skip;
+                if (evtleaderDefault->xyCounterArray[row][col]->GetInitErr()) {
+                    continue;
+                }
+                groupFd = evtleaderDefault->xyCounterArray[row][col]->GetFd();
+            }
             int err = perfEvt->Init(groupEnable, groupFd, resetOutPutFd);
             if (err == LIBPERF_ERR_NO_PERMISSION && !this->pmuEvt->excludeKernel && !this->pmuEvt->excludeUser && GetParanoidVal() > 1) {
                 perfEvt->SetNeedTryExcludeKernel(true);
                 err = perfEvt->Init(groupEnable, groupFd, resetOutPutFd);
             }
             if (err != SUCCESS) {
-                hasHappenedErr = true;
                 if (!perfEvt->IsMainPid()) {
-                    if (err == LIBPERF_ERR_NO_PROC) {
-                        noProcList.emplace(this->pidList[col]->tid);
-                    }
+                    // child pid init err
+                    perfEvt->SetInitErr(true);
+                    evtVec.emplace_back(perfEvt);
                     continue;
                 }
-                
                 this->AdaptErrInfo(err, perfEvt);
                 return err;
             }
@@ -135,10 +137,7 @@ int KUNPENG_PMU::EvtListDefault::Init(const bool groupEnable, const std::shared_
         }
         this->xyCounterArray.emplace_back(evtVec);
     }
-    // if an exception occurs due to exited threads, clear the exited fds.
-    if (hasHappenedErr) {
-        this->ClearExitFd();
-    }
+
     return SUCCESS;
 }
 
@@ -202,9 +201,9 @@ int KUNPENG_PMU::EvtListDefault::Read(EventData &eventData)
 
     std::unique_lock<std::mutex> lg(mutex);
 
-    for (unsigned int row = 0; row < numCpu; row++) {
-        for (unsigned int col = 0; col < numPid; col++) {
-            int err = this->xyCounterArray[row][col]->BeginRead();
+    for (auto rowList : this->xyCounterArray) {
+        for (auto evt : rowList) {
+            int err = evt->BeginRead();
             if (err != SUCCESS) {
                 return err;
             }
@@ -214,31 +213,31 @@ int KUNPENG_PMU::EvtListDefault::Read(EventData &eventData)
     struct PmuEvtData* head = nullptr;
     for (unsigned int row = 0; row < numCpu; row++) {
         auto cpuTopo = this->cpuList[row].get();
-        for (unsigned int col = 0; col < numPid; col++) {
+        auto rowList = this->xyCounterArray[row];
+        for (auto evt : rowList) {
             auto cnt = eventData.data.size();
-            int err = this->xyCounterArray[row][col]->Read(eventData);
+            int err = evt->Read(eventData);
             if (err != SUCCESS) {
                 return err;
             }
             if (eventData.data.size() - cnt) {
-                DBG_PRINT("evt: %s pid: %d cpu: %d samples num: %d\n", pmuEvt->name.c_str(), pidList[col]->pid,
+                DBG_PRINT("evt: %s pid: %d cpu: %d samples num: %d\n", pmuEvt->name.c_str(), evt->GetPid(),
                           cpuTopo->coreId, eventData.data.size() - cnt);
             }
             // Fill event name and cpu topology.
-            FillFields(cnt, eventData.data.size(), cpuTopo, pidList[col].get(), eventData.data);
+            FillFields(cnt, eventData.data.size(), cpuTopo, procMap[evt->GetPid()].get(), eventData.data);
         }
     }
 
-    for (unsigned int row = 0; row < numCpu; row++) {
-        for (unsigned int col = 0; col < numPid; col++) {
-            int err = this->xyCounterArray[row][col]->EndRead();
+    for (auto rowList : this->xyCounterArray) {
+        for (auto evt : rowList) {
+            int err = evt->EndRead();
             if (err != SUCCESS) {
                 return err;
             }
         }
     }
 
-    this->ClearExitFd();
     return SUCCESS;
 }
 
@@ -263,15 +262,10 @@ std::shared_ptr<KUNPENG_PMU::PerfEvt> KUNPENG_PMU::EvtListDefault::MapPmuAttr(in
 
 void KUNPENG_PMU::EvtListDefault::AddNewProcess(pid_t pid, const bool groupEnable, const std::shared_ptr<EvtList> evtLeader)
 {
-    if (pid <= 0 || evtStat == CLOSE || evtStat == STOP) {
-        return;
-    }
-    ProcTopology* topology = GetProcTopology(pid);
-    if (topology == nullptr) {
+    if (evtStat == CLOSE || evtStat == STOP) {
         return;
     }
     std::unique_lock<std::mutex> lock(mutex);
-    this->pidList.emplace_back(shared_ptr<ProcTopology>(topology, FreeProcTopo));
     bool hasInitErr = false;
     std::map<int, PerfEvtPtr> perfEvtMap;
     for (unsigned int row = 0; row < numCpu; row++) {
@@ -285,9 +279,8 @@ void KUNPENG_PMU::EvtListDefault::AddNewProcess(pid_t pid, const bool groupEnabl
         perfEvt->SetBranchSampleFilter(branchSampleFilter);
         int err = 0;
         if (groupEnable) {
-            int sz = this->pidList.size();
             std::shared_ptr<EvtListDefault> evtLeaderDefault = std::dynamic_pointer_cast<EvtListDefault>(evtLeader);
-            auto groupFd = evtLeaderDefault?evtLeaderDefault->xyCounterArray[row][sz - 1]->GetFd():-1;
+            auto groupFd = evtLeaderDefault?evtLeaderDefault->xyCounterArray[row].back()->GetFd():-1;
             err = perfEvt->Init(groupEnable, groupFd, -1);
         } else {
             err = perfEvt->Init(groupEnable, -1, -1);
@@ -322,38 +315,36 @@ void KUNPENG_PMU::EvtListDefault::AddNewProcess(pid_t pid, const bool groupEnabl
         for (const auto& evtPtr : perfEvtMap) {
             close(evtPtr.second->GetFd());
         }
-        this->pidList.erase(this->pidList.end() - 1);
     }
 }
 
-void KUNPENG_PMU::EvtListDefault::ClearExitFd()
+
+void KUNPENG_PMU::EvtListDefault::RemoveInitErr()
 {
-    if (this->pidList.size() == 1 && this->pidList[0]->tid == -1) {
-        return;
-    }
-
-    for (const auto& it: this->pidList) {
-        if (it->isMain) {
-            continue;
-        }
-        std::string path = "/proc/" + std::to_string(it->tid);
-        if (!ExistPath(path)) {
-            noProcList.insert(it->tid);
-        }
-    }
-
-    if (noProcList.empty()) {
-        return;
-    }
-    // erase the exit perfVet
-    for (int row = 0; row < numCpu; row++) {
-        auto& perfVet = xyCounterArray[row];
+    for (auto &perfVet : xyCounterArray) {
         for (auto it = perfVet.begin(); it != perfVet.end();) {
+            if (it->get()->GetInitErr()) {
+                it = perfVet.erase(it);
+                continue;
+            }
+            ++it;
+        }
+    }
+}
+
+void KUNPENG_PMU::EvtListDefault::ClearExitFd(std::set<int> noProcList)
+{
+    std::unique_lock<std::mutex> lock(mutex);
+    // erase the exit perfVet
+    for (auto& perfVet : xyCounterArray) {
+          for (auto it = perfVet.begin(); it != perfVet.end();) {
             int pid = it->get()->GetPid();
             if (noProcList.find(pid) != noProcList.end()) {
                 int fd = it->get()->GetFd();
-                this->fdList.erase(this->fdList.find(fd));
-                close(fd);
+                if (this->fdList.find(fd) != this->fdList.end()) {
+                    this->fdList.erase(fd);
+                    close(fd);
+                }
                 it = perfVet.erase(it);
                 continue;
             }
@@ -362,19 +353,9 @@ void KUNPENG_PMU::EvtListDefault::ClearExitFd()
     }
 
     for (const auto& exitPid: noProcList) {
-        for (auto it = this->pidList.begin(); it != this->pidList.end();) {
-            if (it->get()->tid == exitPid) {
-                this->unUsedPidList.push_back(it.operator*());
-                it = this->pidList.erase(it);
-                continue;
-            }
-            ++it;
-        }
         procMap.erase(exitPid);
         numPid--;
     }
-
-    noProcList.clear();
 }
 
 void KUNPENG_PMU::EvtListDefault::SetGroupInfo(const EventGroupInfo &grpInfo)
