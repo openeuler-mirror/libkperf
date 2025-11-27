@@ -2385,6 +2385,7 @@ __all__ = [
     'PmuStop',
     'PmuExit',
     'PmuRead',
+    'PmuAppendData',
     'PmuClose',
     'PmuDumpData',
     'PmuGetField',
