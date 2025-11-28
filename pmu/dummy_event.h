@@ -19,43 +19,20 @@
 #include <atomic>
 #include <queue>
 #include <unordered_map>
+#include <condition_variable>
 #include "pcerr.h"
-#include "evt_list.h"
+#include "pmu_list.h"
 
 namespace KUNPENG_PMU {
 
-    struct DummyContext {
-        std::shared_ptr<EvtList> evtList;
-        pid_t pid;
-        bool groupEnable;
-        std::shared_ptr<EvtList> evtLeader;
-    };
-
-    class DummyEventStrategy {
-    public:
-        virtual void DoHandler(DummyContext& ctx, const bool groupEnable, const std::shared_ptr<EvtList> evtLeader) = 0;
-    };
-
-    class ProcessForkStrategy : public DummyEventStrategy {
-    public:
-        void DoHandler(DummyContext& ctx, const bool groupEnable, const std::shared_ptr<EvtList> evtLeader)
-        {
-            ctx.evtList->AddNewProcess(ctx.pid, groupEnable, evtLeader);
-        }
-    };
-
     class DummyEvent {
     public:
-        DummyEvent(std::vector<std::shared_ptr<EvtList>>& evtLists, std::vector<pid_t>& ppids, groupMapPtr& eventGroupInfoMap) :
-                evtLists(evtLists),
+        DummyEvent(const unsigned &pd, std::vector<pid_t>& ppids) :
+                pd(pd),
                 ppids(ppids),
-                eventGroupInfoMap(eventGroupInfoMap),
                 dummyFlag(true) {};
 
         ~DummyEvent();
-
-        std::pair<bool, std::shared_ptr<EvtList>> GetEvtGroupState(const int groupId, std::shared_ptr<EvtList> evtList, groupMapPtr eventGroupInfoMap);
-
         /**
          * @brief start a thread to observe fork thread.
          */
@@ -64,19 +41,18 @@ namespace KUNPENG_PMU {
     private:
         std::thread dummyThread;
         std::thread consumeThread;
-
         volatile std::atomic<bool> dummyFlag;
-
-        std::vector<std::shared_ptr<EvtList>>& evtLists;
         std::vector<pid_t> ppids;
-        groupMapPtr eventGroupInfoMap;
+        unsigned pd;
         std::vector<pid_t> exitPids;
         std::unordered_map<pid_t, std::pair<int, void*>> dummyMap;
+        std::condition_variable hasDataCond;
 
         std::mutex dummyMutex;
         std::queue<int> forkPidQueue;
         std::vector<std::thread> childThreads;
 
+        void ConsumeForkQueue();
         void InitDummy(pid_t pid);
         void ParseDummyData(void* page, pid_t pid);
         void HandleDummyData();

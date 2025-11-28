@@ -47,7 +47,8 @@ public:
 
     void SetGroupInfo(const EventGroupInfo &grpInfo) override;
     void AddNewProcess(pid_t pid, const bool groupEnable, const std::shared_ptr<EvtList> evtLeader) override;
-    void ClearExitFd();
+    void ClearExitFd(std::set<int> noProcList) override;
+    void RemoveInitErr() override;
 private:
     int CollectorXYArrayDoTask(std::vector<std::vector<PerfEvtPtr>>& xyArray, int task);
     void FillFields(size_t start, size_t end, CpuTopology* cpuTopo, ProcTopology* procTopo, std::vector<PmuData>& pmuData);

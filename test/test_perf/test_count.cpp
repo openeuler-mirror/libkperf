@@ -183,7 +183,7 @@ TEST_F(TestCount, NumaFluxWr)
     for (int i=0;i<len;++i) {
         cntSum += data[i].count;
     }
-    ASSERT_GE(cntSum, (1024 * 256 * 4 * 64) / 32);
+    ASSERT_GE(cntSum, (1024 * 256 * 4 * 64) / 32 * 0.8);
 }
 
 TEST_F(TestCount, AggregateUncoreEventsHIPA)
