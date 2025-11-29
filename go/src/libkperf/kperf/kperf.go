@@ -89,6 +89,10 @@ void SetEnableHwMetric(struct PmuAttr* attr, unsigned enableHwMetric) {
 	attr->enableHwMetric = enableHwMetric;
 }
 
+void SetEnableOnExec(struct PmuAttr* attr, unsigned enableOnExec) {
+	attr->enableOnExec = enableOnExec;
+}
+
 struct PmuData* IPmuRead(int fd, int* len) {
 	struct PmuData* pmuData = NULL;
 	*len = PmuRead(fd, &pmuData);
@@ -407,6 +411,7 @@ type PmuAttr struct {
 	EnableUserAccess bool              // enable user access counting for current process
 	EnableBpf bool                     // enable bpf mode for counting
 	EnableHwMetric bool                // enable hw metric 
+	EnableOnExec bool                  // enable enable_on_exec, after PmuOpen is called, if the load is started, enabling enable_on_exec will automatically enable the performance event after the load starts,withoud the need to call PmuEnable
 }
 
 type CpuTopology struct {
@@ -677,6 +682,10 @@ func ToCPmuAttr(attr PmuAttr) (*C.struct_PmuAttr, int) {
 
 	if attr.EnableHwMetric {
 		C.SetEnableHwMetric(cAttr, C.uint(1))
+	}
+
+	if attr.EnableOnExec {
+		C.SetEnableOnExec(cAttr, C.uint(1))
 	}
 
 	return cAttr, 0

@@ -25,6 +25,7 @@
 #include <unistd.h>
 #include <linux/types.h>
 #include <linux/perf_event.h>
+#include "process_map.h"
 #include "pmu_event.h"
 #include "symbol.h"
 
@@ -158,7 +159,7 @@ public:
      * @return true
      * @return false
      */
-    int Open(PmuEvt *attr);
+    int Open(PmuEvt *attr, int pid);
 
     /**
      * @brief Start collect.
@@ -213,6 +214,7 @@ private:
     int SpeReadData(struct SpeContext *context, struct SpeRecord *buf, int size);
     int CoreDummyData(struct SpeCoreContext *context, struct ContextSwitchData *data, int size, int pageSize);
     void UpdateProcMap(__u32 ppid, __u32 pid);
+    void UpdateCommProcMap(struct KUNPENG_PMU::PerfRecordComm* recordComm);
 
     const unsigned short NONE = 0;
     const unsigned short OPENED = 1 << 0;

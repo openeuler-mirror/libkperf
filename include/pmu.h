@@ -179,6 +179,9 @@ struct PmuAttr {
     unsigned enableBpf : 1;
     // enable hw metric
     unsigned enableHwMetric : 1;
+    // enable enable_on_exec
+    // after PmuOpen is called, if the load is started, enabling enable_on_exec will automatically enable the performance event after the load starts,withoud the need to call PmuEnable.
+    unsigned enableOnExec : 1;
 };
 
 enum PmuTraceType {

@@ -299,6 +299,10 @@ int KUNPENG_PMU::PerfCounterDefault::MapPerfAttr(const bool groupEnable, const i
     attr.exclude_kernel = this->evt->excludeKernel;
     attr.exclude_user = this->evt->excludeUser;
 
+    if (this->evt->enableOnExec) {
+        attr.enable_on_exec = 1;
+    }
+
     /**
      * if no permission try setting exclude_kernel=1.
      */
@@ -324,7 +328,6 @@ int KUNPENG_PMU::PerfCounterDefault::MapPerfAttr(const bool groupEnable, const i
         * and any child events are initialized with disabled bit set to 0. Despite disabled bit being set to 0,
         * the child events will not start counting until the group leader is enabled.
         */
-
         if (groupFd != -1) {
             attr.disabled = 0;
             groupStatus = GroupStatus::GROUP_MEMBER;

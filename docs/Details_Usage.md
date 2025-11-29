@@ -2047,3 +2047,96 @@ HIP_L1 1952
     |——4009cc sum_a(void*)+0x1c8 /home/test/libkperf/example/case/falsesharing_long.c:33 [151]
     |——400bbc inc_b(void*)+0x1cc /home/test/libkperf/example/case/falsesharing_long.c:59 [114]
 ```
+
+### 通过使能enableExecOn的方式采集进程
+```c++
+#include "pmu.h"
+#include "pcerrc.h"
+#include "symbol.h"
+
+#include <signal.h>
+#include <iostream>
+#include <vector>
+#include <stdio.h>
+#include <cstring>
+#include <cstdlib>
+#include <unistd.h>
+
+int main() {
+    std::vector<std::string> comms;
+    comms.push_back("ls");
+    comms.push_back("-l");
+    int fd[2];
+    pipe(fd);
+    pid_t pid = fork();
+    if (pid == 0) {
+        close(fd[1]);
+        char buf[4];
+        int ret = read(fd[0], buf, 4);
+        if (ret < 1) {
+            std::cout << "read error" << std::endl;
+            exit(EXIT_FAILURE);
+        }
+        //启动进程数据
+        char **argv = new char*[comms.size() + 1];
+        for (size_t i = 0; i < comms.size(); ++i) {
+            argv[i] = strdup(comms[i].c_str());
+        }
+        argv[comms.size()] = NULL;
+        execvp(argv[0], argv);
+        perror("exec commands failed!");
+        for (size_t i = 0; i < comms.size(); ++i) {
+            free(argv[i]);
+        }
+        delete []argv;
+        exit(EXIT_FAILURE);
+    } else {
+        close(fd[0]);
+        PmuAttr attr = {0};
+        int pidList[1] = {pid};
+        attr.numPid = 1;
+        attr.pidList = pidList;
+
+        char* evtList[1] = {"cycles"};
+        attr.evtList = evtList;
+        attr.numEvt = 1;
+        attr.symbolMode = RESOLVE_ELF_DWARF;
+        attr.period = 4096;
+        attr.enableOnExec = 1;
+
+        int pd = PmuOpen(SAMPLING, &attr);
+        if (pd == -1) {
+            std::cout << Perror() << std::endl;
+            kill(pid, 9);
+            return 1;
+        } else {
+            std::cout << "pmu open success" << std::endl;
+        }
+
+        int ret = write(fd[1], "data", 4);
+        if (ret < 0) {
+            kill(pid, 9);
+            std::cout << "pipe write error" << std::endl;
+            return 1;
+        }
+
+        PmuData* data = nullptr;
+        sleep(1);
+        int len = PmuRead(pd, &data);
+        for (int i = 0; i < len; i++) {
+            std::cout << "comm=" << data[i].comm << " " << data[i].ts << " " << data[i].pid  << " " << data[i].tid;
+
+            if (data[i].stack) {
+                auto result = data[i].stack;
+                  if (result->symbol != nullptr) {
+                      Symbol *data = result->symbol;
+                      std::cout << std::hex << data->addr << " " << data->symbolName << "+0x" << data->offset << " " << data->codeMapAddr << " (" << data->module << ")" << " (" << std::dec << data->fileName << ":" << data->lineNum << ")" << std::endl;
+                  }
+            } else {
+                std::cout << std::endl;
+            }
+        }
+        kill(pid, 9);
+    }
+}
+```

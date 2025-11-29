@@ -55,6 +55,7 @@ struct PmuEvt {
     unsigned numEvent;           // pmu event number for bpf cgroup init
     unsigned enableBpf : 1;      // enable bpf mode in counting mode
     unsigned enableHwMetric : 1; // enable hw_metric=1 in sampling mode
+    unsigned enableOnExec : 1; // set enable_on_exec = 1 
 };
 
 namespace KUNPENG_PMU {
@@ -71,6 +72,10 @@ struct PerfRawSample {
     __u64 period;
     __u64 nr;
     unsigned long ips[];
+};
+
+struct PerfSampleInfo {
+    __u64 time;
 };
 
 struct TraceRawData {
@@ -206,6 +211,7 @@ struct EventData {
 };
 
 int MapErrno(int sysErr);
+struct PerfSampleInfo GetPerfSampleInfo(__u64 sampleType, PerfEvent* event);
 }   // namespace KUNPENG_PMU
 #endif
 #endif

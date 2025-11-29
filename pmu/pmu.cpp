@@ -382,6 +382,19 @@ static int CheckHwMetric(enum PmuTaskType collectType, struct PmuAttr* attr) {
     return SUCCESS;
 }
 
+static int CheckEnableOnExec(struct PmuAttr* attr) {
+    if (!attr->enableOnExec) {
+        return SUCCESS;
+    }
+
+    if (!attr->numPid) {
+        New(LIBPERF_ERR_NOT_SUPPORT_EXEC_ON, "EnableExecOn can't be enabled without specifying a process");
+        return LIBPERF_ERR_NOT_SUPPORT_EXEC_ON;
+    }
+
+    return SUCCESS;
+}
+
 static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
 {
     auto err = CheckUserAccess(collectType, attr);
@@ -434,6 +447,11 @@ static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
     }
 
     err = CheckHwMetric(collectType, attr);
+    if (err != SUCCESS) {
+        return err;
+    }
+
+    err = CheckEnableOnExec(attr);
     if (err != SUCCESS) {
         return err;
     }
@@ -1093,6 +1111,7 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
     }
     taskParam->pmuEvt->numEvent = attr->numEvt;
     taskParam->pmuEvt->enableBpf = attr->enableBpf;
+    taskParam->pmuEvt->enableOnExec = attr->enableOnExec;
     return taskParam.release();
 }
 

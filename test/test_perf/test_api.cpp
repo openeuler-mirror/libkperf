@@ -797,3 +797,26 @@ TEST_F(TestAPI, InvalidBpfAttr)
     ASSERT_EQ(pd, -1);
 #endif
 }
+
+TEST_F(TestAPI, TestEnableExeOnFailed)
+{
+    PmuAttr attr = {0};
+    char *evtList[1];
+    evtList[0] = (char *)"cycles";
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+    attr.enableOnExec = 1;
+    pd = PmuOpen(COUNTING, &attr);
+    ASSERT_EQ(pd, -1);
+    ASSERT_EQ(LIBPERF_ERR_NOT_SUPPORT_EXEC_ON, Perrorno());
+    pd = PmuOpen(SAMPLING, &attr);
+    ASSERT_EQ(pd, -1);
+    ASSERT_EQ(LIBPERF_ERR_NOT_SUPPORT_EXEC_ON, Perrorno());
+    auto speAttr = GetSpeAttribute();
+    speAttr.pidList = nullptr;
+    speAttr.numPid = 0;
+    speAttr.enableOnExec = 1;
+    pd = PmuOpen(SPE_SAMPLING, &attr);
+    ASSERT_EQ(pd, -1);
+    ASSERT_EQ(LIBPERF_ERR_NOT_SUPPORT_EXEC_ON, Perrorno());
+}

@@ -20,6 +20,7 @@
 #include <unordered_map>
 #include <linux/types.h>
 #include <linux/perf_event.h>
+#include "process_map.h"
 #include "common.h"
 #include "symbol.h"
 #include "pmu_event.h"

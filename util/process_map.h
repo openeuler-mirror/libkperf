@@ -20,6 +20,20 @@
 extern "C" {
 #endif
 
+struct ProcTopology {
+    int pid;
+    int tid;
+    int ppid;
+    int numChild;
+    int* childPid;
+    char* comm;
+    char* exe;
+    bool kernel;
+    bool isMain;
+    char* execComm;
+    unsigned long execTs;
+};
+
 struct ProcTopology* GetProcTopology(pid_t pid);
 void FreeProcTopo(struct ProcTopology *procTopo);
 int* GetChildTid(int pid, int* numChild);
