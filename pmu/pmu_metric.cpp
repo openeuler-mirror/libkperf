@@ -27,6 +27,9 @@
 #include <cstring>
 #include <fstream>
 #include <mutex>
+#include <iomanip>
+#include <sys/stat.h>
+#include <limits.h>
 #include "common.h"
 #include "uncore.h"
 #include "cpu_map.h"
@@ -507,36 +510,6 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    void FindAllSubBdfDevice(std::string bdfPath, std::string bus, unordered_map<string, string>& pcieBdfToBus)
-    {
-        vector<string> entries = ListDirectoryEntries(bdfPath);
-        for (auto& entry : entries) {
-            if (entry.find("0000:") != string::npos) {
-                string bdfNumber = entry.substr(strlen("0000:"));
-                pcieBdfToBus[bdfNumber] = bus;
-                FindAllSubBdfDevice(bdfPath + "/" + entry, bus, pcieBdfToBus);
-            }
-        }
-        return;
-    }
-    
-    // build map: EP bdf number -> bus
-    static int GeneratePcieBusToBdfMap(unordered_map<string, string>& pcieBdfToBus)
-    {
-        if (!ExistPath(SYS_DEVICES) || !IsDirectory(SYS_DEVICES)) {
-            New(LIBPERF_ERR_QUERY_EVENT_LIST_FAILED, "Query uncore evtlist falied!");
-            return LIBPERF_ERR_QUERY_EVENT_LIST_FAILED;
-        }
-        vector<string> entries = ListDirectoryEntries(SYS_DEVICES);
-        for (const auto& entry : entries) {
-            if (entry.find("pci0000:") == 0) {
-                string bus = entry.substr(strlen("pci0000:"));
-                FindAllSubBdfDevice(SYS_DEVICES + "/" + entry, bus, pcieBdfToBus);
-            }
-        }
-        return SUCCESS;
-    }
-
     static std::unordered_map<string, vector<string>> ClassifyDevicesByPrefix(const string& devicePrefix,
         const string& subDeviceName, unsigned splitPos)
     {
@@ -641,6 +614,153 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
+    struct DevNode {
+        string path;
+        string name;
+        unsigned int domain;
+        unsigned int bus;
+        unsigned int device;
+        unsigned int function;
+        unsigned int classCode;
+        string parentName;
+    };
+
+    static int EncodeBdf(unsigned int bus, unsigned int dev, unsigned int func)
+    {
+        return (bus << 8) | (dev << 3) | func;
+    }
+
+    static std::string BdfToString(unsigned int bus, unsigned int dev, unsigned int func)
+    {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%02x:%02x.%u", bus, dev, func);
+        return std::string(buf);
+    }
+
+    static bool ParseBdfString(const string& s, unsigned int& domain, unsigned int& bus,
+                                unsigned int& dev, unsigned int& fn)
+    {
+        size_t c1 = s.find(':');
+        size_t c2 = s.find(':', c1 + 1);
+        size_t dot = s.find('.', c2 + 1);
+        if (c1 == string::npos || c2 == string::npos || dot == string::npos) {
+            return false;
+        }
+        try {
+            domain = std::stoul(s.substr(0, c1), nullptr, 16);
+            bus = std::stoul(s.substr(c1 + 1, c2 - c1 - 1), nullptr, 16);
+            dev = std::stoul(s.substr(c2 + 1, dot - c2 - 1), nullptr, 16);
+            fn = std::stoul(s.substr(dot + 1), nullptr, 16);
+        } catch (...) {
+            return false;
+        }
+        return true;
+    }
+
+    static unsigned int ReadClassCode(const string& devDir)
+    {
+        string s = ReadFileContent(devDir + "/class");
+        if (s.rfind("0x", 0) == 0)
+            s = s.substr(2);
+        unsigned int val = 0;
+        try {
+            val = std::stoul(s, nullptr, 16);
+        } catch (...) {
+            val = 0;
+        }
+        return val;
+    }
+
+    // scan and build DevNode tree
+    void ScanAllBdfs(const string& base, const string& parentBdf, unordered_map<string, DevNode>& nodes)
+    {
+        for (const string& e : ListDirectoryEntries(base)) {
+            if (e.find("0000:") == string::npos) {
+                continue;
+            }
+            string full = base + "/" + e;
+            unsigned int dom, bus, dev, fn;
+            if (!ParseBdfString(e, dom, bus, dev, fn)) {
+                continue;
+            }
+            DevNode node;
+            node.path = full;
+            node.name = e;
+            node.domain = dom;
+            node.bus = bus;
+            node.device = dev;
+            node.function = fn;
+            node.classCode = ReadClassCode(full);
+            node.parentName = parentBdf;
+            nodes[e] = node;
+
+            ScanAllBdfs(full, e, nodes);
+        }
+    }
+
+    vector<string> collectAllBdfs(const std::tuple<std::string, int, int>& pciePmu, const unordered_map<string, DevNode>& nodes)
+    {
+        vector<string> res;
+        // collecy all root point bdfs of the current core
+        unordered_set<unsigned int> coreRpBdfs;
+        for (const auto& kv : nodes) {
+            const DevNode& dev = kv.second;
+            // eg. /sys/devices/pci0000:20/0000:20:14.0/class 0x060400, is bridge
+            unsigned int base = (dev.classCode >> 16) & 0xFF;
+            unsigned int sub = (dev.classCode >> 8) & 0xFF;
+            if (!(base == 0x06 && sub == 0x04)) {  // not bridge
+                continue;
+            }
+            auto coreBus = std::stoul(std::get<0>(pciePmu), nullptr, 16);
+            if (dev.bus != coreBus) {  // not in bus of current core
+                continue;
+            }
+            unsigned int bdf = EncodeBdf(dev.bus, dev.device, dev.function);
+            if (std::get<1>(pciePmu) == -1) {
+                coreRpBdfs.insert(bdf);
+            } else if (bdf >= std::get<1>(pciePmu) && bdf <= std::get<2>(pciePmu)) {
+                coreRpBdfs.insert(bdf);
+            }
+        }
+
+        // check whether the upstream RP of the EP in the coreRpBdfs
+        for (const auto& kv : nodes) {
+            const DevNode& dev = kv.second;
+            unsigned int base = (dev.classCode >> 16) & 0xFF;
+            unsigned int sub = (dev.classCode >> 8) & 0xFF;
+            if (base == 0x06 && sub == 0x04){  // is bridge
+                continue;
+            }
+            const DevNode* cur = &dev;
+            bool found = false;
+            while (!cur->parentName.empty()) {
+                auto it = nodes.find(cur->parentName);
+                if (it == nodes.end()) {
+                    break;
+                }
+                const DevNode* parent = &it->second;
+                unsigned int pBase = (parent->classCode >> 16) & 0xFF;
+                unsigned int pSub = (parent->classCode >> 8) & 0xFF;
+                if (pBase == 0x06 && pSub == 0x04) {  // find upstream RP
+                    unsigned int rp_bdf = EncodeBdf(parent->bus, parent->device, parent->function);
+                    if (coreRpBdfs.count(rp_bdf)) {
+                        found = true;
+                        break;
+                    }
+                }
+                cur = parent;
+            }
+            if (!found) {
+                continue;
+            }
+            auto epStr = BdfToString(dev.bus, dev.device, dev.function);
+            res.push_back(epStr);
+        }
+        std::sort(res.begin(), res.end());
+        res.erase(std::unique(res.begin(), res.end()), res.end());
+        return res;
+    }
+
     static const char** PmuDevicePcieBdfList(unsigned *numBdf)
     {
         // fix repeat called List continue increase
@@ -655,47 +775,27 @@ namespace KUNPENG_PMU {
             return nullptr;
         }
 
-        unordered_map<string, string> pcieBdfToBus;
-        if (GeneratePcieBusToBdfMap(pcieBdfToBus) != SUCCESS) {
-            *numBdf = 0;
-            return nullptr;
-        }
         unordered_map<string, std::tuple<string, int, int>> pciePmuToBdfRang;
         if (QueryPcieBdfRanges(pciePmuToBdfRang) != SUCCESS) {
             *numBdf = 0;
             return nullptr;
         }
 
-        for (int i = 0; i < bdfList.size(); i++) {
-            auto it = pcieBdfToBus.find(bdfList[i]);
-            if (it == pcieBdfToBus.end()) {
+        unordered_map<string, DevNode> nodes;
+        for (const string& e : ListDirectoryEntries(SYS_DEVICES)) {
+            if (e.rfind("pci0000:", 0) != 0) {
                 continue;
             }
+            ScanAllBdfs(SYS_DEVICES + "/" + e, "", nodes);
+        }
 
-            const string bus = it->second;
-            for (auto& pciePmu : pciePmuToBdfRang) {
-                string pcieBus = std::get<0>(pciePmu.second);
-                int bdfmin = std::get<1>(pciePmu.second);
-                int bdfMax = std::get<2>(pciePmu.second);
-                if (bdfmin == -1) {
-                    if (bus == pcieBus) {
-                        char* bdfCopy = new char[bdfList[i].size() + 1];
-                        strcpy(bdfCopy, bdfList[i].c_str());
-                        pcieBdfList.emplace_back(bdfCopy);
-                        bdfToPcieMap[bdfList[i]] = pciePmu.first;
-                    }
-                } else {
-                    uint16_t bdfValue = 0;
-                    if (ConvertBdfStringToValue(bdfList[i], bdfValue) != SUCCESS) {
-                        continue;
-                    }
-                    if (bus == pcieBus && bdfValue >= bdfmin && bdfValue <= bdfMax) {
-                        char* bdfCopy = new char[bdfList[i].size() + 1];
-                        strcpy(bdfCopy, bdfList[i].c_str());
-                        pcieBdfList.emplace_back(bdfCopy);
-                        bdfToPcieMap[bdfList[i]] = pciePmu.first;
-                    }
-                }
+        for (const auto& pciePmu : pciePmuToBdfRang) {
+            auto eps = collectAllBdfs(pciePmu.second, nodes);
+            for (auto bdf : eps) {
+                char* bdfCopy = new char[bdf.size() + 1];
+                strcpy(bdfCopy, bdf.c_str());
+                pcieBdfList.emplace_back(bdfCopy);
+                bdfToPcieMap[bdf] = pciePmu.first;
             }
         }
 
