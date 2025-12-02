@@ -346,7 +346,8 @@ class PmuAttr(_libkperf.PmuAttr):
                  branchSampleFilter = 0,
                  cgroupNameList = None,
                  enableUserAccess = False,
-                 enableBpf = False):
+                 enableBpf = False,
+                 enableOnExec = False):
         super(PmuAttr, self).__init__(
             evtList=evtList,
             pidList=pidList,
@@ -367,6 +368,7 @@ class PmuAttr(_libkperf.PmuAttr):
             cgroupNameList=cgroupNameList,
             enableUserAccess=enableUserAccess,
             enableBpf=enableBpf,
+            enableOnExec=enableOnExec,
         )
 
 

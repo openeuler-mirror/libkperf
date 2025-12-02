@@ -37,6 +37,8 @@
 
 using namespace std;
 
+static const __u64 SAMPLING_SAMPLE_TYPE = PERF_SAMPLE_IP | PERF_SAMPLE_TID | PERF_SAMPLE_TIME | PERF_SAMPLE_CALLCHAIN | PERF_SAMPLE_ID | PERF_SAMPLE_CPU | PERF_SAMPLE_PERIOD | PERF_SAMPLE_IDENTIFIER | PERF_SAMPLE_RAW;
+
 int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupEnable, const int groupFd)
 {
     struct perf_event_attr attr;
@@ -45,8 +47,7 @@ int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupEnable, const int grou
     attr.config = this->evt->config;
     attr.config2 = this->evt->config2;
     attr.size = sizeof(struct perf_event_attr);
-    attr.sample_type = PERF_SAMPLE_IP | PERF_SAMPLE_TID | PERF_SAMPLE_TIME | PERF_SAMPLE_CALLCHAIN | PERF_SAMPLE_ID |
-                       PERF_SAMPLE_CPU | PERF_SAMPLE_PERIOD | PERF_SAMPLE_IDENTIFIER | PERF_SAMPLE_RAW;
+    attr.sample_type = SAMPLING_SAMPLE_TYPE;
     // if the branch sample type is not nullptr, set the branch sample type.                       
     if (branchSampleFilter != KPERF_NO_BRANCH_SAMPLE) {
         attr.sample_type |= PERF_SAMPLE_BRANCH_STACK;
@@ -75,6 +76,11 @@ int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupEnable, const int grou
     attr.task = 1;
     attr.sample_id_all = 1;
     attr.exclude_guest = 1;
+
+    if (this->evt->enableOnExec) {
+        attr.enable_on_exec = 1;
+    }
+
     if ((this->evt->blockedSample == 1) && (this->evt->name == "context-switches")) {
         attr.exclude_kernel = 0; // for confrim the reason of entering off cpu, it need to include kernel.
         attr.context_switch = 1;
@@ -152,6 +158,7 @@ void KUNPENG_PMU::PerfSampler::UpdatePidInfo(const int &tid)
 
 void KUNPENG_PMU::PerfSampler::UpdateCommInfo(KUNPENG_PMU::PerfEvent *event)
 {
+    auto sampleInfo = GetPerfSampleInfo(SAMPLING_SAMPLE_TYPE, event);
     auto findProc = procMap.find(event->comm.tid);
     if (findProc == procMap.end()) {
         std::shared_ptr<ProcTopology> procTopo(new ProcTopology{0}, FreeProcTopo);
@@ -164,6 +171,13 @@ void KUNPENG_PMU::PerfSampler::UpdateCommInfo(KUNPENG_PMU::PerfEvent *event)
         strcpy(procTopo->comm, event->comm.comm);
         DBG_PRINT("Add to proc map: %d\n", event->comm.tid);
         procMap[event->comm.tid] = procTopo;
+    } else {
+        findProc->second->execComm = static_cast<char *>(malloc(strlen(event->comm.comm) + 1));
+        if (findProc->second->execComm == nullptr) {
+            return;
+        }
+        strcpy(findProc->second->execComm, event->comm.comm);
+        findProc->second->execTs = sampleInfo.time;
     }
 }
 

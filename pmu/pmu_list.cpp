@@ -1174,6 +1174,11 @@ namespace KUNPENG_PMU {
             return SUCCESS;
         }
 
+        // avoid loading the symbols of the process itself
+        if (taskParam->pmuEvt->enableOnExec) {
+            return SUCCESS;
+        }
+
         if (this->symModeList[pd] == RESOLVE_ELF) {
             for (const auto& pid: pidList) {
                 int rt = SymResolverRecordModuleNoDwarf(pid);

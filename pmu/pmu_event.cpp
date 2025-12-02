@@ -38,4 +38,22 @@ namespace KUNPENG_PMU {
                 return UNKNOWN_ERROR;
         }
     }
+
+    /**
+     * Currently, read timestamp from perf record sample, and this interface can be extendes as needes.
+     */
+    struct PerfSampleInfo GetPerfSampleInfo(__u64 sampleType, PerfEvent* event)
+    {
+        const __u64* arr = event->sample.array;
+        arr += ((event->header.size - sizeof(event->header))) / sizeof(__u64) - 1;
+        __u64 skipList[4] = {PERF_SAMPLE_IDENTIFIER, PERF_SAMPLE_CPU, PERF_SAMPLE_STREAM_ID, PERF_SAMPLE_ID};
+        for (int i = 0; i < 4; i++) {
+            if (sampleType & skipList[i]) {
+                arr--;
+            }
+        }
+        struct PerfSampleInfo info = {0};
+        info.time = *arr;
+        return info;
+    }
 }  // namespace KUNPENG_PMU

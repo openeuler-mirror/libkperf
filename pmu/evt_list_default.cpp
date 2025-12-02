@@ -188,7 +188,12 @@ void KUNPENG_PMU::EvtListDefault::FillFields(
         }
         data[i].groupId = this->groupId;
         if (data[i].comm == nullptr) {
-            data[i].comm = procTopo->comm;
+            // If process has a fork call, it will generate a new pid and add a new comm.
+            if (data[i].pid > 0 && procMap.find(data[i].pid) != procMap.end()) {
+                data[i].comm = procMap[data[i].pid]->comm;   
+            } else {
+                data[i].comm = procTopo->comm;
+            }
         }
         if (data[i].ts == 0) {
             data[i].ts = this->ts;
@@ -226,6 +231,19 @@ int KUNPENG_PMU::EvtListDefault::Read(EventData &eventData)
             }
             // Fill event name and cpu topology.
             FillFields(cnt, eventData.data.size(), cpuTopo, procMap[evt->GetPid()].get(), eventData.data);
+        }
+    }
+
+    // Due to the enable_on_exec being enabled, before launching, pmuopen will record its own comm,which needs to be replaced.
+    if (this->pmuEvt->enableOnExec) {
+        for (auto &pmuData : eventData.data) {
+            if (procMap.find(pmuData.pid) == procMap.end()) {
+                continue;
+            }
+            auto proc = procMap[pmuData.pid];
+            if (proc->execComm != nullptr && pmuData.ts >= proc->execTs && pmuData.comm != proc->execComm) {
+                pmuData.comm = proc->execComm;
+            }
         }
     }
 

@@ -47,7 +47,7 @@ struct AuxContext {
     size_t auxSize;
 };
 
-static int OpenSpeEvent(PmuEvt *pmuAttr, int cpu)
+static int OpenSpeEvent(PmuEvt *pmuAttr, int cpu, int pid)
 {
     struct perf_event_attr attr = {0};
 
@@ -66,8 +66,14 @@ static int OpenSpeEvent(PmuEvt *pmuAttr, int cpu)
     attr.exclude_kernel = pmuAttr->excludeKernel;
     attr.exclude_user = pmuAttr->excludeUser;
 
+    if (pmuAttr->enableOnExec) {
+        attr.enable_on_exec = 1;
+        attr.inherit = 1;
+    } else {
+        pid = -1;
+    }
+
     unsigned flags = 0;
-    pid_t pid = -1;
     if (!pmuAttr->cgroupName.empty()) {
         flags = PERF_FLAG_PID_CGROUP | PERF_FLAG_FD_CLOEXEC;
         pid = pmuAttr->cgroupFd;
@@ -75,7 +81,7 @@ static int OpenSpeEvent(PmuEvt *pmuAttr, int cpu)
     return PerfEventOpen(&attr, pid, cpu, -1, flags);
 }
 
-static int OpenDummyEvent(int cpu)
+static int OpenDummyEvent(PmuEvt *pmuAttr, int cpu, int pid)
 {
     struct perf_event_attr attr = {0};
 
@@ -94,7 +100,14 @@ static int OpenDummyEvent(int cpu)
     attr.inherit = 1;
     attr.exclude_guest = 1;
 
-    return PerfEventOpen(&attr, -1, cpu, -1, 0);
+    if (pmuAttr->enableOnExec) {
+        attr.enable_on_exec = 1;
+        attr.comm = 1;
+    } else {
+        pid = -1;
+    }
+
+    return PerfEventOpen(&attr, pid, cpu, -1, 0);
 }
 
 static int PerfReadTscConversion(const struct perf_event_mmap_page *pc, struct PerfTscConversion *tc)
@@ -168,13 +181,13 @@ static int CoreSpeOpenFailed(struct SpeCoreContext **ctx, struct SpeContext *spe
     return LIBPERF_ERR_SPE_UNAVAIL;
 }
 
-static int CoreSpeOpen(struct SpeCoreContext **ctx, struct SpeContext *speCtx, PmuEvt *attr, int cpu)
+static int CoreSpeOpen(struct SpeCoreContext **ctx, struct SpeContext *speCtx, PmuEvt *attr, int cpu, int pid)
 {
     int ret = -1;
     struct perf_event_mmap_page *mp = nullptr;
 
     (*ctx)->cpu = cpu;
-    (*ctx)->speFd = OpenSpeEvent(attr, cpu);
+    (*ctx)->speFd = OpenSpeEvent(attr, cpu, pid);
     if ((*ctx)->speFd < 0) {
         auto err = MapErrno(errno);
         ERR_PRINT("failed to open spe\n");
@@ -199,7 +212,7 @@ static int CoreSpeOpen(struct SpeCoreContext **ctx, struct SpeContext *speCtx, P
         return CoreSpeOpenFailed(ctx, speCtx);
     }
 
-    (*ctx)->dummyFd = OpenDummyEvent(cpu);
+    (*ctx)->dummyFd = OpenDummyEvent(attr, cpu, pid);
     if ((*ctx)->dummyFd < 0) {
         ERR_PRINT("failed to open dummy event fd\n");
         return CoreSpeOpenFailed(ctx, speCtx);
@@ -214,7 +227,7 @@ static int CoreSpeOpen(struct SpeCoreContext **ctx, struct SpeContext *speCtx, P
     return SUCCESS;
 }
 
-int SpeOpen(PmuEvt *attr, int cpu, SpeContext *ctx)
+int SpeOpen(PmuEvt *attr, int cpu, SpeContext *ctx, int pid)
 {
     int pageSize = sysconf(_SC_PAGESIZE);
 
@@ -241,7 +254,7 @@ int SpeOpen(PmuEvt *attr, int cpu, SpeContext *ctx)
     ctx->coreCtxes->mask = ctx->auxMmapSize - 1;
     ctx->coreCtxes->prev = 0;
 
-    auto err = CoreSpeOpen(&ctx->coreCtxes, ctx, attr, cpu);
+    auto err = CoreSpeOpen(&ctx->coreCtxes, ctx, attr, cpu, pid);
     if (err != 0) {
         free(ctx->coreCtxes);
         ctx->coreCtxes = nullptr;
@@ -339,6 +352,32 @@ void Spe::UpdateProcMap(__u32 ppid, __u32 pid)
     }
 }
 
+void Spe::UpdateCommProcMap(struct KUNPENG_PMU::PerfRecordComm* recordComm)
+{
+    union KUNPENG_PMU::PerfEvent *event = (union KUNPENG_PMU::PerfEvent *)recordComm;
+    auto sampleInfo = GetPerfSampleInfo(PERF_SAMPLE_TIME, event);
+    auto findProc = procMap.find(recordComm->tid);
+    if (findProc == procMap.end()) {
+        std::shared_ptr<ProcTopology> procTopo(new ProcTopology{0}, FreeProcTopo);
+        procTopo->tid = recordComm->tid;
+        procTopo->pid = recordComm->pid;
+        procTopo->comm = static_cast<char *>(malloc(strlen(recordComm->comm) + 1));
+        if (procTopo->comm == nullptr) {
+            return;
+        }
+        strcpy(procTopo->comm, recordComm->comm);
+        DBG_PRINT("Add to proc map: %d\n", recordComm->tid);
+        procMap[recordComm->tid] = procTopo;
+    } else {
+        findProc->second->execComm = static_cast<char *>(malloc(strlen(recordComm->comm) + 1));
+        if (findProc->second->execComm == nullptr) {
+            return;
+        }
+        strcpy(findProc->second->execComm, recordComm->comm);
+        findProc->second->execTs = sampleInfo.time;
+    }
+}
+
 static void ParseContextSwitch(PerfEventSampleContextSwitch *contextSample, ContextSwitchData *data, uint64_t *num,
                                ContextSwitchData *lastSwitchOut)
 {
@@ -400,15 +439,21 @@ int Spe::CoreDummyData(struct SpeCoreContext *context, struct ContextSwitchData 
         if (header->type == PERF_RECORD_FORK) {
             struct PerfRecordFork *sample = (struct PerfRecordFork *)header;
             DBG_PRINT("Fork pid: %d tid: %d\n", sample->pid, sample->tid);
-	    if (sample->pid == sample->tid) {
-		// A new process is forked and the parent pid is ppid.
-            	UpdateProcMap(sample->ppid, sample->tid);
-	    } else {
-		// A new thread is created and the parent pid is pid(process id).
-            	UpdateProcMap(sample->pid, sample->tid);
-	    }
+            if (sample->pid == sample->tid) {
+                // A new process is forked and the parent pid is ppid.
+                UpdateProcMap(sample->ppid, sample->tid);
+            } else {
+                // A new thread is created and the parent pid is pid(process id).
+                UpdateProcMap(sample->pid, sample->tid);
+            }
             dataTail += header->size;
             continue;
+        }
+
+        if (header->type == PERF_RECORD_COMM) {
+            struct PerfRecordComm *sample = (struct PerfRecordComm *)header;
+            DBG_PRINT("Comm exec pid: %d tid: %d\n", sample->pid, sample->tid);
+            UpdateCommProcMap(sample);
         }
 
         if ((off + header->size) > mpage->data_size || header->type != PERF_RECORD_SWITCH_CPU_WIDE) {
@@ -572,14 +617,14 @@ int Spe::SpeReadData(struct SpeContext *context, struct SpeRecord *buf, int size
     return size - remainSize;
 }
 
-int Spe::Open(PmuEvt *attr)
+int Spe::Open(PmuEvt *attr, int pid)
 {
     if (status == NONE) {
         ctx = (struct SpeContext *)malloc(sizeof(struct SpeContext));
         if (!ctx) {
             return COMMON_ERR_NOMEM;
         }
-        auto err = SpeOpen(attr, cpu, ctx);
+        auto err = SpeOpen(attr, cpu, ctx, pid);
         if (err != SUCCESS) {
             return err;
         }

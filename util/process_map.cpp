@@ -43,6 +43,12 @@ void FreeProcTopo(struct ProcTopology *procTopo)
         free(procTopo->exe);
         procTopo->exe = nullptr;
     }
+
+    if (procTopo->execComm != nullptr) {
+        free(procTopo->execComm);
+        procTopo->execComm = nullptr;
+    }
+
     delete procTopo;
 }
 

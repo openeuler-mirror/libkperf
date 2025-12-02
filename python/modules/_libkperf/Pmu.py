@@ -127,6 +127,8 @@ class CtypesPmuAttr(ctypes.Structure):
         unsigned numCgroup;               // length of cgroup list
         unsigned enableUserAccess : 1;    // enable user access counting for current process
         unsigned enableBpf : 1;           // enable bpf mode for counting
+        unsigned enableHwMetric : 1;      // enable hw metric
+        unsigned enableOnExec: 1;         // enable enable_on_exec, after PmuOpen is called, if the load is started, enabling enable_on_exec will automatically enable the performance event after the load starts,withoud the need to call PmuEnable
     };
     """
 
@@ -156,6 +158,7 @@ class CtypesPmuAttr(ctypes.Structure):
         ('enableUserAccess', ctypes.c_uint, 1),
         ('enableBpf',        ctypes.c_uint, 1),
         ('enableHwMetric', ctypes.c_uint, 1),
+        ('enableOnExec', ctypes.c_uint, 1),
     ]
 
     def __init__(self,
@@ -180,6 +183,7 @@ class CtypesPmuAttr(ctypes.Structure):
                  enableUserAccess=False,
                  enableBpf=False,
                  enableHwMetric=False,
+                 enableOnExec=False,
                  *args, **kw):
         super(CtypesPmuAttr, self).__init__(*args, **kw)
 
@@ -244,6 +248,7 @@ class CtypesPmuAttr(ctypes.Structure):
         self.enableUserAccess = enableUserAccess
         self.enableBpf = enableBpf
         self.enableHwMetric = enableHwMetric
+        self.enableOnExec = enableOnExec
 
 class PmuAttr(object):
     __slots__ = ['__c_pmu_attr']
@@ -268,7 +273,8 @@ class PmuAttr(object):
                  cgroupNameList=None,
                  enableUserAccess=False,
                  enableBpf=False,
-                 enableHwMetric=False):
+                 enableHwMetric=False,
+                 enableOnExec=False):
 
         self.__c_pmu_attr = CtypesPmuAttr(
             evtList=evtList,
@@ -291,6 +297,7 @@ class PmuAttr(object):
             enableUserAccess=enableUserAccess,
             enableBpf=enableBpf,
             enableHwMetric=enableHwMetric,
+            enableOnExec=enableOnExec,
         )
 
     @property
@@ -316,6 +323,14 @@ class PmuAttr(object):
     @enableHwMetric.setter
     def enableHwMetric(self, enableHwMetric):
         self.c_pmu_attr.enableHwMetric = int(enableHwMetric)
+    
+    @property
+    def enableOnExec(self):
+        return bool(self.c_pmu_attr.enableOnExec)
+
+    @enableOnExec.setter
+    def enableOnExec(self, enableOnExec):
+        self.c_pmu_attr.enableOnExec = int(enableOnExec)
 
     @property
     def c_pmu_attr(self):
