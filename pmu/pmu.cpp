@@ -204,6 +204,36 @@ static int CheckCgroupNameList(unsigned numCgroup, char** cgroupName)
     return SUCCESS;
 }
 
+static bool CheckValidSpeEvtFilter(SpeEventFilter val) {
+    switch (val) {
+        case SPE_EVENT_NONE:
+        case SPE_EVENT_RETIRED:
+        case SPE_EVENT_L1DMISS:
+        case SPE_EVENT_TLB_WALK:
+        case SPE_EVENT_MISPREDICTED:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static bool CheckValidSpeFilter(SpeFilter val) {
+    switch (val) {
+        case SPE_FILTER_NONE:
+        case TS_ENABLE:
+        case PA_ENABLE:
+        case PCT_ENABLE:
+        case JITTER:
+        case BRANCH_FILTER:
+        case LOAD_FILTER:
+        case STORE_FILTER:
+        case SPE_DATA_ALL:
+            return true;
+        default:
+            return false;
+    }
+}
+
 static int CheckCollectTypeConfig(enum PmuTaskType collectType, struct PmuAttr *attr)
 {
     if (collectType < 0 || collectType >= MAX_TASK_TYPE) {
@@ -243,21 +273,32 @@ static int CheckCollectTypeConfig(enum PmuTaskType collectType, struct PmuAttr *
             }
         }
     }
-    if (collectType == SPE_SAMPLING && attr->evtAttr != nullptr) {
-        New(LIBPERF_ERR_INVALID_GROUP_SPE);
-        return LIBPERF_ERR_INVALID_GROUP_SPE;
-    }
     if (attr->cgroupNameList != nullptr && attr->pidList != nullptr) {
         New(LIBPERF_ERR_INVALID_CGROUP_LIST, "Cannot specify both cgroup and pid. Please use only one.");
         return LIBPERF_ERR_INVALID_CGROUP_LIST;
     }
-    if (collectType == SPE_SAMPLING && attr->numCgroup > 1) {
-        New(LIBPERF_ERR_INVALID_CGROUP_LIST, "SPE mode only support one cgroup");
-        return LIBPERF_ERR_INVALID_CGROUP_LIST;
-    }
-    if (collectType == SPE_SAMPLING && (attr->minLatency > 4095 || attr->minLatency < 0)) {
-        New(LIBPERF_ERR_INVALID_MIN_LATENCY, "Invalid min_latency: value must be between 0 and 4095");
-        return LIBPERF_ERR_INVALID_MIN_LATENCY;
+
+    if (collectType == SPE_SAMPLING) {
+        if( attr->evtAttr != nullptr) {
+            New(LIBPERF_ERR_INVALID_GROUP_SPE);
+            return LIBPERF_ERR_INVALID_GROUP_SPE;
+        }
+        if (attr->numCgroup > 1) {
+            New(LIBPERF_ERR_INVALID_CGROUP_LIST, "SPE mode only support one cgroup");
+            return LIBPERF_ERR_INVALID_CGROUP_LIST;
+        }
+        if (attr->minLatency > 4095 || attr->minLatency < 0) {
+            New(LIBPERF_ERR_INVALID_MIN_LATENCY, "Invalid min_latency: value must be between 0 and 4095");
+            return LIBPERF_ERR_INVALID_MIN_LATENCY;
+        }
+        if (!CheckValidSpeEvtFilter(attr->evFilter)) {
+            New(LIBPERF_ERR_INVALID_EVT_FILTER, "Invalid evt filter in SPE mode");
+            return LIBPERF_ERR_INVALID_EVT_FILTER;
+        }
+        if (!CheckValidSpeFilter(attr->dataFilter)) {
+            New(LIBPERF_ERR_INVALID_DATA_FILTER, "Invalid data filter in SPE mode");
+            return LIBPERF_ERR_INVALID_DATA_FILTER;
+        }
     }
     return SUCCESS;
 }
