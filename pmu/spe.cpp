@@ -58,7 +58,6 @@ static int OpenSpeEvent(PmuEvt *pmuAttr, int cpu)
     attr.config2 = pmuAttr->config2;       /* min_latency */
     attr.exclude_guest = 1;
     attr.disabled = 1;
-    attr.freq = pmuAttr->useFreq;
     attr.sample_period = pmuAttr->period;
     attr.sample_type = PERF_SAMPLE_TID;
     attr.sample_id_all = 1;
