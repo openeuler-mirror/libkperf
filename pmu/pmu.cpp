@@ -204,7 +204,8 @@ static int CheckCgroupNameList(unsigned numCgroup, char** cgroupName)
     return SUCCESS;
 }
 
-static bool CheckValidSpeEvtFilter(SpeEventFilter val) {
+static bool CheckValidSpeEvtFilter(SpeEventFilter val)
+{
     switch (val) {
         case SPE_EVENT_NONE:
         case SPE_EVENT_RETIRED:
@@ -217,21 +218,21 @@ static bool CheckValidSpeEvtFilter(SpeEventFilter val) {
     }
 }
 
-static bool CheckValidSpeFilter(SpeFilter val) {
-    switch (val) {
-        case SPE_FILTER_NONE:
-        case TS_ENABLE:
-        case PA_ENABLE:
-        case PCT_ENABLE:
-        case JITTER:
-        case BRANCH_FILTER:
-        case LOAD_FILTER:
-        case STORE_FILTER:
-        case SPE_DATA_ALL:
-            return true;
-        default:
-            return false;
+static bool CheckValidSpeFilter(SpeFilter val)
+{
+    const unsigned long validMask =
+        SPE_FILTER_NONE |
+        TS_ENABLE |
+        PA_ENABLE |
+        PCT_ENABLE |
+        JITTER |
+        BRANCH_FILTER |
+        LOAD_FILTER |
+        STORE_FILTER;
+    if ((val & ~validMask) == 0) {
+        return true;
     }
+    return false;
 }
 
 static int CheckCollectTypeConfig(enum PmuTaskType collectType, struct PmuAttr *attr)
