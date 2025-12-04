@@ -129,6 +129,12 @@ build_libkperf()
     if [ "${PYTHON}" = "true" ];then
        CMAKE_ARGS+=("-DPYTHON_WHL=${WHL}")
     fi
+    if [ "${BPF}" = "true" ];then
+       CMAKE_ARGS+=(
+            "-DCMAKE_INSTALL_RPATH=${INSTALL_PATH}lib;${THIRD_PARTY}local/bpf/usr/lib64"
+            "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=TRUE"
+        )
+    fi
     cmake "${CMAKE_ARGS[@]}" ..
     make -j ${cpu_core_num}
     make install

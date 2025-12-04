@@ -40,13 +40,14 @@ using namespace std;
 using namespace pcerr;
 
 #define MAX_ENTITES 102400
+#define MAX_CPU_LIMIT 1024
 
-static map<string, struct sched_counter_bpf *> counterMap;  // key: evt name, value: bpf obj
-static struct sched_cgroup_bpf *cgrpCounter = nullptr;      // one bpf obj in cgroup mode
+static unordered_map<string, struct sched_counter_bpf *> counterMap; // key: evt name, value: bpf obj
+static struct sched_cgroup_bpf *cgrpCounter = nullptr;               // one bpf obj in cgroup mode
 static std::unordered_map<std::string, BpfEvent> evtDataMap;
-static set<int> evtKeys;                                    // updated fds of cgroup
-static set<string> readCgroups;
-static set<string> triggerdEvt;
+static unordered_set<int> evtKeys;                                   // updated fds of cgroup
+static unordered_set<string> readCgroups;
+static unordered_set<string> triggerdEvt;
 static int evtIdx = 0;
 static int cgrpProgFd = 0;
 
@@ -75,9 +76,18 @@ int KUNPENG_PMU::PerfCounterBpf::EndRead()
     return SUCCESS;
 }
 
-int KUNPENG_PMU::PerfCounterBpf::ReadBpfProcess(std::vector<PmuData> &data)
+inline int CachedCpuCount()
 {
-    const unsigned cpuNums = MAX_CPU_NUM;
+    static int cached = []{
+        long n = sysconf(_SC_NPROCESSORS_CONF);
+        return (n > 0) ? (int)n : 1;
+    }();
+    return cached > MAX_CPU_LIMIT ? MAX_CPU_LIMIT : cached;
+}
+
+int KUNPENG_PMU::PerfCounterBpf::ReadBpfProcess(const std::vector<int>& pids, std::vector<PmuData>& data)
+{
+    const unsigned cpuNums = CachedCpuCount();
     auto obj = counterMap[this->evt->name];
 
     // must execute sched_switch when each read operation.
@@ -91,44 +101,34 @@ int KUNPENG_PMU::PerfCounterBpf::ReadBpfProcess(std::vector<PmuData> &data)
         }
         triggerdEvt.insert(this->evt->name);
     }
-    
-    // read the pmu count of this pid in each cpu core
-    struct bpf_perf_event_value values[cpuNums];
 
-    int err = bpf_map__lookup_elem(
-        obj->maps.accum_readings, &this->pid, sizeof(__u32), values, sizeof(bpf_perf_event_value) * cpuNums, BPF_ANY);
-    if (err) {
-        New(LIBPERF_ERR_BPF_ACT_FAILED, "failed to lookup counter map accum_readings. Error: "
-                + string(strerror(-err)) + " pid " + to_string(this->pid));
-        return LIBPERF_ERR_BPF_ACT_FAILED;
+    static const std::vector<bpf_perf_event_value> zeros(cpuNums, bpf_perf_event_value{});
+    for (int tid : pids) {
+        std::vector<bpf_perf_event_value> values(cpuNums, bpf_perf_event_value{});
+        if (bpf_map_lookup_elem(bpf_map__fd(obj->maps.accum_readings), &tid, values.data())) {
+            continue;
+        }
+
+        int processId = 0;
+        auto it = procMap.find(tid);
+        if (it != procMap.end()) {
+            processId = it->second->pid;
+        }
+        for (int cpu = 0; cpu < cpuNums; ++cpu) {
+            if (values[cpu].counter == 0) continue;
+            data.emplace_back(PmuData{
+                .pid          = processId,
+                .tid          = tid,
+                .cpu          = cpu,
+                .count        = values[cpu].counter,
+                .countPercent = values[cpu].enabled ? 
+                                (double)values[cpu].running / values[cpu].enabled : 0.0,
+            });
+        }
+
+        bpf_map_update_elem(bpf_map__fd(obj->maps.accum_readings), &tid, zeros.data(), BPF_EXIST);
     }
 
-    // convert pmu count to PmuData
-    int processId = 0;
-    auto findProc = procMap.find(this->pid);
-    if (findProc != procMap.end()) {
-        processId = findProc->second->pid;
-    }
-
-    for (int i = 0; i < cpuNums; i++) {
-        data.emplace_back(PmuData{0});
-        auto &current = data.back();
-        current.count = values[i].counter;
-        current.countPercent = values[i].running / values[i].enabled;
-        current.cpu = i;
-        current.tid = this->pid;
-        current.pid = processId;
-    }
-
-    // reset pmu count in bpf to ensure that the value read from pmu is delta (after last read/open)
-    memset(values, 0, MAX_CPU_NUM * sizeof(bpf_perf_event_value));
-    err = bpf_map__update_elem(
-        obj->maps.accum_readings, &pid, sizeof(__u32), values, sizeof(bpf_perf_event_value) * cpuNums, BPF_ANY);
-    if (err) {
-        New(LIBPERF_ERR_BPF_ACT_FAILED, "failed to update counter map accum_readings. Error: "
-                + string(strerror(-err)) + " pid " + to_string(this->pid));
-        return LIBPERF_ERR_BPF_ACT_FAILED;
-    }
     return SUCCESS;
 }
 
@@ -140,7 +140,7 @@ int KUNPENG_PMU::PerfCounterBpf::ReadBpfCgroup(std::vector<PmuData> &data)
     }
     readCgroups.insert(cgrpName);
 
-    for (int i=0;i<MAX_CPU_NUM;++i) {
+    for (int i = 0; i < MAX_CPU_NUM; ++i) {
         int triggerErr = TriggeredRead(cgrpProgFd, i);
         if (triggerErr) {
             DBG_PRINT("trigger error: %s\n", strerror(-triggerErr));
@@ -158,14 +158,15 @@ int KUNPENG_PMU::PerfCounterBpf::ReadBpfCgroup(std::vector<PmuData> &data)
         return SUCCESS;
     }
 
-    for (int i = 0; i < cpuNums; i++) {
-        data.emplace_back(PmuData{0});
-        auto &current = data.back();
-        current.count = values[i].counter;
-        current.countPercent = values[i].running / values[i].enabled;
-        current.cpu = i;
-        current.tid = this->pid;
-        current.cgroupName = this->evt->cgroupName.c_str();
+    for (int cpu = 0; cpu < cpuNums; ++cpu) {
+        data.emplace_back(PmuData{
+            .tid          = this->pid,
+            .cpu          = cpu,
+            .count        = values[cpu].counter,
+            .countPercent = values[cpu].enabled ? 
+                            (double)values[cpu].running / values[cpu].enabled : 0.0,
+            .cgroupName   = this->evt->cgroupName.c_str(),
+        });
     }
 
     memset(values, 0, cpuNums * sizeof(bpf_perf_event_value));
@@ -180,11 +181,7 @@ int KUNPENG_PMU::PerfCounterBpf::ReadBpfCgroup(std::vector<PmuData> &data)
 
 int KUNPENG_PMU::PerfCounterBpf::Read(EventData &eventData)
 {
-    if (!evt->cgroupName.empty()) {
-        return ReadBpfCgroup(eventData.data);
-    } else {
-        return ReadBpfProcess(eventData.data);
-    }
+    return SUCCESS;
 }
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
@@ -192,13 +189,9 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va
     return vfprintf(stderr, format, args);
 }
 
-int KUNPENG_PMU::PerfCounterBpf::InitPidForEvent()
+int KUNPENG_PMU::PerfCounterBpf::InitPidForEvent(const std::vector<int>& pids)
 {
-    if (this->pid == -1) {
-        return SUCCESS;
-    }
-
-    if (evtDataMap[this->evt->name].pids.find(this->pid) != evtDataMap[this->evt->name].pids.end()) {
+    if (!this->evt->cgroupName.empty()) {
         return SUCCESS;
     }
 
@@ -206,26 +199,53 @@ int KUNPENG_PMU::PerfCounterBpf::InitPidForEvent()
     if (findObj == counterMap.end()) {
         return -1;
     }
+    auto obj = findObj->second;
+    int map_fd = bpf_map__fd(obj->maps.accum_readings);
+    // initialize the cumulative pmu count for this pid, only once
+    int cpu_num = CachedCpuCount();
+
+    std::vector<__u32> keys;
+    keys.reserve(pids.size());
+    for (int pid : pids) {
+        keys.push_back(static_cast<__u32>(pid));
+    }
+
+    std::vector<bpf_perf_event_value> values(keys.size() * cpu_num, bpf_perf_event_value{});
+    __u32 cnt = static_cast<__u32>(keys.size());
+    struct bpf_map_batch_opts opts {
+        .sz = sizeof(struct bpf_map_batch_opts),
+        .flags = BPF_NOEXIST,
+    };
 
     // initialize the cumulative pmu count for this pid
-    struct bpf_perf_event_value evtVal[MAX_CPU_NUM];
-
-    memset(evtVal, 0, MAX_CPU_NUM * sizeof(bpf_perf_event_value));
-    int err = bpf_map__update_elem(findObj->second->maps.accum_readings, &pid, sizeof(__u32), evtVal,
-                sizeof(bpf_perf_event_value) * MAX_CPU_NUM, BPF_NOEXIST);
+    int err = bpf_map_update_batch(map_fd, keys.data(), values.data(), &cnt, &opts);
     if (err) {
-        New(LIBPERF_ERR_BPF_ACT_FAILED, "failed to update counter map accum_readings. Error: " + err);
-        return LIBPERF_ERR_BPF_ACT_FAILED;
+        // batch error, rollback to update elem one by one
+        for (auto pid : keys) {
+            std::vector<bpf_perf_event_value> zeroVals(cpu_num, bpf_perf_event_value{});
+            int err = bpf_map__update_elem(obj->maps.accum_readings,
+                                         &pid, sizeof(__u32),
+                                         zeroVals.data(),
+                                         sizeof(bpf_perf_event_value) * cpu_num,
+                                         BPF_NOEXIST);
+            if (err && err != -EEXIST) {
+                New(LIBPERF_ERR_BPF_ACT_FAILED, "failed to update counter map accum_readings. Error: " + std::to_string(err));
+                return LIBPERF_ERR_BPF_ACT_FAILED;
+            }
+        }
     }
 
     // initialize the filter, build the map relationship of pid and accum_key
-    err = bpf_map__update_elem(findObj->second->maps.filter, &pid, sizeof(__u32), &pid, sizeof(__u32), BPF_NOEXIST);
-    if (err) {
-        New(LIBPERF_ERR_BPF_ACT_FAILED, "failed to update counter map filter. Error: " + err);
-        return LIBPERF_ERR_BPF_ACT_FAILED;
+    for (auto pid : keys) {
+        int err = bpf_map__update_elem(obj->maps.filter,&pid, sizeof(__u32), &pid, sizeof(__u32), BPF_NOEXIST);
+        if (err && err != -EEXIST) {
+            New(LIBPERF_ERR_BPF_ACT_FAILED,"failed to update counter map filter. Error: " + std::to_string(err));
+            return LIBPERF_ERR_BPF_ACT_FAILED;
+        }
+        DBG_PRINT("Init pid %d For eventId: %s\n", pid, this->evt->name.c_str());
+        evtDataMap[this->evt->name].pids.insert(pid);
     }
-    DBG_PRINT("InitPidForEvent: %d\n", pid);
-    evtDataMap[this->evt->name].pids.insert(this->pid);
+
     return SUCCESS;
 }
 
@@ -233,8 +253,9 @@ int KUNPENG_PMU::PerfCounterBpf::InitBpfObj()
 {
     int err;
     struct sched_counter_bpf *obj;
-    auto findObj = counterMap.find(evt->name);
-    if (findObj == counterMap.end()) {
+
+    auto findObj = counterMap[this->evt->name];
+    if (!findObj) {
         // initialize the bpf obj
         obj = sched_counter_bpf__open();
         if (!obj) {
@@ -251,7 +272,7 @@ int KUNPENG_PMU::PerfCounterBpf::InitBpfObj()
             New(LIBPERF_ERR_BPF_ACT_FAILED, "failed to set max entries of counter map: prev_readings");
             return LIBPERF_ERR_BPF_ACT_FAILED;
         }
-        err = bpf_map__set_max_entries(obj->maps.accum_readings, 1024);
+        err = bpf_map__set_max_entries(obj->maps.accum_readings, this->procMap.size());
         if (err) {
             New(LIBPERF_ERR_BPF_ACT_FAILED, "failed to set max entries of counter map: accum_readings");
             return LIBPERF_ERR_BPF_ACT_FAILED;
@@ -275,17 +296,13 @@ int KUNPENG_PMU::PerfCounterBpf::InitBpfObj()
         }
 
         counterMap[this->evt->name] = obj;
-        err = InitPidForEvent();
-        if (err == LIBPERF_ERR_BPF_ACT_FAILED) {
-            return err;
-        }
+
         // get the fd of bpf prog, trigger trace function(sched_switch) of bpf in read
         int progFd = bpf_program__fd(obj->progs.on_switch);
-
         evtDataMap[this->evt->name].bpfFd = progFd;
         DBG_PRINT("create bpf obj for evt %s prog fd %d\n", evt->name.c_str(), progFd);
     } else {
-        obj = counterMap[this->evt->name];
+        obj = findObj;
     }
 
     // initialize the pmu count, put fd of pmu into value
@@ -414,29 +431,20 @@ int KUNPENG_PMU::PerfCounterBpf::InitBpfCgroupObj()
 
 int KUNPENG_PMU::PerfCounterBpf::Init(const bool groupEnable, const int groupFd, const int resetOutputFd)
 {
-    int err = InitPidForEvent();
-    if (err == LIBPERF_ERR_BPF_ACT_FAILED) {
-        return err;
-    }
     auto findCpuMap = evtDataMap.find(this->evt->name);
     auto findCgroup = cgroupIdxMap.find(this->evt->cgroupName);
     if (findCpuMap != evtDataMap.end() && findCpuMap->second.cpus.count(this->cpu) && findCgroup != cgroupIdxMap.end()) {
         return SUCCESS;
     }
-    
+
     if (findCpuMap == evtDataMap.end() || !findCpuMap->second.cpus.count(this->cpu)) {
-        err = this->MapPerfAttr(groupEnable, groupFd);
+        int err = this->MapPerfAttr(groupEnable, groupFd);
         if (err != SUCCESS) {
             return err;
         }
     }
 
-    if (this->evt->cgroupName.empty()) {
-        err = InitBpfObj();
-    } else {
-        err = InitBpfCgroupObj();
-    }
-    return err;
+    return this->evt->cgroupName.empty() ? InitBpfObj() : InitBpfCgroupObj();
 }
 
 int KUNPENG_PMU::PerfCounterBpf::MapPerfAttr(const bool groupEnable, const int groupFd)

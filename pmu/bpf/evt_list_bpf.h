@@ -53,6 +53,7 @@ public:
     void RemoveInitErr() override {};
     
 private:
+    std::vector<int> allPids;
     std::vector<std::shared_ptr<PerfEvt>> cpuCounterArray;
     std::vector<std::shared_ptr<PerfEvt>> pidCounterArray;
     int CollectorTaskArrayDoTask(std::vector<PerfEvtPtr>& taskArray, int task);

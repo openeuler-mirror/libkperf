@@ -41,24 +41,25 @@ int KUNPENG_PMU::EvtListBpf::Init(const bool groupEnable, const std::shared_ptr<
             continue;
         }
 
-        int err = 0;
-        err = perfEvt->Init(groupEnable, -1, -1);
+        int err = perfEvt->Init(groupEnable, -1, -1);
         if (err != SUCCESS) {
             return err;
         }
         this->cpuCounterArray.emplace_back(perfEvt);
     }
 
-    for (unsigned int pid = 0; pid < numPid; pid++) {
-        PerfEvtPtr perfEvt =
-                std::make_shared<KUNPENG_PMU::PerfCounterBpf>(-1, this->pidList[pid]->tid, this->pmuEvt.get(), procMap);
-        if (perfEvt == nullptr) {
-            continue;
-        }
-
-        perfEvt->Init(groupEnable, -1, -1);  // init pid, ignore the result of perf_event_open
-        this->pidCounterArray.emplace_back(perfEvt);
+    this->allPids.resize(pidList.size());
+    for (size_t i = 0; i < pidList.size(); i++) {
+        this->allPids[i] = pidList[i]->tid;
     }
+
+    PerfEvtPtr perfEvt =std::make_shared<KUNPENG_PMU::PerfCounterBpf>(-1, -1, this->pmuEvt.get(), procMap);
+    int err = std::dynamic_pointer_cast<KUNPENG_PMU::PerfCounterBpf>(perfEvt)->InitPidForEvent(allPids);
+    if (err != SUCCESS) {
+        return err;
+    }
+
+    this->pidCounterArray.emplace_back(perfEvt);
     return SUCCESS;
 }
 
@@ -115,52 +116,48 @@ int KUNPENG_PMU::EvtListBpf::Close()
 int KUNPENG_PMU::EvtListBpf::Read(EventData &eventData)
 {
     std::unique_lock<std::mutex> lg(mutex);
+    auto perfEvt = this->pidCounterArray[0];
+    int err = perfEvt->BeginRead();
+    if (err != SUCCESS) {
+        return err;
+    }
 
-    for (unsigned int pid = 0; pid < numPid; pid++) {
-        int err = this->pidCounterArray[pid]->BeginRead();
-        if (err != SUCCESS) {
-            return err;
+    auto cpuTopo = this->cpuList[0].get();
+    size_t oldSize = eventData.data.size();
+    if (pmuEvt->cgroupName.empty()) {
+        err = std::dynamic_pointer_cast<KUNPENG_PMU::PerfCounterBpf>(
+                this->pidCounterArray[0])->ReadBpfProcess(this->allPids, eventData.data);
+    } else {
+        err = std::dynamic_pointer_cast<KUNPENG_PMU::PerfCounterBpf>(
+                this->pidCounterArray[0])->ReadBpfCgroup(eventData.data);
+    }
+    if (err != SUCCESS) {
+        return err;
+    }
+
+    const char* evtName = pmuEvt->name.c_str();
+    uint64_t tsVal = this->ts;
+    for (size_t i = oldSize; i < eventData.data.size(); i++) {
+        auto& d = eventData.data[i];
+        DBG_PRINT("evt: %s pid: %d cpu: %d\n", evtName, d.pid, d.cpu);
+
+        d.cpuTopo = cpuTopo;
+        d.evt = evtName;
+        if (!d.comm) {
+            auto it = procMap.find(d.tid);
+            if (it != procMap.end()) {
+                d.comm = it->second->comm;
+            }
+        }
+        if (d.ts == 0) {
+            d.ts = tsVal;
         }
     }
 
-    struct PmuEvtData* head = nullptr;
-    int row = 0;
-    auto cpuTopo = this->cpuList[row].get();
-    for (unsigned int pid = 0; pid < numPid; pid++) {
-        auto cnt = eventData.data.size();
-        int err = this->pidCounterArray[pid]->Read(eventData);
-        if (err != SUCCESS) {
-            return err;
-        }
-        if (eventData.data.size() - cnt) {
-            DBG_PRINT("evt: %s pid: %d cpu: %d samples num: %d\n", pmuEvt->name.c_str(), pidList[pid]->pid,
-                cpuTopo->coreId, eventData.data.size() - cnt);
-        }
-        // Fill event name and cpu topology.
-        FillFields(cnt, eventData.data.size(), cpuTopo, pidList[pid].get(), eventData.data);
-    }
-
-    for (unsigned int pid = 0; pid < numPid; pid++) {
-        int err = this->pidCounterArray[pid]->EndRead();
-        if (err != SUCCESS) {
-            return err;
-        }
+    err = perfEvt->EndRead();
+    if (err != SUCCESS) {
+        return err;
     }
 
     return SUCCESS;
-}
-
-void KUNPENG_PMU::EvtListBpf::FillFields(
-        size_t start, size_t end, CpuTopology* cpuTopo, ProcTopology* procTopo, vector<PmuData>& data)
-{
-    for (auto i = start; i < end; ++i) {
-        data[i].cpuTopo = cpuTopo;
-        data[i].evt = this->pmuEvt->name.c_str();
-        if (data[i].comm == nullptr) {
-            data[i].comm = procTopo->comm;
-        }
-        if (data[i].ts == 0) {
-            data[i].ts = this->ts;
-        }
-    }
 }

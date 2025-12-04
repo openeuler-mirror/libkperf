@@ -18,6 +18,7 @@
 #include <memory>
 #include <stdexcept>
 #include <linux/types.h>
+#include <unordered_set>
 #include "evt.h"
 #include "pmu_event.h"
 #include "perf_counter.h"
@@ -27,8 +28,8 @@
 struct BpfEvent {
     int bpfFd = -1;
     int eventId = -1;
-    std::set<int> cpus;
-    std::set<int> pids;
+    std::unordered_set<int> cpus;
+    std::unordered_set<int> pids;
 };
 
 namespace KUNPENG_PMU {
@@ -47,13 +48,14 @@ namespace KUNPENG_PMU {
 
         int BeginRead();
         int EndRead();
+        int InitPidForEvent(const std::vector<int>& pids);
+        int ReadBpfProcess(const std::vector<int>& pids, std::vector<PmuData> &data);
+        int ReadBpfCgroup(std::vector<PmuData> &data);
+
     private:
         int InitBpfObj();
         int InitBpfCgroupObj();
-        int InitPidForEvent();
-        int ReadBpfProcess(std::vector<PmuData> &data);
-        int ReadBpfCgroup(std::vector<PmuData> &data);
-        std::map<std::string, int> cgroupIdxMap; // key: cgroup name, value: sequential number
+        std::unordered_map<std::string, int> cgroupIdxMap; // key: cgroup name, value: sequential number
     };
 }  // namespace KUNPENG_PMU
 #endif
