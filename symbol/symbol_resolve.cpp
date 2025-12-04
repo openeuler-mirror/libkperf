@@ -100,6 +100,7 @@ namespace {
         symbol->symbolName = UNKNOWN;
         symbol->mangleName = UNKNOWN;
         symbol->fileName = UNKNOWN;
+        symbol->mntPoint = nullptr;
         symbol->addr = addr;
         symbol->offset = 0;
         symbol->lineNum = 0;
@@ -217,50 +218,12 @@ namespace {
         return asmCode;
     }
 
-    static inline void FreeSymMap(SYMBOL_MAP& symMap)
-    {
-        for (auto& item : symMap) {
-            for (auto& data : item.second) {
-                SymbolUtils::FreeSymbol(data.second);
-            }
-        }
-    }
-
-    static inline void FreeSymUnmap(SYMBOL_UNMAP& symMap)
-    {
-        for (auto& item : symMap) {
-            SymbolUtils::FreeSymbol(item);
-        }
-    }
-
     static inline void FreeStackMap(STACK_MAP& stackMap)
     {
         for (auto& item : stackMap) {
             for (auto& data : item.second) {
                 struct Stack* head = data.second;
                 FreeList(&head);
-            }
-        }
-    }
-
-    static inline void FreeKernelVet(std::vector<std::shared_ptr<Symbol>>& kernel)
-    {
-        for (auto symbol : kernel) {
-            if (symbol->module) {
-                delete[] symbol->module;
-                symbol->module = nullptr;
-            }
-            if (symbol->fileName) {
-                delete[] symbol->fileName;
-                symbol->fileName = nullptr;
-            }
-            if (symbol->symbolName) {
-                delete[] symbol->symbolName;
-                symbol->symbolName = nullptr;
-            }
-            if (symbol->mangleName) {
-                delete[] symbol->mangleName;
-                symbol->mangleName = nullptr;
             }
         }
     }
@@ -291,32 +254,6 @@ namespace {
     }
 
 }  // namespace
-
-void SymbolUtils::FreeSymbol(struct Symbol* symbol)
-{
-    if (symbol->symbolName && symbol->symbolName != UNKNOWN) {
-        delete[] symbol->symbolName;
-        symbol->symbolName = nullptr;
-    }
-
-    if (symbol->mangleName && symbol->mangleName != UNKNOWN) {
-        delete[] symbol->mangleName;
-        symbol->mangleName = nullptr;
-    }
-
-    if (symbol->fileName && symbol->fileName != UNKNOWN && symbol->fileName != KERNEL) {
-        delete[] symbol->fileName;
-        symbol->fileName = nullptr;
-    }
-    if (symbol->module && symbol->module != UNKNOWN && symbol->module != KERNEL) {
-        delete[] symbol->module;
-        symbol->module = nullptr;
-    }
-    if (symbol) {
-        delete symbol;
-        symbol = nullptr;
-    }
-}
 
 void SymbolUtils::FreeStackAsm(struct StackAsm** stackAsm)
 {
@@ -365,6 +302,14 @@ bool SymbolUtils::IsNumber(const std::string& str)
         }
     }
     return true;
+}
+
+void SymbolUtils::FreeSymbol(struct Symbol* symbol)
+{
+    if (symbol) {
+        delete symbol;
+        symbol = nullptr;
+    }
 }
 
 void SymbolUtils::StrCpy(char* dst, int dstLen, const char* src)
@@ -538,10 +483,16 @@ int SymbolResolve::RecordModule(int pid, RecordModuleType recordModuleType)
     }
     std::vector<std::shared_ptr<ModuleMap>> modVec;
     ReadProcPidMap(file, modVec);
+    std::string mntPoint = GetMntPoint(pid);
     for (auto& item : modVec) {
-        this->RecordElf(item->moduleName.c_str());
+        std::string moduleName = item->moduleName;
+        if (!mntPoint.empty()) {
+            item->mntPoint = mntPoint;
+            moduleName = mntPoint + "/" + item->moduleName;
+        }
+        this->RecordElf(moduleName.c_str());
         if (recordModuleType != RecordModuleType::RECORD_NO_DWARF) {
-            this->RecordDwarf(item->moduleName.c_str());
+            this->RecordDwarf(moduleName.c_str());
         }
     }
     this->moduleMap.insert({pid, modVec});
@@ -573,7 +524,7 @@ int SymbolResolve::UpdateModule(int pid, RecordModuleType recordModuleType)
     }
     std::vector<std::shared_ptr<ModuleMap>> newModVec;
     ReadProcPidMap(file, newModVec);
-
+    std::string mntPoint = GetMntPoint(pid);
     // Find new dynamic modules.
     auto &oldModVec = moduleMap[pid];
     if (newModVec.size() <= oldModVec.size()) {
@@ -584,9 +535,14 @@ int SymbolResolve::UpdateModule(int pid, RecordModuleType recordModuleType)
     auto diffModVec = FindDiffMaps(oldModVec, newModVec);
     // Load modules.
     for (auto& item : diffModVec) {
-        this->RecordElf(item->moduleName.c_str());
+        std::string moduleName = item->moduleName;
+        if (!mntPoint.empty()) {
+            moduleName = mntPoint + "/" + moduleName;
+            item->mntPoint = mntPoint;
+        }
+        this->RecordElf(moduleName.c_str());
         if (recordModuleType != RecordModuleType::RECORD_NO_DWARF) {
-            this->RecordDwarf(item->moduleName.c_str());
+            this->RecordDwarf(moduleName.c_str());
         }
     }
     for (auto& mod : diffModVec) {
@@ -713,19 +669,25 @@ void SymbolResolve::Clear()
     if (!this->instance) {
         return;
     }
-    /**
-     * free the memory allocated for symbol table
-     */
-    FreeSymMap(this->symbolMap);
-    FreeSymUnmap(this->symbolUnmap);
+    for (auto& item : this->symbolMap) {
+        for(auto& data : item.second) {
+            SymbolUtils::FreeSymbol(data.second);
+        }
+    }
+
+    for (auto& item: symbolUnmap) {
+        SymbolUtils::FreeSymbol(item);
+    }
     /**
      * free the memory allocated for stack table
      */
     FreeStackMap(this->stackMap);
     /**
-     * free the memory allocated from kernel
+     * free the strdup data
      */
-    FreeKernelVet(this->ksymArray);
+    for (auto& item : strToCharMap) {
+        free(item.second);
+    }
     this->isCleared = true;
     delete this->instance;
     this->instance = nullptr;
@@ -740,18 +702,15 @@ void SymbolResolve::SearchElfInfo(MyElf& myElf, unsigned long addr, struct Symbo
     symbol->codeMapEndAddr = elfSym->get_data().value + elfSym->get_data().size;
     *offset = addr - elfSym->get_data().value;
     std::string symName = elfSym->get_name();
-    symbol->mangleName = InitChar(symName.size());
-    SymbolUtils::StrCpy(symbol->mangleName, symName.size(), symName.c_str());
+    symbol->mangleName = GetCharFromStr(symName);
     char *name = CppNamedDemangle(symName.c_str());
     if (name) {
-        symbol->symbolName = InitChar(strlen(name));
-        SymbolUtils::StrCpy(symbol->symbolName, strlen(name), name);
+        symbol->symbolName = GetCharFromStr(name);
         free(name);
         name = nullptr;
         return;
     }
-    symbol->symbolName = InitChar(symName.size());
-    SymbolUtils::StrCpy(symbol->symbolName, symName.size(), symName.c_str());
+    symbol->symbolName = GetCharFromStr(symName);
     return;
 }
 
@@ -772,8 +731,7 @@ void SymbolResolve::SearchDwarfInfo(MyDwarf& myDwarf, unsigned long addr, struct
     }
     dwarfLoadHandler.releaseLock(moduleName);
     if (dwarfEntry.find) {
-        symbol->fileName = InitChar(dwarfEntry.fileName.size());
-        SymbolUtils::StrCpy(symbol->fileName, dwarfEntry.fileName.size(), dwarfEntry.fileName.c_str());
+        symbol->fileName = GetCharFromStr(dwarfEntry.fileName);
         symbol->lineNum = dwarfEntry.lineNum;
     }
 }
@@ -858,6 +816,15 @@ struct Symbol* SymbolResolve::MapKernelAddr(unsigned long addr)
     return nullptr;
 }
 
+char* SymbolResolve::GetCharFromStr(const std::string& str) 
+{
+    if (strToCharMap.find(str) == strToCharMap.end()) {
+        char* data = strdup(str.c_str());
+        strToCharMap[str] = data;
+    }
+    return strToCharMap[str];
+}
+
 struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
 {
     if (this->moduleMap.find(pid) == this->moduleMap.end()) {
@@ -882,13 +849,17 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
         return it->second;
     }
     struct Symbol* symbol = InitializeSymbol(addr);
-    symbol->module = InitChar(module->moduleName.size());
-    SymbolUtils::StrCpy(symbol->module, module->moduleName.size(), module->moduleName.c_str());
+    symbol->module = GetCharFromStr(module->moduleName);
     unsigned long addrToSearch = addr;
-    if (this->elfMap.find(module->moduleName) != this->elfMap.end()) {
+    std::string moduleName = module->moduleName;
+    if (!module->mntPoint.empty()) {
+        symbol->mntPoint = GetCharFromStr(module->mntPoint);
+        moduleName = module->mntPoint + "/" + module->moduleName;
+    }
+    if (this->elfMap.find(moduleName) != this->elfMap.end()) {
         // If the largest symbol in the elf symbol table is detected to be smaller than the searched symbol, subtraction
         // is performed.
-        MyElf& myElf = this->elfMap.at(module->moduleName);
+        MyElf& myElf = this->elfMap.at(moduleName);
         // if the file is not exectable, subtraction is required
         if(!myElf.IsExecFile()){
             addrToSearch = addrToSearch - module->start;
@@ -896,8 +867,8 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
         this->SearchElfInfo(myElf, addrToSearch, symbol, &symbol->offset);  
     }
 
-    if (this->dwarfMap.find(module->moduleName) != this->dwarfMap.end()) {
-        this->SearchDwarfInfo(this->dwarfMap.at(module->moduleName), addrToSearch, symbol);
+    if (this->dwarfMap.find(moduleName) != this->dwarfMap.end()) {
+        this->SearchDwarfInfo(this->dwarfMap.at(moduleName), addrToSearch, symbol);
     }
     symbol->codeMapAddr = addrToSearch;
     this->symbolMap.at(pid).insert({addr, symbol});
@@ -950,17 +921,12 @@ int SymbolResolve::RecordKernel()
         if (sscanf(line, "%llx %c %s%*[^\n]\n", &addr, &mode, name) == EOF) {
             continue;
         }
-        ssize_t nameLen = strlen(name);
         std::shared_ptr<Symbol> data = std::make_shared<Symbol>();
-        data->symbolName = InitChar(nameLen);
-        strcpy(data->symbolName, name);
-        data->mangleName = InitChar(nameLen);
-        strcpy(data->mangleName, name);
+        data->symbolName = GetCharFromStr(name);
+        data->mangleName = GetCharFromStr(name);
         data->addr = addr;
-        data->fileName = InitChar(KERNEL_NAME_LEN);
-        strcpy(data->fileName, "[kernel]");
-        data->module = InitChar(KERNEL_NAME_LEN);
-        strcpy(data->module, "[kernel]");
+        data->fileName = KERNEL;
+        data->module = KERNEL;
         data->lineNum = 0;
         this->ksymArray.emplace_back(data);
     }
@@ -978,15 +944,21 @@ int SymbolResolve::UpdateModule(int pid, const char* moduleName, unsigned long s
     }
     SetFalse(this->isCleared);
     std::shared_ptr<ModuleMap> data = std::make_shared<ModuleMap>();
+    std::string mntPoint = GetMntPoint(pid);
     data->moduleName = moduleName;
     data->start = startAddr;
-    int ret = this->RecordElf(data->moduleName.c_str());
+    std::string recordModule = std::string{moduleName};
+    if (!mntPoint.empty()) {
+        data->mntPoint = mntPoint;
+        recordModule = mntPoint + "/" + recordModule;
+    }
+    int ret = this->RecordElf(recordModule.c_str());
     if (ret == LIBSYM_ERR_OPEN_FILE_FAILED || ret == LIBSYM_ERR_FILE_NOT_RGE) {
         return ret;
     }
 
     if (recordModuleType != RecordModuleType::RECORD_NO_DWARF) {
-        ret = this->RecordDwarf(data->moduleName.c_str());
+        ret = this->RecordDwarf(recordModule.c_str());
         if (ret == LIBSYM_ERR_OPEN_FILE_FAILED || ret == LIBSYM_ERR_FILE_NOT_RGE) {
             return ret;
         }
@@ -1025,8 +997,7 @@ struct Symbol* SymbolResolve::MapUserCodeAddr(const std::string& moduleName, uns
     struct Symbol* symbol = InitializeSymbol(startAddr);
     unsigned long addrToSearch = startAddr;
     symbol->codeMapAddr = addrToSearch;
-    symbol->module = InitChar(moduleName.size());
-    SymbolUtils::StrCpy(symbol->module, moduleName.size(), moduleName.c_str());
+    symbol->module = GetCharFromStr(moduleName);
     if (this->elfMap.find(moduleName) != this->elfMap.end()) {
         this->SearchElfInfo(this->elfMap.at(moduleName), addrToSearch, symbol, &symbol->offset);
     }

@@ -35,13 +35,14 @@ namespace KUNPENG_SYM {
         unsigned long start;
         unsigned long end;
         std::string moduleName;
-    } __attribute__((aligned(8)));
+        std::string mntPoint;
+    };
 
     struct ElfMap {
         unsigned long start;
         unsigned long end;
         std::string symbolName;
-    } __attribute__((aligned(8)));
+    };
 
     struct DwarfEntry {
         unsigned int lineNum = 0;
@@ -175,6 +176,7 @@ namespace KUNPENG_SYM {
     private:
         void SearchElfInfo(MyElf &myElf, unsigned long addr, struct Symbol *symbol, unsigned long *offset);
         void SearchDwarfInfo(MyDwarf &myDwarf, unsigned long addr, struct Symbol *symbol);
+        char* GetCharFromStr(const std::string& str);
         struct Symbol* MapKernelAddr(unsigned long addr);
         struct Symbol* MapUserAddr(int pid, unsigned long addr);
         struct Symbol* MapUserCodeAddr(const std::string& moduleName, unsigned long addr);
@@ -183,6 +185,7 @@ namespace KUNPENG_SYM {
         std::vector<std::shared_ptr<ModuleMap>> FindDiffMaps(const std::vector<std::shared_ptr<ModuleMap>>& oldMaps,
                                                              const std::vector<std::shared_ptr<ModuleMap>>& newMaps) const;
 
+        std::map<std::string, char*> strToCharMap;
         SYMBOL_MAP symbolMap{};
         SYMBOL_UNMAP symbolUnmap{};
         STACK_MAP stackMap{};

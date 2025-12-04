@@ -25,10 +25,14 @@
 #include <sys/utsname.h>
 #include <sys/stat.h>
 #include <climits>
+#include <map>
 #include <sys/vfs.h>
 #include "pcerrc.h"
 #include "pcerr.h"
 #include "common.h"
+
+const std::string CUR_NS_PATH = "/proc/self/ns/mnt";
+const std::string MOUNT_INFO_PATH = "/proc/self/mountinfo";
 
 std::string GetRealPath(const std::string filePath)
 {
@@ -212,3 +216,77 @@ bool CheckCurKernelConfig(const std::string& configName)
     }
     return false;
 }
+
+struct MountEntry {
+    int mountId;
+    int parentId;
+    char device[32];
+    char root[256];
+    char mountPoint[256];
+    char options[256];
+    char optionFields[256];
+    char fsType[32];
+    char source[256];
+    char superOptions[256];
+};
+
+void ParseMountInfo(const std::string& mntPath, std::map<std::string, MountEntry>& overlayMap)
+{
+    std::ifstream file(mntPath);
+    if (!file.is_open()) {
+        return;
+    }
+    std::string line;
+    while (std::getline(file, line)){
+        struct MountEntry entry;
+        int parseLen = sscanf(line.c_str(), "%d %d %31s %255s %255s %255s %255[^-] - %31s %255s %255s", 
+                        &entry.mountId, &entry.parentId, entry.device, entry.root, entry.mountPoint, entry.options, entry.optionFields, entry.fsType, entry.source, entry.superOptions);
+        if (parseLen != 10) {
+            continue;
+        }
+        if (strcmp(entry.fsType, "overlay") == 0) {
+            overlayMap[entry.superOptions] = entry;
+        }
+    }
+}
+
+bool CheckIsSameMnt(int pid)
+{
+    std::string newMnt = "/proc/" + std::to_string(pid) + "/ns/mnt";
+    struct stat curStat;
+    struct stat newStat;
+    if (stat(CUR_NS_PATH.c_str(), &curStat) < 0) {
+        return true;
+    }
+
+    if (stat(newMnt.c_str(), &newStat) < 0) {
+        return true;
+    }
+
+    return curStat.st_ino == newStat.st_ino;
+}
+
+std::string GetMntPoint(int pid)
+{
+    std::string mntPoint;
+    if (CheckIsSameMnt(pid)) {
+        return mntPoint;
+    }
+    std::map<std::string, MountEntry> overlayMap;
+    std::map<std::string, MountEntry> newOverlayMap;
+    ParseMountInfo(MOUNT_INFO_PATH, overlayMap);
+    std::string newMntInfo = "/proc/" + std::to_string(pid) + "/mountinfo";
+    ParseMountInfo(newMntInfo, newOverlayMap);
+    for (const auto& item : newOverlayMap) {
+        if (overlayMap.find(item.first) != overlayMap.end()) {
+            auto entry = overlayMap[item.first];
+            if (strcmp(entry.device, item.second.device) == 0) {
+                 mntPoint = entry.mountPoint;
+            }
+        }
+    }
+    return mntPoint;
+}
+
+
+
