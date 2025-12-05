@@ -29,7 +29,7 @@ class CtypesSymbol(ctypes.Structure):
         unsigned long offset;
         unsigned long codeMapEndAddr;  // function end address
         unsigned long codeMapAddr;     // real srcAddr of Asm Code or
-        __u64 count;
+        char* mntPoint;        // mount point
     };
     """
 
@@ -43,7 +43,7 @@ class CtypesSymbol(ctypes.Structure):
         ('offset',         ctypes.c_ulong),
         ('codeMapEndAddr', ctypes.c_ulong),
         ('codeMapAddr',    ctypes.c_ulong),
-        ('count',          ctypes.c_uint64)
+        ('mntPoint',       ctypes.c_char_p),
     ]
 
     def __init__(self,
@@ -56,7 +56,7 @@ class CtypesSymbol(ctypes.Structure):
                  offset= 0,
                  codeMapEndAddr= 0,
                  codeMapAddr= 0,
-                 count= 0,
+                 mntPoint='',
                  *args, **kw):
         super(CtypesSymbol, self).__init__(*args, **kw)
         self.addr = ctypes.c_ulong(addr)
@@ -71,12 +71,12 @@ class CtypesSymbol(ctypes.Structure):
 
         self.codeMapEndAddr = ctypes.c_ulong(codeMapEndAddr)
         self.codeMapAddr = ctypes.c_ulong(codeMapAddr)
-        self.count = ctypes.c_uint64(count)
+        self.mntPoint = ctypes.c_char_p(mntPoint.encode(UTF_8))
 
 
 class Symbol:
 
-    __slots__ = ['__c_sym','__module', '__symbolName', '__mangleName', '__fileName']
+    __slots__ = ['__c_sym','__module', '__symbolName', '__mangleName', '__fileName', '__mntPoint']
  
     def __init__(self,
                  addr= 0,
@@ -88,7 +88,7 @@ class Symbol:
                  offset= 0,
                  codeMapEndAddr= 0,
                  codeMapAddr= 0,
-                 count= 0):
+                 mntPoint= ''):
         self.__c_sym = CtypesSymbol(
             addr=addr,
             module=module,
@@ -99,7 +99,7 @@ class Symbol:
             offset=offset,
             codeMapEndAddr=codeMapEndAddr,
             codeMapAddr=codeMapAddr,
-            count=count
+            mntPoint=mntPoint
         )
 
     @property
@@ -153,6 +153,16 @@ class Symbol:
     @fileName.setter
     def fileName(self, fileName):
         self.c_sym.fileName = ctypes.c_char_p(fileName.encode(UTF_8))
+    
+    @property
+    def mntPoint(self):
+        if not self.__mntPoint and self.c_sym.mntPoint:
+            self.__mntPoint = self.c_sym.mntPoint.decode(UTF_8)
+        return self.__mntPoint
+
+    @mntPoint.setter
+    def mntPoint(self, mntPoint):
+        self.c_sym.mntPoint = ctypes.c_char_p(mntPoint.encode(UTF_8))
 
     @property
     def lineNum(self):
@@ -186,14 +196,6 @@ class Symbol:
     def codeMapAddr(self, codeMapAddr):
         self.c_sym.codeMapAddr = ctypes.c_ulong(codeMapAddr)
 
-    @property
-    def count(self):
-        return self.c_sym.count
-
-    @count.setter
-    def count(self, count):
-        self.c_sym.count = ctypes.c_uint64(count)
-
     @classmethod
     def from_c_sym(cls, c_sym):
         symbol = cls()
@@ -202,6 +204,7 @@ class Symbol:
         symbol.__symbolName = None
         symbol.__mangleName = None
         symbol.__fileName = None
+        symbol.__mntPoint = None
         return symbol
 
 
@@ -211,7 +214,6 @@ class CtypesStack(ctypes.Structure):
         struct Symbol* symbol;  // symbol info for current stack
         struct Stack* next;     // points to next position in stack
         struct Stack* prev;     // points to previous position in stack
-        __u64 count;
     } __attribute__((aligned(64)));
     """
     pass
@@ -220,8 +222,7 @@ class CtypesStack(ctypes.Structure):
 CtypesStack._fields_ = [
         ('symbol', ctypes.POINTER(CtypesSymbol)),
         ('next',   ctypes.POINTER(CtypesStack)),
-        ('prev',   ctypes.POINTER(CtypesStack)),
-        ('count',  ctypes.c_uint64)
+        ('prev',   ctypes.POINTER(CtypesStack))
     ]
 
 
@@ -232,14 +233,11 @@ class Stack(object):
     def __init__(self, 
                  symbol= None,
                  next= None,
-                 prev= None,
-                 count= 0):
+                 prev= None):
         self.__c_stack = CtypesStack(
             symbol=symbol.c_sym if symbol else None,
             next=next.c_stack if next else None,
-            prev=prev.c_stack if prev else None,
-            count=count
-        )
+            prev=prev.c_stack if prev else None)
 
     @property
     def c_stack(self):
@@ -266,7 +264,6 @@ class Stack(object):
     def next(self, next):
         self.c_stack.next = next.c_stack if next else None
 
-
     @property
     def prev(self):
         if not self.__prev:
@@ -276,14 +273,6 @@ class Stack(object):
     @prev.setter
     def prev(self, prev):
         self.c_stack.prev = prev.c_stack if prev else None
-
-    @property
-    def count(self):
-        return self.c_stack.count
-
-    @count.setter
-    def count(self, count):
-        self.c_stack.count = ctypes.c_uint64(count)
 
     @classmethod
     def from_c_stack(cls, c_stack):

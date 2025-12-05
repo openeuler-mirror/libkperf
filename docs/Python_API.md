@@ -145,14 +145,14 @@ pd为kperf.open返回值
       * module 模块名称
       * symbolName 符号名
       * mangleName mangle后的符号名
+      * fileName dwarf文件路径
       * lineNum 行号
       * offset 地址偏移
       * codeMapEndAddr 结束地址
       * codeMapAddr 初始地址
-      * count 个数
+      * mntPoint 挂载点
     * next 下一个stack
     * prev  前一个stack
-    * count 计数
   * evt: 事件
   * ts: Pmu采集时间戳
   * pid: 进程ID

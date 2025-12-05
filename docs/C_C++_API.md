@@ -135,10 +135,9 @@
       * unsigned long offset 地址偏移
       * unsigned long codeMapEndAddr 结束地址
       * unsigned long codeMapAddr 初始地址
-      * __u64 count 个数
+      * mntPoint 挂载点
     * Stack next 下一个stack
     * Stack prev  前一个stack
-    * __u64 count 计数
   * const char *evt: 事件名称
   * int64_t ts: Pmu采集时间戳
   * pid_t pid: 进程ID

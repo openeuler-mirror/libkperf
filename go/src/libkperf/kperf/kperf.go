@@ -1402,7 +1402,8 @@ func (data *PmuData) appendSymbols(pmuData C.struct_PmuData) {
 				 LineNum:uint32(cSymbol.lineNum),
 				 Offset:uint64(cSymbol.offset),
 				 CodeMapEndAddr:uint64(cSymbol.codeMapEndAddr),
-				 CodeMapAddr:uint64(cSymbol.codeMapAddr)}
+				 CodeMapAddr:uint64(cSymbol.codeMapAddr),
+				 MntPoint:C.GoString(cSymbol.mntPoint)}
 			symbols = append(symbols, oneSymbol)
 		}
 		curStack = curStack.next
