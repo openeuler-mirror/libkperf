@@ -752,11 +752,11 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    std::vector<PerfEvent> PmuList::GetMetaData(PmuData* pmuData) const
+    std::vector<PerfRecordSample> PmuList::GetMetaData(PmuData* pmuData) const
     {
         auto findData = userDataList.find(pmuData);
         if (findData == userDataList.end()) {
-            return vector<PerfEvent>();
+            return vector<PerfRecordSample>();
         }
         return findData->second.metaData;
     }

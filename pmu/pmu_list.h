@@ -85,7 +85,7 @@ public:
     void FillPidList(const unsigned pd, unsigned numPid, int* pidList);
     int ResolvePmuDataSymbol(struct PmuData* iPmuData);
 
-    std::vector<PerfEvent> GetMetaData(PmuData* pmuData) const;
+    std::vector<PerfRecordSample> GetMetaData(PmuData* pmuData) const;
     void AddNewProcess(const unsigned &pd, int pid);
 
 private:
