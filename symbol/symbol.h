@@ -30,14 +30,13 @@ struct Symbol {
     unsigned long offset;
     unsigned long codeMapEndAddr;  // function end address
     unsigned long codeMapAddr;     // real srcAddr of Asm Code or
-    __u64 count;
+    char* mntPoint;        // mount point
 };
 
 struct Stack {
     struct Symbol* symbol;  // symbol info for current stack
     struct Stack* next;     // points to next position in stack
     struct Stack* prev;     // points to previous position in stack
-    __u64 count;
 } __attribute__((aligned(64)));
 
 struct StackAsm {
