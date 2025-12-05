@@ -28,7 +28,7 @@ class Symbol(_libkperf.Symbol):
                  offset = 0,
                  codeMapEndAddr = 0,
                  codeMapAddr = 0,
-                 count = 0):
+                 mntPoint = ''):
         super(Symbol, self).__init__(
             addr=addr,
             module=module,
@@ -38,7 +38,7 @@ class Symbol(_libkperf.Symbol):
             offset=offset,
             codeMapEndAddr=codeMapEndAddr,
             codeMapAddr=codeMapAddr,
-            count=count
+            mntPoint=mntPoint,
         )
 
 
@@ -47,13 +47,11 @@ class Stack(_libkperf.Stack):
     def __init__(self,
                  symbol = None,
                  next = None,
-                 prev = None,
-                 count = 0):
+                 prev = None):
         super(Stack, self).__init__(
             symbol=symbol.c_sym if symbol else None,
             next=next.c_stack if next else None,
             prev=prev.c_stack if prev else None,
-            count=count
         )
 
 

@@ -151,10 +151,12 @@ func PmuRead(fd int) (PmuDataVo, error)
     * Module string 模块名称
     * SymbolName string 符号名
     * MangleName string mangle后的符号名
+    * FileName string dwarf对应文件路径
     * LineNum uint32 行号
     * Offset uint64 地址偏移
     * CodeMapEndAddr uint64 结束地址
     * CodeMapAddr uint64 初始地址
+    * MntPoint string 挂载点
   * BranchRecords
     * FromAddr uint64 起始地址
     * ToAddr   uint64 跳转地址
