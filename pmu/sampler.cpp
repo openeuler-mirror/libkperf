@@ -296,7 +296,7 @@ void KUNPENG_PMU::PerfSampler::ReadRingBuffer(EventData &eventData)
                 break;
             }
             case PERF_RECORD_MMAP: {
-                eventData.metaData.push_back(*event);
+                eventData.metaData.push_back(event->sample);
                 if (symMode == RESOLVE_ELF_DWARF || symMode == NO_SYMBOL_RESOLVE) {
                     SymResolverUpdateModule(event->mmap.tid, event->mmap.filename, event->mmap.addr);
                 } else if (symMode == RESOLVE_ELF) {
@@ -305,7 +305,7 @@ void KUNPENG_PMU::PerfSampler::ReadRingBuffer(EventData &eventData)
                 break;
             }
             case PERF_RECORD_MMAP2: {
-                eventData.metaData.push_back(*event);
+                eventData.metaData.push_back(event->sample);
                 if (symMode == RESOLVE_ELF_DWARF || symMode == NO_SYMBOL_RESOLVE) {
                     SymResolverUpdateModule(event->mmap2.tid, event->mmap2.filename, event->mmap2.addr);
                 } else if (symMode == RESOLVE_ELF) {
@@ -315,12 +315,12 @@ void KUNPENG_PMU::PerfSampler::ReadRingBuffer(EventData &eventData)
             }
             case PERF_RECORD_FORK: {
                 DBG_PRINT("Fork ptid: %d tid: %d\n", event->fork.pid, event->fork.tid);
-                eventData.metaData.push_back(*event);
+                eventData.metaData.push_back(event->sample);
                 UpdatePidInfo(event->fork.tid);
                 break;
             }
             case PERF_RECORD_COMM: {
-                eventData.metaData.push_back(*event);
+                eventData.metaData.push_back(event->sample);
                 UpdateCommInfo(event);
                 break;
             }

@@ -207,7 +207,7 @@ struct EventData {
     std::vector<PerfSampleIps> sampleIps;
     std::vector<PmuDataExt *> extPool;
     std::vector<PmuSwitchData> switchData;
-    std::vector<PerfEvent> metaData;
+    std::vector<PerfRecordSample> metaData;
 };
 
 int MapErrno(int sysErr);
