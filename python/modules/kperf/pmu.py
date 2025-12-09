@@ -115,11 +115,12 @@ class BranchSampleFilter:
     KPERF_SAMPLE_BRANCH_NO_CYCLES   = 1 << 15
     KPERF_SAMPLE_BRANCH_TYPE_SAVE   = 1 << 16
 
-
 class SymbolMode:
-    NO_SYMBOL_RESOLVE = 0  # <stack> in PmuData will be set to NULL.
-    RESOLVE_ELF = 1        # Resolve elf only. Fields except lineNum and fileName in Symbol will be valid.
-    RESOLVE_ELF_DWARF = 2  # Resolve elf and dwarf. All fields in Symbol will be valid.
+    NO_SYMBOL_RESOLVE = 0   # don't load the elf and dwarf. <stack> in PmuData will be set to NULL.
+    RESOLVE_ELF = 1         # Resolve elf only. Fields except lineNum and fileName in Symbol will be valid.
+    RESOLVE_ELF_DWARF = 2   # Resolve elf and dwarf. All fields in Symbol will be valid.
+    RESOLVE_DELAY_ELF = 3   # Load elf. The ResolvePmuDataSymbol can be called to obtain elf information.
+    RESOLVE_DELAY_DWARF = 4 # Load elf and dwarf. The ResolvePmuDataSymbol can be called to obtain elf information and dwarf information.
 
 class PmuDeviceMetric:
     # Perchannel metric.
@@ -481,7 +482,7 @@ def read(pd):
 
 def resolvePmuDataSymbol(pmuData):
     """
-    when kperf symbol mode is NO_SYMBOL_RESOLVE during PmuRead(), this function can be used to resolve stack symbols
+    when kperf symbol mode is RESOLVE_DELAY_ELF or RESOLVE_DELAY_DWARF during PmuRead(), this function can be used to resolve stack symbols
     :param: pmuData
     :return: pmu data
     """

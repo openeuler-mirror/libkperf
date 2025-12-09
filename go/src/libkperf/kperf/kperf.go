@@ -220,6 +220,8 @@ var (
 var (
 	ELF C.enum_SymbolMode = C.RESOLVE_ELF
 	ELF_DWARF C.enum_SymbolMode = C.RESOLVE_ELF_DWARF
+	DELAY_ELF C.enum_SymbolMode = C.RESOLVE_DELAY_ELF
+	DELAY_DWARF C.enum_SymbolMode = C.RESOLVE_DELAY_DWARF
 )
 
 // spe filter, for pmuAttr.DataFilter
@@ -897,7 +899,7 @@ func PmuDumpData(dataVo PmuDataVo, filePath string, dumpDwf bool) error {
 	return nil
 }
  
-// When symbol mode is SNO_SYMBOL_RESOLVE, you can use this resolve PmuData Symbol after PmuRead function
+// When symbol mode is RESOLVE_DELAY_ELF or RESOLVE_DELAY_DWARF, you can use this resolve PmuData Symbol after PmuRead function
 // param PmuDataVo the data from PmuRead
 // return nil indicates resolve success, otherwise return error code
 func ResolvePmuDataSymbol(dataVo PmuDataVo) error {

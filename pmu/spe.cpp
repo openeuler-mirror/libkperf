@@ -418,14 +418,14 @@ int Spe::CoreDummyData(struct SpeCoreContext *context, struct ContextSwitchData 
 
         if (header->type == PERF_RECORD_MMAP) {
             struct PerfRecordMmap *sample = (struct PerfRecordMmap *)header;
-            if (symbolMode == RESOLVE_ELF_DWARF || symbolMode == NO_SYMBOL_RESOLVE) {
+            if (symbolMode == RESOLVE_ELF_DWARF || symbolMode == RESOLVE_DELAY_DWARF) {
                 int ret = SymResolverUpdateModule(sample->tid, sample->filename, sample->addr);
                 if (ret != SUCCESS) {
                     // if the module fails to be updated, a warning is recorded to overwrite the failure error code.
                     SetWarn(ret, Perror());
                     New(SUCCESS);
                 }
-            } else if (symbolMode == RESOLVE_ELF) {
+            } else if (symbolMode == RESOLVE_ELF || symbolMode == RESOLVE_DELAY_ELF) {
                 int ret = SymResolverUpdateModuleNoDwarf(sample->tid, sample->filename, sample->addr);
                  if (ret != SUCCESS) {
                     // if the module fails to be updated, a warning is recorded to overwrite the failure error code.
