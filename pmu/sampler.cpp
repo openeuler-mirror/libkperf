@@ -297,18 +297,18 @@ void KUNPENG_PMU::PerfSampler::ReadRingBuffer(EventData &eventData)
             }
             case PERF_RECORD_MMAP: {
                 eventData.metaData.push_back(event->sample);
-                if (symMode == RESOLVE_ELF_DWARF || symMode == NO_SYMBOL_RESOLVE) {
+                if (symMode == RESOLVE_ELF_DWARF || symMode == RESOLVE_DELAY_DWARF) {
                     SymResolverUpdateModule(event->mmap.tid, event->mmap.filename, event->mmap.addr);
-                } else if (symMode == RESOLVE_ELF) {
+                } else if (symMode == RESOLVE_ELF || symMode == RESOLVE_DELAY_ELF) {
                     SymResolverUpdateModuleNoDwarf(event->mmap.tid, event->mmap.filename, event->mmap.addr);
                 }
                 break;
             }
             case PERF_RECORD_MMAP2: {
                 eventData.metaData.push_back(event->sample);
-                if (symMode == RESOLVE_ELF_DWARF || symMode == NO_SYMBOL_RESOLVE) {
+                if (symMode == RESOLVE_ELF_DWARF || symMode == RESOLVE_DELAY_DWARF) {
                     SymResolverUpdateModule(event->mmap2.tid, event->mmap2.filename, event->mmap2.addr);
-                } else if (symMode == RESOLVE_ELF) {
+                } else if (symMode == RESOLVE_ELF || symMode == RESOLVE_DELAY_ELF) {
                     SymResolverUpdateModuleNoDwarf(event->mmap2.tid, event->mmap2.filename, event->mmap2.addr);
                 }
                 break;

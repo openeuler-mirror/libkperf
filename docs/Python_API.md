@@ -490,7 +490,7 @@ kperf.close_cpu_freq_sampling()
 
 ### kperf.resolvePmuDataSymbol
 
-def resolvePmuDataSymbol(pmuData: PmuData) -> int: 当SymbolMode不设置或者设置为0时，可通过该接口解析read返回的PmuData数据中的符号
+def resolvePmuDataSymbol(pmuData: PmuData) -> int: 当SymbolMode设置为3或者4时，可通过该接口解析read返回的PmuData数据中的符号
 ```python
 #python代码示例
 import kperf
@@ -502,6 +502,7 @@ pmu_attr = kperf.PmuAttr(
           sampleRate=1000,
           callStack=True,
           useFreq=True,
+          symMode=kperf.RESOLVE_DELAY_ELF,
 )
 fd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
 if fd == -1:

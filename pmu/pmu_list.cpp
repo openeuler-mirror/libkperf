@@ -697,7 +697,10 @@ namespace KUNPENG_PMU {
                 SymResolverRecordModuleNoDwarf(pmuData.pid);
             } else if (symMode == RESOLVE_ELF_DWARF) {
                 SymResolverRecordModule(pmuData.pid);
-            } else if (symMode == NO_SYMBOL_RESOLVE) {
+            } else if (symMode == RESOLVE_DELAY_ELF) {
+                 SymResolverRecordModuleNoDwarf(pmuData.pid);
+                 continue;
+            } else if (symMode == RESOLVE_DELAY_DWARF) {
                 SymResolverRecordModule(pmuData.pid);
                 continue;
             } else {

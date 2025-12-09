@@ -520,7 +520,7 @@ func main() {
 
 ### kperf.ResolvePmuDataSymbol
 
-func ResolvePmuDataSymbol(dataVo PmuDataVo) error 当SymbolMode不设置或者设置为0时，可通过该接口解析PmuRead返回的PmuData数据中的符号
+func ResolvePmuDataSymbol(dataVo PmuDataVo) error 当SymbolMode设置为3或者4时，可通过该接口解析PmuRead返回的PmuData数据中的符号
 ```go
 import "libkperf/kperf"
 import "fmt"

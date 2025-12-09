@@ -321,7 +321,7 @@ func TestPmuGetCpuFreqDetail(t *testing.T) {
 }
 
 func TestResolvePmuDataSymbol(t *testing.T) {
-	attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, CallStack:true, SampleRate: 1000, UseFreq:true}
+	attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, CallStack:true, SampleRate: 1000, UseFreq:true, SymbolMode: kperf.DELAY_DWARF}
 	fd, err := kperf.PmuOpen(kperf.SAMPLE, attr)
 	if err != nil {
 		t.Fatalf("kperf pmuopen sample failed, expect err is nil, but is %v", err)

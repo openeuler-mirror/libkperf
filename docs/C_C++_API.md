@@ -176,7 +176,7 @@
 清理PmuData
 
 ### int ResolvePmuDataSymbol(struct PmuData* pmuData);
-当SymbolMode不设置或者设置为0时，可通过该接口解析read返回的PmuData数据中的符号
+当SymbolMode设置为3或者4时，可通过该接口解析read返回的PmuData数据中的符号
 
 ### int PmuDumpData(struct PmuData *pmuData, unsigned len, char *filepath, int dumpDwf);
 * pmuData

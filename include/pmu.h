@@ -56,12 +56,16 @@ enum SpeEventFilter {
 };
 
 enum SymbolMode {
-    // <stack> in PmuData will be set to NULL.
+    // don't load the elf and dwarf. <stack> in PmuData will be set to NULL.
     NO_SYMBOL_RESOLVE = 0,
     // Resolve elf only. Fields except lineNum and fileName in Symbol will be valid. 
     RESOLVE_ELF = 1,
     // Resolve elf and dwarf. All fields in Symbol will be valid.
-    RESOLVE_ELF_DWARF = 2
+    RESOLVE_ELF_DWARF = 2,
+    // Load elf. The ResolvePmuDataSymbol can be called to obtain elf information.
+    RESOLVE_DELAY_ELF = 3,
+    // Load elf and dwarf. The ResolvePmuDataSymbol can be called to obtain elf information and dwarf information.
+    RESOLVE_DELAY_DWARF = 4
 };
 
 enum BranchSampleFilter {
@@ -399,7 +403,7 @@ int PmuRead(int pd, struct PmuData** pmuData);
 
 /**
 * @brief 
-* When symbol mode is NO_SYMBOL_RESOLVE, you can use this resolve PmuData Symbol after PmuRead function
+* When symbol mode is RESOLVE_DELAY_ELF or RESOLVE_DELAY_DWARF, you can use this resolve PmuData Symbol after PmuRead function
 * @param pmuData the data from PmuRead
 * @return 0 indicates resolve success, otherwise return error code
 */

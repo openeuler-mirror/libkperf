@@ -359,7 +359,7 @@ void collectMiss(CollectArgs& args)
     attr.numEvtAttr = cfg.baseEvents.size();
     attr.callStack = 1;
     attr.excludeKernel = true;
-    attr.symbolMode = NO_SYMBOL_RESOLVE;
+    attr.symbolMode = RESOLVE_DELAY_DWARF;
     attr.freq = args.frequency;
     attr.useFreq = 1;
     attr.pidList = args.pids.data();
