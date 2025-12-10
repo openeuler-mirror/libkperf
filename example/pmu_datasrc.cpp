@@ -94,6 +94,15 @@ struct VaItem {
     int cnt;
 };
 
+struct ArgsContext {
+    int pid = -1;
+    int duration = 10;
+    bool isLaunch = false;
+    char* cgroupName = nullptr;
+    bool computeFs = false;
+    int fd[2];
+};
+
 struct RacePcCompare {
     bool operator() (const pair<VaItem, VaItem> &a, const pair<VaItem, VaItem> &b) const {
         if (a.first.pc != b.first.pc) {
@@ -138,24 +147,38 @@ void ComputeRacePc(const ulong mypc, const map<ulong, int> &vas,
     }
 }
 
-int ExecCommand(std::vector<std::string>& comms)
+int ExecCommand(std::vector<std::string>& comms, int fd[2])
 {
+    pipe(fd);
     pid_t pid = fork();
     if (pid == -1) {
         perror("fork failed!");
         return -1;
     } else if (pid == 0) {
+        close(fd[1]);
+        char buf[4];
+        int ret = read(fd[0], buf, 4);
+        if (ret < 1) {
+            std::cout << "read error" << std::endl;
+            exit(EXIT_FAILURE);
+        }
         char **argv = new char*[comms.size() + 1];
         for (size_t i = 0; i < comms.size(); ++i) {
             argv[i] = strdup(comms[i].c_str());
         }
         argv[comms.size()] = NULL;
         execvp(argv[0], argv);
-        perror("exec commands failed!");
+       
+        union sigval val;
+        val.sival_int = errno;
+        if (sigqueue(getppid(), SIGUSR1, val)) {
+            perror(argv[0]);
+        }
         for (size_t i = 0; i < comms.size(); ++i) {
             free(argv[i]);
         }
         delete []argv;
+
         exit(EXIT_FAILURE);
     } else {
         return pid;
@@ -163,7 +186,14 @@ int ExecCommand(std::vector<std::string>& comms)
     return -1;
 }
 
-int ParseArgv(int argc, char** argv, int& pid, int& duration, bool& isLaunch, bool &computeFs, char** cgroupName)
+static volatile int execErrNo;
+
+static void ExecFailedSignal(int signo, siginfo_t* info, void* ucontext)
+{
+    execErrNo = info->si_value.sival_int;
+}
+
+int ParseArgv(int argc, char** argv, struct ArgsContext& act)
 {
     int longIndex;
     int ret;
@@ -173,7 +203,7 @@ int ParseArgv(int argc, char** argv, int& pid, int& duration, bool& isLaunch, bo
             case 'p':
                 curIndex += 2;
                 try {
-                    pid = std::stoi(optarg);
+                    act.pid = std::stoi(optarg);
                 } catch(...) {
                     std::cout << "pid is number, can't be: " << optarg << std::endl;
                     return -1;
@@ -182,7 +212,7 @@ int ParseArgv(int argc, char** argv, int& pid, int& duration, bool& isLaunch, bo
             case 'd':
                 curIndex += 2;
                 try {
-                    duration = std::stoi(optarg);
+                    act.duration = std::stoi(optarg);
                 } catch(...) {
                     std::cout << "duration is number, can't be: " << optarg << std::endl;
                     return -1;
@@ -190,7 +220,7 @@ int ParseArgv(int argc, char** argv, int& pid, int& duration, bool& isLaunch, bo
                 break;
             case 'c':
                 curIndex += 2;
-                *cgroupName = optarg;
+                act.cgroupName = optarg;
                 break;
             case 'h':
                 curIndex += 2;
@@ -198,20 +228,25 @@ int ParseArgv(int argc, char** argv, int& pid, int& duration, bool& isLaunch, bo
                 return -1;
             case 'f':
                 curIndex += 2;
-                computeFs = true;
+                act.computeFs = true;
                 break;
             default:
                 return -1;
         }
     }
 
-    if (pid == -1 && argc > curIndex + 1) {
+    if (act.pid == -1 && argc > curIndex + 1) {
         std::vector<std::string> comms;
         for (int i = curIndex + 1; i < argc; ++i) {
             comms.push_back(argv[i]);
         }
-        pid = ExecCommand(comms);
-        isLaunch = true;
+        act.pid = ExecCommand(comms, act.fd);
+        act.isLaunch = true;
+        struct sigaction si;
+        si.sa_flags = SA_SIGINFO;
+        si.sa_sigaction = ExecFailedSignal;
+        sigaction(SIGUSR1, &si, NULL);
+        close(act.fd[0]);
     }
     return 0;
 }
@@ -242,41 +277,42 @@ void PrintTime(string msg)
     printf("[%f]%s\n", Time(), msg.c_str());
 }
 
+void KillApp(int pid, bool isLaunch)
+{
+    if (isLaunch) {
+        kill(pid, 9);
+    }
+}
+
 int main(int argc, char** argv)
 {
     startTs = Time();
-    int pid = -1;
-    int duration = 10;
-    bool isLaunch = false;
-    char* cgroupName = nullptr;
-    bool computeFs = false;
+    struct ArgsContext act;
 
-    int err = ParseArgv(argc, argv, pid, duration, isLaunch, computeFs, &cgroupName);
+    int err = ParseArgv(argc, argv, act);
     if (err == -1) {
         return -1;
     }
 
-    if (pid == -1 && cgroupName == nullptr) {
+    if (act.pid == -1 && act.cgroupName == nullptr) {
         std::cout << "usage pmu_datasrc -d 2 -p 10001 or pmu_datasrc -d 2 /home/test/falsesharing_demo" << std::endl;
         return -1;
     }
 
-    if (pid > 0 && cgroupName != nullptr) {
-        if (isLaunch) {
-            kill(pid, 9);
-        }
+    if (act.pid > 0 && act.cgroupName != nullptr) {
+        KillApp(act.pid, act.isLaunch);
         std::cout << "Cannot specify both cgroup and pid. Please use only one" << std::endl;
         return -1;
     }
 
     PmuAttr attr = {0};
-    char* cgroupNameList[1] = {cgroupName};
-    int pidList[1];
-    pidList[0] = pid;
-    if (cgroupName != nullptr) {
+    if (act.cgroupName != nullptr) {
+        char* cgroupNameList[1] = {act.cgroupName};
         attr.cgroupNameList = cgroupNameList;
         attr.numCgroup = 1; 
     } else {
+        int pidList[1];
+        pidList[0] = act.pid;
         attr.pidList = pidList;
         attr.numPid = 1;
     }
@@ -284,24 +320,40 @@ int main(int argc, char** argv)
     attr.dataFilter = SPE_DATA_ALL;
     attr.evFilter = SPE_EVENT_RETIRED;
     attr.symbolMode = SymbolMode::RESOLVE_ELF_DWARF;
+    if (act.isLaunch) {
+        attr.enableOnExec = 1;
+    }
 
     int pd = PmuOpen(SPE_SAMPLING, &attr);
     if (pd == -1) {
-        if (isLaunch) {
-            kill(pid, 9);
-        }
+        KillApp(act.pid, act.isLaunch);
         std::cout << "kperf pmu open spe failed, err is: " << Perror() << std::endl;
         return -1;
     }
+
+    if (act.isLaunch) {
+        int ret = write(act.fd[1], "data", 4);
+        if (ret < 0) {
+            std::cout << "write error" << std::endl;
+            return -1;
+        }
+    }
     
     PrintTime("start collect");
-    int num = duration * 10;
+    int num = act.duration * 100;
     PmuData* data = nullptr;
     int len = 0;
-    for (int i = 0; i < num; i++) {
+    if (!act.isLaunch) {
         PmuEnable(pd);
-        usleep(100 * 1000);
-        PmuDisable(pd);
+    }
+    for (int i = 0; i < num; i++) {
+        usleep(100 * 100);
+        if (execErrNo) {
+            std::cout << "exec failed:" <<  strerror(execErrNo) << std::endl;
+            PmuClose(pd);
+            KillApp(act.pid, act.isLaunch);
+            return -1;
+        }
         PmuData* fromData = nullptr;
         PmuRead(pd, &fromData);
         int curLen = PmuAppendData(fromData, &data);
@@ -358,7 +410,7 @@ int main(int argc, char** argv)
         for (const auto& symItem : sortVec) {
             auto &it = symItem.second;
             std::cout << "    " << "|--" << symItem.first << " [" << symItem.second.cnt << "]" << std::endl;
-            if (computeFs && HITM_SET.find(source) != HITM_SET.end()) {
+            if (act.computeFs && HITM_SET.find(source) != HITM_SET.end()) {
                 // Found out which other insts may access same cacheline with va accessed by current inst.
                 // Iterate over va from current inst and search in the whole inst set(vaList).
                 ComputeRacePc(it.pc, it.vas, vaList, racepc);
@@ -373,7 +425,7 @@ int main(int argc, char** argv)
     });
     PrintTime("sorted");
 
-    if (computeFs) {
+    if (act.computeFs) {
         cout << "Possible false sharing: \n";
         for (auto &race : sortedList) {
             auto &race1 = race.first.first;
@@ -384,9 +436,7 @@ int main(int argc, char** argv)
         }
     }
     PmuClose(pd);
-    if (isLaunch) {
-        kill(pid, 9);
-    }
+    KillApp(act.pid, act.isLaunch);
 
     return 0;
 }
