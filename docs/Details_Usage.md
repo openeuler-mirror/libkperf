@@ -2062,6 +2062,13 @@ HIP_L1 1952
 #include <cstdlib>
 #include <unistd.h>
 
+static volatile int execErrNo;
+
+static void ExecFailedSignal(int signo, siginfo_t* info, void* ucontext)
+{
+    execErrNo = info->si_value.sival_int;
+}
+
 int main() {
     std::vector<std::string> comms;
     comms.push_back("ls");
@@ -2084,13 +2091,22 @@ int main() {
         }
         argv[comms.size()] = NULL;
         execvp(argv[0], argv);
-        perror("exec commands failed!");
+        union sigval val;
+        val.sival_int = errno;
+        if (sigqueue(getppid(), SIGUSR1, val)) {
+            perror(argv[0]);
+        }
         for (size_t i = 0; i < comms.size(); ++i) {
             free(argv[i]);
         }
         delete []argv;
         exit(EXIT_FAILURE);
     } else {
+        struct sigaction si;
+        si.sa_flags = SA_SIGINFO;
+        si.sa_sigaction = ExecFailedSignal;
+        sigaction(SIGUSR1, &si, NULL);
+
         close(fd[0]);
         PmuAttr attr = {0};
         int pidList[1] = {pid};
@@ -2109,8 +2125,6 @@ int main() {
             std::cout << Perror() << std::endl;
             kill(pid, 9);
             return 1;
-        } else {
-            std::cout << "pmu open success" << std::endl;
         }
 
         int ret = write(fd[1], "data", 4);
@@ -2122,6 +2136,14 @@ int main() {
 
         PmuData* data = nullptr;
         sleep(1);
+
+        if (execErrNo) {
+            std::cout << "exec failed:" <<  strerror(execErrNo) << std::endl;
+            PmuClose(pd);
+            kill(pid, 9);
+            return 1;
+        }
+
         int len = PmuRead(pd, &data);
         for (int i = 0; i < len; i++) {
             std::cout << "comm=" << data[i].comm << " " << data[i].ts << " " << data[i].pid  << " " << data[i].tid;
