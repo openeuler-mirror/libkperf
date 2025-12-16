@@ -306,13 +306,13 @@ int main(int argc, char** argv)
     }
 
     PmuAttr attr = {0};
-    if (act.cgroupName != nullptr) {
-        char* cgroupNameList[1] = {act.cgroupName};
+    char* cgroupNameList[1] = {act.cgroupName};
+    int pidList[1];
+    pidList[0] = act.pid;
+    if (act.cgroupName != nullptr) {    
         attr.cgroupNameList = cgroupNameList;
         attr.numCgroup = 1; 
     } else {
-        int pidList[1];
-        pidList[0] = act.pid;
         attr.pidList = pidList;
         attr.numPid = 1;
     }
