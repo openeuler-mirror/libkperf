@@ -59,66 +59,53 @@ int GetTgid(pid_t pid)
         return -1;
     }
     // Get tgid from /proc/<pid>/status.
-    std::string filePath = "/proc/" + std::to_string(pid) + "/status";
-    std::string realPath = GetRealPath(filePath);
-    if (!IsValidPath(realPath)) {
+    char path[64];
+    snprintf(path, sizeof(path), "/proc/%d/status", pid);
+    FILE* f = fopen(path, "r");
+    if (!f) {
         return -1;
     }
-    std::ifstream statusFile(realPath);
-    if (!statusFile.is_open()) {
-        return -1;
-    }
-    string token;
-    bool foundTgid = false;
-    while (!statusFile.eof()) {
-        if (!statusFile.is_open()) {
-            return -1;
-        }
-        statusFile >> token;
-        if (statusFile.bad()) {
-            // The file may be successfully opened before while loop,
-            // but disappear before reading stream.
-            return -1;
-        }
-        if (token == "Tgid:") {
-            foundTgid = true;
-            continue;
-        }
-        if (foundTgid) {
-            return stoi(token);
+
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "Tgid:", 5) == 0) {
+            char* endptr;
+            long tgid = strtol(line + 5, &endptr, 10);
+            fclose(f);
+            if (endptr == line + 5) {
+                return -1;
+            }
+            return static_cast<int>(tgid);
         }
     }
+    // The file may be successfully opened before while loop,
+    // but disappear before reading stream.
+    fclose(f);
     return -1;
 }
 
 char *GetComm(pid_t pid)
 {
-    std::string commName;
+    static thread_local char buffer[PATH_MAX];
     if (pid == -1) {
-        commName = "system";
-        char *comm = static_cast<char *>(malloc(commName.length() + 1));
-        if (comm == nullptr) {
-            return nullptr;
-        }
-        strcpy(comm, commName.c_str());
-        return comm;
+        return strdup("system");
     }
-    std::string filePath = "/proc/" + std::to_string(pid) + "/comm";
-    std::string realPath = GetRealPath(filePath);
-    if (!IsValidPath(realPath)) {
+
+    char path[64];
+    snprintf(path, sizeof(path), "/proc/%d/comm", pid);
+    FILE* f = fopen(path, "r");
+    if (!f) {
         return nullptr;
     }
-    std::ifstream commFile(realPath);
-    if (!commFile.is_open()) {
+
+    if (!fgets(buffer, sizeof(buffer), f)) {
+        fclose(f);
         return nullptr;
     }
-    commFile >> commName;
-    char *comm = static_cast<char *>(malloc(commName.length() + 1));
-    if (comm == nullptr) {
-        return nullptr;
-    }
-    strcpy(comm, commName.c_str());
-    return comm;
+    fclose(f);
+
+    buffer[strcspn(buffer, "\n")] = '\0';
+    return strdup(buffer);
 }
 
 struct ProcTopology *GetProcTopology(pid_t pid)

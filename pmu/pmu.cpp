@@ -387,6 +387,15 @@ static int CheckBpfMode(enum PmuTaskType collectType, struct PmuAttr *attr)
         New(LIBPERF_ERR_INVALID_BPF_PARAM, "Bpf mode doesn't support event group now");
         return LIBPERF_ERR_INVALID_BPF_PARAM;
     }
+
+    set<string> events;
+    for (int i = 0; i < attr->numEvt; i++) {
+        std::string evt(attr->evtList[i]);
+        if (!events.insert(evt).second) {
+            New(LIBPERF_ERR_INVALID_BPF_PARAM, "Bpf mode doesn't support duplicate event names");
+            return LIBPERF_ERR_INVALID_BPF_PARAM;
+        }
+    }
     return SUCCESS;
 }
 
