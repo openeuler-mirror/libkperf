@@ -2162,3 +2162,150 @@ int main() {
     }
 }
 ```
+
+```python
+import multiprocessing
+import time
+import os
+import signal
+import sys
+import kperf
+
+pd = -1
+
+def child_proc(event, args):
+    event.wait()
+    try:
+        os.execvp(args[0], args)
+    except OSError as e:
+        print(f"{args[0]:{str(e)}}")
+        os.kill(os.getppid(), signal.SIGUSR1)
+
+def signal_handler(sig, fm):
+    kperf.close(pd)
+    sys.exit(1)
+
+def cout_stack(stack):
+    if stack.symbol:
+        symbol = stack.symbol
+        print(f"{hex(symbol.addr)} {symbol.symbolName}:+{hex(symbol.offset)} {symbol.module} {symbol.fileName}:{symbol.lineNum}")
+
+if __name__ == "__main__":
+    multiprocessing.set_start_method('fork')
+    event = multiprocessing.Event()
+    pro = multiprocessing.Process(target=child_proc, args=(event, ["ls", "-l"]))
+    pro.start()
+    signal.signal(signal.SIGUSR1, signal_handler)
+    pid = pro.pid
+
+    pmu_attr = kperf.PmuAttr(
+        pidList = [pid],
+        sampleRate=4096,
+        useFreq=True,
+        enableOnExec = True,
+        evtList=["cycles"],
+        symbolMode=kperf.SymbolMode.RESOLVE_ELF_DWARF,
+    )
+    pd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
+    if pd == -1:
+        print(f"pmu open failed, err is {kperf.error()}")
+        os.kill(pid, 9)
+        exit(1)
+    event.set()
+    time.sleep(1)
+    pmu_data = kperf.read(pd)
+    for item in pmu_data.iter:
+        print(f"comm={item.comm} {item.ts} {item.pid} {item.tid} {item.period} ", end="")
+        if item.stack:
+            cout_stack(item.stack)
+        else:
+            print("\n")
+    kperf.close(pd)
+    os.kill(pid, 9)
+```
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+    "os/exec"
+    "syscall"
+    "time"
+    "libkperf/kperf"
+)
+
+func main() {
+    rp, wp, err := os.Pipe()
+    if err != nil {
+        panic(err)
+    }
+    defer rp.Close()
+    defer wp.Close()
+
+    cmd := exec.Command(os.Args[0], "child")
+    cmd.Stdin = os.Stdin
+    cmd.Stdout = os.Stdout
+    cmd.Stderr = os.Stderr
+    cmd.ExtraFiles = []*os.File{rp}
+
+    cmd.SysProcAttr = &syscall.SysProcAttr {
+        Setpgid: true,
+    }
+
+    if err := cmd.Start(); err != nil {
+        panic(err)
+    }
+
+    attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, SymbolMode:kperf.ELF_DWARF, SampleRate: 4096, UseFreq:true, EnableOnExec:true, PidList:[]int{cmd.Process.Pid}}
+    pd, err := kperf.PmuOpen(kperf.SAMPLE, attr)
+    if err != nil {
+        fmt.Printf("kperf pmuopen sample failed, expect err is nil, but is %v\n", err)
+        return
+    }
+
+    wp.Write([]byte("start"))
+    time.Sleep(time.Second)
+    dataVo, err := kperf.PmuRead(pd)
+    if err != nil {
+        fmt.Printf("kperf pmuread failed, expect err is nil, but is %v\n", err)
+        return
+    }
+    for _, o := range dataVo.GoData {
+        fmt.Printf("%v %v %v %v ", o.Comm, o.Ts, o.Pid, o.Tid)
+        for _, s := range o.Symbols {
+            fmt.Printf("%#x %v+%#x %v %v (%v:%v) \n", s.Addr, s.SymbolName, s.Offset, s.CodeMapAddr, s.Module, s.FileName, s.LineNum)
+        }
+    }
+    kperf.PmuDataFree(dataVo)
+    kperf.PmuClose(pd)
+    cmd.Process.Kill()
+    cmd.Wait()
+}
+
+func childProc() {
+    pipe := os.NewFile(3, "signal_pipe")
+    defer pipe.Close()
+    buf := make([]byte, 10)
+    _, err := pipe.Read(buf)
+    if err != nil {
+        panic(err)
+    }
+    cmdPath := "/bin/ls"
+    args := []string{"ls", "-l"}
+    env := os.Environ()
+    callErr := syscall.Exec(cmdPath, args, env)
+    if callErr != nil {
+        fmt.Printf("%v: %v\n", cmdPath, callErr)
+        os.Exit(1)
+    }
+}
+
+func init() {
+    if len(os.Args) > 1 && os.Args[1] == "child" {
+        childProc()
+        os.Exit(0)
+    }
+}
+```
