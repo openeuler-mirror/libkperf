@@ -38,6 +38,8 @@ using namespace std;
 static unordered_map<unsigned, bool> runningStatus;
 static SafeHandler<unsigned> pdMutex;
 static pair<unsigned, const char**> uncoreEventPair;
+static unordered_map<CHIP_TYPE, int> groupEvtCapacity = {{HIPA, 13}, {HIPB, 9}, {HIPC, 9},
+                                                         {HIPF, 9}, {HIPE, 9}, {HIPG, 6}};
 
 #define REQUEST_USER_ACCESS 0x2
 #define HARD_WARE_METRIC 0x1
@@ -122,6 +124,29 @@ static int CheckGroupList(unsigned numEvtAttr, struct EvtAttr *evtAttr)
     if (numEvtAttr > 0 && evtAttr == nullptr) {
         New(LIBPERF_ERR_INVALID_EVTATTR, "Invalid evtAttr list: numEvtAttr is greater than 0, but evtAttr is null.");
         return LIBPERF_ERR_INVALID_EVTATTR;
+    }
+
+    // check whether the number of events in each group exceeds the PMU limit
+    CHIP_TYPE chipType = GetCpuType();
+    int maxEvt;
+    auto findType = groupEvtCapacity.find(chipType);
+    if (findType == groupEvtCapacity.end()) {
+        return SUCCESS;
+    } else {
+        maxEvt = findType->second;
+    }
+    unordered_map<int, size_t> cntEvtMap;
+    for (size_t i = 0; i < numEvtAttr; i++) {
+        if (evtAttr[i].groupId != -1) {
+            cntEvtMap[evtAttr[i].groupId]++;
+        }
+    }
+    for (const auto& evt : cntEvtMap) {
+        if (evt.second > maxEvt) {
+            New(LIBPERF_ERR_INVALID_EVTATTR, "Invalid evtAttr list: the number of events in group " + to_string(evt.first)
+                 + " is: " + to_string(evt.second) + ", which exceeds the PMU collection limit: " + to_string(maxEvt));
+            return LIBPERF_ERR_INVALID_EVTATTR;
+        }
     }
     return SUCCESS;
 }
@@ -288,7 +313,7 @@ static int CheckCollectTypeConfig(enum PmuTaskType collectType, struct PmuAttr *
             New(LIBPERF_ERR_INVALID_CGROUP_LIST, "SPE mode only support one cgroup");
             return LIBPERF_ERR_INVALID_CGROUP_LIST;
         }
-        if (attr->minLatency > 4095 || attr->minLatency < 0) {
+        if (attr->minLatency > 4095) {
             New(LIBPERF_ERR_INVALID_MIN_LATENCY, "Invalid min_latency: value must be between 0 and 4095");
             return LIBPERF_ERR_INVALID_MIN_LATENCY;
         }
