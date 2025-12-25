@@ -1503,9 +1503,8 @@ namespace KUNPENG_PMU {
                     // Compute bandwidth: (packet length) * 4 / (latency), unit: Bytes/us
                     value *= 4;
                 }
-            } else {
-                value = -1;
             }
+
             PmuDeviceData outData;
             outData.metric = metric;
             outData.count = value;
