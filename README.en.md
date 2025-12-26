@@ -66,7 +66,7 @@ Minimum required Python version:
 To build a library with C API:
 
 ```shell
-git clone --recurse-submodules https://gitee.com/openeuler/libkperf.git
+git clone --recurse-submodules https://atomgit.com/openeuler/libkperf.git
 cd libkperf
 bash build.sh install_path=/path/to/install
 ```

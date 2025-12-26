@@ -1,6 +1,6 @@
 ### Issue
 欢迎对libkperf做反馈，提出改进意见，记录相关问题。
-- https://gitee.com/openeuler/libkperf/issues
+- https://atomgit.com/openeuler/libkperf/issues
 
 ### 改进文档
 文档在docs/目录下，如果希望改进文档，可以提交PR。
@@ -13,7 +13,7 @@
 
 ### Issue
 Feedback on libkperf is welcome.
-- https://gitee.com/openeuler/libkperf/issues
+- https://atomgit.com/openeuler/libkperf/issues
 
 ### Documentation
 The document is in the docs/ directory, if you want to improve the documentation, please submit a PR.
