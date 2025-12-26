@@ -38,7 +38,7 @@ using namespace std;
 static unordered_map<unsigned, bool> runningStatus;
 static SafeHandler<unsigned> pdMutex;
 static pair<unsigned, const char**> uncoreEventPair;
-static unordered_map<CHIP_TYPE, int> groupEvtCapacity = {{HIPA, 13}, {HIPB, 9}, {HIPC, 9},
+static unordered_map<int, int> groupEvtCapacity = {{HIPA, 13}, {HIPB, 9}, {HIPC, 9},
                                                          {HIPF, 9}, {HIPE, 9}, {HIPG, 6}};
 
 #define REQUEST_USER_ACCESS 0x2
