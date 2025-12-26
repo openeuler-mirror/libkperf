@@ -53,7 +53,7 @@ v1.0:
 
 编译生成动态库和C的API：
 ```shell
-git clone --recurse-submodules https://gitee.com/openeuler/libkperf.git
+git clone --recurse-submodules https://atomgit.com/openeuler/libkperf.git
 cd libkperf
 bash build.sh install_path=/path/to/install
 ```
