@@ -103,6 +103,7 @@ private:
     void EraseParentEventMap(const unsigned pd);
     void EraseSymModeList(const unsigned pd);
     void ErasePpidList(const unsigned pd);
+    void EraseProcptrList(const unsigned pd);
 
     std::pair<bool, std::shared_ptr<EvtList>> GetEvtGroupState(const int groupId, std::shared_ptr<EvtList> evtList, groupMapPtr eventGroupInfoMap);
     int EvtInit(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader, const int pd, const std::shared_ptr<EvtList> &evtList);

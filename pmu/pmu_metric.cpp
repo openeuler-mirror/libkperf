@@ -853,7 +853,9 @@ namespace KUNPENG_PMU {
             if (smmuName != bdfToSmmuMap.end()) {
                 string smmuPmuName = "";
                 if (FindSmmuToSmmuPmu(smmuName->second, smmuPmuName) == SUCCESS) {
-                    smmuBdfList.emplace_back(strdup(bdfList[i].c_str()));
+                    char* copyStr = new char[bdfList[i].size() + 1];
+                    strcpy(copyStr, bdfList[i].c_str());
+                    smmuBdfList.emplace_back(copyStr);
                     bdfToSmmuPmuMap[bdfList[i]] = smmuPmuName;
                 }
             }

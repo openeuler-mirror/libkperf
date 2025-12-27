@@ -176,21 +176,21 @@ namespace KUNPENG_PMU {
         // handle the event group child event Init
         for (auto evtGroup : eventGroupInfoMap) {
             for (auto evtChild : evtGroup.second.evtGroupChildList) {
-                if (eventGroupInfoMap[evtChild->GetGroupId()].uncoreState == static_cast<UncoreState>(UncoreState::OnlyUncore)) {
+                if (eventGroupInfoMap[evtChild.lock()->GetGroupId()].uncoreState == static_cast<UncoreState>(UncoreState::OnlyUncore)) {
                     return LIBPERF_ERR_INVALID_GROUP_ALL_UNCORE;
                 }
                 int err = 0;
-                if (eventGroupInfoMap[evtChild->GetGroupId()].uncoreState == static_cast<UncoreState>(UncoreState::HasUncore)) {
+                if (eventGroupInfoMap[evtChild.lock()->GetGroupId()].uncoreState == static_cast<UncoreState>(UncoreState::HasUncore)) {
                     SetWarn(LIBPERF_WARN_INVALID_GROUP_HAS_UNCORE);
-                    err = EvtInit(false, nullptr, pd, evtChild);
+                    err = EvtInit(false, nullptr, pd, evtChild.lock());
                 } else {
-                    err = EvtInit(true, eventGroupInfoMap[evtChild->GetGroupId()].evtLeader, pd, evtChild);
+                    err = EvtInit(true, eventGroupInfoMap[evtChild.lock()->GetGroupId()].evtLeader.lock(), pd, evtChild.lock());
                 }
                 if (err != SUCCESS) {
                     return err;
                 }
             }
-            evtGroup.second.evtLeader->SetGroupInfo(evtGroup.second);
+            evtGroup.second.evtLeader.lock()->SetGroupInfo(evtGroup.second);
         }
         groupMapPtr eventDataEvtGroup = std::make_shared<std::unordered_map<int, EventGroupInfo>>(eventGroupInfoMap);
         InsertDataEvtGroupList(pd, eventDataEvtGroup);
@@ -232,14 +232,14 @@ namespace KUNPENG_PMU {
             return std::make_pair(false, nullptr);
         }
         // if the event is the event group leader, initialize it in the default way.
-        if (evtList == (*eventGroupInfoMap)[groupId].evtLeader) {
+        if (evtList == (*eventGroupInfoMap)[groupId].evtLeader.lock()) {
             return std::make_pair(false, nullptr);
         } else {
             // In this case, the event group contains only some uncore events or all other events.
             if ((*eventGroupInfoMap)[groupId].uncoreState == static_cast<UncoreState>(UncoreState::HasUncore)) {
                 return std::make_pair(false, nullptr);
             } else {
-                return std::make_pair(true, (*eventGroupInfoMap)[groupId].evtLeader);
+                return std::make_pair(true, (*eventGroupInfoMap)[groupId].evtLeader.lock());
             }
         }
     }
@@ -511,6 +511,7 @@ namespace KUNPENG_PMU {
         EraseEvtList(pd);
         EraseSymModeList(pd);
         ErasePpidList(pd);
+        EraseProcptrList(pd);
         EraseDataList(pd);
         EraseDataEvtGroupList(pd);
         RemoveEpollFd(pd);
@@ -625,6 +626,11 @@ namespace KUNPENG_PMU {
     void PmuList::ErasePpidList(const unsigned pd)
     {
         ppidList.erase(pd);
+    }
+
+    void PmuList::EraseProcptrList(const unsigned pd)
+    {
+        pmuProcList.erase(pd);
     }
 
     void PmuList::InsertDataEvtGroupList(const unsigned pd, groupMapPtr evtGroupList)

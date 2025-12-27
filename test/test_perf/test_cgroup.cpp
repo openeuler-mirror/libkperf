@@ -94,7 +94,7 @@ TEST_F(TestCgroup, ValidCgroupName)
     cgroupName[0] = (char*)"ValidCgroupName";
     attr.cgroupNameList = cgroupName;
     attr.numCgroup = 1;
-    auto pd = PmuOpen(SAMPLING, &attr);
+    pd = PmuOpen(SAMPLING, &attr);
     ASSERT_GT(pd, 0);
 }
 

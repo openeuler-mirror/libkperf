@@ -22,7 +22,7 @@
 template <typename ListNode>
 ListNode* CreateNode()
 {
-    ListNode* newNode = (ListNode*)malloc(sizeof(ListNode));
+    ListNode* newNode = new ListNode;
     if (newNode == nullptr) {
         return nullptr;
     }
@@ -72,7 +72,7 @@ void FreeList(ListNode** head)
 
     while (current != nullptr) {
         nextNode = current->next;
-        free(current);
+        delete current;
         current = nextNode;
     }
     *head = nullptr;  // Ensure the head is set to nullptr after freeing all nodes

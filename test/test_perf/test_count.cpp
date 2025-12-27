@@ -32,7 +32,24 @@ public:
             data = nullptr;
         }
         PmuClose(pd);
+        if (pd1 > 0) {
+            if (data1 != nullptr) {
+                PmuDataFree(data1);
+                data1 = nullptr;
+            }
+            PmuClose(pd1);
+        }
+
+        if (pd2 > 0) {
+            if (data2 != nullptr) {
+                PmuDataFree(data2);
+                data2 = nullptr;
+            }
+            PmuClose(pd2);
+        }
     }
+
+
 
 protected:
     map<string, uint64_t> CollectProcessEvent(const string &caseName, const vector<string> &evtName)
@@ -59,13 +76,22 @@ protected:
         {
             ret[data[i].evt] += data[i].count;
         }
+        if (data != nullptr) {
+            PmuDataFree(data);
+            data = nullptr;
+        }
+        PmuClose(pd);
         delete[] evtList;
         return ret;
     }
 
     int pd;
+    int pd1;
+    int pd2;
     pid_t appPid = 0;
     PmuData *data = nullptr;
+    PmuData *data1 = nullptr;
+    PmuData *data2 = nullptr;
     static const unsigned collectInterval = 100;
     static constexpr float relativeErr = 0.01;
 };
@@ -198,20 +224,17 @@ TEST_F(TestCount, AggregateUncoreEventsHIPA)
     PmuAttr attr = {0};
     attr.evtList = aggreUncore;
     attr.numEvt = 1;
-    int pd1 = PmuOpen(COUNTING, &attr);
+    pd1 = PmuOpen(COUNTING, &attr);
     attr.evtList = uncoreList;
     attr.numEvt = 4;
-    int pd2 = PmuOpen(COUNTING, &attr);
+    pd2 = PmuOpen(COUNTING, &attr);
     PmuEnable(pd1);
     PmuEnable(pd2);
     sleep(2);
     PmuDisable(pd1);
     PmuDisable(pd2);
-
-    PmuData *data1 = nullptr;
     int len1 = PmuRead(pd1, &data1);
     ASSERT_EQ(len1, 1);
-    PmuData *data2 = nullptr;
     int len2 = PmuRead(pd2, &data2);
     ASSERT_EQ(len2, 4);
 
@@ -236,20 +259,18 @@ TEST_F(TestCount, AggregateUncoreEventsHIPB)
                     "hisi_sccl1_ddrc3_0/flux_rd/", "hisi_sccl1_ddrc3_1/flux_rd/", "hisi_sccl1_ddrc5_0/flux_rd/", "hisi_sccl1_ddrc5_1/flux_rd/"};
     attr.evtList = aggreUncore;
     attr.numEvt = 1;
-    int pd1 = PmuOpen(COUNTING, &attr);
+    pd1 = PmuOpen(COUNTING, &attr);
     attr.evtList = uncoreList;
     attr.numEvt = 8;
-    int pd2 = PmuOpen(COUNTING, &attr);
+    pd2 = PmuOpen(COUNTING, &attr);
     PmuEnable(pd1);
     PmuEnable(pd2);
     sleep(2);
     PmuDisable(pd1);
     PmuDisable(pd2);
 
-    PmuData *data1 = nullptr;
     int len1 = PmuRead(pd1, &data1);
     ASSERT_EQ(len1, 1);
-    PmuData *data2 = nullptr;
     int len2 = PmuRead(pd2, &data2);
     ASSERT_EQ(len2, 8);
 
@@ -465,7 +486,7 @@ TEST_F(TestCount, DeleteEvtAfterOpenPmu) {
     }
     attr.evtList = evtList;
     attr.numEvt = evtNum;
-    int pd = PmuOpen(COUNTING, &attr);
+    pd = PmuOpen(COUNTING, &attr);
     for (int i = 0; i < evtNum; i++) {
         delete[] evtList[i];
     }
@@ -473,12 +494,10 @@ TEST_F(TestCount, DeleteEvtAfterOpenPmu) {
     PmuEnable(pd);
     sleep(1);
     PmuDisable(pd);
-    PmuData* pmuData = nullptr;
-    int len = PmuRead(pd, &pmuData);
+    int len = PmuRead(pd, &data);
     for(int i = 0; i < len; i++) {
-        ASSERT_TRUE(evtNames.find(pmuData[i].evt) != evtNames.end());
+        ASSERT_TRUE(evtNames.find(data[i].evt) != evtNames.end());
     }
-    PmuClose(pd);
 }
 
 TEST_F(TestCount, Test100000ThreadInCountingMode) {
@@ -502,6 +521,4 @@ TEST_F(TestCount, Test100000ThreadInCountingMode) {
     PmuDisable(pd);
     int len = PmuRead(pd, &data);
     ASSERT_GT(len, 0);
-    PmuDataFree(data);
-    PmuClose(pd);
 }

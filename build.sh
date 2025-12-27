@@ -30,6 +30,8 @@ INCLUDE_TEST=false
 GO=false
 # Bpf mode for counting
 BPF=false
+# ASAN
+ASAN=false
 
 source ${PROJECT_DIR}/build/common.sh
 
@@ -71,6 +73,9 @@ for arg in "$@"; do
             ;;
         bpf=*)
             BPF="${arg#*=}"
+            ;;
+        asan=*)
+            ASAN="${arg#*=}"
             ;;
     esac
 done
@@ -134,6 +139,14 @@ build_libkperf()
             "-DCMAKE_INSTALL_RPATH=${INSTALL_PATH}lib;${THIRD_PARTY}local/bpf/usr/lib64"
             "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=TRUE"
         )
+    fi
+    if [ "${ASAN}" = "true" ];then
+       CMAKE_ARGS+=(
+            "-DCMAKE_C_FLAGS=-fsanitize=address -fno-omit-frame-pointer"
+            "-DCAMKE_CXX_FLASG=-fsanitize=address -fno-omit-frame-pointer"
+            "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address"
+            "-DCAMKE_SHARED_LINKPER_FLAGS=-fsanitize=address"
+       )
     fi
     cmake "${CMAKE_ARGS[@]}" ..
     make -j ${cpu_core_num}
