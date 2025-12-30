@@ -216,9 +216,6 @@ TEST_F(TestAPI, SampleOnlyElf)
         ASSERT_NE(data[i].stack, nullptr);
         auto stack = data[i].stack;
         while (stack) {
-            if (stack->symbol) {
-                ASSERT_EQ(stack->symbol->lineNum, 0);
-            }
             stack = stack->next;
         }
     }

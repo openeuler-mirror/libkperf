@@ -115,6 +115,17 @@ function build_elfin() {
   echo "install log path: $cmake_target_dir"
 }
 
+function build_symbolizer()
+{
+    local cmake_target_dir=$PROJECT_DIR/llvm-symbolizer/build
+    rm -rf ${cmake_target_dir}
+    cd $PROJECT_DIR/llvm-symbolizer
+    mkdir build
+    cd build
+    cmake -DCMKAE_BUILD_TYPE=Release ..
+    make -j ${cpu_core_num}
+}
+
 build_libkperf()
 {
     cd $BUILD_DIR
@@ -162,7 +173,8 @@ function build_test()
 }
 
 main() {
-    build_elfin
+    build_symbolizer
+    # build_elfin
     build_libkperf
     build_test
 }

@@ -27,10 +27,11 @@ struct Symbol {
     char* mangleName;      // name of the symbol with no demangle
     char* fileName;        // corresponding file of current symbol
     unsigned int lineNum;  // line number of a symbol in the file
-    unsigned long offset;
+    unsigned long offset;          // offset from the first address
     unsigned long codeMapEndAddr;  // function end address
-    unsigned long codeMapAddr;     // real srcAddr of Asm Code or
-    char* mntPoint;        // mount point
+    unsigned long codeMapAddr;     // real srcAddr of the symbol
+    unsigned int  firstLine;       // the start line of function
+    char* mntPoint;        // mount point (Applicable for collecting container processes from the host machine)
 };
 
 struct Stack {
@@ -65,7 +66,6 @@ int SymResolverRecordModuleNoDwarf(int pid);
  * Incremental update modules of pid, i.e. record newly loaded dynamic libraries by pid.
  */
 int SymResolverIncrUpdateModule(int pid);
-
 /**
  * Incremental update modules of pid, i.e. record newly loaded dynamic libraries with no dwarf by pid.
  */
@@ -74,17 +74,6 @@ int SymResolverIncrUpdateModuleNoDwarf(int pid);
 int SymResolverUpdateModule(int pid, const char* moduleName, unsigned long startAddr);
 
 int SymResolverUpdateModuleNoDwarf(int pid, const char* moduleName, unsigned long startAddr);
-
-/**
- * Record ELF data for a binary
- */
-int SymResolverRecordElf(const char* fileName);
-
-/**
- * Record DWARF data for a binary
- */
-int SymResolverRecordDwarf(const char* fileName);
-
 /**
  * Clean up resolver in the end after usage
  */

@@ -18,7 +18,7 @@ package sym
 /*
 #cgo CFLAGS: -I ../include
 #cgo !static LDFLAGS: -L ../lib -lsym
-#cgo static LDFLAGS: -L ../static_lib -lsym -lstdc++ -lelf++ -ldwarf++
+#cgo static LDFLAGS: -L ../static_lib -lsym -lLLVMDebugInfoDWARF -lLLVMDemangle -lLLVMObject -lLLVMOption -lLLVMSupport -lLLVMSymbolize -lLLVMDebugInfoDWARF -lLLVMObject -lLLVMBitReader -lLLVMCore -lLLVMMCParser -lLLVMMC -lLLVMDebugInfoCodeView -lLLVMBinaryFormat -lLLVMSupport -lLLVMDemangle -lz -lm -lstdc++
 
 #include "symbol.h"
 #include "pcerrc.h"
@@ -122,24 +122,6 @@ func UpdateModule(pid int, moduleName string, startAddr  uint64) error {
 // update module info but dose not collect dwarf info
 func UpdateModuleNoDwarf(pid int, moduleName string, startAddr  uint64) error {
 	res := C.SymResolverUpdateModuleNoDwarf(C.int(pid), C.CString(moduleName), C.ulong(startAddr))
-	if int(res) != 0 {
-		return errors.New(C.GoString(C.Perror()))
-	}
-	return nil
-}
-
-// record ELF data for a binay
-func RecordElf(fileName string) error {
-	res := C.SymResolverRecordElf(C.CString(fileName))
-	if int(res) != 0 {
-		return errors.New(C.GoString(C.Perror()))
-	}
-	return nil
-}
-
-//  Record DWARF data for a binary
-func RecordDwarf(fileName string) error {
-	res := C.SymResolverRecordDwarf(C.CString(fileName))
 	if int(res) != 0 {
 		return errors.New(C.GoString(C.Perror()))
 	}

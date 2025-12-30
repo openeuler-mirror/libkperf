@@ -18,7 +18,7 @@ package kperf
 /*
 #cgo CFLAGS: -I ../include
 #cgo !static LDFLAGS: -L ../lib -lkperf -lsym
-#cgo static LDFLAGS: -L ../static_lib -lkperf -lsym -lelf++ -ldwarf++ -lstdc++ -lnuma
+#cgo static LDFLAGS: -L ../static_lib -lkperf -lsym -lLLVMDebugInfoDWARF -lLLVMDemangle -lLLVMObject -lLLVMOption -lLLVMSupport -lLLVMSymbolize -lLLVMDebugInfoDWARF -lLLVMObject -lLLVMBitReader -lLLVMCore -lLLVMMCParser -lLLVMMC -lLLVMDebugInfoCodeView -lLLVMBinaryFormat -lLLVMSupport -lLLVMDemangle -lz -lm -lstdc++
 
 #include "pmu.h"
 #include "symbol.h"

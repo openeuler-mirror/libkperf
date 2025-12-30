@@ -14,7 +14,7 @@ set(CMAKE_CXX_STANDARD 14)
 aux_source_directory(. SOURCE_SRC)
 add_executable(test_perf ${SOURCE_SRC} ${CMAKE_CURRENT_LIST_DIR}/../../util/pcerr.cpp)
 
-set(COMMON_LIBS sym kperf gtest m gtest_main elf_static dwarf_static pthread -g)
+set(COMMON_LIBS sym kperf gtest m gtest_main pthread -g)
 if (BPF)
     set(BPF_LIBS bpf)
 endif()
