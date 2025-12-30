@@ -44,6 +44,7 @@ public:
         buffer = getcwd(NULL, 256);
         std::string exeDir = std::string{buffer};
         std::string exePath = exeDir + "/case/libsym_case";
+        free(buffer);
         return exePath;
     }
 
@@ -484,6 +485,8 @@ TEST_F(TestLibSym, map_asm_code)
         SymResolverAsmCode(fileName.c_str(), symbol->codeMapAddr - symbol->offset, symbol->codeMapEndAddr);
     EXPECT_TRUE(stackAsm != nullptr);
     CoutAsmCode(stackAsm);
+    FreeSymbolPtr(symbol);
+    FreeAsmStack(stackAsm);
     SymResolverDestroy();
 }
 
@@ -503,6 +506,8 @@ TEST_F(TestLibSym, map_asm_code_so)
         SymResolverAsmCode(fileName.c_str(), symbol->codeMapAddr - symbol->offset, symbol->codeMapEndAddr);
     EXPECT_TRUE(stackAsm != nullptr);
     CoutAsmCode(stackAsm);
+    FreeSymbolPtr(symbol);
+    FreeAsmStack(stackAsm);
     SymResolverDestroy();
 }
 
@@ -514,6 +519,7 @@ TEST_F(TestLibSym, get_src_code)
     Symbol *symbol = SymResolverMapCodeAddr(fileName.c_str(), lineObj->first);
     EXPECT_TRUE(symbol->addr == lineObj->first);
     EXPECT_TRUE(symbol->lineNum == lineObj->second);
+    FreeSymbolPtr(symbol);
 }
 
 TEST_F(TestLibSym, get_src_code_so)
@@ -529,6 +535,7 @@ TEST_F(TestLibSym, get_src_code_so)
     }
     Symbol *symbol = SymResolverMapCodeAddr(fileName.c_str(), select.low);
     EXPECT_TRUE(symbol != nullptr);
+    FreeSymbolPtr(symbol);
 }
 
 TEST(symbol, get_asm_code_failed)

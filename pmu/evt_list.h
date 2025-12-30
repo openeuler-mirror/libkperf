@@ -108,6 +108,11 @@ public:
         return pmuEvt->blockedSample;
     }
 
+    const char* GetPmuEvtName() const
+    {
+        return pmuEvt->name.c_str();
+    }
+
     virtual void SetGroupInfo(const EventGroupInfo &grpInfo) = 0;
     virtual void AddNewProcess(pid_t pid, const bool groupEnable, const std::shared_ptr<EvtList> evtLeader) = 0;
     virtual void ClearExitFd(std::set<int> noProcList) = 0;
@@ -156,9 +161,9 @@ protected:
 
 struct EventGroupInfo {
     // store event group leader info
-    std::shared_ptr<EvtList> evtLeader;
+    std::weak_ptr<EvtList> evtLeader;
     // store event group child events info
-    std::vector<std::shared_ptr<EvtList>> evtGroupChildList;
+    std::vector<std::weak_ptr<EvtList>> evtGroupChildList;
     // store event group child events state flag info
     /* event group child state explain:
         * Enumeration variable uncoreState has four state, Initialization is the InitState;

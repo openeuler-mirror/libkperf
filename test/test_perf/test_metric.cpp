@@ -21,9 +21,31 @@ using namespace std;
 
 class TestMetric : public testing::Test {
 public:
+     void TearDown()
+    {
+        if (data != nullptr) {
+            PmuDataFree(data);
+            data = nullptr;
+        }
+        
+        if (devData) {
+            DevDataFree(devData);
+            devData = nullptr;
+        }
+
+        if (oriData) {
+            PmuDataFree(oriData);
+            oriData = nullptr;
+        }
+        
+        PmuClose(pd);
+    }
 
 protected:
-    
+    int pd = 0;
+    PmuData *data = nullptr;
+    PmuData* oriData = nullptr;
+    PmuDeviceData *devData = nullptr;
 };
 
 static CpuTopology GetTopo(const unsigned coreId, const unsigned numaId)
@@ -105,23 +127,18 @@ TEST_F(TestMetric, CollectDDRBandwidth)
     PmuDeviceAttr devAttr[2] = {};
     devAttr[0].metric = PMU_DDR_READ_BW;
     devAttr[1].metric = PMU_DDR_WRITE_BW;
-    int pd = PmuDeviceOpen(devAttr, 2);
+    pd = PmuDeviceOpen(devAttr, 2);
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
     sleep(1);
     PmuDisable(pd);
-    PmuData* oriData = nullptr;
     int oriLen = PmuRead(pd, &oriData);
     ASSERT_NE(oriLen, -1);
 
-    PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
     ASSERT_EQ(devData[0].mode, PMU_METRIC_CHANNEL);
     ASSERT_EQ(devData[0].metric, PMU_DDR_READ_BW);
     ASSERT_EQ(devData[len - 1].metric, PMU_DDR_WRITE_BW);
-    DevDataFree(devData);
-    PmuDataFree(oriData);
-    PmuClose(pd);
 }
 
 TEST_F(TestMetric, CollectL3Latency)
@@ -132,16 +149,14 @@ TEST_F(TestMetric, CollectL3Latency)
     }
     PmuDeviceAttr devAttr = {};
     devAttr.metric = PMU_L3_LAT;
-    int pd = PmuDeviceOpen(&devAttr, 1);
+    pd = PmuDeviceOpen(&devAttr, 1);
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
     sleep(1);
     PmuDisable(pd);
-    PmuData* oriData = nullptr;
     int oriLen = PmuRead(pd, &oriData);
     ASSERT_NE(oriLen, -1);
 
-    PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(oriData, oriLen, &devAttr, 1, &devData);
     unsigned clusterCount = GetClusterCount();
     ASSERT_EQ(len, clusterCount);
@@ -150,31 +165,23 @@ TEST_F(TestMetric, CollectL3Latency)
     ASSERT_EQ(devData[0].mode, PMU_METRIC_CLUSTER);
     ASSERT_EQ(devData[clusterCount - 1].clusterId, clusterCount - 1);
     ASSERT_EQ(devData[clusterCount - 1].mode, PMU_METRIC_CLUSTER);
-    DevDataFree(devData);
-    PmuDataFree(oriData);
-    PmuClose(pd);
 }
 
 TEST_F(TestMetric, CollectL3Traffic)
 {
     PmuDeviceAttr devAttr = {};
     devAttr.metric = PMU_L3_TRAFFIC;
-    int pd = PmuDeviceOpen(&devAttr, 1);
+    pd = PmuDeviceOpen(&devAttr, 1);
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
     sleep(1);
     PmuDisable(pd);
-    PmuData* oriData = nullptr;
     int oriLen = PmuRead(pd, &oriData);
     ASSERT_NE(oriLen, -1);
 
-    PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(oriData, oriLen, &devAttr, 1, &devData);
     ASSERT_EQ(len, GetCpuNums());
     ASSERT_EQ(devData[0].mode, PMU_METRIC_CORE);
-    DevDataFree(devData);
-    PmuDataFree(oriData);
-    PmuClose(pd);
 }
 
 TEST_F(TestMetric, CollectL3TrafficAndL3REF)
@@ -182,16 +189,14 @@ TEST_F(TestMetric, CollectL3TrafficAndL3REF)
     PmuDeviceAttr devAttr[2] = {};
     devAttr[0].metric = PMU_L3_TRAFFIC;
     devAttr[1].metric = PMU_L3_REF;
-    int pd = PmuDeviceOpen(devAttr, 2);
+    pd = PmuDeviceOpen(devAttr, 2);
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
     sleep(1);
     PmuDisable(pd);
-    PmuData* oriData = nullptr;
     int oriLen = PmuRead(pd, &oriData);
     ASSERT_NE(oriLen, -1);
 
-    PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
     unsigned cpuNum = GetCpuNums();
     ASSERT_EQ(len, 2 * cpuNum);
@@ -199,9 +204,6 @@ TEST_F(TestMetric, CollectL3TrafficAndL3REF)
     ASSERT_EQ(devData[0].mode, PMU_METRIC_CORE);
     ASSERT_EQ(devData[cpuNum].metric, PMU_L3_REF);
     ASSERT_EQ(devData[cpuNum].mode, PMU_METRIC_CORE);
-    DevDataFree(devData);
-    PmuDataFree(oriData);
-    PmuClose(pd);
 }
 
 TEST_F(TestMetric, CollectL3Miss)
@@ -209,16 +211,14 @@ TEST_F(TestMetric, CollectL3Miss)
     PmuDeviceAttr devAttr[1] = {};
     devAttr[0].metric = PMU_L3_MISS;
 
-    int pd = PmuDeviceOpen(devAttr, 1);
+    pd = PmuDeviceOpen(devAttr, 1);
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
     sleep(1);
     PmuDisable(pd);
-    PmuData* oriData = nullptr;
     int oriLen = PmuRead(pd, &oriData);
     ASSERT_NE(oriLen, -1);
 
-    PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 1, &devData);
     unsigned clusterCount = GetClusterCount();
     unsigned dataLen = GetCpuNums();
@@ -226,9 +226,6 @@ TEST_F(TestMetric, CollectL3Miss)
     ASSERT_NE(devData[0].count, 0);
     ASSERT_EQ(devData[0].metric, PMU_L3_MISS);
     ASSERT_EQ(devData[0].mode, PMU_METRIC_CORE);
-    DevDataFree(devData);
-    PmuDataFree(oriData);
-    PmuClose(pd);
 }
 
 TEST_F(TestMetric, GetMetricPcieBandwidth)
@@ -246,16 +243,14 @@ TEST_F(TestMetric, GetMetricPcieBandwidth)
         devAttr[i].bdf = strdup(bdfList[i]);
     }
 
-    int pd = PmuDeviceOpen(devAttr, bdfLen);
+    pd = PmuDeviceOpen(devAttr, bdfLen);
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
     sleep(1);
     PmuDisable(pd);
-    PmuData* oriData = nullptr;
     int oriLen = PmuRead(pd, &oriData);
     ASSERT_NE(oriLen, -1);
 
-    PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(oriData, oriLen, devAttr, bdfLen, &devData);
     ASSERT_EQ(len, bdfLen);
     ASSERT_EQ(devData[0].metric, PMU_PCIE_RX_MRD_BW);
@@ -264,9 +259,6 @@ TEST_F(TestMetric, GetMetricPcieBandwidth)
     for (int i = 0; i < bdfLen; ++i) {
         free(devAttr[i].bdf);
     }
-    DevDataFree(devData);
-    PmuDataFree(oriData);
-    PmuClose(pd);
 }
 
 TEST_F(TestMetric, GetMetricSmmuTransaction)
@@ -283,16 +275,14 @@ TEST_F(TestMetric, GetMetricSmmuTransaction)
         devAttr[i].bdf = strdup(bdfList[i]);
     }
 
-    int pd = PmuDeviceOpen(devAttr, bdfLen);
+    pd = PmuDeviceOpen(devAttr, bdfLen);
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
     sleep(1);
     PmuDisable(pd);
-    PmuData* oriData = nullptr;
     int oriLen = PmuRead(pd, &oriData);
     ASSERT_NE(oriLen, -1);
 
-    PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(oriData, oriLen, devAttr, bdfLen, &devData);
     ASSERT_EQ(len, bdfLen);
     ASSERT_EQ(devData[0].metric, PMU_SMMU_TRAN);
@@ -304,9 +294,6 @@ TEST_F(TestMetric, GetMetricSmmuTransaction)
     for (int i = 0; i < bdfLen; ++i) {
         free(devAttr[i].bdf);
     }
-    DevDataFree(devData);
-    PmuDataFree(oriData);
-    PmuClose(pd);
 }
 
 TEST_F(TestMetric, GetMetricHHACross)
@@ -314,24 +301,19 @@ TEST_F(TestMetric, GetMetricHHACross)
     PmuDeviceAttr devAttr[2] = {};
     devAttr[0].metric = PMU_HHA_CROSS_NUMA;
     devAttr[1].metric = PMU_HHA_CROSS_SOCKET;
-    int pd = PmuDeviceOpen(devAttr, 2);
+    pd = PmuDeviceOpen(devAttr, 2);
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
     sleep(1);
     PmuDisable(pd);
-    PmuData* oriData = nullptr;
     int oriLen = PmuRead(pd, &oriData);
     ASSERT_NE(oriLen, -1);
 
-    PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
     ASSERT_EQ(devData[0].metric, PMU_HHA_CROSS_NUMA);
     ASSERT_EQ(devData[0].mode, PMU_METRIC_NUMA);
     ASSERT_EQ(devData[len - 1].metric, PMU_HHA_CROSS_SOCKET);
     ASSERT_EQ(devData[len - 1].mode, PMU_METRIC_NUMA);
-    DevDataFree(devData);
-    PmuDataFree(oriData);
-    PmuClose(pd);
 }
 
 TEST_F(TestMetric, GetMetricPcieLatency)
@@ -349,16 +331,14 @@ TEST_F(TestMetric, GetMetricPcieLatency)
         devAttr[i].port = strdup(bdfList[i]);
     }
 
-    int pd = PmuDeviceOpen(devAttr, bdfLen);
+    pd = PmuDeviceOpen(devAttr, bdfLen);
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
     sleep(1);
     PmuDisable(pd);
-    PmuData* oriData = nullptr;
     int oriLen = PmuRead(pd, &oriData);
     ASSERT_NE(oriLen, -1);
 
-    PmuDeviceData *devData = nullptr;
     auto len = PmuGetDevMetric(oriData, oriLen, devAttr, bdfLen, &devData);
     ASSERT_EQ(len, bdfLen);
     ASSERT_EQ(devData[0].metric, PMU_PCIE_RX_MRD_LAT);
@@ -367,9 +347,6 @@ TEST_F(TestMetric, GetMetricPcieLatency)
     for (int i = 0; i < bdfLen; ++i) {
         free(devAttr[i].port);
     }
-    DevDataFree(devData);
-    PmuDataFree(oriData);
-    PmuClose(pd);
 }
 
 TEST_F(TestMetric, TestHwMetric)
@@ -386,12 +363,11 @@ TEST_F(TestMetric, TestHwMetric)
     double thresholdList[2] = {0.8, 0.2};
     unsigned basePeriodList[2] = {1000000, 100000};
     PmuHwMetricAttr attr = {PmuHwMetric::PMU_HWM_CPI | PMU_HWM_L3_CACHE_MISS, basePeriodList, thresholdList, 0};
-    int pd = PmuOpenWithHWMetric(&attr);
+    pd = PmuOpenWithHWMetric(&attr);
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
     sleep(1);
     PmuDisable(pd);
-    PmuData* oriData = nullptr;
     int oriLen = PmuRead(pd, &oriData);
     ASSERT_NE(oriLen, -1);
     for (int i = 0; i < oriLen; i++) {
@@ -403,5 +379,4 @@ TEST_F(TestMetric, TestHwMetric)
             ASSERT_EQ(oriData[i].period, 20000);
         }
     }
-    PmuClose(pd);
 }

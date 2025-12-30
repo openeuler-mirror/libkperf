@@ -180,8 +180,7 @@ void KUNPENG_PMU::EvtListDefault::FillFields(
         if (groupInfo && pmuEvt->collectType == COUNTING && i - start > 0) {
             // For group events, PmuData are all read by event leader,
             // and then some PmuData elements should be related to group members.
-            std::shared_ptr<EvtListDefault> child = std::dynamic_pointer_cast<EvtListDefault>(groupInfo->evtGroupChildList[i-start-1]);
-            data[i].evt = child->pmuEvt->name.c_str();
+            data[i].evt = groupInfo->evtGroupChildList[i-start-1].lock()->GetPmuEvtName();
         } else {
             // For no group events or group leader.
             data[i].evt = this->pmuEvt->name.c_str();

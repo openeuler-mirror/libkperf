@@ -29,6 +29,7 @@ pid_t RunTestApp(const string &name)
     char myDir[PATH_MAX] = {0};
     readlink("/proc/self/exe", myDir, sizeof(myDir) - 1);
     auto pid = vfork();
+    char* dirPath = dirname(myDir);
     if (pid == 0) {
         // Bind test_perf to cpu 0 and bind test app to cpu 1.
         cpu_set_t mask;
@@ -38,9 +39,10 @@ pid_t RunTestApp(const string &name)
         }
         sched_setaffinity(0, sizeof(mask), &mask);
         setpgid(0, 0);
-        string fullPath = string(dirname(myDir)) + "/case/" + name;
+        char fullPath[PATH_MAX];
+        snprintf(fullPath, PATH_MAX, "%s/case/%s", dirPath, name.c_str());
         char *const *dummy = nullptr;
-        execvp(fullPath.c_str(), dummy);
+        execvp(fullPath, dummy);
         _exit(errno);
     }
 

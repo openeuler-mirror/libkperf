@@ -636,7 +636,7 @@ static void PmuTaskAttrFree(PmuTaskAttr *taskAttr)
         auto current = node;
         node = node->next;
         current->pmuEvt = nullptr;
-        free(current);
+        delete current;
     }
 }
 
@@ -1186,6 +1186,7 @@ struct PmuTaskAttr* AssignPmuTaskParam(enum PmuTaskType collectType, struct PmuA
                 EvtAttr evtAttrDto = ResolveEvtAttrParams(attr, j);
                 struct PmuTaskAttr* current = AssignTaskParam(collectType, attr, attr->evtList[j], evtAttrDto, cgroupName.c_str(), cgroupFds[cgroupName]);
                 if (current == nullptr) {
+                    PmuTaskAttrFree(taskParam);
                     return nullptr;
                 }
                 AddTail(&taskParam, &current);
@@ -1201,6 +1202,7 @@ struct PmuTaskAttr* AssignPmuTaskParam(enum PmuTaskType collectType, struct PmuA
             EvtAttr evtAttrDto = ResolveEvtAttrParams(attr, i);
             struct PmuTaskAttr* current = AssignTaskParam(collectType, attr, attr->evtList[i], evtAttrDto, nullptr, -1);
             if (current == nullptr) {
+                PmuTaskAttrFree(taskParam);
                 return nullptr;
             }
             AddTail(&taskParam, &current);

@@ -151,9 +151,9 @@ namespace {
             int ret = sscanf(line.c_str(), "%llx %s %*s %*s %llx", &stackAsm->funcStartAddr, stackAsm->funcName,
                                &stackAsm->functFileOffset);
             if (ret == EOF) {
-                free(stackAsm->funcName);
+                delete[] stackAsm->funcName;
                 stackAsm->funcName = nullptr;
-                free(stackAsm);
+                delete stackAsm;
                 stackAsm = nullptr;
                 return nullptr;
             }
@@ -264,12 +264,10 @@ void SymbolUtils::FreeStackAsm(struct StackAsm** stackAsm)
         if (current->asmCode) {
             delete[] current->asmCode->code;
             delete[] current->asmCode->fileName;
-            free(current->asmCode);
+            delete current->asmCode;
         }
-        if (current->funcName) {
-            delete[] current->funcName;
-        }
-        free(current);
+        delete[] current->funcName;
+        delete current;
         current = next;
     }
     *stackAsm = nullptr;

@@ -108,7 +108,7 @@ TEST_F(TestGroup, TestNoEventGroup)
     char *evtList[numEvt] = {"r11", "r3", "r4"};
     attr.evtList = evtList;
 
-    int pd = PmuOpen(COUNTING, &attr);
+    pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd != -1);
     int ret = PmuCollect(pd, 100, collectInterval);
     ASSERT_EQ(ret, SUCCESS);
@@ -133,7 +133,7 @@ TEST_F(TestGroup, TestCountingEventGroup)
     attr.evtAttr = evtAttr;
     attr.numEvtAttr = numEvt;
 
-    int pd = PmuOpen(COUNTING, &attr);
+    pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd != -1);
     int ret = PmuCollect(pd, 100, collectInterval);
     ASSERT_EQ(ret, SUCCESS);
@@ -161,7 +161,7 @@ TEST_F(TestGroup, TestEventGroupLessGroupId)
     attr.evtAttr = evtAttr;
     attr.numEvtAttr = 13;
 
-    int pd = PmuOpen(COUNTING, &attr);
+    pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd != -1);
     int ret = PmuCollect(pd, 100, collectInterval);
     ASSERT_EQ(ret, SUCCESS);
@@ -192,7 +192,7 @@ TEST_F(TestGroup, TestCountingEventGroupAllUncore)
     struct EvtAttr evtAttr[numEvt] = {{1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9}, {10}, {11}, {12}, {13}, {13}, {13}, {13}};
     attr.evtAttr = evtAttr;
     attr.numEvtAttr = numEvt;
-    int pd = PmuOpen(COUNTING, &attr);
+    pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd == -1);
 }
 
@@ -209,7 +209,7 @@ TEST_F(TestGroup, TestCountingEventGroupHasAggregateUncore)
     struct EvtAttr evtAttr[numEvt] = {{1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9}, {10}, {11}, {12}, {13}, {13}};
     attr.evtAttr = evtAttr;
     attr.numEvtAttr = numEvt;
-    int pd = PmuOpen(COUNTING, &attr);
+    pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd != -1);
     int ret = PmuCollect(pd, 100, collectInterval);
     ASSERT_EQ(ret, SUCCESS);
@@ -234,7 +234,7 @@ TEST_F(TestGroup, TestCountingEventGroupHasAggregateUncoreEnd)
     attr.evtAttr = evtAttr;
     attr.numEvtAttr = numEvt;
 
-    int pd = PmuOpen(COUNTING, &attr);
+    pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd != -1);
     int ret = PmuCollect(pd, 100, collectInterval);
     ASSERT_EQ(ret, SUCCESS);
@@ -256,7 +256,7 @@ TEST_F(TestGroup, TestCountingEventGroupAllAggregateUncore)
     struct EvtAttr evtAttr[numEvt] = {{1}, {1}};
     attr.evtAttr = evtAttr;
     attr.numEvtAttr = numEvt;
-    int pd = PmuOpen(COUNTING, &attr);
+    pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd == -1);
 }
 
@@ -274,7 +274,7 @@ TEST_F(TestGroup, TestCountingEventGroupHasUncore)
     attr.evtAttr = evtAttr;
     attr.numEvtAttr = numEvt;
 
-    int pd = PmuOpen(COUNTING, &attr);
+    pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd != -1);
     int ret = PmuCollect(pd, 100, collectInterval);
     ASSERT_EQ(ret, SUCCESS);
@@ -297,7 +297,7 @@ TEST_F(TestGroup, TestSamplingNoEventGroup)
     attr.evtAttr = evtAttr;
     attr.numEvtAttr = numEvt;
 
-    int pd = PmuOpen(SAMPLING, &attr);
+    pd = PmuOpen(SAMPLING, &attr);
     ASSERT_TRUE(pd!= -1);
     int ret = PmuCollect(pd, 1000, collectInterval);
     ASSERT_EQ(ret, SUCCESS);
@@ -318,7 +318,7 @@ TEST_F(TestGroup, TestSamplingEventGroup)
     attr.evtAttr = evtAttr;
     attr.numEvtAttr = numEvt;
 
-    int pd = PmuOpen(SAMPLING, &attr);
+    pd = PmuOpen(SAMPLING, &attr);
     ASSERT_TRUE(pd != -1);
     int ret = PmuCollect(pd, 3000, collectInterval);
     ASSERT_EQ(ret, SUCCESS);
@@ -339,7 +339,7 @@ TEST_F(TestGroup, TestSamplingEventGroupHasUncore)
     attr.evtAttr = evtAttr;
     attr.numEvtAttr = numEvt;
 
-    int pd = PmuOpen(SAMPLING, &attr);
+    pd = PmuOpen(SAMPLING, &attr);
     ASSERT_TRUE(pd == -1);
 }
 
@@ -359,7 +359,7 @@ TEST_F(TestGroup, TestEvtGroupForkNewThread)
     attr.evtAttr = evtAttr;
     attr.numEvtAttr = numEvt;
 
-    int pd = PmuOpen(COUNTING, &attr);
+    pd = PmuOpen(COUNTING, &attr);
     ASSERT_TRUE(pd != -1);
     int ret = PmuCollect(pd, 10000, collectInterval);
     ASSERT_EQ(ret, SUCCESS);

@@ -170,7 +170,7 @@ TEST_F(TestPMU, NoDataAfterDisable)
     appPid = RunTestApp("test_12threads");
     pid_t pidList[1] = {appPid};
     auto attr = GetProcAttribute(pidList, 1);
-    auto pd = PmuOpen(SAMPLING, &attr);
+    pd = PmuOpen(SAMPLING, &attr);
     PmuEnable(pd);
     sleep(1);
     // Disable sampling.
@@ -189,7 +189,7 @@ TEST_F(TestPMU, TestSampling10000ThreadCase)
     sleep(1);
     pid_t pidList[1] = {appPid};
     auto attr = GetProcAttribute(pidList, 1);
-    auto pd = PmuOpen(SAMPLING, &attr);
+    pd = PmuOpen(SAMPLING, &attr);
     PmuEnable(pd);
     sleep(3);
     PmuDisable(pd);

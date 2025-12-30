@@ -43,9 +43,11 @@ protected:
         readlink("/proc/self/exe", myDir, sizeof(myDir) - 1);
         auto pid = vfork();
         if (pid == 0) {
-            string fullPath = string(dirname(myDir)) + "/case/" + name;
+            char *dirPath = dirname(myDir);
+            char fullPath[PATH_MAX];
+            snprintf(fullPath, PATH_MAX, "%s/case/%s", dirPath, name.c_str());
             char *const *dummy = nullptr;
-            execvp(fullPath.c_str(), dummy);
+            execvp(fullPath, dummy);
             _exit(errno);
         }
 

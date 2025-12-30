@@ -261,6 +261,7 @@ TEST_F(TestAPI, SpeCollectSuccess)
     ASSERT_TRUE(pd != -1);
     int ret = PmuCollect(pd, 10, collectInterval);
     ASSERT_TRUE(ret == SUCCESS);
+    PmuRead(pd, &data);
 }
 
 TEST_F(TestAPI, SpeReadSuccess)
@@ -426,6 +427,7 @@ TEST_F(TestAPI, TestRaiseNumFd)
     sleep(1); // Wait for all threads to start
     int numChildTid = 0;
     int* childTidList = GetChildTid(attr.pidList[0], &numChildTid);
+    delete[] childTidList;
     int numCpu = attr.cpuList == nullptr ? sysconf(_SC_NPROCESSORS_ONLN) : attr.numCpu;
 
     unsigned long setNumFd = numCpu * numChildTid - 100;
@@ -435,8 +437,7 @@ TEST_F(TestAPI, TestRaiseNumFd)
             .rlim_cur = setNumFd, .rlim_max = currentlim.rlim_max,
     };
 
-    int pd = PmuOpen(SAMPLING, &attr);
-    std::cout << "pd:" << pd << std::endl;
+    pd = PmuOpen(SAMPLING, &attr);
     PmuEnable(pd);
     // Due to collecting low load applications, collect for long time to ensure pmudata data is present
     sleep(3);
@@ -470,7 +471,7 @@ TEST_F(TestAPI, RaiseNumFdFunc)
 TEST_F(TestAPI, NoDataBeforeEnable)
 {
     auto attr = GetPmuAttribute();
-    int pd = PmuOpen(SAMPLING, &attr);
+    pd = PmuOpen(SAMPLING, &attr);
     PmuData *data = nullptr;
     // No data before PmuEnable.
     int len = PmuRead(pd, &data);
@@ -487,7 +488,7 @@ TEST_F(TestAPI, NoDataBeforeEnable)
 TEST_F(TestAPI, NoDataAfterDisable)
 {
     auto attr = GetPmuAttribute();
-    int pd = PmuOpen(SAMPLING, &attr);
+    pd = PmuOpen(SAMPLING, &attr);
     int err = PmuEnable(pd);
     ASSERT_EQ(err, SUCCESS);
     sleep(1);
@@ -505,7 +506,7 @@ TEST_F(TestAPI, NoDataAfterDisable)
 TEST_F(TestAPI, AppendPmuDataToNullArray)
 {
     auto attr = GetPmuAttribute();
-    int pd = PmuOpen(SAMPLING, &attr);
+    pd = PmuOpen(SAMPLING, &attr);
     int err = PmuEnable(pd);
     ASSERT_EQ(err, SUCCESS);
 
@@ -533,7 +534,7 @@ TEST_F(TestAPI, AppendPmuDataToNullArray)
 TEST_F(TestAPI, AppendPmuDataToExistArray)
 {
     auto attr = GetPmuAttribute();
-    int pd = PmuOpen(COUNTING, &attr);
+    pd = PmuOpen(COUNTING, &attr);
     ASSERT_NE(pd, -1);
     int err = PmuEnable(pd);
     ASSERT_EQ(err, SUCCESS);
@@ -569,7 +570,7 @@ TEST_F(TestAPI, TestForkNewThread)
     attr.pidList[0] = pid;
     attr.numPid = 1;
     attr.includeNewFork = 1;
-    int pd = PmuOpen(COUNTING, &attr);
+    pd = PmuOpen(COUNTING, &attr);
     ASSERT_NE(pd, -1);
     int ret = PmuCollect(pd, 10000, collectInterval);
     ASSERT_EQ(ret, SUCCESS);
@@ -594,7 +595,7 @@ TEST_F(TestAPI, TestShortChild)
     attr.pidList[0] = pid;
     attr.numPid = 1;
     attr.includeNewFork = 0;
-    int pd = PmuOpen(COUNTING, &attr);
+    pd = PmuOpen(COUNTING, &attr);
     ASSERT_NE(pd, -1);
     int ret = PmuCollect(pd, 1000, collectInterval);
     ASSERT_EQ(ret, SUCCESS);
@@ -783,6 +784,7 @@ TEST_F(TestAPI, InvalidBpfAttr)
     pd = PmuOpen(COUNTING, &attr);
     ASSERT_NE(pd, -1);
     pd = PmuOpen(SAMPLING, &attr);
+    PmuClose(pd);
     ASSERT_EQ(pd, -1);
     EvtAttr evtAttr[1] = {1};
     attr.evtAttr = evtAttr;
@@ -792,6 +794,7 @@ TEST_F(TestAPI, InvalidBpfAttr)
 #else
     pd = PmuOpen(COUNTING, &attr);
     ASSERT_NE(pd, -1);
+    PmuClose(pd);
     attr.enableBpf = 1;
     pd = PmuOpen(COUNTING, &attr);
     ASSERT_EQ(pd, -1);
