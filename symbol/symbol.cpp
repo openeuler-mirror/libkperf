@@ -54,26 +54,6 @@ int SymResolverRecordModuleNoDwarf(int pid)
     }
 }
 
-int SymResolverRecordElf(const char* fileName)
-{
-    try {
-        return SymbolResolve::GetInstance()->RecordElf(fileName);
-    } catch (std::bad_alloc& err) {
-        pcerr::New(COMMON_ERR_NOMEM);
-        return COMMON_ERR_NOMEM;
-    }
-}
-
-int SymResolverRecordDwarf(const char* fileName)
-{
-    try {
-        return SymbolResolve::GetInstance()->RecordDwarf(fileName);
-    } catch (std::bad_alloc& err) {
-        pcerr::New(COMMON_ERR_NOMEM);
-        return COMMON_ERR_NOMEM;
-    }
-}
-
 void SymResolverDestroy()
 {
     SymbolResolve::GetInstance()->Clear();

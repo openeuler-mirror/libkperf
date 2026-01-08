@@ -287,51 +287,6 @@ TEST(symbol, record_user_module_regular_success)
 }
 
 /** For regular users, we only have access to process owned by current user */
-TEST(symbol, record_elf_success)
-{
-    SymResolverInit();
-    std::string exePath = TestLibSym::GetExePath();
-    int ret = SymResolverRecordElf(exePath.c_str());
-    EXPECT_TRUE(ret == 0);
-}
-
-/** For regular users, we only have access to process owned by current user */
-TEST(symbol, record_elf_failed)
-{
-    SymResolverInit();
-    std::string fileName = "test" + std::to_string(std::time(nullptr));
-    int ret = SymResolverRecordElf(fileName.c_str());
-    EXPECT_TRUE(ret == LIBSYM_ERR_FILE_NOT_RGE);
-}
-
-/** For regular users, we only have access to process owned by current user */
-TEST(symbol, record_dwarf_success)
-{
-    SymResolverInit();
-    std::string exePath = TestLibSym::GetExePath();
-    int ret = SymResolverRecordDwarf(exePath.c_str());
-    EXPECT_TRUE(ret == 0);
-}
-
-/** For regular users, we only have access to process owned by current user */
-TEST(symbol, record_dwarf_failed)
-{
-    SymResolverInit();
-    std::string fileName = "test" + std::to_string(std::time(nullptr));
-    int ret = SymResolverRecordDwarf(fileName.c_str());
-    EXPECT_TRUE(ret == LIBSYM_ERR_FILE_NOT_RGE);
-}
-
-/** For regular users, we only have access to process owned by current user */
-TEST(symbol, record_dwarf_failed2)
-{
-    SymResolverInit();
-    std::string fileName = "/home";
-    int ret = SymResolverRecordDwarf(fileName.c_str());
-    EXPECT_TRUE(ret == LIBSYM_ERR_FILE_NOT_RGE);
-}
-
-/** For regular users, we only have access to process owned by current user */
 TEST_F(TestLibSym, sym_map_addr_suc)
 {
     SymResolverInit();

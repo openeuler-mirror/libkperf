@@ -22,7 +22,7 @@
 #include <fstream>
 #include <climits>
 #include <set>
-#include "name_resolve.h"
+#include <elf.h>
 #include "pcerr.h"
 #include "symbol_resolve.h"
 #include "common.h"
@@ -67,11 +67,6 @@ char* UNKNOWN = "UNKNOWN";
 char* KERNEL = "[kernel]";
 
 namespace {
-    static inline void SetFalse(bool& flag)
-    {
-        flag = false;
-    }
-
     static inline bool CheckIfFile(const std::string& mapline)
     {
         const std::vector<std::string> patterns = {HUGEPAGE, DEV_ZERO, ANON, STACK, SOCKET, VSYSCALL, HEAP ,VDSO, SYSV, VVAR};
@@ -104,6 +99,7 @@ namespace {
         symbol->addr = addr;
         symbol->offset = 0;
         symbol->lineNum = 0;
+        symbol->firstLine = 0;
         return symbol;
     }
 
@@ -127,17 +123,6 @@ namespace {
             }
             data->moduleName = modNameChar;
             modVec.emplace_back(data);
-        }
-    }
-
-    static inline void ElfInfoRecord(MyElf& myElf, const elf::section& sec)
-    {
-        for (const auto& sym : sec.as_symtab()) {
-            auto& data = sym.get_data();
-            if (data.type() != elf::stt::func){
-                continue;
-            }
-            myElf.Emplace(data.value, sym);
         }
     }
 
@@ -317,157 +302,12 @@ void SymbolUtils::StrCpy(char* dst, int dstLen, const char* src)
     dst[dstLen] = '\0';
 }
 
-bool MyElf::IsExecFile()
-{
-    return elf.get_hdr().type == elf::et::exec;
-}
-
-void MyElf::Emplace(unsigned long addr, const ELF_SYM& elfSym)
-{
-    this->symTab.emplace(addr, elfSym);
-}
-
-ELF_SYM* MyElf::FindSymbol(unsigned long addr)
-{
-    if (symTab.empty()) {
-        return nullptr;
-    }
-    auto it = symTab.upper_bound(addr);
-    if(it == symTab.cbegin()) {
-        return nullptr;
-    }
-    --it;
-    if(addr > it->first + it->second.get_data().size) {
-        return nullptr;
-    }
-    return &it->second;
-}
-
-void RangeL::FindLine(unsigned long addr, struct DwarfEntry& entry)
-{
-    if (!loadLineTable) {
-        lineTab = cu.get_line_table();
-        loadLineTable = true;
-    }
-    auto rs = FindAddress(addr);
-    if (rs != lineTab.end()) {
-        entry.find = true;
-        entry.fileName = rs->file->path();
-        entry.lineNum = rs->line;
-    }
-}
-
-dwarf::line_table::iterator RangeL::FindAddress(unsigned long addr)
-{
-    auto prev = lineTab.begin();
-    auto end = lineTab.end();
-    if (prev == end) {
-        return prev;
-    }
-    auto it = prev;
-    for (++it; it != end; prev = it++) {
-        if (prev->address <= addr && it->address > addr && !prev->end_sequence) {
-            return prev;
-        }
-    }
-    if (it->address > addr && addr >= prev->address) {
-        return prev;
-    }
-    return end;
-}
-
-void RangeL::ReadRange(const DWARF_CU& cu)
-{
-    this->cu = cu;
-    // it spends most time to get data, just load one time;
-    const dwarf::die &die = cu.root();
-    if (die.has(dwarf::DW_AT::ranges) && die[dwarf::DW_AT::ranges].is_valid_rangelist()) {
-        for (auto &dwarfRange : dwarf::at_ranges(die)) {
-            if (dwarfRange.low >= dwarfRange.high) {
-                continue;
-            }
-            if (rangeMap.find(dwarfRange.low) != rangeMap.end()) {
-                continue;
-            }
-            rangeMap.insert({dwarfRange.low, dwarfRange.high});
-        }
-    }
-
-    if (rangeMap.size() > 0) {
-        return;
-    }
-
-    // if the die does not contain ranges, get_line_table obtains
-    lineTab = cu.get_line_table();
-    loadLineTable = true;
-    auto it = lineTab.begin();
-    auto end = lineTab.end();
-    unsigned long minAddr = it->address;
-    unsigned long maxAddr = it->address;
-    while (it != end) {
-        if (it->end_sequence) {
-            maxAddr = maxAddr < it->address ? it->address : maxAddr;
-            rangeMap.insert({minAddr, maxAddr});
-            ++it;
-            minAddr = it->address;
-            maxAddr = it->address;
-            continue;
-        }
-        ++it;
-    }
-    maxAddr = maxAddr < it->address ? it->address : maxAddr;
-    if (minAddr < maxAddr) {
-        rangeMap.insert({minAddr, maxAddr});
-    }
-}
-
-void MyDwarf::FindLine(unsigned long addr, struct DwarfEntry &entry)
-{
-    for (auto &range : rangeList) {
-        if (range.IsInLineTable(addr)) {
-            range.FindLine(addr, entry);
-            if (entry.find) {
-                return;
-            }
-        }
-    }
-}
-
-void MyDwarf::LoadDwarf(unsigned long addr, DwarfEntry& entry)
-{
-    if (hasLoad) {
-        return;
-    }
-    if (cuList.empty()) {
-        for (const auto &cu : dw.compilation_units()) {
-            cuList.push_back(cu);
-        }
-    }
-    // Set hasLoad = true if it's loaded
-    while (loadNum < cuList.size())
-    {
-        const auto &cu = cuList.at(loadNum);
-        RangeL range;
-        range.ReadRange(cu);
-        rangeList.push_back(range);
-        loadNum++;
-        if (range.IsInLineTable(addr)) {
-            range.FindLine(addr, entry);
-            if (entry.find) {
-                return;
-            }
-        }
-    }
-    hasLoad = true;
-}
-
 int SymbolResolve::RecordModule(int pid, RecordModuleType recordModuleType)
 {
     if (pid < 0) {
         pcerr::New(LIBSYM_ERR_PARAM_PID_INVALID, "libsym param process ID must be greater than 0");
         return LIBSYM_ERR_PARAM_PID_INVALID;
     }
-    SetFalse(this->isCleared);
     if (this->moduleMap.find(pid) != this->moduleMap.end()) {
         pcerr::New(0, "success");
         return 0;
@@ -483,15 +323,10 @@ int SymbolResolve::RecordModule(int pid, RecordModuleType recordModuleType)
     ReadProcPidMap(file, modVec);
     std::string mntPoint = GetMntPoint(pid);
     for (auto& item : modVec) {
-        std::string moduleName = item->moduleName;
         if (!mntPoint.empty()) {
             item->mntPoint = mntPoint;
-            moduleName = mntPoint + "/" + item->moduleName;
         }
-        this->RecordElf(moduleName.c_str());
-        if (recordModuleType != RecordModuleType::RECORD_NO_DWARF) {
-            this->RecordDwarf(moduleName.c_str());
-        }
+        item->moduleType = recordModuleType;
     }
     this->moduleMap.insert({pid, modVec});
     pcerr::New(0, "success");
@@ -533,14 +368,8 @@ int SymbolResolve::UpdateModule(int pid, RecordModuleType recordModuleType)
     auto diffModVec = FindDiffMaps(oldModVec, newModVec);
     // Load modules.
     for (auto& item : diffModVec) {
-        std::string moduleName = item->moduleName;
         if (!mntPoint.empty()) {
-            moduleName = mntPoint + "/" + moduleName;
             item->mntPoint = mntPoint;
-        }
-        this->RecordElf(moduleName.c_str());
-        if (recordModuleType != RecordModuleType::RECORD_NO_DWARF) {
-            this->RecordDwarf(moduleName.c_str());
         }
     }
     for (auto& mod : diffModVec) {
@@ -563,102 +392,6 @@ void SymbolResolve::FreeModule(int pid)
     }
     moduleSafeHandler.releaseLock(pid);
     return;
-}
-
-int SymbolResolve::RecordElf(const char* fileName)
-{
-    SetFalse(this->isCleared);
-    std::string file = fileName;
-    elfSafeHandler.tryLock(file);
-
-    if (this->elfMap.find(fileName) != this->elfMap.end()) {
-        pcerr::New(0, "success");
-        elfSafeHandler.releaseLock(file);
-        return 0;
-    }
-
-    if (!SymbolUtils::IsFile(fileName)) {
-        pcerr::New(LIBSYM_ERR_FILE_NOT_RGE, "libsym detects that the input parameter fileName is not a file");
-        elfSafeHandler.releaseLock(file);
-        return LIBSYM_ERR_FILE_NOT_RGE;
-    }
-
-    /** symbol cache logic should be implemented after this line */
-    int fd = open(fileName, O_RDONLY);
-    if (fd < 0) {
-        pcerr::New(LIBSYM_ERR_OPEN_FILE_FAILED,
-                   "libsym can't open file named " + file + " because of " + std::string{strerror(errno)});
-        elfSafeHandler.releaseLock(file);
-        return LIBSYM_ERR_OPEN_FILE_FAILED;
-    }
-
-    try {
-        std::shared_ptr<elf::loader> efLoader = elf::create_mmap_loader(fd);
-        elf::elf ef(efLoader);
-        MyElf myElf(ef);
-        for (const auto& sec : ef.sections()) {
-            if (sec.get_hdr().type != elf::sht::symtab && sec.get_hdr().type != elf::sht::dynsym) {
-                continue;
-            }
-            ElfInfoRecord(myElf, sec);
-        }
-        this->elfMap.emplace(file, myElf);
-    } catch (std::exception& error) {
-        pcerr::New(LIBSYM_ERR_ELFIN_FOMAT_FAILED, "libsym record elf format error: " + std::string{error.what()});
-        elfSafeHandler.releaseLock(file);
-        return LIBSYM_ERR_ELFIN_FOMAT_FAILED;
-    }
-
-    pcerr::New(0, "success");
-    elfSafeHandler.releaseLock(file);
-    return 0;
-}
-
-int SymbolResolve::RecordDwarf(const char* fileName)
-{
-    SetFalse(this->isCleared);
-    std::string file = fileName;
-    dwarfSafeHandler.tryLock(file);
-
-    if (this->dwarfMap.find(fileName) != this->dwarfMap.end()) {
-        pcerr::New(0, "success");
-        dwarfSafeHandler.releaseLock((file));
-        return 0;
-    }
-
-    if (!SymbolUtils::IsFile(fileName)) {
-        pcerr::New(LIBSYM_ERR_FILE_NOT_RGE, "libsym detects that the input parameter fileName is not a file");
-        dwarfSafeHandler.releaseLock((file));
-        return LIBSYM_ERR_FILE_NOT_RGE;
-    }
-
-    int fd = open(fileName, O_RDONLY);
-    if (fd < 0) {
-        pcerr::New(LIBSYM_ERR_OPEN_FILE_FAILED,
-                   "libsym can't open file named " + file + " because of " + std::string{strerror(errno)});
-        dwarfSafeHandler.releaseLock((file));
-        return LIBSYM_ERR_OPEN_FILE_FAILED;
-    }
-    /** symbol cache logic should be implemented after this line */
-    try {
-        auto efLoader = elf::create_mmap_loader(fd);
-        elf::elf ef(std::move(efLoader));
-
-        dwarf::dwarf dw(dwarf::elf::create_loader(ef));
-        MyDwarf myDwarf(dw, file);
-        dwarfMap.emplace(file, myDwarf);
-
-        efLoader.reset();
-    } catch (std::exception& error) {
-        dwarfSafeHandler.releaseLock((file));
-        pcerr::New(LIBSYM_ERR_DWARF_FORMAT_FAILED,
-                   "libsym record dwarf file named " + file + " format error: " + std::string{error.what()});
-        return LIBSYM_ERR_DWARF_FORMAT_FAILED;
-    }
-
-    pcerr::New(0, "success");
-    dwarfSafeHandler.releaseLock((file));
-    return 0;
 }
 
 void SymbolResolve::Clear()
@@ -686,52 +419,8 @@ void SymbolResolve::Clear()
     for (auto& item : strToCharMap) {
         free(item.second);
     }
-    this->isCleared = true;
     delete this->instance;
     this->instance = nullptr;
-}
-
-void SymbolResolve::SearchElfInfo(MyElf& myElf, unsigned long addr, struct Symbol* symbol, unsigned long* offset)
-{
-    ELF_SYM *elfSym = myElf.FindSymbol(addr);
-    if (elfSym == nullptr) {
-        return;
-    }
-    symbol->codeMapEndAddr = elfSym->get_data().value + elfSym->get_data().size;
-    *offset = addr - elfSym->get_data().value;
-    std::string symName = elfSym->get_name();
-    symbol->mangleName = GetCharFromStr(symName);
-    char *name = CppNamedDemangle(symName.c_str());
-    if (name) {
-        symbol->symbolName = GetCharFromStr(name);
-        free(name);
-        name = nullptr;
-        return;
-    }
-    symbol->symbolName = GetCharFromStr(symName);
-    return;
-}
-
-void SymbolResolve::SearchDwarfInfo(MyDwarf& myDwarf, unsigned long addr, struct Symbol* symbol)
-{
-    DwarfEntry dwarfEntry;
-    const std::string moduleName = myDwarf.GetModule();
-    dwarfLoadHandler.tryLock(moduleName);
-    myDwarf.FindLine(addr, dwarfEntry);
-    if(!dwarfEntry.find) {
-        try {
-            myDwarf.LoadDwarf(addr, dwarfEntry);
-        } catch (std::exception& err) {
-            pcerr::SetWarn(LIBSYM_WARN_LOAD_DWARF_FAILED, "libsym find the exception " + std::string{err.what()} + " when load dwarf.");
-            dwarfLoadHandler.releaseLock(moduleName);
-            return;
-        }
-    }
-    dwarfLoadHandler.releaseLock(moduleName);
-    if (dwarfEntry.find) {
-        symbol->fileName = GetCharFromStr(dwarfEntry.fileName);
-        symbol->lineNum = dwarfEntry.lineNum;
-    }
 }
 
 std::shared_ptr<ModuleMap> SymbolResolve::AddrToModule(
@@ -849,24 +538,33 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
     struct Symbol* symbol = InitializeSymbol(addr);
     symbol->module = GetCharFromStr(module->moduleName);
     unsigned long addrToSearch = addr;
+    if (addrToSearch > 0xFFFFFF) {
+        addrToSearch = addrToSearch - module->start;
+    }
+
     std::string moduleName = module->moduleName;
     if (!module->mntPoint.empty()) {
         symbol->mntPoint = GetCharFromStr(module->mntPoint);
         moduleName = module->mntPoint + "/" + module->moduleName;
     }
-    if (this->elfMap.find(moduleName) != this->elfMap.end()) {
-        // If the largest symbol in the elf symbol table is detected to be smaller than the searched symbol, subtraction
-        // is performed.
-        MyElf& myElf = this->elfMap.at(moduleName);
-        // if the file is not exectable, subtraction is required
-        if(!myElf.IsExecFile()){
-            addrToSearch = addrToSearch - module->start;
-        }
-        this->SearchElfInfo(myElf, addrToSearch, symbol, &symbol->offset);  
-    }
 
-    if (this->dwarfMap.find(moduleName) != this->dwarfMap.end()) {
-        this->SearchDwarfInfo(this->dwarfMap.at(moduleName), addrToSearch, symbol);
+    auto ResOrErr = Symbolizer.symbolizeCode(moduleName, addrToSearch);
+
+    if (ResOrErr) {
+        if (module->moduleType == RecordModuleType::RECORD_ALL) {
+            if (ResOrErr->FileName != "<invalid>") {
+                symbol->lineNum = ResOrErr->Line;
+                symbol->fileName = GetCharFromStr(ResOrErr->FileName);
+                symbol->firstLine = ResOrErr->StartLine;
+            }
+        }
+      
+        if (ResOrErr->FunctionName != "<invalid>") {
+            symbol->symbolName = GetCharFromStr(ResOrErr->FunctionName);
+            symbol->mangleName = GetCharFromStr(ResOrErr->MangleName);
+            symbol->offset = ResOrErr->Offset;
+            symbol->codeMapEndAddr = ResOrErr->CodeEndAddr;
+        }
     }
     symbol->codeMapAddr = addrToSearch;
     this->symbolMap.at(pid).insert({addr, symbol});
@@ -895,7 +593,6 @@ struct Symbol* SymbolResolve::MapAddr(int pid, unsigned long addr)
 
 int SymbolResolve::RecordKernel()
 {
-    SetFalse(this->isCleared);
     if (!this->ksymArray.empty()) {
         pcerr::New(0, "success");
         return 0;
@@ -940,7 +637,6 @@ int SymbolResolve::UpdateModule(int pid, const char* moduleName, unsigned long s
         pcerr::New(LIBSYM_ERR_PARAM_PID_INVALID, "libsym param process ID must be greater than 0");
         return LIBSYM_ERR_PARAM_PID_INVALID;
     }
-    SetFalse(this->isCleared);
     std::shared_ptr<ModuleMap> data = std::make_shared<ModuleMap>();
     std::string mntPoint = GetMntPoint(pid);
     data->moduleName = moduleName;
@@ -950,16 +646,10 @@ int SymbolResolve::UpdateModule(int pid, const char* moduleName, unsigned long s
         data->mntPoint = mntPoint;
         recordModule = mntPoint + "/" + recordModule;
     }
-    int ret = this->RecordElf(recordModule.c_str());
-    if (ret == LIBSYM_ERR_OPEN_FILE_FAILED || ret == LIBSYM_ERR_FILE_NOT_RGE) {
-        return ret;
-    }
 
-    if (recordModuleType != RecordModuleType::RECORD_NO_DWARF) {
-        ret = this->RecordDwarf(recordModule.c_str());
-        if (ret == LIBSYM_ERR_OPEN_FILE_FAILED || ret == LIBSYM_ERR_FILE_NOT_RGE) {
-            return ret;
-        }
+    if (!SymbolUtils::IsFile(recordModule.c_str())) {
+        pcerr::New(LIBSYM_ERR_FILE_NOT_RGE, "libsym detects that the input paramter fileName is not a file");
+        return LIBSYM_ERR_FILE_NOT_RGE;
     }
 
     if (this->moduleMap.find(pid) == this->moduleMap.end()) {
@@ -973,36 +663,6 @@ int SymbolResolve::UpdateModule(int pid, const char* moduleName, unsigned long s
     return 0;
 }
 
-struct Symbol* SymbolResolve::MapCodeElfAddr(const std::string& moduleName, unsigned long addr)
-{
-    struct Symbol* data = nullptr;
-    if (addr > KERNEL_START_ADDR) {
-        pcerr::New(LIBSYM_ERR_MAP_CODE_KERNEL_NOT_SUPPORT,
-                   "libsym The current version does not support kernel source code matching.");
-        return nullptr;
-    } else {
-        int ret = RecordElf(moduleName.c_str());
-        if (ret != 0) {
-            return nullptr;
-        }
-        data = this->MapUserCodeAddr(moduleName, addr);
-    }
-    return data;
-}
-
-struct Symbol* SymbolResolve::MapUserCodeAddr(const std::string& moduleName, unsigned long startAddr)
-{
-    struct Symbol* symbol = InitializeSymbol(startAddr);
-    unsigned long addrToSearch = startAddr;
-    symbol->codeMapAddr = addrToSearch;
-    symbol->module = GetCharFromStr(moduleName);
-    if (this->elfMap.find(moduleName) != this->elfMap.end()) {
-        this->SearchElfInfo(this->elfMap.at(moduleName), addrToSearch, symbol, &symbol->offset);
-    }
-    pcerr::New(0, "success");
-    return symbol;
-}
-
 struct StackAsm* SymbolResolve::MapAsmCode(const char* moduleName, unsigned long startAddr, unsigned long endAddr)
 {
     struct StackAsm* stackAsm = MapAsmCodeStack(moduleName, startAddr, endAddr);
@@ -1011,71 +671,156 @@ struct StackAsm* SymbolResolve::MapAsmCode(const char* moduleName, unsigned long
 
 struct Symbol* SymbolResolve::MapCodeAddr(const char* moduleName, unsigned long startAddr)
 {
-    Symbol* symbol = MapCodeElfAddr(moduleName, startAddr);
-    if (!symbol) {
+    struct Symbol* symbol = InitializeSymbol(startAddr);
+    symbol->module = GetCharFromStr(moduleName);
+    
+    auto ResOrErr = Symbolizer.symbolizeCode(moduleName, startAddr);
+
+    if (ResOrErr) {
+        if (ResOrErr->FileName != "<invalid>") {
+            symbol->lineNum = ResOrErr->Line;
+            symbol->firstLine = ResOrErr->StartLine;
+            symbol->fileName = GetCharFromStr(ResOrErr->FileName);
+        }
+        if (ResOrErr->FunctionName != "<invalid>") {
+            symbol->symbolName = GetCharFromStr(ResOrErr->FunctionName);
+            symbol->mangleName = GetCharFromStr(ResOrErr->MangleName);
+            symbol->offset = ResOrErr->Offset;
+            symbol->codeMapEndAddr = ResOrErr->CodeEndAddr;
+        }
+    }
+    symbol->codeMapAddr = startAddr;
+    return symbol;
+}
+
+static const void* loadElf(off_t offset, size_t size, size_t lim, void* base) {
+    if (offset + size > lim) {
         return nullptr;
     }
-    int ret = RecordDwarf(moduleName);
-    if (ret == 0) {
-        this->SearchDwarfInfo(this->dwarfMap.at(moduleName), symbol->codeMapAddr, symbol);
-    } else {
-        symbol->fileName = nullptr;
+    return (const char*)base + offset;
+}
+
+int MyElf::LoadMmap() {
+    int fd = open(filePath.c_str(), O_RDONLY);
+    if (fd < 0) {
+        pcerr::New(LIBSYM_ERR_OPEN_FILE_FAILED);
+        return LIBSYM_ERR_OPEN_FILE_FAILED;
     }
-    return symbol;
+
+    off_t end = lseek(fd, 0, SEEK_END);
+    if (end == (off_t) - 1) {
+        close(fd);
+        pcerr::New(LIBSYM_ERR_READ_BUILDID);
+        return LIBSYM_ERR_READ_BUILDID;
+    }
+
+    lim = end;
+    base = mmap(nullptr, lim, PROT_READ, MAP_SHARED, fd, 0);
+    if (base == MAP_FAILED) {
+        close(fd);
+        pcerr::New(LIBSYM_ERR_READ_BUILDID);
+        return LIBSYM_ERR_READ_BUILDID;
+    }
+    close(fd);
+    return this->CheckElfHeader();
+}
+
+const void* MyElf::Load(off_t offset, size_t size) {
+    return loadElf(offset, size, lim, base);
+}
+
+int MyElf::CheckElfHeader() {
+    const void* elfLoad = Load(0, sizeof(ElfHdr));
+    if (!elfLoad) {
+        pcerr::New(LIBSYM_ERR_READ_BUILDID);
+        return LIBSYM_ERR_READ_BUILDID;
+    }
+
+    elfHdr = (struct ElfHdr*) elfLoad;
+
+    if (strncmp(elfHdr->elfFormat, "\x7f" "ELF", 4) != 0) {
+        pcerr::New(LIBSYM_ERR_READ_BUILDID, "bad ELF format");
+        return LIBSYM_ERR_READ_BUILDID;
+    }
+
+    if (elfHdr->elfVersion != 1) {
+        pcerr::New(LIBSYM_ERR_READ_BUILDID, "bad ELF version");
+        return LIBSYM_ERR_READ_BUILDID;
+    }
+
+    if (elfHdr->elfClass != ELFCLASS32 && elfHdr->elfClass != ELFCLASS64) {
+        pcerr::New(LIBSYM_ERR_READ_BUILDID, "bad ELF class");
+        return LIBSYM_ERR_READ_BUILDID;
+    }
+
+    if (elfHdr->elfData != 1 && elfHdr->elfData) {
+        pcerr::New(LIBSYM_ERR_READ_BUILDID, "bad ELF data");
+        return LIBSYM_ERR_READ_BUILDID;
+    }
+    return SUCCESS;
+}
+
+int MyElf::ElfGetBuildId(char** buildId)
+{
+    if (elfHdr->elfClass == ELFCLASS32) {
+        return ElfParser<Elf32_Ehdr, Elf32_Phdr, Elf32_Shdr>(buildId);
+    } else if(elfHdr->elfClass == ELFCLASS64) {
+        return ElfParser<Elf64_Ehdr, Elf64_Phdr, Elf64_Shdr>(buildId);
+    }
+    return LIBSYM_ERR_READ_BUILDID;
+}
+
+template<typename Ehdr, typename Phdr, typename Shdr>
+int MyElf::ElfParser(char** buildId) 
+{
+    static int BUILD_ID_TYPE = 3;
+    Ehdr* ehdr = reinterpret_cast<Ehdr*>(base);
+    if (ehdr->e_type != ET_EXEC && ehdr->e_type != ET_DYN) {
+        pcerr::New(LIBSYM_ERR_READ_BUILDID, "bad file type");
+        return LIBSYM_ERR_READ_BUILDID;
+    }
+
+    Phdr* phdr = reinterpret_cast<Phdr*>(((uint8_t*)base) + ehdr->e_phoff);
+    for (int i = 0; i < ehdr->e_phnum; i++) {
+        if (phdr[i].p_type != PT_NOTE) {
+            continue;
+        }
+        const void* data = Load(phdr[i].p_offset, phdr[i].p_filesz);
+        if (data == nullptr) {
+            pcerr::New(LIBSYM_ERR_READ_BUILDID, "load elf data failed");
+            return LIBSYM_ERR_READ_BUILDID;
+        }
+        auto header = (ElfNoteHeader*)data;
+        auto ptr = (char*)header;
+        ptr += sizeof(*header);
+        char* name = ptr;
+        ptr += header->nameSize;
+        if (header->type == BUILD_ID_TYPE && 
+            header->nameSize == sizeof("GNU") &&
+            memcmp(name, "GNU", header->nameSize) == 0) {
+            char buildIdStr[2*header->descSize + 1];
+            memset(buildIdStr, 0, 2*header->descSize + 1);
+            for (size_t j = 0; j < header->descSize; j++) {
+                sprintf(buildIdStr + j*2, "%02x", ptr[j]);
+            }
+            buildIdStr[2 * header->descSize] = '\0';
+            *buildId = InitChar(2*header->descSize);
+            strcpy(*buildId, buildIdStr);
+            return SUCCESS;
+        }
+    }
+    pcerr::New(LIBSYM_ERR_READ_BUILDID, "can't find buildId");
+    return LIBSYM_ERR_READ_BUILDID;
 }
 
 int SymbolResolve::GetBuildId(const char *moduleName, char **buildId)
 {
-    // Refer to elf_read_build_id in linux.
-
-    struct ElfNoteHeader {
-        int nameSize;
-        int descSize;
-        int type;
-    };
-
-    static int BUILD_ID_TYPE = 3;
-    int fd = open(moduleName, O_RDONLY);
-    if (fd < 0) {
-        return LIBSYM_ERR_OPEN_FILE_FAILED;
+    MyElf myElf(moduleName);
+    int rt = myElf.LoadMmap();
+    if (rt != 0) {
+        return rt;
     }
-
-    try {
-        std::shared_ptr<elf::loader> efLoader = elf::create_mmap_loader(fd);
-        elf::elf ef(efLoader);
-        MyElf myElf(ef);
-        const elf::section *sec = &ef.get_section(".note.gnu.build-id");
-        if (!sec->valid()) {
-            sec = &ef.get_section(".notes");
-        }
-        if (!sec->valid()) {
-            sec = &ef.get_section(".note");
-        }
-        if (sec && sec->valid()) {
-            // Note section is something like that:
-            // | name size | desc size(0x14) | type(3) | name(GNU) | 912312fabef135672390... |
-            // |  4 bytes  |    4 bytes      | 4 bytes | name size |   20 bytes              |
-            auto header = (ElfNoteHeader*)sec->data();
-            auto ptr = (char*)header;
-            ptr += sizeof(*header);
-            char *name = ptr;
-            ptr += header->nameSize;
-            if (header->type == BUILD_ID_TYPE &&
-                header->nameSize == sizeof("GNU") &&
-                memcmp(name, "GNU", header->nameSize) == 0) {
-                *buildId = new char[header->descSize];
-                memset(*buildId, 0, header->descSize);
-                memcpy(*buildId, ptr, header->descSize);
-                return header->descSize;
-            }
-        }
-    } catch (std::exception& error) {
-        pcerr::New(LIBSYM_ERR_ELFIN_FOMAT_FAILED, "libsym record elf format error: " + std::string{error.what()});
-        return LIBSYM_ERR_ELFIN_FOMAT_FAILED;
-    }
-
-    pcerr::New(LIBSYM_ERR_READ_BUILDID);
-    return LIBSYM_ERR_READ_BUILDID;
+    return myElf.ElfGetBuildId(buildId);
 }
 
 struct StackAsm* ReadAsmCodeFromPipe(FILE* pipe)
@@ -1182,7 +927,6 @@ std::vector<std::shared_ptr<ModuleMap>> SymbolResolve::FindDiffMaps(
             diffMaps.emplace_back(newMod);
         }
     }
-
     return diffMaps;
 }
 

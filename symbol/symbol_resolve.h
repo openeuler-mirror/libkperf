@@ -16,6 +16,7 @@
 #ifndef USER_SYMBOL_H
 #define USER_SYMBOL_H
 #include <sys/stat.h>
+#include <sys/mman.h>
 #include <mutex>
 #include <unordered_map>
 #include <map>
@@ -23,116 +24,68 @@
 #include <vector>
 #include <iostream>
 #include <string>
-#include <dwarf++.hh>
-#include <elf++.hh>
+#include "llvm/DebugInfo/Symbolize/Symbolize.h"
 #include <linux/types.h>
 #include "safe_handler.h"
 #include "linked_list.h"
 #include "symbol.h"
 
+using namespace llvm;
+using namespace symbolize;
+
 namespace KUNPENG_SYM {
+
+    enum class RecordModuleType { RECORD_ALL = 0, RECORD_NO_DWARF = 1 };
+
     struct ModuleMap {
         unsigned long start;
         unsigned long end;
         std::string moduleName;
         std::string mntPoint;
+        RecordModuleType moduleType;
     };
 
-    struct ElfMap {
-        unsigned long start;
-        unsigned long end;
-        std::string symbolName;
+    struct ElfHdr {
+        char elfFormat[4];
+        char elfClass;
+        char elfData;
+        unsigned char elfVersion;
     };
 
-    struct DwarfEntry {
-        unsigned int lineNum = 0;
-        std::string fileName = {};
-        bool find = false;
+    struct ElfNoteHeader {
+        int nameSize;
+        int descSize;
+        int type;
     };
 
-    enum class RecordModuleType { RECORD_ALL = 0, RECORD_NO_DWARF = 1 };
-
-    using ELF_SYM = elf::sym;
-    using ELF = elf::elf;
-    using DWARF = dwarf::dwarf;
-    using DWARF_TABEL = dwarf::line_table;
-    using DWARF_ENTRY = dwarf::line_table::entry;
-    using DWARF_CU = dwarf::compilation_unit;
-
-    class RangeL {
+    class MyElf {
     public:
-        RangeL() = default;
-
-        void FindLine(unsigned long addr, struct DwarfEntry &entry);
-
-        void ReadRange(const DWARF_CU &cu);
-
-        dwarf::line_table::iterator FindAddress(unsigned long addr);
-
-        bool IsInLineTable(unsigned long addr) const
-        {
-            auto it = rangeMap.upper_bound(addr);
-            if (it == rangeMap.cbegin()) {
-                return false;
+        MyElf(const std::string& filePath) : filePath(filePath){};
+        ~MyElf() {
+            if (base) {
+                munmap(base, lim);
             }
-            it--;
-            const unsigned long *highAddr = &it->second;
-            return addr <= *highAddr;
-        }
-
+        };
+        int LoadMmap();
+        const void* Load(off_t offset, size_t size);
+        int ElfGetBuildId(char** buildId);
     private:
-        std::map<unsigned long, unsigned long> rangeMap;
-        bool loadLineTable = false;
-        DWARF_TABEL lineTab;
-        DWARF_CU cu;
+        template<typename Ehdr, typename Phdr, typename Shdr>
+        int ElfParser(char** buildId);
+        int CheckElfHeader();
+        ElfHdr* elfHdr = nullptr;
+        void* base;
+        size_t lim;
+        std::string filePath;
     };
 
-    class MyElf
-    {
-    public:
-        explicit MyElf(const ELF &elf) : elf(elf){};
-        ELF_SYM *FindSymbol(unsigned long addr);
-        void Emplace(unsigned long addr, const ELF_SYM &elfSym);
-        bool IsExecFile();
-
-    private:
-        ELF elf;
-        std::map<unsigned long, ELF_SYM> symTab;
-    };
-
-    class MyDwarf
-    {
-    public:
-        MyDwarf(const DWARF &dw, const std::string &moduleName) : dw(dw), moduleName(moduleName){};
-        void FindLine(unsigned long addr, struct DwarfEntry &dwarfEntry);
-        void LoadDwarf(unsigned long addr, struct DwarfEntry &dwarfEntry);
-
-        bool IsLoad() const 
-        {
-            return hasLoad;
-        }
-
-        std::string GetModule() const
-        {
-            return this->moduleName;
-        }
-
-    private:
-        DWARF dw;
-        std::string moduleName;
-        volatile bool hasLoad = false;
-        volatile int loadNum = 0;
-        std::vector<RangeL> rangeList;
-        std::vector<dwarf::compilation_unit> cuList;
-    };
+    static LLVMSymbolizer Symbolizer;
 
     using SYMBOL_MAP = std::unordered_map<pid_t, std::unordered_map<__u64, struct Symbol *>>;
     using SYMBOL_UNMAP = std::vector<Symbol*>;
     using STACK_MAP = std::unordered_map<pid_t, std::unordered_map<std::string, struct Stack*>>;
     using MODULE_MAP = std::unordered_map<pid_t, std::vector<std::shared_ptr<ModuleMap>>>;
-    using DWARF_MAP = std::unordered_map<std::string, MyDwarf>;
-    using ELF_MAP = std::unordered_map<std::string, MyElf>;
-
+    
     class SymbolUtils final {
     public:
         SymbolUtils() = default;
@@ -161,8 +114,6 @@ namespace KUNPENG_SYM {
         int RecordModule(int pid, RecordModuleType recordModuleType);
         void FreeModule(int pid);
         int RecordKernel();
-        int RecordElf(const char* fileName);
-        int RecordDwarf(const char* fileName);
         int UpdateModule(int pid, RecordModuleType recordModuleType);
         int UpdateModule(int pid, const char* moduleName, unsigned long startAddr, RecordModuleType recordModuleType);
         void Clear();
@@ -174,13 +125,9 @@ namespace KUNPENG_SYM {
         int GetBuildId(const char *moduleName, char **buildId);
 
     private:
-        void SearchElfInfo(MyElf &myElf, unsigned long addr, struct Symbol *symbol, unsigned long *offset);
-        void SearchDwarfInfo(MyDwarf &myDwarf, unsigned long addr, struct Symbol *symbol);
         char* GetCharFromStr(const std::string& str);
         struct Symbol* MapKernelAddr(unsigned long addr);
         struct Symbol* MapUserAddr(int pid, unsigned long addr);
-        struct Symbol* MapUserCodeAddr(const std::string& moduleName, unsigned long addr);
-        struct Symbol* MapCodeElfAddr(const std::string& moduleName, unsigned long addr);
         struct StackAsm* MapAsmCodeStack(const std::string& moduleName, unsigned long startAddr, unsigned long endAddr);
         std::vector<std::shared_ptr<ModuleMap>> FindDiffMaps(const std::vector<std::shared_ptr<ModuleMap>>& oldMaps,
                                                              const std::vector<std::shared_ptr<ModuleMap>>& newMaps) const;
@@ -190,9 +137,6 @@ namespace KUNPENG_SYM {
         SYMBOL_UNMAP symbolUnmap{};
         STACK_MAP stackMap{};
         MODULE_MAP moduleMap{};
-        DWARF_MAP dwarfMap{};
-        ELF_MAP elfMap{};
-        bool isCleared = false;
         std::vector<std::shared_ptr<Symbol>> ksymArray;
         SymbolResolve()
         {}
