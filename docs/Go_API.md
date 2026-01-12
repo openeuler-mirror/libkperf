@@ -156,6 +156,7 @@ func PmuRead(fd int) (PmuDataVo, error)
     * Offset uint64 地址偏移
     * CodeMapEndAddr uint64 结束地址
     * CodeMapAddr uint64 初始地址
+    * FirstLine uin32 首行
     * MntPoint string 挂载点
   * BranchRecords
     * FromAddr uint64 起始地址

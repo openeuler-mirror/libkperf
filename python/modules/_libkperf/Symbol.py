@@ -43,6 +43,7 @@ class CtypesSymbol(ctypes.Structure):
         ('offset',         ctypes.c_ulong),
         ('codeMapEndAddr', ctypes.c_ulong),
         ('codeMapAddr',    ctypes.c_ulong),
+        ('firstLine',      ctypes.c_uint),
         ('mntPoint',       ctypes.c_char_p),
     ]
 
@@ -56,6 +57,7 @@ class CtypesSymbol(ctypes.Structure):
                  offset= 0,
                  codeMapEndAddr= 0,
                  codeMapAddr= 0,
+                 firstLine=0,
                  mntPoint='',
                  *args, **kw):
         super(CtypesSymbol, self).__init__(*args, **kw)
@@ -71,6 +73,7 @@ class CtypesSymbol(ctypes.Structure):
 
         self.codeMapEndAddr = ctypes.c_ulong(codeMapEndAddr)
         self.codeMapAddr = ctypes.c_ulong(codeMapAddr)
+        self.firstLine = ctypes.c_uint(firstLine)
         self.mntPoint = ctypes.c_char_p(mntPoint.encode(UTF_8))
 
 
@@ -88,6 +91,7 @@ class Symbol:
                  offset= 0,
                  codeMapEndAddr= 0,
                  codeMapAddr= 0,
+                 firstLine=0,
                  mntPoint= ''):
         self.__c_sym = CtypesSymbol(
             addr=addr,
@@ -99,6 +103,7 @@ class Symbol:
             offset=offset,
             codeMapEndAddr=codeMapEndAddr,
             codeMapAddr=codeMapAddr,
+            firstLine=firstLine,
             mntPoint=mntPoint
         )
 
@@ -195,6 +200,14 @@ class Symbol:
     @codeMapAddr.setter
     def codeMapAddr(self, codeMapAddr):
         self.c_sym.codeMapAddr = ctypes.c_ulong(codeMapAddr)
+    
+    @property
+    def firstLine(self):
+        return self.c_sym.firstLine
+
+    @firstLine.setter
+    def firstLine(self, firstLine):
+        self.c_sym.firstLine = ctypes.c_uint(firstLine)
 
     @classmethod
     def from_c_sym(cls, c_sym):
