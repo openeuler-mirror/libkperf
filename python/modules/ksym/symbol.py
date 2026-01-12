@@ -28,6 +28,7 @@ class Symbol(_libkperf.Symbol):
                  offset = 0,
                  codeMapEndAddr = 0,
                  codeMapAddr = 0,
+                 firstLine = 0,
                  mntPoint = ''):
         super(Symbol, self).__init__(
             addr=addr,
@@ -38,6 +39,7 @@ class Symbol(_libkperf.Symbol):
             offset=offset,
             codeMapEndAddr=codeMapEndAddr,
             codeMapAddr=codeMapAddr,
+            firstLine=firstLine,
             mntPoint=mntPoint,
         )
 

@@ -150,6 +150,7 @@ pd为kperf.open返回值
       * offset 地址偏移
       * codeMapEndAddr 结束地址
       * codeMapAddr 初始地址
+      * firstLine 首行
       * mntPoint 挂载点
     * next 下一个stack
     * prev  前一个stack

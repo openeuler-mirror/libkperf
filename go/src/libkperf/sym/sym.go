@@ -36,6 +36,7 @@ type Symbol struct {
 	Offset uint64			   // offset relateive to the start address
 	CodeMapEndAddr uint64	   // function end address
 	CodeMapAddr uint64		   // real srcAddr of Asm Code or
+	FirstLine uint32           // first line of function
 	MntPoint string            // mount point
 
 	cSymbol *C.struct_Symbol   // pointer of C source symbol
@@ -232,6 +233,7 @@ func getGoSymbol(cSymbol *C.struct_Symbol) Symbol {
 		Offset:uint64(cSymbol.offset),
 		CodeMapEndAddr:uint64(cSymbol.codeMapEndAddr),
 		CodeMapAddr:uint64(cSymbol.codeMapAddr),
+		FirstLine:uint32(cSymbol.firstLine),
 		MntPoint:C.GoString(cSymbol.mntPoint),
 		cSymbol: cSymbol}
 }
