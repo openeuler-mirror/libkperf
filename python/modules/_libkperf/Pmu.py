@@ -159,6 +159,7 @@ class CtypesPmuAttr(ctypes.Structure):
         ('enableBpf',        ctypes.c_uint, 1),
         ('enableHwMetric', ctypes.c_uint, 1),
         ('enableOnExec', ctypes.c_uint, 1),
+        ('perThread', ctypes.c_uint, 1),
     ]
 
     def __init__(self,
@@ -184,6 +185,7 @@ class CtypesPmuAttr(ctypes.Structure):
                  enableBpf=False,
                  enableHwMetric=False,
                  enableOnExec=False,
+                 perThread=False,
                  *args, **kw):
         super(CtypesPmuAttr, self).__init__(*args, **kw)
 
@@ -249,6 +251,7 @@ class CtypesPmuAttr(ctypes.Structure):
         self.enableBpf = enableBpf
         self.enableHwMetric = enableHwMetric
         self.enableOnExec = enableOnExec
+        self.perThread = perThread
 
 class PmuAttr(object):
     __slots__ = ['__c_pmu_attr']
@@ -274,7 +277,8 @@ class PmuAttr(object):
                  enableUserAccess=False,
                  enableBpf=False,
                  enableHwMetric=False,
-                 enableOnExec=False):
+                 enableOnExec=False,
+                 perThread=False):
 
         self.__c_pmu_attr = CtypesPmuAttr(
             evtList=evtList,
@@ -298,6 +302,7 @@ class PmuAttr(object):
             enableBpf=enableBpf,
             enableHwMetric=enableHwMetric,
             enableOnExec=enableOnExec,
+            perThread=perThread,
         )
 
     @property
@@ -527,6 +532,14 @@ class PmuAttr(object):
     @branchSampleFilter.setter
     def branchSampleFilter(self, branchSampleFilter):
         self.c_pmu_attr.branchSampleFilter = ctypes.c_ulong(branchSampleFilter)
+    
+    @property
+    def perThread(self):
+        return bool(self.c_pmu_attr.perThread)
+
+    @perThread.setter
+    def perThread(self, perThread):
+        self.c_pmu_attr.perThread = int(perThread)
 
     @classmethod
     def from_c_pmu_data(cls, c_pmu_attr):

@@ -820,3 +820,82 @@ TEST_F(TestAPI, TestEnableExeOnFailed)
     ASSERT_EQ(pd, -1);
     ASSERT_EQ(LIBPERF_ERR_NOT_SUPPORT_EXEC_ON, Perrorno());
 }
+
+TEST_F(TestAPI, TestPerThreadSUC)
+{
+    int pid = RunTestApp("simple");
+    PmuAttr attr = {0};
+    char *evtList[1] = {"cycles"};
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+    attr.perThread = 1;
+    attr.useFreq = 1;
+    attr.freq = 4000;
+
+    int pidList[1] = {pid};
+    attr.pidList = pidList;
+    attr.numPid = 1;
+
+    pd = PmuOpen(SAMPLING, &attr);
+    ASSERT_NE(pd, -1);
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+    int len = PmuRead(pd, &data);
+    ASSERT_GT(len, 0);
+    KillApp(pid);
+}
+
+TEST_F(TestAPI, TestPerThreadNotSupportCPU)
+{
+    int pid = RunTestApp("simple");
+    PmuAttr attr = {0};
+    char *evtList[1] = {"cycles"};
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+    attr.perThread = 1;
+    attr.useFreq = 1;
+    attr.freq = 4000;
+    attr.numPid = 1;
+    int pidList[1] = {pid};
+    attr.pidList = pidList;
+    attr.numPid = 1;
+
+    int cpuList[1] = {0};
+    attr.cpuList = cpuList;
+    attr.numCpu = 1;
+    pd = PmuOpen(SAMPLING, &attr);
+    ASSERT_EQ(pd, -1);
+    ASSERT_EQ(Perrorno(), LIBPERF_ERR_NOT_SUPPORT_PER_THREAD);
+    KillApp(pid);
+}
+
+TEST_F(TestAPI, TestPerThreadNotSupportWithoutPid)
+{
+    PmuAttr attr = {0};
+    char *evtList[1] = {"cycles"};
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+    attr.perThread = 1;
+    attr.useFreq = 1;
+    attr.freq = 4000;
+
+    pd = PmuOpen(SAMPLING, &attr);
+    ASSERT_EQ(pd, -1);
+    ASSERT_EQ(Perrorno(), LIBPERF_ERR_NOT_SUPPORT_PER_THREAD);
+}
+
+TEST_F(TestAPI, TestPerThreadNotSupportNotSampling)
+{
+    PmuAttr attr = {0};
+    char *evtList[1] = {"cycles"};
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+    attr.perThread = 1;
+    attr.useFreq = 1;
+    attr.freq = 4000;
+
+    pd = PmuOpen(COUNTING, &attr);
+    ASSERT_EQ(pd, -1);
+    ASSERT_EQ(Perrorno(), LIBPERF_ERR_NOT_SUPPORT_PER_THREAD);
+}

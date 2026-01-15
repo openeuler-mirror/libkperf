@@ -186,6 +186,10 @@ struct PmuAttr {
     // enable enable_on_exec
     // after PmuOpen is called, if the load is started, enabling enable_on_exec will automatically enable the performance event after the load starts,withoud the need to call PmuEnable.
     unsigned enableOnExec : 1;
+    // --per-thread
+    // This mode supports only the pidList and does not support the CPU specification. 
+    // This mode can't be used togerther with enableOnExec, and can't support inherit which instructed the kernel to automatically make that event available to newly created child processes.
+    unsigned perThread : 1;
 };
 
 enum PmuTraceType {

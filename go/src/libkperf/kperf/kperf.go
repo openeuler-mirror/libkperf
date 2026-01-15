@@ -93,6 +93,10 @@ void SetEnableOnExec(struct PmuAttr* attr, unsigned enableOnExec) {
 	attr->enableOnExec = enableOnExec;
 }
 
+void SetPerThread(struct PmuAttr* attr, unsigned perThread) {
+	attr->perThread = perThread;
+}
+
 struct PmuData* IPmuRead(int fd, int* len) {
 	struct PmuData* pmuData = NULL;
 	*len = PmuRead(fd, &pmuData);
@@ -414,6 +418,7 @@ type PmuAttr struct {
 	EnableBpf bool                     // enable bpf mode for counting
 	EnableHwMetric bool                // enable hw metric 
 	EnableOnExec bool                  // enable enable_on_exec, after PmuOpen is called, if the load is started, enabling enable_on_exec will automatically enable the performance event after the load starts,withoud the need to call PmuEnable
+	PerThread bool                     // --per-thread This mode supports only the pidList and does not support the CPU specification. This mode can't be used togerther with enableOnExec, and can't support inherit which instructed the kernel to automatically make that event available to newly created child processes.
 }
 
 type CpuTopology struct {
@@ -688,6 +693,10 @@ func ToCPmuAttr(attr PmuAttr) (*C.struct_PmuAttr, int) {
 
 	if attr.EnableOnExec {
 		C.SetEnableOnExec(cAttr, C.uint(1))
+	}
+
+	if attr.PerThread {
+		C.SetPerThread(cAttr, C.uint(1))
 	}
 
 	return cAttr, 0

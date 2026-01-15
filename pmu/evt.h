@@ -98,6 +98,10 @@ public:
         return "";
     }
 
+    bool GetPerThread() {
+        return this->evt->perThread;
+    }
+
 protected:
     bool initErr;
     int fd;

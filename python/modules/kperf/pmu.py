@@ -348,7 +348,8 @@ class PmuAttr(_libkperf.PmuAttr):
                  cgroupNameList = None,
                  enableUserAccess = False,
                  enableBpf = False,
-                 enableOnExec = False):
+                 enableOnExec = False,
+                 perThread = False):
         super(PmuAttr, self).__init__(
             evtList=evtList,
             pidList=pidList,
@@ -370,8 +371,8 @@ class PmuAttr(_libkperf.PmuAttr):
             enableUserAccess=enableUserAccess,
             enableBpf=enableBpf,
             enableOnExec=enableOnExec,
+            perThread=perThread,
         )
-
 
 class CpuTopology(_libkperf.CpuTopology):
     pass
