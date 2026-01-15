@@ -85,7 +85,9 @@ static uint8_t* Get0B01Pkt(uint16_t header, struct SpePacket *pkt, uint8_t *buf)
     } else if ((header >> 2) == 0b010010) {
         pkt->type = SpePacketType::SPE_PACKET_OP_TYPE;
         buf += sizeof(uint8_t);
-        buf += sizeof(uint8_t);
+        pkt->payloadSize = 1 << ((header & 0b110000) >> 4);
+        SetPktPayload(pkt, buf);
+        buf += pkt->payloadSize;
     } else {
         pkt->type = SpePacketType::SPE_PACKET_BAD;
         buf += sizeof(uint8_t);
@@ -222,6 +224,43 @@ static void DecodeDataSrcPkt(struct SpePacket *pkt, struct SpeRecord *record)
     record->source = pkt->payload;
 }
 
+static inline bool IsLdStExtended(uint64_t payload)
+{
+    uint8_t p = (uint8_t)(payload & 0xff);
+    return (p >> 1) == 0x9;
+}
+
+static inline uint32_t DecodeOpTypeToMask(uint16_t header, uint64_t payload)
+{
+    uint32_t op = 0;
+    uint8_t opClass = (uint8_t)(header & 0x3);
+    uint8_t p = (uint8_t)(payload & 0xffff);
+
+    if (opClass != SPE_OP_CLASS_LD_ST_ATOMIC) {
+        return SPE_OP_OTHER;
+    }
+
+    op |= SPE_OP_LDST;
+
+    if (p & SPE_OP_PACKET_ST) {
+        op |= SPE_OP_ST;
+    } else {
+        op |= SPE_OP_LD;
+    }
+
+    if (IsLdStExtended(p)) {
+        if (payload & SPE_OP_PACKET_AT) {
+            op |= SPE_OP_ATOMIC;
+        }
+    }
+    return op;
+}
+
+static void DecodeOpTypePkt(struct SpePacket *pkt, struct SpeRecord *record)
+{
+    record->opType = DecodeOpTypeToMask(pkt->header, pkt->payload);
+}
+
 static void DecodePkt(struct SpePacket *pkt, struct SpeRecord *record)
 {
     switch (pkt->type) {
@@ -243,6 +282,7 @@ static void DecodePkt(struct SpePacket *pkt, struct SpeRecord *record)
             DecodeEventPkt(pkt, record);
             break;
         case SpePacketType::SPE_PACKET_OP_TYPE:
+            DecodeOpTypePkt(pkt, record);
             break;
         case SpePacketType::SPE_PACKET_PAD:
             break;
@@ -261,6 +301,7 @@ SpeRecord *SpeGetRecord(uint8_t *buf, uint8_t *end, struct SpeRecord *rec, int *
     rec->pid = -1;
     rec->tid = -1;
     rec->source = -1;
+    rec->opType = -1;
     while (buf < end) {
         if (*remainSize < 1) {
             break;
@@ -273,7 +314,7 @@ SpeRecord *SpeGetRecord(uint8_t *buf, uint8_t *end, struct SpeRecord *rec, int *
             *remainSize -= 1;
             rec->pid = -1;
             rec->tid = -1;
-            rec->source = -1;
+            rec->opType = -1;
         }
     }
 

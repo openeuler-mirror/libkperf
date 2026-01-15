@@ -243,6 +243,12 @@ enum HIP_DATA_SOURCE {
     HIP_L1                  = 18,
 };
 
+enum SpeLdStOpType {
+    SPE_OP_LD            = 1 << 20,
+    SPE_OP_ST            = 1 << 21,
+    SPE_OP_ATOMIC        = 1 << 22,
+};
+
 struct BranchSampleRecord {
     unsigned long fromAddr;
     unsigned long toAddr;
@@ -259,6 +265,7 @@ struct PmuDataExt {
             unsigned long event; // event id, which is a bit map of mixed events, event bit is defined in SPE_EVENTS.
             unsigned short lat; // latency, Number of cycles between the time when an operation is dispatched and the time when the operation is executed.
             unsigned short source; // data source, used to record the source of data accessed by a load operation.
+            uint32_t op;  // the op type, used to distinguish the load and store operation.
         };
 
         struct {

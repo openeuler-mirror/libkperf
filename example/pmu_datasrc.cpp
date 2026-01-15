@@ -92,14 +92,46 @@ struct VaItem {
     ulong pc;
     // hit count of va
     int cnt;
+    int ldCnt;
+    int stCnt;
+    int atCnt;
 };
+
+static inline bool HasLoad(const VaItem& v)
+{
+    return v.ldCnt > 0;
+}
+static inline bool HasStore(const VaItem& v)
+{
+    return v.stCnt > 0 || v.atCnt > 0;
+}
+
+static inline bool ShouldCountFS(const VaItem& a, const VaItem& b)
+{
+    bool aStore = HasStore(a);
+    bool bStore = HasStore(b);
+    bool aLoad = HasLoad(a);
+    bool bLoad = HasLoad(b);
+
+    // store-store
+    if (aStore && bStore) {
+        return true;
+    }
+
+    // load-store
+    if ((aLoad && bStore) || (aStore && bLoad)) {
+        return true;
+    }
+    // load-load / unknown-only
+    return false;
+}
 
 struct ArgsContext {
     int pid = -1;
     int duration = 10;
     bool isLaunch = false;
     char* cgroupName = nullptr;
-    bool computeFs = false;
+    bool computeFs = true;
     int fd[2];
 };
 
@@ -112,36 +144,56 @@ struct RacePcCompare {
     };
 };
 
+static inline bool WithinCacheLine(ulong a, ulong b)
+{
+    const int CACHE_LINE = 64;
+    return (a > b) ? (a - b < CACHE_LINE) : (b - a < CACHE_LINE);
+}
+
 void ComputeRacePc(const ulong mypc, const map<ulong, int> &vas, 
             const map<ulong, map<ulong, VaItem>> &vaPcMap, map<pair<VaItem, VaItem>, int, RacePcCompare> &racepc)
 {
-    const int CACHE_LINE = 64;
-    for (auto vaPair : vas) {
+    for (const auto &vaPair : vas) {
         // Iterate over virtual addresses, find which other virtual addresses is near current va,
         // i.e., less than 64 bytes between them.
         auto va = vaPair.first;
         auto vaCnt = vaPair.second;
-        VaItem racePc;
+        VaItem racePc{};
         racePc.pc = mypc;
+        racePc.va = va;
         racePc.cnt = vaCnt;
-        for (auto &vapc : vaPcMap) {
+
+        auto itVa = vaPcMap.find(va);
+        if (itVa != vaPcMap.end()) {
+            auto itPc = itVa->second.find(mypc);
+            if (itPc != itVa->second.end()) {
+                racePc.ldCnt = itPc->second.ldCnt;
+                racePc.stCnt = itPc->second.stCnt;
+            }
+        }
+
+        for (const auto &vapc : vaPcMap) {
             auto otherVa = vapc.first;
-            for (auto &vaItemPair : vapc.second) {
-                auto otherPc = vaItemPair.second;
-                if (otherPc.pc == mypc) {
+            if (!WithinCacheLine(va, otherVa)) {
+                continue;
+            }
+            for (const auto &vaItemPair : vapc.second) {
+                const VaItem &otherPcItem = vaItemPair.second;
+                if (otherPcItem.pc == mypc) {
                     continue;
                 }
-                if (va - otherVa < CACHE_LINE || otherVa - va < CACHE_LINE) {
-    	            VaItem otherRacePc;
-	                otherRacePc.pc = otherPc.pc;
-	                otherRacePc.cnt = vaItemPair.second.cnt;
-                    // remove duplicated race pc, {a,b} and {b,a} are the same.
-                    if (mypc > otherPc.pc) {
-                        racepc[make_pair(otherRacePc, racePc)] = racePc.cnt + otherRacePc.cnt;
-                    } else {
-                        racepc[make_pair(racePc, otherRacePc)] = racePc.cnt + otherRacePc.cnt;
-                    }
+                VaItem otherRacePc{};
+                otherRacePc.pc    = otherPcItem.pc;
+                otherRacePc.va    = otherVa;
+                otherRacePc.cnt   = otherPcItem.cnt;
+                otherRacePc.ldCnt = otherPcItem.ldCnt;
+                otherRacePc.stCnt = otherPcItem.stCnt;
+
+                if (!ShouldCountFS(racePc, otherRacePc)) {
+                    continue;
                 }
+                auto key = (mypc > otherPcItem.pc) ? std::make_pair(otherPcItem, racePc) : std::make_pair(racePc, otherPcItem);
+                racepc[key] += std::min(racePc.cnt, otherPcItem.cnt);
             }
         }
     }
@@ -388,12 +440,22 @@ int main(int argc, char** argv)
             vaItem.va = o.ext->va;
         }
         vaItem.cnt++;
+        if (o.ext->op & SPE_OP_LD) {
+            vaItem.ldCnt++;
+        }
+        if (o.ext->op & SPE_OP_ST) {
+            vaItem.stCnt++;
+        }
+        if ((o.ext->op & SPE_OP_ST) && (o.ext->op & SPE_OP_ATOMIC)) {
+            vaItem.atCnt++;
+        }
     }
+
     PrintTime("prepared");
 
     // Inst addresses pair which may access same cacheline.
     // key: pair
-    // value: count of va hit, for later sorting racepc by va hit count.
+    // value: accumulated overlap hits on the same cacheline (sum of min(hitA, hitB) across matched VA)
     map<pair<VaItem, VaItem>, int, RacePcCompare> racepc;
     int totalSource = 0;
     for (const auto& item : sourceList) {
@@ -423,6 +485,10 @@ int main(int argc, char** argv)
     sort(sortedList.begin(), sortedList.end(), [](const auto &a, const auto &b) {
         return a.second > b.second;
     });
+    long long totalOverlap = 0;
+    for (const auto &kv : racepc) {
+        totalOverlap += kv.second;
+    }
     PrintTime("sorted");
 
     if (act.computeFs) {
@@ -430,9 +496,10 @@ int main(int argc, char** argv)
         for (auto &race : sortedList) {
             auto &race1 = race.first.first;
             auto &race2 = race.first.second;
+            float pct = (totalOverlap > 0) ? (race.second * 100.0f / (float)totalOverlap) : 0.0f;
             cout << std::hex << race1.pc << "<->" << race2.pc
                 << " [" << std::dec << race.second << " " 
-                << fixed << setprecision(4) << race.second*100/(float)totalSource << "%]" << "\n";
+                << fixed << setprecision(4) << pct << "%]\n";
         }
     }
     PmuClose(pd);

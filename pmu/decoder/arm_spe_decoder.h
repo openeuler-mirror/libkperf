@@ -34,6 +34,16 @@ enum class SpePacketType {
     SPE_PACKET_TIMESTAMP,
 };
 
+#define SPE_OP_CLASS_LD_ST_ATOMIC  0x1
+#define SPE_OP_PACKET_ST    (1ULL << 0)
+#define SPE_OP_PACKET_AT    (1ULL << 2)
+
+enum SpeOpType {
+    SPE_OP_OTHER        = 1 << 0,
+    SPE_OP_LDST         = 1 << 1,
+    SPE_OP_BRANCH_ERET  = 1 << 2,
+};
+
 struct SpePacket {
     enum SpePacketType type;
     uint64_t payload;
