@@ -2394,6 +2394,315 @@ def PmuOpenWithHWMetric(hwMetricAttr):
     c_PmuOpenWithHWMetric.restype = ctypes.c_int
     return c_PmuOpenWithHWMetric(ctypes.byref(hwMetricAttr.c_hw_metric_attr))
 
+class CtypesSymbolSource(ctypes.Structure):
+    """
+    struct SymbolSource {
+        char *moduleName;
+        char *symbolName;
+    };
+    """
+    _fields_ = [
+        ('moduleName', ctypes.c_char_p),
+        ('symbolName', ctypes.c_char_p),
+    ]
+
+    def __init__(self, moduleName='', symbolName='', *args, **kw):
+        super(CtypesSymbolSource, self).__init__(*args, **kw)
+        self.moduleName = ctypes.c_char_p(moduleName.encode(UTF_8))
+        self.symbolName = ctypes.c_char_p(symbolName.encode(UTF_8))
+
+class CtypesUTraceAttr(ctypes.Structure):
+    """
+    struct UTraceAttr {
+        struct SymbolSource *symSrc;
+        unsigned numSym;
+        int *pidList;
+        unsigned numPid;
+        int *cpuList;
+        unsigned numCpu;
+        unsigned fetchG : 1;
+    };
+    """
+    _fields_ = [
+        ('symSrc',  ctypes.POINTER(CtypesSymbolSource)),
+        ('numSym',  ctypes.c_uint),
+        ('pidList', ctypes.POINTER(ctypes.c_int)),
+        ('numPid',  ctypes.c_uint),
+        ('cpuList', ctypes.POINTER(ctypes.c_int)),
+        ('numCpu',  ctypes.c_uint),
+        ('fetchG',  ctypes.c_uint),
+    ]
+
+    def __init__(self, symSrc=None, pidList=None, cpuList=None, fetchG=0, *args, **kw):
+        super(CtypesUTraceAttr, self).__init__(*args, **kw)
+
+        if symSrc:
+            numSym = len(symSrc)
+            self.symSrc = (CtypesSymbolSource * numSym)(*[CtypesSymbolSource(module, symbol) for module, symbol in symSrc])
+            self.numSym = ctypes.c_uint(numSym)
+        else:
+            self.symSrc = None
+            self.numSym = ctypes.c_uint(0)
+        
+        if pidList:
+            numPid = len(pidList)
+            self.pidList = (ctypes.c_int * numPid)(*pidList)
+            self.numPid = ctypes.c_uint(numPid)
+        else:
+            self.pidList = None
+            self.numPid = ctypes.c_uint(0)
+
+        if cpuList:
+            numCpu = len(cpuList)
+            self.cpuList = (ctypes.c_int * numCpu)(*cpuList)
+            self.numCpu = ctypes.c_uint(numCpu)
+        else:
+            self.cpuList = None
+            self.numCpu = ctypes.c_uint(0)
+        
+        self.fetchG = ctypes.c_uint(fetchG)
+
+class UTraceAttr(object):
+    __slots__ = ['__c_u_trace_attr']
+
+    def __init__(self, symSrc=None, pidList=None, cpuList=None, fetchG=0):
+        self.__c_u_trace_attr = CtypesUTraceAttr(symSrc, pidList, cpuList, fetchG)
+
+    @property
+    def c_u_trace_attr(self):
+        return self.__c_u_trace_attr
+    
+    @property
+    def numSym(self):
+        return int(self.c_u_trace_attr.numSym)
+
+    @property
+    def symSrc(self):
+        return [
+            (self.c_u_trace_attr.symSrc[i].moduleName.decode(UTF_8),
+             self.c_u_trace_attr.symSrc[i].symbolName.decode(UTF_8))
+            for i in range(self.numSym)
+        ]
+
+    @symSrc.setter
+    def symSrc(self, symSrc):
+        if symSrc:
+            numSym = len(symSrc)
+            self.c_u_trace_attr.symSrc = (CtypesSymbolSource * numSym)(*[CtypesSymbolSource(module, symbol) for module, symbol in symSrc])
+            self.c_u_trace_attr.numSym = ctypes.c_uint(numSym)
+        else:
+            self.c_u_trace_attr.symSrc = None
+            self.c_u_trace_attr.numSym = ctypes.c_uint(0)
+
+    @property
+    def numPid(self):
+        return int(self.c_u_trace_attr.numPid)
+
+    @property
+    def pidList(self):
+        return [int(self.c_u_trace_attr.pidList[i]) for i in range(self.numPid)]
+
+    @pidList.setter
+    def pidList(self, pidList):
+        if pidList:
+            numPid = len(pidList)
+            self.c_u_trace_attr.pidList = (ctypes.c_int * numPid)(*pidList)
+            self.c_u_trace_attr.numPid = ctypes.c_uint(numPid)
+        else:
+            self.c_u_trace_attr.pidList = None
+            self.c_u_trace_attr.numPid = ctypes.c_uint(0)
+
+    @property
+    def numCpu(self):
+        return int(self.c_u_trace_attr.numCpu)
+
+    @property
+    def cpuList(self):
+        return [int(self.c_u_trace_attr.cpuList[i]) for i in range(self.numCpu)]
+
+    @cpuList.setter
+    def cpuList(self, cpuList):
+        if cpuList:
+            numCpu = len(cpuList)
+            self.c_u_trace_attr.cpuList = (ctypes.c_int * numCpu)(*cpuList)
+            self.c_u_trace_attr.numCpu = ctypes.c_uint(numCpu)
+        else:
+            self.c_u_trace_attr.cpuList = None
+            self.c_u_trace_attr.numCpu = ctypes.c_uint(0)
+    
+    @property
+    def fetchG(self):
+        return bool(self.c_u_trace_attr.fetchG)
+    
+    @fetchG.setter
+    def fetchG(self, fetchG):
+        self.c_u_trace_attr.fetchG = 1 if fetchG else 0
+
+class CtypesUTraceData(ctypes.Structure):
+    """
+    struct UTraceData {
+        unsigned long addr;
+        const char *comm;
+        int tid;
+        int cpu;
+        int64_t timestamp;
+        uint64_t gPtr;
+    };
+    """
+    _fields_ = [
+        ('addr',      ctypes.c_ulong),
+        ('comm',      ctypes.c_char_p),
+        ('tid',       ctypes.c_int),
+        ('cpu',       ctypes.c_int),
+        ('timestamp', ctypes.c_int64),
+        ('gPtr',      ctypes.c_uint64),
+    ]
+
+    def __init__(self, addr=0, comm='', tid=0, cpu=0, timestamp=0, gPtr=0, *args, **kw):
+        super(CtypesUTraceData, self).__init__(*args, **kw)
+
+        self.addr = ctypes.c_ulong(addr)
+        self.comm = ctypes.c_char_p(comm.encode(UTF_8))
+        self.tid = ctypes.c_int(tid)
+        self.cpu = ctypes.c_int(cpu)
+        self.timestamp = ctypes.c_int64(timestamp)
+        self.gPtr = ctypes.c_uint64(gPtr)
+
+class UTraceData:
+    __slots__ = ['__c_u_trace_data']
+
+    def __init__(self, addr=0, comm='', tid=0, cpu=0, timestamp=0, gPtr=0, *args, **kw):
+        self.__c_u_trace_data = CtypesUTraceData(
+            addr=addr,
+            comm=comm,
+            tid=tid,
+            cpu=cpu,
+            timestamp=timestamp,
+            gPtr=gPtr
+        )
+    
+    @property
+    def c_u_trace_data(self):
+        return self.__c_u_trace_data
+    
+    @property
+    def addr(self):
+        return int(self.__c_u_trace_data.addr)
+
+    @property
+    def comm(self):
+        return self.__c_u_trace_data.comm.decode(UTF_8)
+
+    @property
+    def tid(self):
+        return int(self.__c_u_trace_data.tid)
+
+    @property
+    def cpu(self):
+        return int(self.__c_u_trace_data.cpu)
+
+    @property
+    def timestamp(self):
+        return int(self.__c_u_trace_data.timestamp)
+    
+    @property
+    def gPtr(self):
+        return int(self.__c_u_trace_data.gPtr)
+
+    @classmethod
+    def from_c_u_trace_data(cls, c_u_trace_data):
+        u_trace_data = cls()
+        u_trace_data.__c_u_trace_data = c_u_trace_data
+        return u_trace_data
+
+class UTraceDataList:
+    __slots__ = ['__pointer', '__iter', '__len']
+
+    def __init__(self, pointer=None, len=0):
+        self.__pointer = pointer
+        self.__len = len
+        self.__iter = (UTraceData.from_c_u_trace_data(self.__pointer[i]) for i in range(self.__len))
+    
+    def __del__(self):
+        self.free()
+    
+    @property
+    def len(self):
+        return self.__len
+    
+    @property
+    def iter(self):
+        return self.__iter
+    
+    def free(self):
+        if self.__pointer is not None:
+            UTraceDataFree(self.__pointer)
+            self.__pointer = None
+
+def UTraceOpen(attr):
+    """
+    int UTraceOpen(struct UTraceAttr *attr);
+    """
+    c_UTraceOpen = kperf_so.UTraceOpen
+    c_UTraceOpen.argtypes = [ctypes.POINTER(CtypesUTraceAttr)]
+    c_UTraceOpen.restype = ctypes.c_int
+
+    return c_UTraceOpen(ctypes.byref(attr.c_u_trace_attr))
+
+def UTraceEnable(pd):
+    """
+    int UTraceEnable(int pd);
+    """
+    c_UTraceEnable = kperf_so.UTraceEnable
+    c_UTraceEnable.argtypes = [ctypes.c_int]
+    c_UTraceEnable.restype = ctypes.c_int
+
+    return c_UTraceEnable(pd)
+
+def UTraceDisable(pd):
+    """
+    int UTraceDisable(int pd);
+    """
+    c_UTraceDisable = kperf_so.UTraceDisable
+    c_UTraceDisable.argtypes = [ctypes.c_int]
+    c_UTraceDisable.restype = ctypes.c_int
+
+    return c_UTraceDisable(pd)
+
+def UTraceRead(pd):
+    """
+    int UTraceRead(int pd, struct UTraceData **traceData);
+    """
+    c_UTraceRead = kperf_so.UTraceRead
+    c_UTraceRead.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.POINTER(CtypesUTraceData))]
+    c_UTraceRead.restype = ctypes.c_int
+
+    c_data_pointer = ctypes.POINTER(CtypesUTraceData)()
+
+    c_data_len = c_UTraceRead(pd, ctypes.byref(c_data_pointer))
+
+    return UTraceDataList(c_data_pointer, c_data_len)
+
+def UTraceClose(pd):
+    """
+    void UTraceClose(int pd);
+    """
+    c_UTraceClose = kperf_so.UTraceClose
+    c_UTraceClose.argtypes = [ctypes.c_int]
+    c_UTraceClose.restype = None
+
+    c_UTraceClose(pd)
+
+def UTraceDataFree(traceData):
+    """
+    void UTraceDataFree(struct UTraceData *traceData);
+    """
+    c_UTraceDataFree = kperf_so.UTraceDataFree
+    c_UTraceDataFree.argtypes = [ctypes.POINTER(CtypesUTraceData)]
+    c_UTraceDataFree.restype = None
+
+    c_UTraceDataFree(traceData)
+
 __all__ = [
     'CtypesEvtAttr',
     'EvtAttr',
@@ -2451,4 +2760,16 @@ __all__ = [
     'PmuEndWrite',
     'PmuOpenWithHWMetric',
     'PmuHwMetricAttr',
+    'CtypesSymbolSource',
+    'CtypesUTraceAttr',
+    'UTraceAttr',
+    'CtypesUTraceData',
+    'UTraceData',
+    'UTraceDataList',
+    'UTraceOpen',
+    'UTraceEnable',
+    'UTraceDisable',
+    'UTraceRead',
+    'UTraceClose',
+    'UTraceDataFree'
 ]

@@ -453,7 +453,7 @@ static int CheckPerThread(enum PmuTaskType collectType, struct PmuAttr* attr) {
     return SUCCESS;
 }
 
-static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
+int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
 {
     auto err = CheckUserAccess(collectType, attr);
     if (err != SUCCESS) {
@@ -656,7 +656,7 @@ static bool PdValid(const int &pd)
     return PmuList::GetInstance()->IsPdAlive(pd);
 }
 
-static void PmuTaskAttrFree(PmuTaskAttr *taskAttr)
+void PmuTaskAttrFree(PmuTaskAttr *taskAttr)
 {
     auto node = taskAttr;
     while (node) {

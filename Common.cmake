@@ -28,7 +28,7 @@ add_compile_options(-w) # 调试阶段先去除告警
 include_directories(${PROJECT_TOP_DIR}/llvm-symbolizer/build/include)
 include_directories(${PROJECT_TOP_DIR}/llvm-symbolizer/include)
 
-include_directories(${THIRD_PARTY}/googletest/googletest/include)
+include_directories(${THIRD_PARTY}/local/googletest/include)
 add_library(gtest_main STATIC IMPORTED)
 set_property(TARGET gtest_main PROPERTY IMPORTED_LOCATION ${THIRD_PARTY}/local/googletest/lib64/libgtest_main.a)
 add_library(gtest STATIC IMPORTED)

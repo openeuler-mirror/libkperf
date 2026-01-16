@@ -550,6 +550,27 @@ type PmuHwMetricAttr struct {
 	Pid uint32
 }
 
+type SymbolSource struct {
+	ModuleName string
+	SymbolName string
+}
+
+type UTraceAttr struct {
+	SymSrc  []SymbolSource
+	PidList []int
+	CpuList []int
+	FetchG  bool
+}
+
+type UTraceData struct {
+	Addr	  uint64
+	Comm	  string
+	Tid 	  int
+	Cpu       int
+	Timestamp int64
+	GPtr      uint64
+}
+
 func FreePmuAttr(attr *C.struct_PmuAttr) {
 	if attr == nil {
 		return
@@ -1517,4 +1538,105 @@ func PmuOpenWithHwMetric(hwMetricAttr PmuHwMetricAttr) (int, error) {
 		return -1, errors.New(C.GoString(C.Perror()))
 	}
 	return int(taskId), nil
+}
+
+func UTraceOpen(attr UTraceAttr) (int, error) {
+	cAttr := (*C.struct_UTraceAttr)(C.calloc(1, C.sizeof_struct_UTraceAttr))
+	if cAttr == nil {
+		return -1, errors.New("calloc failed")
+	}
+	defer C.free(unsafe.Pointer(cAttr))
+
+	symLen := len(attr.SymSrc)
+	if symLen > 0 {
+		cSymSrc := make([]C.struct_SymbolSource, symLen)
+		for i, s := range attr.SymSrc {
+			cSymSrc[i].moduleName = C.CString(s.ModuleName)
+			defer C.free(unsafe.Pointer(cSymSrc[i].moduleName))
+			cSymSrc[i].symbolName = C.CString(s.SymbolName)
+			defer C.free(unsafe.Pointer(cSymSrc[i].symbolName))
+		}
+		cAttr.symSrc = &cSymSrc[0]
+		cAttr.numSym = C.uint(symLen)
+	}
+
+	pidLen := len(attr.PidList)
+	if pidLen > 0 {
+		cPidList := make([]C.int, pidLen)
+		for i, pid := range attr.PidList {
+			cPidList[i] = C.int(pid)
+		}
+		cAttr.pidList = &cPidList[0]
+		cAttr.numPid  = C.uint(pidLen)
+	}
+
+	cpuLen := len(attr.CpuList)
+	if cpuLen > 0 {
+		cCpuList := make([]C.int, cpuLen)
+		for i, cpu := range(attr.CpuList) {
+			cCpuList[i] = C.int(cpu)
+		}
+		cAttr.cpuList = &cCpuList[0]
+		cAttr.numCpu  = C.uint(cpuLen)
+	}
+
+	cAttr.fetchG = C.uint(attr.FetchG)
+
+	pd := C.PmuTraceOpen(cAttr)
+	if int(pd) == -1 {
+		return -1, errors.New(C.GoString(C.Perror()))
+	}
+	return int(pd), nil
+}
+
+func UTraceEnable(pd int) error {
+	err := C.UTraceEnable(C.int(pd))
+	if int(err) != 0 {
+		return errors.New(C.GoString(C.Perror()))
+	}
+	return nil
+}
+
+func UTraceDisable(pd int) error {
+	err := C.UTraceDisable(C.int(pd))
+	if int(err) != 0 {
+		return errors.New(C.GoString(C.Perror()))
+	}
+	return nil
+}
+
+func UTraceRead(pd int) ([]UTraceData, *C.struct_UTraceData, error) {
+	var cTraceData *C.struct_UTraceData
+	length := int(C.UTraceRead(C.int(pd), &cTraceData))
+	if length < 0 {
+		return nil, errors.New(C.GoString(C.Perror()))
+	}
+	if length == 0 {
+		return nil, nil
+	}
+
+	result := make([]UTraceData, length)
+	for i := 0; i < length; i++ {
+		elem := (*C.struct_UTraceData)(unsafe.Pointer(
+			uintptr(unsafe.Pointer(cTraceData)) + uintptr(i)*unsafe.Sizeof(*cTraceData),
+		))
+		result[i] = UTraceData{
+			Addr: 	   uint64(elem.addr),
+			Comm:      C.GoString(elem.comm),
+			Tid:       int(elem.tid),
+			Cpu:       int(elem.cpu),
+			Timestamp: int64(elem.timestamp),
+			GPtr:      uint64(elem.gPtr),
+		}
+	}
+
+	return result, cTraceData, nil
+}
+
+func UTraceDataFree(cTraceData *C.struct_UTraceData) {
+	C.UTraceDataFree(cTraceData)
+}
+
+func UTraceClose(pd int) {
+	C.UTraceClose(C.int(pd))
 }

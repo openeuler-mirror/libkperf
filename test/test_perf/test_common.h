@@ -48,4 +48,6 @@ bool HasEvent(PmuData *data, int len, std::string evt);
 // Check whether there is arm_spe_0 device.
 bool HasSpeDevice();
 
+std::string GetTestBinaryPath(const std::string &name);
+
 #endif
