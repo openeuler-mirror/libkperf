@@ -30,15 +30,18 @@ cd ..
 #include <getopt.h>
 #include <algorithm>
 #include <iomanip>
+#include <unordered_map>
+#include <cstdint>
 
 #include "symbol.h"
 #include "pmu.h"
 #include "pcerrc.h"
 
+#define RESERVED_SISE 8192
+
 using namespace std;
 typedef unsigned long ulong;
 
-static double startTs = 0;
 
 static std::map<uint16_t, std::string> HIP_STR_MAP = {
     {HIP_PEER_CPU, "HIP_PEER_CPU"},
@@ -87,115 +90,31 @@ struct Item {
     map<ulong, int> vas;
 };
 
-struct VaItem {
-    ulong va;
-    ulong pc;
-    // hit count of va
-    int cnt;
-    int ldCnt;
-    int stCnt;
-    int atCnt;
-};
-
-static inline bool HasLoad(const VaItem& v)
-{
-    return v.ldCnt > 0;
-}
-static inline bool HasStore(const VaItem& v)
-{
-    return v.stCnt > 0 || v.atCnt > 0;
-}
-
-static inline bool ShouldCountFS(const VaItem& a, const VaItem& b)
-{
-    bool aStore = HasStore(a);
-    bool bStore = HasStore(b);
-    bool aLoad = HasLoad(a);
-    bool bLoad = HasLoad(b);
-
-    // store-store
-    if (aStore && bStore) {
-        return true;
-    }
-
-    // load-store
-    if ((aLoad && bStore) || (aStore && bLoad)) {
-        return true;
-    }
-    // load-load / unknown-only
-    return false;
-}
-
 struct ArgsContext {
     int pid = -1;
     int duration = 10;
     bool isLaunch = false;
     char* cgroupName = nullptr;
-    bool computeFs = true;
+    bool computeFs = false;
     int fd[2];
 };
 
-struct RacePcCompare {
-    bool operator() (const pair<VaItem, VaItem> &a, const pair<VaItem, VaItem> &b) const {
-        if (a.first.pc != b.first.pc) {
-            return a.first.pc < b.first.pc;
-        }
-	return a.second.pc < b.second.pc;
-    };
-};
-
-static inline bool WithinCacheLine(ulong a, ulong b)
+double Time()
 {
-    const int CACHE_LINE = 64;
-    return (a > b) ? (a - b < CACHE_LINE) : (b - a < CACHE_LINE);
+    timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec + tv.tv_usec/1e6;
 }
 
-void ComputeRacePc(const ulong mypc, const map<ulong, int> &vas, 
-            const map<ulong, map<ulong, VaItem>> &vaPcMap, map<pair<VaItem, VaItem>, int, RacePcCompare> &racepc)
+void PrintTime(string msg)
 {
-    for (const auto &vaPair : vas) {
-        // Iterate over virtual addresses, find which other virtual addresses is near current va,
-        // i.e., less than 64 bytes between them.
-        auto va = vaPair.first;
-        auto vaCnt = vaPair.second;
-        VaItem racePc{};
-        racePc.pc = mypc;
-        racePc.va = va;
-        racePc.cnt = vaCnt;
+    printf("[%f]%s\n", Time(), msg.c_str());
+}
 
-        auto itVa = vaPcMap.find(va);
-        if (itVa != vaPcMap.end()) {
-            auto itPc = itVa->second.find(mypc);
-            if (itPc != itVa->second.end()) {
-                racePc.ldCnt = itPc->second.ldCnt;
-                racePc.stCnt = itPc->second.stCnt;
-            }
-        }
-
-        for (const auto &vapc : vaPcMap) {
-            auto otherVa = vapc.first;
-            if (!WithinCacheLine(va, otherVa)) {
-                continue;
-            }
-            for (const auto &vaItemPair : vapc.second) {
-                const VaItem &otherPcItem = vaItemPair.second;
-                if (otherPcItem.pc == mypc) {
-                    continue;
-                }
-                VaItem otherRacePc{};
-                otherRacePc.pc    = otherPcItem.pc;
-                otherRacePc.va    = otherVa;
-                otherRacePc.cnt   = otherPcItem.cnt;
-                otherRacePc.ldCnt = otherPcItem.ldCnt;
-                otherRacePc.stCnt = otherPcItem.stCnt;
-
-                if (!ShouldCountFS(racePc, otherRacePc)) {
-                    continue;
-                }
-                auto key = (mypc > otherPcItem.pc) ? std::make_pair(otherPcItem, racePc) : std::make_pair(racePc, otherPcItem);
-                racepc[key] += std::min(racePc.cnt, otherPcItem.cnt);
-            }
-        }
+void KillApp(int pid, bool isLaunch)
+{
+    if (isLaunch) {
+        kill(pid, 9);
     }
 }
 
@@ -317,29 +236,292 @@ bool SortBySymValue(const SYMBOL_NUM_PAIR& t1, const SYMBOL_NUM_PAIR& t2)
     return t1.second.cnt > t2.second.cnt;
 }
 
-double Time()
+// in cacheline bucket
+struct PcBucket {
+    uint32_t cnt   = 0;
+    uint32_t ldCnt = 0;
+    uint32_t stCnt = 0;
+    uint64_t accessMask = 0;
+};
+
+static inline bool HasLoad(const PcBucket& a)
 {
-    timeval tv;
-    gettimeofday(&tv, NULL);
-    return tv.tv_sec + tv.tv_usec/1e6;
+    return a.ldCnt > 0;
 }
 
-void PrintTime(string msg)
-{
-    printf("[%f]%s\n", Time(), msg.c_str());
+static inline bool HasStore(const PcBucket& a) {
+    return a.stCnt > 0;
 }
 
-void KillApp(int pid, bool isLaunch)
+struct PcPair {
+    ulong a;
+    ulong b;
+};
+
+struct PcPairHash {
+    size_t operator()(const PcPair& p) const noexcept {
+        size_t h1 = std::hash<ulong>{}(p.a);
+        size_t h2 = std::hash<ulong>{}(p.b);
+        return h1 * 1315423911u + h2;
+    }
+};
+
+struct PcPairEq {
+    bool operator()(const PcPair& x, const PcPair& y) const noexcept {
+        return x.a == y.a && x.b == y.b;
+    }
+};
+
+static inline PcPair MakePcPair(ulong x, ulong y)
 {
-    if (isLaunch) {
-        kill(pid, 9);
+    return (x < y) ? PcPair{x, y} : PcPair{y, x};
+}
+
+using SourceList = std::map<uint16_t, int>;
+using SourceSymMap = std::map<uint16_t, std::map<std::string, Item>>;
+using LinePcBucketMap = std::unordered_map<ulong, std::unordered_map<ulong, PcBucket>>;
+using PcBucketMap = std::unordered_map<ulong, PcBucket>;
+using RacePcMap = std::unordered_map<PcPair, int, PcPairHash, PcPairEq>;
+
+static bool CollectPmuData(const ArgsContext &act, int &pd, PmuData* &data, int &len)
+{
+    PmuAttr attr = {0};
+    static char* cgroupNameList[1];
+    static int pidList[1];
+    cgroupNameList[0] = act.cgroupName;
+    pidList[0] = act.pid;
+    if (act.cgroupName != nullptr) {
+        attr.cgroupNameList = cgroupNameList;
+        attr.numCgroup = 1;
+    } else {
+        attr.pidList = pidList;
+        attr.numPid = 1;
+    }
+    attr.period = 256;
+    attr.dataFilter = SPE_DATA_ALL;
+    attr.evFilter = SPE_EVENT_RETIRED;
+    attr.symbolMode = SymbolMode::RESOLVE_ELF_DWARF;
+    if (act.isLaunch) {
+        attr.enableOnExec = 1;
+    }
+
+    pd = PmuOpen(SPE_SAMPLING, &attr);
+    if (pd == -1) {
+        std::cout << "kperf pmu open spe failed, err is: " << Perror() << std::endl;
+        return false;
+    }
+
+    if (act.isLaunch) {
+        int ret = write(act.fd[1], "data", 4);
+        if (ret < 0) {
+            std::cout << "write error" << std::endl;
+            PmuClose(pd);
+            return false;
+        }
+    }
+
+    PrintTime("start collect");
+    int num = act.duration * 100;
+    if (!act.isLaunch) {
+        PmuEnable(pd);
+    }
+    for (int i = 0; i < num; i++) {
+        usleep(100 * 100);
+        if (execErrNo) {
+            std::cout << "exec failed:" << strerror(execErrNo) << std::endl;
+            PmuClose(pd);
+            return false;
+        }
+        PmuData* fromData = nullptr;
+        PmuRead(pd, &fromData);
+        int curLen = PmuAppendData(fromData, &data);
+        if (curLen) {
+            len = curLen;
+        }
+    }
+    PrintTime("end collect");
+    return true;
+}
+
+static void BuildAggregations(const ArgsContext &act, PmuData* data, int len, SourceList &sourceList, SourceSymMap &sourceSymList,
+                              LinePcBucketMap &linePcBucket,PcBucketMap &pcGlobalBucket)
+{
+    linePcBucket.reserve(RESERVED_SISE);    // cachelie -> (pc -> PcBucket), for combine PCs in same cache line
+    pcGlobalBucket.reserve(RESERVED_SISE);  // pc -> PcBucket, for global statistics of print
+
+    for (int i = 0; i < len; i++) {
+        auto o = data[i];
+        if (HIP_STR_MAP.find(o.ext->source) == HIP_STR_MAP.end()) {
+            continue;
+        }
+        auto sym = o.stack->symbol;
+        if (sym) {
+            std::string symStr = ParseSymbol(sym);
+            auto &item = sourceSymList[o.ext->source][symStr];
+            item.cnt++;
+            item.vas[o.ext->va]++;
+            item.pc = sym->codeMapAddr;
+        }
+        sourceList[o.ext->source] += 1;
+
+        // falsesharing only in HITM sources
+        if (!act.computeFs || HITM_SET.find(o.ext->source) == HITM_SET.end()) {
+            continue;
+        }
+        if (!sym) {
+            continue;
+        }
+        ulong pc = sym->codeMapAddr;
+        if (pc == 0) {
+            continue;
+        }
+
+        ulong va = o.ext->va;
+        ulong line = (va >> 6);  // mapping all addresses of the same cache line to the same bucket key
+        auto &pcMap = linePcBucket[line];
+        auto &item = pcMap[pc];  // numbers of this pc on this cacheline
+        item.cnt++;
+        uint64_t offset = va & 0x03F;
+        item.accessMask |= (1ULL << offset);
+        if (o.ext->op & SPE_OP_LD) {
+            item.ldCnt++;
+        }
+        if (o.ext->op & SPE_OP_ST) {
+            item.stCnt++;
+        }
+        // summary info
+        auto &g = pcGlobalBucket[pc];
+        g.cnt++;
+        if (o.ext->op & SPE_OP_LD) {
+            g.ldCnt++;
+        }
+        if (o.ext->op & SPE_OP_ST) {
+            g.stCnt++;
+        }
+    }
+}
+
+static void PrintSourceSummary(const SourceList &sourceList, const SourceSymMap &sourceSymList, int &totalSource)
+{
+    totalSource = 0;
+    for (const auto& item : sourceList) {
+        auto source = item.first;
+        auto sourceNum = item.second;
+        std::cout << HIP_STR_MAP[source] << " " << sourceNum << std::endl;
+        totalSource += sourceNum;
+        auto itSysMap = sourceSymList.find(source);
+        if (itSysMap == sourceSymList.end()) {
+            continue;
+        }
+        auto &symList = itSysMap->second;
+        std::vector<SYMBOL_NUM_PAIR> sortVec(symList.begin(), symList.end());
+        std::sort(sortVec.begin(), sortVec.end(), SortBySymValue);
+        for (const auto& symItem : sortVec) {
+            auto &it = symItem.second;
+            std::cout << "    " << "|--" << symItem.first << " [" << it.cnt << "]" << std::endl;
+        }
+    }
+}
+
+static void ComputeFsFromCachelines(const LinePcBucketMap &linePcBucket, RacePcMap &racepc)
+{
+    racepc.reserve(RESERVED_SISE);
+
+    for (const auto &lineEntry : linePcBucket) {
+        const auto &pcMap = lineEntry.second;
+        // If fewer than 2 instructions access this cacheline, not included in statistics
+        if (pcMap.size() < 2) {
+            continue;
+        }
+
+        std::vector<std::pair<ulong, const PcBucket*>> stores;
+        std::vector<std::pair<ulong, const PcBucket*>> loads;
+        stores.reserve(pcMap.size());
+        loads.reserve(pcMap.size());
+        for (const auto &kv : pcMap) {
+            ulong pc = kv.first;
+            const PcBucket &item = kv.second;
+            bool isStore = HasStore(item);
+            bool isLoad  = HasLoad(item);
+            if (isStore) {
+                stores.push_back({pc, &item});
+            } else if (isLoad) {
+                loads.push_back({pc, &item});
+            }
+        }
+
+        if (stores.empty()) {
+            continue;
+        }
+        // store-store
+        for (size_t i = 0; i < stores.size(); ++i) {
+            for (size_t j = i + 1; j < stores.size(); ++j) {
+                if (stores[i].second->accessMask & stores[j].second->accessMask) {
+                    continue;  // true sharing
+                }
+                int score = std::min(stores[i].second->cnt, stores[j].second->cnt);
+                if (score > 0) {
+                    racepc[MakePcPair(stores[i].first, stores[j].first)] += score;
+                }
+            }
+        }
+
+        // store-load
+        for (size_t i = 0; i < stores.size(); ++i) {
+            for (size_t j = 0; j < loads.size(); ++j) {
+                if (stores[i].second->accessMask & loads[j].second->accessMask) {
+                    continue;  // true sharing
+                }
+                int score = std::min(stores[i].second->cnt, loads[j].second->cnt);
+                if (score > 0) {
+                    racepc[MakePcPair(stores[i].first, loads[j].first)] += score;
+                }
+            }
+        }
+    }
+}
+
+static void PrintFsResults(const RacePcMap &racepc, const PcBucketMap &pcGlobalBucket)
+{
+    std::vector<std::pair<PcPair, int>> sortedList;
+    sortedList.reserve(racepc.size());
+    for (const auto &kv : racepc) {
+        sortedList.push_back(kv);
+    }
+
+    std::sort(sortedList.begin(), sortedList.end(),
+              [](const auto &a, const auto &b) { return a.second > b.second; });
+
+    long long totalOverlap = 0;
+    for (const auto &kv : sortedList) {
+        totalOverlap += kv.second;
+    }
+    PrintTime("sorted");
+
+    cout << "Possible false sharing:\n";
+    for (const auto &race : sortedList) {
+        ulong pc1 = race.first.a;
+        ulong pc2 = race.first.b;
+        int score = race.second;
+        float pct = (totalOverlap > 0) ? (score * 100.0f / (float)totalOverlap) : 0.0f;
+
+        PcBucket a{}, b{};
+        auto itA = pcGlobalBucket.find(pc1);
+        if (itA != pcGlobalBucket.end()) a = itA->second;
+        auto itB = pcGlobalBucket.find(pc2);
+        if (itB != pcGlobalBucket.end()) b = itB->second;
+
+        // pc1<->pc2 [score pct] A(...) B(...)
+        cout << std::hex << pc1 << "<->" << pc2 << " [" << std::dec << score << " "
+             << fixed << setprecision(4) << pct << "%]"
+             << " A(" << a.cnt << "/" << a.ldCnt << "/" << a.stCnt << ")"
+             << " B(" << b.cnt << "/" << b.ldCnt << "/" << b.stCnt << ")" << "\n";
     }
 }
 
 int main(int argc, char** argv)
 {
-    startTs = Time();
-    struct ArgsContext act;
+    ArgsContext act;
 
     int err = ParseArgv(argc, argv, act);
     if (err == -1) {
@@ -357,153 +539,33 @@ int main(int argc, char** argv)
         return -1;
     }
 
-    PmuAttr attr = {0};
-    char* cgroupNameList[1] = {act.cgroupName};
-    int pidList[1];
-    pidList[0] = act.pid;
-    if (act.cgroupName != nullptr) {    
-        attr.cgroupNameList = cgroupNameList;
-        attr.numCgroup = 1; 
-    } else {
-        attr.pidList = pidList;
-        attr.numPid = 1;
-    }
-    attr.period = 256;
-    attr.dataFilter = SPE_DATA_ALL;
-    attr.evFilter = SPE_EVENT_RETIRED;
-    attr.symbolMode = SymbolMode::RESOLVE_ELF_DWARF;
-    if (act.isLaunch) {
-        attr.enableOnExec = 1;
-    }
-
-    int pd = PmuOpen(SPE_SAMPLING, &attr);
-    if (pd == -1) {
+    int pd = -1;
+    PmuData* data = nullptr;
+    int len = 0;
+    if (!CollectPmuData(act, pd, data, len)) {
         KillApp(act.pid, act.isLaunch);
-        std::cout << "kperf pmu open spe failed, err is: " << Perror() << std::endl;
         return -1;
     }
 
-    if (act.isLaunch) {
-        int ret = write(act.fd[1], "data", 4);
-        if (ret < 0) {
-            std::cout << "write error" << std::endl;
-            return -1;
-        }
-    }
-    
-    PrintTime("start collect");
-    int num = act.duration * 100;
-    PmuData* data = nullptr;
-    int len = 0;
-    if (!act.isLaunch) {
-        PmuEnable(pd);
-    }
-    for (int i = 0; i < num; i++) {
-        usleep(100 * 100);
-        if (execErrNo) {
-            std::cout << "exec failed:" <<  strerror(execErrNo) << std::endl;
-            PmuClose(pd);
-            KillApp(act.pid, act.isLaunch);
-            return -1;
-        }
-        PmuData* fromData = nullptr;
-        PmuRead(pd, &fromData);
-        int curLen = PmuAppendData(fromData, &data);
-        if (curLen) {
-            len = curLen;
-        }
-    }
-    PrintTime("end collect");
+    SourceList sourceList;
+    SourceSymMap sourceSymList;
+    LinePcBucketMap linePcBucket;
+    PcBucketMap pcGlobalBucket;
 
-    std::map<uint16_t, int> sourceList;
-    std::map<uint16_t, std::map<std::string, Item>> sourceSymList;
-    // va -> pc -> VaItem
-    map<ulong, map<ulong, VaItem>> vaList;
-    for (int i = 0; i < len; i++) {
-        auto o = data[i];
-        if (HIP_STR_MAP.find(o.ext->source) == HIP_STR_MAP.end()) {
-            continue;
-        }
-        auto sym = o.stack->symbol;
-        if (sym) {
-            std::string symStr = ParseSymbol(sym);
-            auto &item = sourceSymList[o.ext->source][symStr];
-            item.cnt++;
-            item.vas[o.ext->va]++;
-            item.pc = sym->codeMapAddr;
-        }
-        sourceList[o.ext->source] += 1;
-
-        auto &vaItem = vaList[o.ext->va][sym->codeMapAddr];
-        if (vaItem.cnt == 0) {
-            vaItem.pc = sym->codeMapAddr;
-            vaItem.va = o.ext->va;
-        }
-        vaItem.cnt++;
-        if (o.ext->op & SPE_OP_LD) {
-            vaItem.ldCnt++;
-        }
-        if (o.ext->op & SPE_OP_ST) {
-            vaItem.stCnt++;
-        }
-        if ((o.ext->op & SPE_OP_ST) && (o.ext->op & SPE_OP_ATOMIC)) {
-            vaItem.atCnt++;
-        }
-    }
-
+    BuildAggregations(act, data, len, sourceList, sourceSymList, linePcBucket, pcGlobalBucket);
     PrintTime("prepared");
 
-    // Inst addresses pair which may access same cacheline.
-    // key: pair
-    // value: accumulated overlap hits on the same cacheline (sum of min(hitA, hitB) across matched VA)
-    map<pair<VaItem, VaItem>, int, RacePcCompare> racepc;
     int totalSource = 0;
-    for (const auto& item : sourceList) {
-        auto source = item.first;
-        auto sourceNum = item.second;
-        std::cout << HIP_STR_MAP[source] << " " << sourceNum << std::endl;
-        totalSource += sourceNum;
-        if (sourceSymList.find(source) == sourceSymList.end()) {
-            continue;
-        }
-        auto symList = sourceSymList[source];
-        std::vector<SYMBOL_NUM_PAIR> sortVec(symList.begin(), symList.end());
-        std::sort(sortVec.begin(), sortVec.end(), SortBySymValue);
-        for (const auto& symItem : sortVec) {
-            auto &it = symItem.second;
-            std::cout << "    " << "|--" << symItem.first << " [" << symItem.second.cnt << "]" << std::endl;
-            if (act.computeFs && HITM_SET.find(source) != HITM_SET.end()) {
-                // Found out which other insts may access same cacheline with va accessed by current inst.
-                // Iterate over va from current inst and search in the whole inst set(vaList).
-                ComputeRacePc(it.pc, it.vas, vaList, racepc);
-            }
-        }
-    }
-    PrintTime("computed");
-
-    vector<pair<pair<VaItem, VaItem>, int>> sortedList(racepc.begin(), racepc.end());
-    sort(sortedList.begin(), sortedList.end(), [](const auto &a, const auto &b) {
-        return a.second > b.second;
-    });
-    long long totalOverlap = 0;
-    for (const auto &kv : racepc) {
-        totalOverlap += kv.second;
-    }
-    PrintTime("sorted");
+    PrintSourceSummary(sourceList, sourceSymList, totalSource);
 
     if (act.computeFs) {
-        cout << "Possible false sharing: \n";
-        for (auto &race : sortedList) {
-            auto &race1 = race.first.first;
-            auto &race2 = race.first.second;
-            float pct = (totalOverlap > 0) ? (race.second * 100.0f / (float)totalOverlap) : 0.0f;
-            cout << std::hex << race1.pc << "<->" << race2.pc
-                << " [" << std::dec << race.second << " " 
-                << fixed << setprecision(4) << pct << "%]\n";
-        }
+        RacePcMap racepc;
+        ComputeFsFromCachelines(linePcBucket, racepc);
+        PrintTime("computed");
+        PrintFsResults(racepc, pcGlobalBucket);
     }
-    PmuClose(pd);
-    KillApp(act.pid, act.isLaunch);
 
+    KillApp(act.pid, act.isLaunch);
+    PmuClose(pd);
     return 0;
 }
