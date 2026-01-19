@@ -139,17 +139,17 @@ static int GetEventType(const char *pmuName)
     if (CheckEventInList(UNCORE_EVENT, pmuName)) {
         return UNCORE_TYPE;
     }
+      // Parse uncore event raw name like 'hisi_sccl3_ddrc0/config=0x0/'
+    // or smmuv3_pmcg_100020/transaction,filter_enable=1,filter_stream_id=0x7d/
+    if (CheckUncoreRawEvent(pmuName)) {
+        return UNCORE_RAW_TYPE;
+    }
 #ifdef IS_X86
     return -1;
 #else
     // Kernel trace point event name like 'block:block_bio_complete'
     if (IsTraceEventFormat(pmuName) && CheckEventInList(TRACE_EVENT, pmuName)) {
         return TRACE_TYPE;
-    }
-    // Parse uncore event raw name like 'hisi_sccl3_ddrc0/config=0x0/'
-    // or smmuv3_pmcg_100020/transaction,filter_enable=1,filter_stream_id=0x7d/
-    if (CheckUncoreRawEvent(pmuName)) {
-        return UNCORE_RAW_TYPE;
     }
 #endif
     return -1;

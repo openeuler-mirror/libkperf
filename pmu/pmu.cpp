@@ -430,6 +430,29 @@ static int CheckEnableOnExec(struct PmuAttr* attr) {
     return SUCCESS;
 }
 
+static int CheckPerThread(enum PmuTaskType collectType, struct PmuAttr* attr) {
+    if (!attr->perThread) {
+        return SUCCESS;
+    }
+
+    if (collectType != SAMPLING) {
+        New(LIBPERF_ERR_NOT_SUPPORT_PER_THREAD, "perThread just supports SAMPLING mode");
+        return LIBPERF_ERR_NOT_SUPPORT_PER_THREAD;
+    }
+
+    if (!attr->numPid) {
+        New(LIBPERF_ERR_NOT_SUPPORT_PER_THREAD, "perThread can't be enabled without specifying a process");
+        return LIBPERF_ERR_NOT_SUPPORT_PER_THREAD;
+    }
+
+    if (attr->numCpu) {
+        New(LIBPERF_ERR_NOT_SUPPORT_PER_THREAD, "perThread does not support CPU specification");
+        return LIBPERF_ERR_NOT_SUPPORT_PER_THREAD;
+    }
+    
+    return SUCCESS;
+}
+
 static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
 {
     auto err = CheckUserAccess(collectType, attr);
@@ -487,6 +510,11 @@ static int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
     }
 
     err = CheckEnableOnExec(attr);
+    if (err != SUCCESS) {
+        return err;
+    }
+
+    err = CheckPerThread(collectType, attr);
     if (err != SUCCESS) {
         return err;
     }
@@ -1038,11 +1066,15 @@ static void PrepareCpuList(PmuAttr *attr, PmuTaskAttr *taskParam, PmuEvt* pmuEvt
             for(int i = 0; i < MAX_CPU_NUM; i++) {
                 taskParam->cpuList.push_back(i);
             }
-        } else { 
+        } else {
             // For counting with pid list for system wide, open fd with cpu -1 and specific pid.
             taskParam->cpuList.push_back(-1);
         }
     } else if (attr->cpuList == nullptr) {
+        if (attr->perThread) {
+            taskParam->cpuList.emplace_back(-1);
+            return;
+        }
         // For null cpulist, open fd with cpu 0,1,2...max_cpu
         const set<int> &onLineCpus = GetOnLineCpuIds();
         for (const auto &cpuId : onLineCpus) {
@@ -1147,6 +1179,7 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
     taskParam->pmuEvt->numEvent = attr->numEvt;
     taskParam->pmuEvt->enableBpf = attr->enableBpf;
     taskParam->pmuEvt->enableOnExec = attr->enableOnExec;
+    taskParam->pmuEvt->perThread = attr->perThread;
     return taskParam.release();
 }
 

@@ -103,7 +103,7 @@ int KUNPENG_PMU::EvtListDefault::Init(const bool groupEnable, const std::shared_
             if (perfEvt == nullptr) {
                 continue;
             }
-            if (col > 0 && !evtVec.empty()) {
+            if (col > 0 && !evtVec.empty() && !perfEvt->GetPerThread()) {
                 resetOutPutFd = evtVec[0]->GetFd();
             }
             perfEvt->SetSymbolMode(symMode);

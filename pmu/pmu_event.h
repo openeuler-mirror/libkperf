@@ -56,6 +56,7 @@ struct PmuEvt {
     unsigned enableBpf : 1;      // enable bpf mode in counting mode
     unsigned enableHwMetric : 1; // enable hw_metric=1 in sampling mode
     unsigned enableOnExec : 1; // set enable_on_exec = 1 
+    unsigned perThread : 1; // --per-thread mode, which just supports sampling mode
 };
 
 namespace KUNPENG_PMU {

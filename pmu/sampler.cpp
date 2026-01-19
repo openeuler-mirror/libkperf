@@ -81,6 +81,10 @@ int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupEnable, const int grou
         attr.enable_on_exec = 1;
     }
 
+    if (this->evt->perThread) {
+        attr.inherit = 0;
+    }
+
     if ((this->evt->blockedSample == 1) && (this->evt->name == "context-switches")) {
         attr.exclude_kernel = 0; // for confrim the reason of entering off cpu, it need to include kernel.
         attr.context_switch = 1;

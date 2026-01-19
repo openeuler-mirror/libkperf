@@ -302,6 +302,7 @@ static bool ValidConfigValueAndGenerateFields(const std::unordered_map<string, U
         auto findConfig = supportConfigParams.find(key);
         if (findConfig == supportConfigParams.end()) {
             DBG_PRINT("Error: Invalid config param %s\n", key.c_str());
+            pcerr::New(LIBPERF_ERR_QUERY_EVENT_LIST_FAILED, "Invalid config param " + key);
             return false;
         }
         auto& configBitFiled = findConfig->second;
@@ -313,11 +314,13 @@ static bool ValidConfigValueAndGenerateFields(const std::unordered_map<string, U
             configValue = stoull(value, nullptr, 0);
         } catch (const std::invalid_argument& e) {
             DBG_PRINT("Error: Invalid config value %s\n", value.c_str());
+            pcerr::New(LIBPERF_ERR_QUERY_EVENT_LIST_FAILED, "Invalid config value " + value);
             return false;
         }
 
         if (configValue < 0 || configValue > maxValue) {
             DBG_PRINT("Error: config value: %s is too big or negative number.\n", value.c_str());
+            pcerr::New(LIBPERF_ERR_QUERY_EVENT_LIST_FAILED, "config value: " + value + " is too big or negative number for format, maximum is " + string{maxValue});
             return false;
         }
 

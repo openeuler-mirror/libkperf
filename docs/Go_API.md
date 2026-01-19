@@ -86,6 +86,12 @@ func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error)
     是否直接读取寄存器，仅支持COUNTING模式
   * EnableBpf bool
     是否基于BPF采集，仅支持COUNTING模式
+  * EnableHwMetric bool
+    是否使能hWMetric, 该模式需要两个事件指标配对进行采样
+  * EnableOnExec bool
+    使能enableOnExec，适用于launch模式，在fork之后，未拉起子应用之前PmuOpen，PmuOpen成功之后再去拉起子应用，能规避多线程和短时间应用无数据问题
+  * PerThread bool
+    per thread的模式，每个线程会单独开一个perf_event_open，开启时cpu设置为-1，去监测对应事件，但是该模式不会监测新开子进程的该事件，并且只支持sampling采样
 
 * 返回值是int,error, 如果error不等于nil，则返回的int值为对应采集任务ID
 
