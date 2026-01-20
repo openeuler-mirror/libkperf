@@ -570,7 +570,6 @@ static bool AppendChildEvents(char* evt, unordered_map<string, char*>& eventSpli
     auto numEvt = uncoreEventPair.first;
     auto uncoreEventList = uncoreEventPair.second;
     if (uncoreEventList == nullptr) {
-        New(LIBPERF_ERR_INVALID_EVENT, "Invalid uncore event list");
         return false;
     }
     bool invalidFlag = true;
@@ -588,8 +587,6 @@ static bool AppendChildEvents(char* evt, unordered_map<string, char*>& eventSpli
         }
     }
     if (invalidFlag) {
-        string err = "Invalid uncore event " + string(evt);
-        New(LIBPERF_ERR_INVALID_EVENT, err);
         return false;
     }
     return true;
@@ -610,8 +607,10 @@ static bool SplitUncoreEvent(struct PmuAttr *attr, unordered_map<string, char*> 
             char* prevChar = slashPos - 1;
             if (!std::isdigit(*prevChar)) {
                 // 添加子事件
-                if (!AppendChildEvents(evt, eventSplitMap)){
-                    return false;
+                if (!AppendChildEvents(evt, eventSplitMap)) {
+                    eventSplitMap.emplace(evt, evt);
+                    newSize++;
+                    continue;
                 }
                 continue;
             }

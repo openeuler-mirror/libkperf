@@ -340,24 +340,7 @@ bool CheckUncoreRawEvent(const char *pmuName)
     if (firstFindSlash == string::npos || lastFindSlash == string::npos || firstFindSlash >= lastFindSlash) {
         return false;
     }
-    unsigned numEvt;
-    auto eventList = PmuEventList(UNCORE_EVENT, &numEvt);
-    if (eventList == nullptr) {
-        return false;
-    }
     string devName = strName.substr(0, firstFindSlash);
-    // check if front part of pmuName in Uncore Pmu Event List
-    bool findDev = false;
-    for (int j = 0; j < numEvt; ++j) {
-        if (strstr(eventList[j], devName.c_str()) != nullptr) {
-            findDev = true;
-            break;
-        }
-    }
-    if (!findDev) {
-        return false;
-    }
-
     // check if "config=, params= " at back part of pmuName
     auto supportConfigParams = ReadConfigFormatFiles(devName);
     if (supportConfigParams.empty()) {

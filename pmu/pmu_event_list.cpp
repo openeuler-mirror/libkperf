@@ -37,7 +37,7 @@ static const string EVENT_DIR = "/events/";
 static std::mutex pmuEventListMtx;
 
 #ifdef IS_X86
-static vector<const char*> supportDevPrefixs = {"uncore_iio", "uncore_imc", "cpu"};
+static vector<const char*> supportDevPrefixs = {"uncore_iio", "uncore_imc", "cpu", "amd_iommu", "power", "msr"};
 #else
 static vector<const char*> supportDevPrefixs = {"hisi", "smmuv3", "hns3", "armv8"};
 #endif
