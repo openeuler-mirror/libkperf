@@ -210,20 +210,29 @@ struct CpuTopology {
 };
 
 enum SPE_EVENTS {
-    SPE_EV_EXCEPT       = 1 << 0,
-    SPE_EV_RETIRED      = 1 << 1,
-    SPE_EV_L1D_ACCESS   = 1 << 2,
-    SPE_EV_L1D_REFILL   = 1 << 3,
-    SPE_EV_TLB_ACCESS   = 1 << 4,
-    SPE_EV_TLB_WALK     = 1 << 5,
-    SPE_EV_NOT_TAKEN    = 1 << 6,
-    SPE_EV_MISPRED      = 1 << 7,
-    SPE_EV_LLC_ACCESS   = 1 << 8,
-    SPE_EV_LLC_MISS     = 1 << 9,
-    SPE_EV_REMOTE_ACCESS= 1 << 10,
-    SPE_EV_ALIGNMENT    = 1 << 11,
-    SPE_EV_PARTIAL_PRED = 1 << 17,
-    SPE_EV_EMPTY_PRED   = 1 << 18,
+    SPE_EV_EXCEPT        = 1 << 0,
+    SPE_EV_RETIRED       = 1 << 1,
+    SPE_EV_L1D_ACCESS    = 1 << 2,
+    SPE_EV_L1D_REFILL    = 1 << 3,
+    SPE_EV_TLB_ACCESS    = 1 << 4,
+    SPE_EV_TLB_WALK      = 1 << 5,
+    SPE_EV_NOT_TAKEN     = 1 << 6,
+    SPE_EV_MISPRED       = 1 << 7,
+    SPE_EV_LLC_ACCESS    = 1 << 8,
+    SPE_EV_LLC_MISS      = 1 << 9,
+    SPE_EV_REMOTE_ACCESS = 1 << 10,
+    SPE_EV_ALIGNMENT     = 1 << 11,
+    SPE_EV_TRANSACTIONAL = 1 << 16,
+    SPE_EV_PARTIAL_PRED  = 1 << 17,
+    SPE_EV_EMPTY_PRED    = 1 << 18,
+    SPE_EV_L2D_ACCESS    = 1 << 19,
+    SPE_EV_L2D_MISS      = 1 << 20,
+    SPE_EV_CACHE_DATA_MODIFIED = 1 << 21,
+    SPE_EV_RECENTLY_FETCHED = 1 << 22,
+    SPE_DATA_SNOOPED = 1 << 23,
+    SPE_LOAD_INVALIDATED = 1 << 24,  // forward hazard
+    SPE_CACHE_COLLISION  = 1 << 25,  // structure hazard
+    SPE_LOADQ_FULL       = 1 << 26,  // resource full
 };
 
 enum HIP_DATA_SOURCE {
@@ -247,6 +256,8 @@ enum SpeLdStOpType {
     SPE_OP_LD            = 1 << 20,
     SPE_OP_ST            = 1 << 21,
     SPE_OP_ATOMIC        = 1 << 22,
+    SPE_OP_EXCL          = 1 << 23,
+    SPE_OP_AR            = 1 << 24,
 };
 
 struct BranchSampleRecord {

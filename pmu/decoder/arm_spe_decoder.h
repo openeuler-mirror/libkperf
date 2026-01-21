@@ -37,6 +37,8 @@ enum class SpePacketType {
 #define SPE_OP_CLASS_LD_ST_ATOMIC  0x1
 #define SPE_OP_PACKET_ST    (1ULL << 0)
 #define SPE_OP_PACKET_AT    (1ULL << 2)
+#define SPE_OP_PACKET_EXCL  (1ULL << 3)
+#define SPE_OP_PACKET_AR    (1ULL << 4)
 
 enum SpeOpType {
     SPE_OP_OTHER        = 1 << 0,

@@ -224,17 +224,17 @@ static void DecodeDataSrcPkt(struct SpePacket *pkt, struct SpeRecord *record)
     record->source = pkt->payload;
 }
 
-static inline bool IsLdStExtended(uint64_t payload)
+static inline bool IsLdStExtended(uint16_t payload)
 {
     uint8_t p = (uint8_t)(payload & 0xff);
-    return (p >> 1) == 0x9;
+    return (p & 0xE2u) == 0x02u;
 }
 
 static inline uint32_t DecodeOpTypeToMask(uint16_t header, uint64_t payload)
 {
     uint32_t op = 0;
     uint8_t opClass = (uint8_t)(header & 0x3);
-    uint8_t p = (uint8_t)(payload & 0xffff);
+    uint16_t p = (uint16_t)(payload & 0xffff);
 
     if (opClass != SPE_OP_CLASS_LD_ST_ATOMIC) {
         return SPE_OP_OTHER;
@@ -250,6 +250,12 @@ static inline uint32_t DecodeOpTypeToMask(uint16_t header, uint64_t payload)
 
     if (IsLdStExtended(p)) {
         if (payload & SPE_OP_PACKET_AT) {
+            op |= SPE_OP_ATOMIC;
+        }
+        if (payload & SPE_OP_PACKET_EXCL) {
+            op |= SPE_OP_ATOMIC;
+        }
+        if (payload & SPE_OP_PACKET_AR) {
             op |= SPE_OP_ATOMIC;
         }
     }
