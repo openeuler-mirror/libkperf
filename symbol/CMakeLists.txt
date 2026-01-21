@@ -38,6 +38,25 @@ target_link_libraries(sym
         ${LLVM_LIB_DIR}/libLLVMSupport.a
         ${LLVM_LIB_DIR}/libLLVMDemangle.a
         z)
+
+file(GLOB STATIC_LLVM_FILES ${LLVM_LIB_DIR}/libLLVMDebugInfoDWARF.a
+        ${LLVM_LIB_DIR}/libLLVMDemangle.a
+        ${LLVM_LIB_DIR}/libLLVMObject.a
+        ${LLVM_LIB_DIR}/libLLVMOption.a
+        ${LLVM_LIB_DIR}/libLLVMSupport.a
+        ${LLVM_LIB_DIR}/libLLVMSymbolize.a
+        ${LLVM_LIB_DIR}/libLLVMDebugInfoDWARF.a
+        ${LLVM_LIB_DIR}/libLLVMObject.a
+        ${LLVM_LIB_DIR}/libLLVMBitReader.a
+        ${LLVM_LIB_DIR}/libLLVMCore.a
+        ${LLVM_LIB_DIR}/libLLVMMCParser.a
+        ${LLVM_LIB_DIR}/libLLVMMC.a
+        ${LLVM_LIB_DIR}/libLLVMDebugInfoCodeView.a
+        ${LLVM_LIB_DIR}/libLLVMBinaryFormat.a
+        ${LLVM_LIB_DIR}/libLLVMSupport.a
+        ${LLVM_LIB_DIR}/libLLVMDemangle.a)
+
 install(TARGETS sym DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)
 install(TARGETS sym_static DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)
 install(FILES ${SYMBOL_FILE_DIR}/symbol.h DESTINATION ${CMAKE_INSTALL_PREFIX}/include)
+install(FILES ${STATIC_LLVM_FILES} DESTINATION  ${CMAKE_INSTALL_PREFIX}/lib)
