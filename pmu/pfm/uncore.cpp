@@ -15,6 +15,7 @@
 #include <fstream>
 #include <sstream>
 #include <dirent.h>
+#include <string>
 #include "common.h"
 #include "log.h"
 #include "pcerr.h"
@@ -320,7 +321,7 @@ static bool ValidConfigValueAndGenerateFields(const std::unordered_map<string, U
 
         if (configValue < 0 || configValue > maxValue) {
             DBG_PRINT("Error: config value: %s is too big or negative number.\n", value.c_str());
-            pcerr::New(LIBPERF_ERR_QUERY_EVENT_LIST_FAILED, "config value: " + value + " is too big or negative number for format, maximum is " + string{maxValue});
+            pcerr::New(LIBPERF_ERR_QUERY_EVENT_LIST_FAILED, "config value: " + value + " is too big or negative number for format, maximum is " + to_string(maxValue));
             return false;
         }
 
