@@ -426,6 +426,27 @@ class ImplPmuTraceData(_libkperf.ImplPmuTraceData):
 class PmuTraceData(_libkperf.PmuTraceData):
     pass
 
+class UTraceAttr(_libkperf.UTraceAttr):
+    """
+    struct UTraceAttr {
+        struct SymbolSource *symSrc;
+        unsigned numSym;
+        int *pidList;
+        unsigned numPid;
+        int *cpuList;
+        unsigned numCpu;
+        unsigned fetchG : 1;
+    };
+    """
+    def __init__(self, symSrc=None, pidList=None, cpuList=None, fetchG=0):
+        super(UTraceAttr, self).__init__(symSrc=symSrc, pidList=pidList, cpuList=cpuList, fetchG=fetchG)
+
+class UTraceData(_libkperf.UTraceData):
+    pass
+
+class UTraceDataList(_libkperf.UTraceDataList):
+    pass
+
 def open(collect_type, pmu_attr):
     """
     Initialize the collection target.
@@ -665,6 +686,36 @@ def end_write(file):
 def pmu_open_with_hw_metric(pmu_hw_metric_attr):
     return _libkperf.PmuOpenWithHWMetric(pmu_hw_metric_attr)
 
+def u_trace_open(trace_attr):
+    """
+    int UTraceOpen(struct UTraceAttr *attr);
+    """
+    return _libkperf.UTraceOpen(trace_attr)
+
+def u_trace_enable(pd):
+    """
+    int UTraceEnable(int pd);
+    """
+    return _libkperf.UTraceEnable(pd)
+
+def u_trace_disable(pd):
+    """
+    int UTraceDisable(int pd);
+    """
+    return _libkperf.UTraceDisable(pd)
+
+def u_trace_read(pd):
+    """
+    int UTraceRead(int pd, struct UTraceData **traceData);
+    """
+    return _libkperf.UTraceRead(pd)
+
+def u_trace_close(pd):
+    """
+    void UTraceClose(int pd);
+    """
+    return _libkperf.UTraceClose(pd)
+
 __all__ = [
     'PmuTaskType',
     'PmuEventType',
@@ -725,4 +776,12 @@ __all__ = [
     'PmuHwMetric',
     'PmuHwMetricAttr',
     'pmu_open_with_hw_metric',
+    'UTraceAttr',
+    'UTraceData',
+    'UTraceDataList',
+    'u_trace_open',
+    'u_trace_enable',
+    'u_trace_disable',
+    'u_trace_read',
+    'u_trace_close',
 ]

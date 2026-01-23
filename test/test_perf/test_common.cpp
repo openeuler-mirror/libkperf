@@ -257,3 +257,14 @@ bool HasSpeDevice()
     return false;
 }
 
+std::string GetTestBinaryPath(const std::string &name)
+{
+    char myDir[PATH_MAX] = {0};
+    readlink("/proc/self/exe", myDir, sizeof(myDir) - 1);
+    char* dirPath = dirname(myDir);
+
+    char fullPath[PATH_MAX];
+    snprintf(fullPath, PATH_MAX, "%s/case/%s", dirPath, name.c_str());
+    return std::string(fullPath);
+}
+

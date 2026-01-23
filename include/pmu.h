@@ -781,6 +781,94 @@ struct PmuHwMetricAttr {
 
 int PmuOpenWithHWMetric(struct PmuHwMetricAttr* hwMetricAttr);
 
+struct SymbolSource {
+    char *moduleName;
+    char *symbolName;
+};
+
+struct UTraceAttr {
+    struct SymbolSource *symSrc;
+    unsigned numSym;
+    int *pidList;
+    unsigned numPid;
+    int *cpuList;
+    unsigned numCpu;
+    unsigned fetchG : 1; /* whether to capture the Go runtime `g` pointer at probe point */
+};
+
+struct UTraceData {
+    unsigned long addr;
+    const char *comm;
+    int tid;
+    int cpu;
+    int64_t timestamp;
+    uint64_t gPtr;
+};
+
+/**
+ * @brief Open a new trace session
+ * 
+ * Based on the provided UTraceAttr configuration, this function resolves ELF symbols,
+ * installs probes, and registers PMU events. It returns a session descriptor.
+ * 
+ * @param attr Pointer to a UTraceAttr structure containing symbol sources,
+ *             PID list, CPU list, and other configuration parameters.
+ * @return int Returns the session descriptor (pd) on success, or -1 on failure.
+ */
+int UTraceOpen(struct UTraceAttr *attr);
+
+/**
+ * @brief Enable a trace session
+ * 
+ * Calls the underlying PmuEnable interface to start sampling or event collection.
+ * 
+ * @param pd Trace session descriptor
+ * @return int Returns 0 on success, or an error code on failure.
+ */
+int UTraceEnable(int pd);
+
+/**
+ * @brief Disable a trace session
+ * 
+ * Calls the underlying PmuDisable interface to stop sampling or event collection.
+ * 
+ * @param pd Trace session descriptor
+ * @return int Returns 0 on success, or an error code on failure.
+ */
+int UTraceDisable(int pd);
+
+/**
+ * @brief Read trace data
+ * 
+ * Reads sampled data from the specified trace session and converts it
+ * into a UTraceData structure.
+ * 
+ * @param pd Trace session descriptor
+ * @param traceData Output parameter, returns a pointer to UTraceData
+ *                  (must be freed with TraceDataFree)
+ * @return int Returns the number of records read; -1 on failure.
+ */
+int UTraceRead(int pd, struct UTraceData **traceData);
+
+/**
+ * @brief Free trace data memory
+ * 
+ * Releases the memory allocated for a UTraceData structure returned by TraceRead.
+ * 
+ * @param traceData Pointer to the UTraceData structure to be freed.
+ */
+void UTraceDataFree(struct UTraceData *traceData);
+
+/**
+ * @brief Close a trace session
+ * 
+ * Closes the specified trace session, uninstalls probes,
+ * and clears events and cached data.
+ * 
+ * @param pd Trace session descriptor
+ */
+void UTraceClose(int pd);
+
 #pragma GCC visibility pop
 #ifdef __cplusplus
 }

@@ -14,6 +14,7 @@ set(PMU_FILE_DIR ${PROJECT_TOP_DIR}/pmu)
 set(PFM_FILE_DIR ${PROJECT_TOP_DIR}/pmu/pfm)
 set(PMU_DECODER_DIR ${PMU_FILE_DIR}/decoder)
 set(PMU_BPF_DIR ${PMU_FILE_DIR}/bpf)
+set(TRACE_DIR ${PMU_FILE_DIR}/trace)
 
 # Source files                                      #
 file(GLOB UTIL_SRC ${UTIL_FILE_DIR}/*.cpp)
@@ -22,10 +23,12 @@ file(GLOB PMU_DECODER_SRC ${PMU_DECODER_DIR}/*.cpp)
 file(GLOB SYMBOL_SRC ${SYMBOL_FILE_DIR}/*c ${SYMBOL_FILE_DIR}/*cpp)
 file(GLOB PFM_SRC ${PFM_FILE_DIR}/*c ${PFM_FILE_DIR}/*cpp)
 file(GLOB BPF_SRC ${PMU_BPF_DIR}/*cpp)
+file(GLOB TRACE_SRC ${TRACE_DIR}/*cpp)
 
 include_directories(${PROJECT_TOP_DIR}/include)
 include_directories(${PMU_FILE_DIR}/)
 include_directories(${PFM_FILE_DIR})
+include_directories(${TRACE_DIR})
 
 # directories for utilities and symbol resolving
 include_directories(${UTIL_FILE_DIR})
@@ -42,8 +45,8 @@ if (BPF)
 else ()
     set(BPF_SOURCES "")
 endif()
-ADD_LIBRARY(kperf SHARED ${PMU_SRC} ${UTIL_SRC} ${PFM_SRC} ${PMU_DECODER_SRC} ${BPF_SOURCES})
-ADD_LIBRARY(kperf_static STATIC ${PMU_SRC} ${UTIL_SRC} ${PFM_SRC} ${PMU_DECODER_SRC} ${BPF_SOURCES})
+ADD_LIBRARY(kperf SHARED ${PMU_SRC} ${UTIL_SRC} ${PFM_SRC} ${TRACE_SRC} ${PMU_DECODER_SRC} ${BPF_SOURCES})
+ADD_LIBRARY(kperf_static STATIC ${PMU_SRC} ${UTIL_SRC} ${PFM_SRC} ${TRACE_SRC} ${PMU_DECODER_SRC} ${BPF_SOURCES})
 
 set_target_properties(kperf_static PROPERTIES OUTPUT_NAME "kperf")
 if (BPF)
