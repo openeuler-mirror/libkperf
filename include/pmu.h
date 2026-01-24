@@ -222,17 +222,10 @@ enum SPE_EVENTS {
     SPE_EV_LLC_MISS      = 1 << 9,
     SPE_EV_REMOTE_ACCESS = 1 << 10,
     SPE_EV_ALIGNMENT     = 1 << 11,
-    SPE_EV_TRANSACTIONAL = 1 << 16,
     SPE_EV_PARTIAL_PRED  = 1 << 17,
     SPE_EV_EMPTY_PRED    = 1 << 18,
-    SPE_EV_L2D_ACCESS    = 1 << 19,
-    SPE_EV_L2D_MISS      = 1 << 20,
-    SPE_EV_CACHE_DATA_MODIFIED = 1 << 21,
-    SPE_EV_RECENTLY_FETCHED = 1 << 22,
-    SPE_DATA_SNOOPED = 1 << 23,
-    SPE_LOAD_INVALIDATED = 1 << 24,  // forward hazard
-    SPE_CACHE_COLLISION  = 1 << 25,  // structure hazard
-    SPE_LOADQ_FULL       = 1 << 26,  // resource full
+    SPE_FORWARD_HAZARD   = 1 << 24,
+    SPE_STRUCTURE_HAZARD = 1 << 25,
 };
 
 enum HIP_DATA_SOURCE {

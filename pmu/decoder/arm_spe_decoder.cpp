@@ -253,10 +253,10 @@ static inline uint32_t DecodeOpTypeToMask(uint16_t header, uint64_t payload)
             op |= SPE_OP_ATOMIC;
         }
         if (payload & SPE_OP_PACKET_EXCL) {
-            op |= SPE_OP_ATOMIC;
+            op |= SPE_OP_EXCL;
         }
         if (payload & SPE_OP_PACKET_AR) {
-            op |= SPE_OP_ATOMIC;
+            op |= SPE_OP_AR;
         }
     }
     return op;
@@ -320,6 +320,7 @@ SpeRecord *SpeGetRecord(uint8_t *buf, uint8_t *end, struct SpeRecord *rec, int *
             *remainSize -= 1;
             rec->pid = -1;
             rec->tid = -1;
+            rec->source = -1;
             rec->opType = -1;
         }
     }
