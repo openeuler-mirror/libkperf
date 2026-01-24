@@ -30,6 +30,7 @@
 #include "pmu_metric.h"
 #include "trace_point_parser.h"
 #include "pmu.h"
+#include "simple_pebs_backend.h"
 
 using namespace pcerr;
 using namespace KUNPENG_PMU;
@@ -724,6 +725,17 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
 
         if (pd == -1) {
             FreeEvtList(previousEventList.first, previousEventList.second);
+        #ifdef IS_X86
+            if (attr->branchSampleFilter != 0) {
+                int driverPd = PebsDriverManager::Instance().Open(attr);
+                if (driverPd >= 0) {
+                    return driverPd;
+                } else {
+                    New(LIBPERF_ERR_LBR_DRIVER_INVALID, "The pebs driver is not loaded or unavailable to collect lbr.");
+                    return -1;
+                }
+            }
+        #endif
             return -1;
         }
         // store eventList provided by user and the mapping relationship between the user eventList and the split
@@ -744,12 +756,22 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
 int PmuEnable(int pd)
 {
     SetWarn(SUCCESS);
+#ifdef IS_X86
+    if (PebsDriverManager::IsDriverPd(pd)) {
+        return PebsDriverManager::Instance().Enable(pd);
+    }
+#endif
     return PmuCollectStart(pd);
 }
 
 int PmuDisable(int pd)
 {
     SetWarn(SUCCESS);
+#ifdef IS_X86
+    if (PebsDriverManager::IsDriverPd(pd)) {
+        return PebsDriverManager::Instance().Disable(pd);
+    }
+#endif
     return PmuCollectPause(pd);
 }
 
@@ -994,6 +1016,11 @@ void PmuStop(int pd)
 int PmuRead(int pd, struct PmuData** pmuData)
 {
     SetWarn(SUCCESS);
+#ifdef IS_X86
+    if (PebsDriverManager::IsDriverPd(pd)) {
+        return PebsDriverManager::Instance().Read(pd, pmuData);
+    }
+#endif
     try {
         if (!PdValid(pd)) {
             New(LIBPERF_ERR_INVALID_PD);
@@ -1026,6 +1053,11 @@ int ResolvePmuDataSymbol(struct PmuData* pmuData)
 void PmuClose(int pd)
 {
     SetWarn(SUCCESS);
+#ifdef IS_X86
+    if (PebsDriverManager::IsDriverPd(pd)) {
+        return PebsDriverManager::Instance().Close(pd);
+    }
+#endif
     if (!PdValid(pd)) {
         New(LIBPERF_ERR_INVALID_PD);
         return;

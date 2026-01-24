@@ -1697,7 +1697,7 @@ for (int i = 0; i < len; i++)
             if (rd[j].misPred == 1) {
                 predStr = "M";
             }
-            std::cout << std::hex << rd[j].fromAddr << "->" << rd[j].toAddr << " " << rd[j].cycles << " " << predStr << std::endl;
+            std::cout << std::hex << rd[j].fromAddr << "->" << rd[j].toAddr << " " << std::dec << rd[j].cycles << " " << predStr << std::endl;
         }
     }
 }
