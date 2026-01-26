@@ -653,10 +653,20 @@ int SymbolResolve::UpdateModule(int pid, const char* moduleName, unsigned long s
     }
 
     if (this->moduleMap.find(pid) == this->moduleMap.end()) {
-        std::vector<std::shared_ptr<ModuleMap>> modVec;
-        modVec.emplace_back(data);
-        this->moduleMap[pid] = modVec;
-    } else {
+        int ret = RecordModule(pid, recordModuleType);
+        if (ret != 0) {
+            return ret;
+        }
+    }
+    auto modV = moduleMap[pid];
+    bool findModule = false;
+    for (auto item : modV) {
+        if (item->moduleName.compare(moduleName) == 0) {
+            findModule = true;
+            break;
+        }
+    }
+    if (!findModule) {
         this->moduleMap[pid].emplace_back(data);
     }
     pcerr::New(0, "success");
@@ -671,6 +681,10 @@ struct StackAsm* SymbolResolve::MapAsmCode(const char* moduleName, unsigned long
 
 struct Symbol* SymbolResolve::MapCodeAddr(const char* moduleName, unsigned long startAddr)
 {
+    if (!SymbolUtils::IsFile(moduleName)) {
+        pcerr::New(LIBSYM_ERR_FILE_NOT_RGE, "libsym detects that the input parameter fileName is not a file");
+        return nullptr;
+    }
     struct Symbol* symbol = InitializeSymbol(startAddr);
     symbol->module = GetCharFromStr(moduleName);
     
