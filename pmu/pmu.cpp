@@ -494,13 +494,11 @@ int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
 
     err = CheckCgroupNameList(attr->numCgroup, attr->cgroupNameList);
     if (err != SUCCESS) {
-        New(err);
         return err;
     }
 
     err = CheckBpfMode(collectType, attr);
     if (err != SUCCESS) {
-        New(err);
         return err;
     }
 
