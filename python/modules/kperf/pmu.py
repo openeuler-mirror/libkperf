@@ -435,7 +435,7 @@ class UTraceAttr(_libkperf.UTraceAttr):
         unsigned numPid;
         int *cpuList;
         unsigned numCpu;
-        unsigned fetchG : 1;
+        unsigned fetchG;
     };
     """
     def __init__(self, symSrc=None, pidList=None, cpuList=None, fetchG=0):

@@ -2420,7 +2420,7 @@ class CtypesUTraceAttr(ctypes.Structure):
         unsigned numPid;
         int *cpuList;
         unsigned numCpu;
-        unsigned fetchG : 1;
+        unsigned fetchG;
     };
     """
     _fields_ = [
