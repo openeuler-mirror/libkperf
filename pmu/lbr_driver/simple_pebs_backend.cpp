@@ -56,6 +56,19 @@ bool PebsDriverManager::ProbeDevice(int* out_size)
     return true;
 }
 
+static void FreePmuDataExts(PmuData* data, int n)
+{
+    if (!data || n <= 0) return;
+    for (int i = 0; i < n; i++) {
+        if (data[i].ext) {
+            auto* ext = static_cast<PmuDataExt*>(data[i].ext);
+            delete[] ext->branchRecords;
+            delete ext;
+            data[i].ext = nullptr;
+        }
+    }
+}
+
 bool PebsDriverManager::OpenCpu(PebsDriverSession& s, int cpu)
 {
     int fd = open("/dev/simple-pebs", O_RDONLY);
@@ -143,19 +156,44 @@ int PebsDriverManager::Enable(int pd)
         return -1;
     }
     auto& s = it->second;
-    int fail = 0;
+
     ResetAll(s);
+    
+    int failed = 0;
+    int opened = 0;
+    std::vector<int> failedCpus;
+    failedCpus.reserve(s.cpuNum);
+
     for (int cpu = 0; cpu < s.cpuNum; cpu++) {
         if (s.fds[cpu] >= 0) {
+            opened++;
             if (ioctl(s.fds[cpu], SIMPLE_PEBS_START, 0) < 0) {
                 // pass
-                fail++;
+                failed++;
+                failedCpus.push_back(cpu);
             }
         }
     }
-    if (fail == s.cpuNum) {
+
+    if (opened == 0) {
+        pcerr::New(LIBPERF_ERR_LBR_DRIVER_INVALID, "Enable LBR driver failed: no CPUs opened.");
         return -1;
     }
+
+    if (failed == opened) {
+        pcerr::New(LIBPERF_ERR_LBR_DRIVER_INVALID, "Enable LBR driver failed: all opened CPUs failed to start.");
+        return -1;
+    }
+
+    if (failed > 0) {
+        std::string msg = "Enable LBR driver partial failure: failed=" + std::to_string(failed) +
+                          " opened=" + std::to_string(opened) +". Failed CPUs:";
+        for (int c : failedCpus) {
+            msg += " " + std::to_string(c);
+        }
+        pcerr::SetWarn(LIBPERF_WARN_LBR_DRIVER_START_FAILED, msg);
+    }
+
     s.running = true;
     return 0;
 }
@@ -166,6 +204,10 @@ int PebsDriverManager::Disable(int pd)
     auto it = sess.find(pd);
     if (it == sess.end()) {
         return -1;
+    }
+    auto& s = it->second;
+    if (!s.running) {
+        return 0;
     }
     StopAll(it->second);
     return 0;
@@ -179,9 +221,15 @@ struct CpuChunk {
 static int TransferDriverToPmuData(PebsDriverSession& s, const CpuChunk& c, PmuData* data,
                                    int totalSamples, int& idx)
 {
-    if (!data || totalSamples <= 0) return -1;
-    if (c.cpu < 0 || c.cpu >= s.cpuNum) return -1;
-    if (!s.maps[c.cpu] || s.maps[c.cpu] == MAP_FAILED) return -1;
+    if (!data || totalSamples <= 0) {
+        return -1;
+    }
+    if (c.cpu < 0 || c.cpu >= s.cpuNum) {
+        return -1;
+    }
+    if (!s.maps[c.cpu] || s.maps[c.cpu] == MAP_FAILED) {
+        return -1;
+    }
 
     uint8_t* p   = reinterpret_cast<uint8_t*>(s.maps[c.cpu]);
     uint8_t* end = p + c.len;
@@ -217,7 +265,7 @@ static int TransferDriverToPmuData(PebsDriverSession& s, const CpuChunk& c, PmuD
                 uint64_t from = r->lbr_from[i];
                 uint64_t to   = r->lbr_to[i];
                 uint64_t info = r->lbr_info[i];
-                if (!IsValidAddr(from) || !IsValidAddr(to)) {
+                if (!IsValidAddr(from) && !IsValidAddr(to)) {
                     continue;
                 }
                 br[k].fromAddr  = from;
@@ -241,6 +289,8 @@ static int TransferDriverToPmuData(PebsDriverSession& s, const CpuChunk& c, PmuD
         } catch (const std::bad_alloc&) {
             delete[] br;
             delete ext;
+            pcerr::New(LIBPERF_ERR_LBR_DRIVER_INVALID, "Read LBR driver failed: bad_alloc while parsing pebs data.");
+            return -1;
         }
         p += r->size;
     }
@@ -254,17 +304,16 @@ static int TransferDriverToPmuData(PebsDriverSession& s, const CpuChunk& c, PmuD
 
 int PebsDriverManager::Read(int pd, PmuData** out)
 {
-    *out = nullptr;
-    PebsDriverSession* sp = nullptr;
-    {
-        std::lock_guard<std::mutex> lk(driverMu);
-        auto it = sess.find(pd);
-        if (it == sess.end()) {
-            return -1;
-        }
-        sp = &it->second;
+    if (!out) {
+        return -1;
     }
-    PebsDriverSession& s = *sp;
+    *out = nullptr;
+    std::lock_guard<std::mutex> lk(driverMu);
+    auto it = sess.find(pd);
+    if (it == sess.end()) {
+        return -1;
+    }
+    PebsDriverSession& s = it->second;
 
     std::vector<CpuChunk> chunks;
     chunks.reserve(s.cpuNum);
@@ -274,7 +323,7 @@ int PebsDriverManager::Read(int pd, PmuData** out)
         for (auto& p : s.pfds) {
             p.revents = 0;
         }
-        (void)poll(s.pfds.data(), s.pfds.size(), 0);
+        (void)poll(s.pfds.data(), (nfds_t)s.pfds.size(), 0);
     }
 
     for (int cpu = 0; cpu < s.cpuNum; cpu++) {
@@ -316,12 +365,18 @@ int PebsDriverManager::Read(int pd, PmuData** out)
 
     PmuData* data = (PmuData*)calloc((size_t)totalSamples, sizeof(PmuData));
     if (!data) {
+        pcerr::New(LIBPERF_ERR_LBR_DRIVER_INVALID, "Read LBR driver failed: alloc Pmudata failed.");
         return -1;
     }
 
     int idx = 0;
     for (auto& c : chunks) {
-        TransferDriverToPmuData(s, c, data, totalSamples, idx);
+        int rc = TransferDriverToPmuData(s, c, data, totalSamples, idx);
+        if (rc == -1) {
+            FreePmuDataExts(data, idx);
+            free(data);
+            return -1;
+        }
         if (idx >= totalSamples) {
             break;
         }

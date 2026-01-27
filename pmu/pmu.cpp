@@ -725,6 +725,7 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
 
         if (pd == -1) {
             FreeEvtList(previousEventList.first, previousEventList.second);
+        // use pebs driver to collect data when LBR sampling is unavailable
         #ifdef IS_X86
             if (attr->branchSampleFilter != 0) {
                 int driverPd = PebsDriverManager::Instance().Open(attr);
@@ -756,6 +757,7 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
 int PmuEnable(int pd)
 {
     SetWarn(SUCCESS);
+// collect LBR data via the driver. The process is distinguished by driverPd
 #ifdef IS_X86
     if (PebsDriverManager::IsDriverPd(pd)) {
         return PebsDriverManager::Instance().Enable(pd);
@@ -1053,6 +1055,7 @@ int ResolvePmuDataSymbol(struct PmuData* pmuData)
 void PmuClose(int pd)
 {
     SetWarn(SUCCESS);
+// clean up resources related to pebs driver of lbr collection
 #ifdef IS_X86
     if (PebsDriverManager::IsDriverPd(pd)) {
         return PebsDriverManager::Instance().Close(pd);

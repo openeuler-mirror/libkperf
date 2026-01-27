@@ -67,6 +67,10 @@
 #include <linux/wait.h>
 #include <linux/kallsyms.h>
 #include <linux/version.h>
+#include <linux/pid_namespace.h>
+#include <linux/pid.h>
+#include <linux/rcupdate.h>
+#include <linux/rculist.h>
 #include <asm/msr.h>
 #include <asm/desc.h>
 #include <cpuid.h>
@@ -141,6 +145,31 @@ static DEFINE_PER_CPU(wait_queue_head_t, simple_pebs_wait);
 
 static DEFINE_PER_CPU(u64, old_lvtpc);
 static DEFINE_PER_CPU(int, cpu_initialized);
+
+struct simple_pebs_file_ctx {
+    int cpu;                    /* -1: not bound */
+    struct pid_namespace *pidns;/* opener pidns (refcounted) */
+};
+
+/*
+ * Per-CPU binding is RCU-protected because PMI (interrupt context)
+ * may read it concurrently with ioctl/close updates.
+ */
+struct pebs_pidns_binding {
+    struct pid_namespace *ns;   /* refcounted */
+    struct file *owner;         /* which file bound this cpu */
+    struct rcu_head rcu;
+};
+
+static DEFINE_PER_CPU(struct pebs_pidns_binding __rcu *, pebs_pidns_percpu);
+
+static void pebs_pidns_binding_rcu_free(struct rcu_head *rh)
+{
+    struct pebs_pidns_binding *b = container_of(rh, struct pebs_pidns_binding, rcu);
+    if (b->ns)
+        put_pid_ns(b->ns);
+    kfree(b);
+}
 
 static bool check_cpu(void)
 {
@@ -247,7 +276,12 @@ static bool check_cpu(void)
 static int simple_pebs_mmap(struct file *file, struct vm_area_struct *vma)
 {
     unsigned long len = vma->vm_end - vma->vm_start;
-    int cpu = (int)(long)file->private_data;
+    struct simple_pebs_file_ctx *ctx = file->private_data;
+    int cpu;
+
+    if (!ctx || ctx->cpu < 0)
+        return -EINVAL;
+    cpu = ctx->cpu;
 
     if (len % PAGE_SIZE || len != OUT_BUFFER_SIZE || vma->vm_pgoff)
         return -EINVAL;
@@ -266,7 +300,13 @@ static int simple_pebs_mmap(struct file *file, struct vm_area_struct *vma)
 
 static unsigned int simple_pebs_poll(struct file *file, poll_table *wait)
 {
-    unsigned long cpu = (unsigned long)file->private_data;
+    struct simple_pebs_file_ctx *ctx = file->private_data;
+    unsigned long cpu;
+
+    if (!ctx || ctx->cpu < 0)
+        return 0;
+    cpu = (unsigned long)ctx->cpu;
+
     poll_wait(file, &per_cpu(simple_pebs_wait, cpu), wait);
     if (per_cpu(out_buffer, cpu) > per_cpu(out_buffer_base, cpu))
         return POLLIN | POLLRDNORM;
@@ -309,38 +349,142 @@ static void reset_buffer_cpu(void *arg)
 
 static DEFINE_MUTEX(reset_mutex);
 
+static void unbind_cpu_if_owner(struct file *file, int cpu)
+{
+    struct pebs_pidns_binding *old;
+
+    if (cpu < 0 || cpu >= NR_CPUS)
+        return;
+
+    old = rcu_dereference_protected(per_cpu(pebs_pidns_percpu, cpu), 1);
+    if (old && old->owner == file) {
+        rcu_assign_pointer(per_cpu(pebs_pidns_percpu, cpu), NULL);
+        call_rcu(&old->rcu, pebs_pidns_binding_rcu_free);
+    }
+}
+
+static int bind_cpu_pidns(struct file *file, int cpu, struct pid_namespace *pidns)
+{
+    struct pebs_pidns_binding *old, *b;
+
+    if (cpu < 0 || cpu >= NR_CPUS || !pidns)
+        return -EINVAL;
+
+    b = kzalloc(sizeof(*b), GFP_KERNEL);
+    if (!b)
+        return -ENOMEM;
+
+    b->owner = file;
+    b->ns = get_pid_ns(pidns);
+
+    old = rcu_dereference_protected(per_cpu(pebs_pidns_percpu, cpu), 1);
+    rcu_assign_pointer(per_cpu(pebs_pidns_percpu, cpu), b);
+    if (old)
+        call_rcu(&old->rcu, pebs_pidns_binding_rcu_free);
+
+    return 0;
+}
+
+static int simple_pebs_open(struct inode *inode, struct file *file)
+{
+    struct simple_pebs_file_ctx *ctx;
+
+    ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
+    if (!ctx)
+        return -ENOMEM;
+
+    ctx->cpu = -1;
+    ctx->pidns = get_pid_ns(task_active_pid_ns(current));
+    file->private_data = ctx;
+    return 0;
+}
+
+static int simple_pebs_release(struct inode *inode, struct file *file)
+{
+    struct simple_pebs_file_ctx *ctx = file->private_data;
+
+    if (ctx) {
+        /*
+         * Best-effort: stop sampling on bound cpu before unbind
+         * to reduce chance of PMI racing with teardown.
+         */
+        if (ctx->cpu >= 0 && ctx->cpu < NR_CPUS) {
+            mutex_lock(&reset_mutex);
+            smp_call_function_single(ctx->cpu, start_stop_cpu, (void*)0, 1);
+            mutex_unlock(&reset_mutex);
+        }
+
+        unbind_cpu_if_owner(file, ctx->cpu);
+
+        if (ctx->pidns)
+            put_pid_ns(ctx->pidns);
+
+        kfree(ctx);
+        file->private_data = NULL;
+    }
+    return 0;
+}
+
 static long simple_pebs_ioctl(struct file *file, unsigned int cmd,
                         unsigned long arg)
 {
-    unsigned long cpu = (unsigned long)file->private_data;
+    struct simple_pebs_file_ctx *ctx = file->private_data;
+    unsigned long cpu;
+
+    if (!ctx)
+        return -EINVAL;
+    cpu = (ctx->cpu < 0) ? 0 : (unsigned long)ctx->cpu;
 
     switch (cmd) {
-    case SIMPLE_PEBS_SET_CPU:
-        cpu = arg;
-        if (cpu >= NR_CPUS || !cpu_online(cpu))
-            return -EINVAL;
-        file->private_data = (void *)cpu;
-        return 0;
+    case SIMPLE_PEBS_SET_CPU: {
+        int new_cpu = (int)arg;
+        int ret;
+
+        if (new_cpu < 0 || new_cpu >= NR_CPUS || !cpu_online(new_cpu))
+             return -EINVAL;
+        /* Unbind old cpu if this fd owned it */
+        unbind_cpu_if_owner(file, ctx->cpu);
+        ctx->cpu = new_cpu;
+        /* Bind opener pidns to this cpu */
+        ret = bind_cpu_pidns(file, new_cpu, ctx->pidns);
+        if (ret)
+            return ret;
+
+         return 0;
+    }
     case SIMPLE_PEBS_GET_SIZE:
         return put_user(OUT_BUFFER_SIZE, (int *)arg);
     case SIMPLE_PEBS_GET_OFFSET: {
-        unsigned len = per_cpu(out_buffer, cpu) - per_cpu(out_buffer_base, cpu);
+        unsigned len;
+        if (ctx->cpu < 0)
+            return -EINVAL;
+        cpu = (unsigned long)ctx->cpu;
+        len = per_cpu(out_buffer, cpu) - per_cpu(out_buffer_base, cpu);
         return put_user(len, (unsigned *)arg);
     }
     case SIMPLE_PEBS_START:
         /* reset out_buffer and pebs_index to get new data */
+        if (ctx->cpu < 0)
+            return -EINVAL;
+        cpu = (unsigned long)ctx->cpu;
         mutex_lock(&reset_mutex);
         smp_call_function_single(cpu, reset_buffer_cpu, NULL, 1);
         smp_call_function_single(cpu, start_stop_cpu, (void*)1, 1);
         mutex_unlock(&reset_mutex);
         return 0;
     case SIMPLE_PEBS_STOP:
+        if (ctx->cpu < 0)
+            return -EINVAL;
+        cpu = (unsigned long)ctx->cpu;
         mutex_lock(&reset_mutex);
         smp_call_function_single(cpu, start_stop_cpu,
                 (void *)(long)(cmd == SIMPLE_PEBS_START), 1);
         mutex_unlock(&reset_mutex);
         return 0;
     case SIMPLE_PEBS_RESET:
+        if (ctx->cpu < 0)
+            return -EINVAL;
+        cpu = (unsigned long)ctx->cpu;
         mutex_lock(&reset_mutex);
         smp_call_function_single(cpu, reset_buffer_cpu, NULL, 1);
         mutex_unlock(&reset_mutex);
@@ -352,6 +496,8 @@ static long simple_pebs_ioctl(struct file *file, unsigned int cmd,
 
 static const struct file_operations simple_pebs_fops = {
     .owner = THIS_MODULE,
+    .open = simple_pebs_open,
+    .release = simple_pebs_release,
     .mmap = simple_pebs_mmap,
     .poll = simple_pebs_poll,
     .unlocked_ioctl = simple_pebs_ioctl,
@@ -523,9 +669,17 @@ void simple_pebs_pmi(void)
         r->cpu  = (u8)smp_processor_id();
         r->ip   = b->ip;
         r->tsc  = b->tsc;
-        r->tid = (__u32)task_pid_nr(current);
-        r->tgid = (__u32)task_tgid_nr(current);
+        {
+            struct pebs_pidns_binding *bind;
+            struct pid_namespace *ns;
 
+            rcu_read_lock();
+            bind = rcu_dereference(this_cpu_read(pebs_pidns_percpu));
+            ns = (bind && bind->ns) ? bind->ns : task_active_pid_ns(current);
+            r->tid  = (__u32)task_pid_nr_ns(current, ns);
+            r->tgid = (__u32)task_tgid_nr_ns(current, ns);
+            rcu_read_unlock();
+        }
         if ((long)b->ip < 0) {
             p += sz;
             continue;
@@ -795,12 +949,24 @@ module_init(simple_pebs_init);
 
 static void simple_pebs_exit(void)
 {
+    int cpu;
     misc_deregister(&simple_pebs_miscdev);
     get_online_cpus();
     on_each_cpu(simple_pebs_cpu_reset, NULL, 1);
     unregister_cpu_notifier(&cpu_notifier);
     put_online_cpus();
     simple_pebs_free_vector();
+    /* Clear all bindings and wait for RCU callbacks before module unload */
+    for_each_possible_cpu(cpu) {
+        struct pebs_pidns_binding *old;
+        old = rcu_dereference_protected(per_cpu(pebs_pidns_percpu, cpu), 1);
+        if (old) {
+            rcu_assign_pointer(per_cpu(pebs_pidns_percpu, cpu), NULL);
+            call_rcu(&old->rcu, pebs_pidns_binding_rcu_free);
+        }
+    }
+    rcu_barrier();
+
     /* Could PMI still be pending? For now just wait a bit. (XXX) */
     schedule_timeout(HZ);
     pr_info("Exited\n");
