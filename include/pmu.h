@@ -793,7 +793,7 @@ struct UTraceAttr {
     unsigned numPid;
     int *cpuList;
     unsigned numCpu;
-    unsigned fetchG : 1; /* whether to capture the Go runtime `g` pointer at probe point */
+    unsigned fetchG; /* whether to capture the Go runtime `g` pointer at probe point */
 };
 
 struct UTraceData {

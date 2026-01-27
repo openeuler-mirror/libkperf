@@ -1580,9 +1580,11 @@ func UTraceOpen(attr UTraceAttr) (int, error) {
 		cAttr.numCpu  = C.uint(cpuLen)
 	}
 
-	cAttr.fetchG = C.uint(attr.FetchG)
+	if attr.FetchG {
+		cAttr.fetchG = C.uint(1)
+	}
 
-	pd := C.PmuTraceOpen(cAttr)
+	pd := C.UTraceOpen(cAttr)
 	if int(pd) == -1 {
 		return -1, errors.New(C.GoString(C.Perror()))
 	}
@@ -1609,10 +1611,10 @@ func UTraceRead(pd int) ([]UTraceData, *C.struct_UTraceData, error) {
 	var cTraceData *C.struct_UTraceData
 	length := int(C.UTraceRead(C.int(pd), &cTraceData))
 	if length < 0 {
-		return nil, errors.New(C.GoString(C.Perror()))
+		return nil, nil, errors.New(C.GoString(C.Perror()))
 	}
 	if length == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	result := make([]UTraceData, length)
