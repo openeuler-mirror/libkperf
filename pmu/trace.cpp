@@ -97,10 +97,11 @@ int UTraceOpen(struct UTraceAttr *attr)
     PmuList::GetInstance()->SetAnalysisStatus(pd, GOING_RESOLVE);
     err = PmuList::GetInstance()->Register(pd, pmuTaskAttrHead.get());
     if (err != SUCCESS) {
-        pcerr::New(err);
         PmuList::GetInstance()->Close(pd);
         ProbeRegistrar::GetInstance().UninstallProbes(pd);
         ProbeRegistrar::GetInstance().EraseProbeEvents(pd);
+        pcerr::New(err);
+        return -1;
     }
 
     TraceDataManager::GetInstance().SetFetchG(pd, attr->fetchG);
