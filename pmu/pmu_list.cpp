@@ -1207,4 +1207,17 @@ namespace KUNPENG_PMU {
         }
         return SUCCESS;
     }
+
+    PmuData* PmuList::RegisterDriverHandle(EventData&& newData)
+    {
+        std::lock_guard<std::mutex> lg(dataListMtx);
+
+        if (newData.data.empty()) {
+            return nullptr;
+        }
+
+        PmuData* handle = newData.data.data();
+        userDataList.emplace(handle, std::move(newData));
+        return handle;
+    }
 }
