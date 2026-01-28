@@ -87,6 +87,7 @@ public:
 
     std::vector<PerfRecordSample> GetMetaData(PmuData* pmuData) const;
     void AddNewProcess(const unsigned &pd, int pid);
+    PmuData* RegisterDriverHandle(EventData&& newData);
 
 private:
     using ProcPtr = std::shared_ptr<ProcTopology>;

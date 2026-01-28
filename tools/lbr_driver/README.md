@@ -75,6 +75,8 @@ The LBR collection demo is documented in: libkperf/docs/Details_Usage/采集BRBE
 
 Current limitations:
 - PID and CPU filtering is not supported.
+- Only collect pmu 'cycles' event.
+- The tsc time in output data is `rdtsc` time, which is different from the ts in PMU collection.
 
 To change the sampling period, modify the `PERIOD` value in the driver source code and rebuild the module.
 

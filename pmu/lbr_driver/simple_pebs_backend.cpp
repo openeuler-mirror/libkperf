@@ -24,6 +24,8 @@
 
 #include "pcerrc.h"
 #include "pcerr.h"
+#include "pmu_list.h"
+#include "pmu_event.h"
 #include "cpu_map.h"
 #include "simple_pebs_backend.h"
 
@@ -54,19 +56,6 @@ bool PebsDriverManager::ProbeDevice(int* out_size)
     close(fd);
     *out_size = size;
     return true;
-}
-
-static void FreePmuDataExts(PmuData* data, int n)
-{
-    if (!data || n <= 0) return;
-    for (int i = 0; i < n; i++) {
-        if (data[i].ext) {
-            auto* ext = static_cast<PmuDataExt*>(data[i].ext);
-            delete[] ext->branchRecords;
-            delete ext;
-            data[i].ext = nullptr;
-        }
-    }
 }
 
 bool PebsDriverManager::OpenCpu(PebsDriverSession& s, int cpu)
@@ -218,15 +207,12 @@ struct CpuChunk {
     int len; 
 };
 
-static int TransferDriverToPmuData(PebsDriverSession& s, const CpuChunk& c, PmuData* data,
-                                   int totalSamples, int& idx)
+static int TransferDriverToPmuData(PebsDriverSession& s, const CpuChunk& c, std::vector<PmuData>& outData,
+                                   std::vector<PmuDataExt*>& extPool, int totalSamples, int& idx)
 {
-    if (!data || totalSamples <= 0) {
-        return -1;
-    }
     if (c.cpu < 0 || c.cpu >= s.cpuNum) {
         return -1;
-    }
+        }
     if (!s.maps[c.cpu] || s.maps[c.cpu] == MAP_FAILED) {
         return -1;
     }
@@ -240,11 +226,12 @@ static int TransferDriverToPmuData(PebsDriverSession& s, const CpuChunk& c, PmuD
             break;
         }
 
-        PmuData& d = data[idx++];
+        PmuData& d = outData[idx++];
         d.ts  = static_cast<int64_t>(r->tsc);
         d.pid = static_cast<pid_t>(r->tgid);
         d.tid = static_cast<int>(r->tid);
         d.cpu = static_cast<int>(c.cpu);
+        d.evt = "cycles";
         d.ext = nullptr;
 
         int depth = static_cast<int>(r->lbr_depth);
@@ -254,43 +241,38 @@ static int TransferDriverToPmuData(PebsDriverSession& s, const CpuChunk& c, PmuD
             continue;
         }
 
-        PmuDataExt* ext = nullptr;
-        BranchSampleRecord* br = nullptr;
-        try {
-            ext = new PmuDataExt();
-            br  = new BranchSampleRecord[depth]();
-
-            int k = 0;
-            for (int i = 0; i < depth; i++) {
-                uint64_t from = r->lbr_from[i];
-                uint64_t to   = r->lbr_to[i];
-                uint64_t info = r->lbr_info[i];
-                if (!IsValidAddr(from) && !IsValidAddr(to)) {
-                    continue;
-                }
-                br[k].fromAddr  = from;
-                br[k].toAddr    = to;
-                br[k].cycles    = static_cast<unsigned long>(static_cast<uint16_t>(info & 0xFFFF));
-                br[k].misPred   = static_cast<uint8_t>((info >> 63) & 1);
-                br[k].predicted = static_cast<uint8_t>(br[k].misPred ? 0 : 1);
-                k++;
+        int validIdx[SIMPLE_PEBS_MAX_LBR];
+        int nr = 0;
+        for (int i = 0; i < depth; i++) {
+            uint64_t from = r->lbr_from[i];
+            uint64_t to = r->lbr_to[i];
+            if (!IsValidAddr(from) && !IsValidAddr(to)) {
+                continue;
             }
+            validIdx[nr++] = i;
+        }
 
-            if (k == 0) {
-                delete[] br;
-                delete ext;
-            } else {
-                ext->nr = static_cast<unsigned long>(k);
+        if (nr > 0) {
+            try {
+                auto* ext = new PmuDataExt();
+                auto* br  = new BranchSampleRecord[nr]();
+                for (int k = 0; k < nr; k++) {
+                    int i = validIdx[k];
+                    uint64_t info = r->lbr_info[i];
+                    br[k].fromAddr = r->lbr_from[i];
+                    br[k].toAddr = r->lbr_to[i];
+                    br[k].cycles = (unsigned long)(uint16_t)(info & 0xFFFF);
+                    br[k].misPred = (uint8_t)((info >> 63) & 1);
+                    br[k].predicted = (uint8_t)(br[k].misPred ? 0 : 1);
+                }
+                ext->nr = (unsigned long)nr;
                 ext->branchRecords = br;
                 d.ext = ext;
-                ext = nullptr;
-                br = nullptr;
+                extPool.push_back(ext);
+            } catch (const std::bad_alloc&) {
+                pcerr::New(LIBPERF_ERR_LBR_DRIVER_INVALID, "Read LBR driver failed: bad_alloc occurs.");
+                return -1;
             }
-        } catch (const std::bad_alloc&) {
-            delete[] br;
-            delete ext;
-            pcerr::New(LIBPERF_ERR_LBR_DRIVER_INVALID, "Read LBR driver failed: bad_alloc while parsing pebs data.");
-            return -1;
         }
         p += r->size;
     }
@@ -302,18 +284,35 @@ static int TransferDriverToPmuData(PebsDriverSession& s, const CpuChunk& c, PmuD
     return 0;
 }
 
+static inline void FreeExtPool(std::vector<PmuDataExt*>& pool)
+{
+    for (auto* ext : pool) {
+        if (!ext) {
+            continue;
+        }
+        delete[] ext->branchRecords;
+        delete ext;
+    }
+    pool.clear();
+}
+
 int PebsDriverManager::Read(int pd, PmuData** out)
 {
     if (!out) {
         return -1;
     }
     *out = nullptr;
-    std::lock_guard<std::mutex> lk(driverMu);
-    auto it = sess.find(pd);
-    if (it == sess.end()) {
-        return -1;
+
+    PebsDriverSession* sp = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(driverMu);
+        auto it = sess.find(pd);
+        if (it == sess.end()) {
+            return -1;
+        }
+        sp = &it->second;
     }
-    PebsDriverSession& s = it->second;
+    PebsDriverSession& s = *sp;
 
     std::vector<CpuChunk> chunks;
     chunks.reserve(s.cpuNum);
@@ -323,19 +322,20 @@ int PebsDriverManager::Read(int pd, PmuData** out)
         for (auto& p : s.pfds) {
             p.revents = 0;
         }
-        (void)poll(s.pfds.data(), (nfds_t)s.pfds.size(), 0);
+        (void)poll(s.pfds.data(), s.pfds.size(), 0);
     }
 
     for (int cpu = 0; cpu < s.cpuNum; cpu++) {
         int fd = s.fds[cpu];
-        if (fd < 0) continue;
+        if (fd < 0) {
+            continue;
+        }
         if (s.running && !(s.pfds[cpu].revents & POLLIN)) {
             continue;
         }
-
         int len = 0;
         if (ioctl(fd, SIMPLE_PEBS_GET_OFFSET, &len) < 0) {
-            ioctl(fd, SIMPLE_PEBS_RESET, 0);
+            (void)ioctl(fd, SIMPLE_PEBS_RESET, 0);
             continue;
         }
         if (len > 0) {
@@ -349,39 +349,61 @@ int PebsDriverManager::Read(int pd, PmuData** out)
 
     int totalSamples = 0;
     for (auto& c : chunks) {
-        uint8_t* p = (uint8_t*)s.maps[c.cpu];
+        if (!s.maps[c.cpu] || s.maps[c.cpu] == MAP_FAILED) {
+            continue;
+        }
+        uint8_t* p   = (uint8_t*)s.maps[c.cpu];
         uint8_t* end = p + c.len;
         while (p + sizeof(simple_pebs_out_rec) <= end) {
             auto* r = (simple_pebs_out_rec*)p;
-            if (r->size < sizeof(*r) || p + r->size > end) break;
+            if (r->size < sizeof(*r) || p + r->size > end) {
+                break;
+            }
             totalSamples++;
             p += r->size;
         }
     }
     if (totalSamples <= 0) {
-        for (auto& c : chunks) ioctl(s.fds[c.cpu], SIMPLE_PEBS_RESET, 0);
+        for (auto& c : chunks) {
+            if (s.fds[c.cpu] >= 0) (void)ioctl(s.fds[c.cpu], SIMPLE_PEBS_RESET, 0);
+        }
         return 0;
     }
 
-    PmuData* data = (PmuData*)calloc((size_t)totalSamples, sizeof(PmuData));
-    if (!data) {
-        pcerr::New(LIBPERF_ERR_LBR_DRIVER_INVALID, "Read LBR driver failed: alloc Pmudata failed.");
-        return -1;
-    }
-
+    KUNPENG_PMU::EventData ed;
+    ed.collectType = SAMPLING;
+    ed.data.resize((size_t)totalSamples);
+    ed.extPool.clear();
+    ed.sampleIps.clear();
+    ed.sampleIps.reserve((size_t)totalSamples);
     int idx = 0;
     for (auto& c : chunks) {
-        int rc = TransferDriverToPmuData(s, c, data, totalSamples, idx);
-        if (rc == -1) {
-            FreePmuDataExts(data, idx);
-            free(data);
+        int rc = TransferDriverToPmuData(
+            s, c,
+            ed.data,
+            ed.extPool,
+            totalSamples,
+            idx
+        );
+        if (rc != 0) {
+            FreeExtPool(ed.extPool);
             return -1;
         }
         if (idx >= totalSamples) {
             break;
         }
     }
-    *out = data;
+
+    if (idx <= 0) {
+        FreeExtPool(ed.extPool);
+        return 0;
+    }
+    ed.data.resize((size_t)idx);
+    PmuData* handle = KUNPENG_PMU::PmuList::GetInstance()->RegisterDriverHandle(std::move(ed));
+    if (!handle) {
+        return -1;
+    }
+    *out = handle;
     return idx;
 }
 
