@@ -74,11 +74,14 @@ void KUNPENG_PMU::EvtListDefault::AdaptErrInfo(int err, PerfEvtPtr perfEvt)
                 pcerr::SetCustomErr(err, std::string{strerror(errno)});
             }
             break;
+        case LIBPERF_ERR_DEVICE_INVAL:
+            pcerr::SetCustomErr(err, "Invalid event for pmu device: " + perfEvt->GetEvtName());
+            break;
         case LIBPERF_ERR_COUNTER_INDEX_IS_ZERO:
             pcerr::SetCustomErr(err, "There are too many open events. No registers are available.");
             break;
         case LIBPERF_ERR_OPEN_INVALID_FILE:
-            pcerr::SetCustomErr(err, "The kernel cannot find the corresponding file or directory when loading the event: " +perfEvt->GetEvtName());
+            pcerr::SetCustomErr(err, "The kernel cannot find the corresponding file or directory when loading the event: " + perfEvt->GetEvtName());
             break;
         case UNKNOWN_ERROR:
             pcerr::SetCustomErr(err, std::string{strerror(errno)});
@@ -187,11 +190,15 @@ void KUNPENG_PMU::EvtListDefault::FillFields(
         }
         data[i].groupId = this->groupId;
         if (data[i].comm == nullptr) {
-            // If process has a fork call, it will generate a new pid and add a new comm.
-            if (data[i].pid > 0 && procMap.find(data[i].pid) != procMap.end()) {
-                data[i].comm = procMap[data[i].pid]->comm;   
+            if (procMap.find(data[i].tid) != procMap.end()) {
+                data[i].comm = procMap[data[i].tid]->comm;
             } else {
-                data[i].comm = procTopo->comm;
+                // If process has a fork call, it will generate a new pid and add a new comm.
+                if (data[i].pid > 0 && procMap.find(data[i].pid) != procMap.end()) {
+                    data[i].comm = procMap[data[i].pid]->comm;   
+                } else {
+                    data[i].comm = procTopo->comm;
+                }
             }
         }
         if (data[i].ts == 0) {
@@ -242,6 +249,13 @@ int KUNPENG_PMU::EvtListDefault::Read(EventData &eventData)
             auto proc = procMap[pmuData.pid];
             if (proc->execComm != nullptr && pmuData.ts >= proc->execTs && pmuData.comm != proc->execComm) {
                 pmuData.comm = proc->execComm;
+                if (pmuData.tid == pmuData.pid) {
+                    continue;    
+                }
+                // it may has its thread comm.
+                if (procMap.find(pmuData.tid) != procMap.end()) {
+                    pmuData.comm = procMap[pmuData.tid]->comm;
+                }
             }
         }
     }

@@ -122,7 +122,7 @@ struct ProcTopology *GetProcTopology(pid_t pid)
             return nullptr;
         }
         // Get command name.
-        procTopo->comm = GetComm(procTopo->pid);
+        procTopo->comm = GetComm(procTopo->tid);
         if (procTopo->comm == nullptr) {
             return nullptr;
         }
