@@ -671,10 +671,12 @@ void simple_pebs_pmi(void)
         r->tsc  = b->tsc;
         {
             struct pebs_pidns_binding *bind;
+            struct pebs_pidns_binding __rcu *pns;
             struct pid_namespace *ns;
-
             rcu_read_lock();
-            bind = rcu_dereference(this_cpu_read(pebs_pidns_percpu));
+            pns = this_cpu_read(pebs_pidns_percpu);
+            bind = rcu_dereference(pns);
+
             ns = (bind && bind->ns) ? bind->ns : task_active_pid_ns(current);
             r->tid  = (__u32)task_pid_nr_ns(current, ns);
             r->tgid = (__u32)task_tgid_nr_ns(current, ns);
