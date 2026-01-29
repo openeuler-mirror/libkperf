@@ -899,3 +899,48 @@ TEST_F(TestAPI, TestPerThreadNotSupportNotSampling)
     ASSERT_EQ(pd, -1);
     ASSERT_EQ(Perrorno(), LIBPERF_ERR_NOT_SUPPORT_PER_THREAD);
 }
+
+TEST_F(TestAPI, TestFormatSuc) 
+{
+    PmuAttr attr = {0};
+    char *evtList[1] = {"armv8_pmuv3_0/event=0x01,long=0x1/"};
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+    pd = PmuOpen(COUNTING, &attr);
+    ASSERT_NE(pd, -1);
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+    int len = PmuRead(pd, &data);
+    ASSERT_GT(len, 0);
+}
+
+TEST_F(TestAPI, TestFormatFailed) 
+{
+    PmuAttr attr = {0};
+    char *evtList[1] = {"armv8_pmuv3_0/event=0x01,long=0x2/"};
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+    pd = PmuOpen(COUNTING, &attr);
+    ASSERT_EQ(pd, -1);
+}
+
+TEST_F(TestAPI, TestFormatFailed2) 
+{
+    PmuAttr attr = {0};
+    char *evtList[1] = {"armv8_pmuv3_0/event1=0x01,long=0x1/"};
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+    pd = PmuOpen(COUNTING, &attr);
+    ASSERT_EQ(pd, -1);
+}
+
+TEST_F(TestAPI, TestFormatFailed3) 
+{
+    PmuAttr attr = {0};
+    char *evtList[1] = {"armv8_pmuv3_0/event=0x01/long=0x1/"};
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+    pd = PmuOpen(COUNTING, &attr);
+    ASSERT_EQ(pd, -1);
+}
