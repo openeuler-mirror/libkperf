@@ -333,14 +333,32 @@ static bool ValidConfigValueAndGenerateFields(const std::unordered_map<string, U
     return true;
 }
 
+static bool CheckSlashIsValid(const std::string& pmuName)
+{
+    if (pmuName.empty() || pmuName.back() != '/')  {
+        return false;
+    }
+    int slashCount = 0;
+    for (auto c : pmuName) {
+        if (c == '/') {
+            slashCount++;
+        }
+    }
+    if (slashCount != 2) {
+        return false;
+    }
+
+    return true;
+}
+
 bool CheckUncoreRawEvent(const char *pmuName)
 {
+    if (!CheckSlashIsValid(pmuName)) {
+        return false;
+    }
     string strName = pmuName;
     auto firstFindSlash = strName.find('/');
     auto lastFindSlash = strName.rfind('/');
-    if (firstFindSlash == string::npos || lastFindSlash == string::npos || firstFindSlash >= lastFindSlash) {
-        return false;
-    }
     string devName = strName.substr(0, firstFindSlash);
     // check if "config=, params= " at back part of pmuName
     auto supportConfigParams = ReadConfigFormatFiles(devName);
