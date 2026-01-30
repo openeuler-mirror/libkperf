@@ -51,7 +51,6 @@ bool FileExists(const std::string& path);
 std::vector<std::string> ListDirectoryEntries(const std::string& dirPath);
 std::string ReadFileContent(const std::string& filePath);
 std::vector<std::string> SplitStringByDelimiter(const std::string& str, char delimiter);
-int RaiseNumFd(uint64_t numFd);
 bool ExistPath(const std::string& filePath);
 std::string GetTraceEventDir();
 bool ConvertStrToInt(const std::string& intValStr, int32_t& val);

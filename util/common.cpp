@@ -90,33 +90,6 @@ std::string ReadFileContent(const std::string& filePath)
     return content;
 }
 
-int RaiseNumFd(uint64_t numFd)
-{
-    unsigned long extra = 50;
-    unsigned long setNumFd = extra + numFd;
-    struct rlimit currentlim;
-    if (getrlimit(RLIMIT_NOFILE, &currentlim) == -1) {
-        return LIBPERF_ERR_RAISE_FD;
-    }
-    if (currentlim.rlim_cur > setNumFd) {
-        return SUCCESS;
-    }
-    if (currentlim.rlim_max < numFd) {
-        return LIBPERF_ERR_TOO_MANY_FD;
-    }
-    struct rlimit rlim {
-            .rlim_cur = currentlim.rlim_max, .rlim_max = currentlim.rlim_max,
-    };
-    if (setNumFd < currentlim.rlim_max) {
-        rlim.rlim_cur = setNumFd;
-    }
-    if (setrlimit(RLIMIT_NOFILE, &rlim) != 0) {
-        return LIBPERF_ERR_RAISE_FD;
-    } else {
-        return SUCCESS;
-    }
-}
-
 bool ExistPath(const std::string &filePath) {
     struct stat statbuf{};
     return stat(filePath.c_str(), &statbuf) == 0;
