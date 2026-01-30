@@ -154,7 +154,8 @@ TEST_F(UTraceTest, FullLifecycleSuccess)
 {
     std::string exePath = GetTestBinaryPath("test_utrace_app");
     SymbolSource srcs[] = {
-        {const_cast<char*>(exePath.c_str()), "my_function"}};
+        {const_cast<char*>(exePath.c_str()), "my_function"}
+    };
     int pidList[1] = {pid};
 
     struct UTraceAttr attr = {0};
@@ -163,33 +164,34 @@ TEST_F(UTraceTest, FullLifecycleSuccess)
     attr.pidList = pidList;
     attr.numPid = 1;
 
-    int pd = UTraceOpen(&attr);
-    ASSERT_GE(pd, 0) << Perror() << "\n" << GetWarnMsg();
+    this->pd = UTraceOpen(&attr);
+    ASSERT_GE(this->pd, 0) << Perror() << "\n" << GetWarnMsg();
 
-    int ret = UTraceEnable(pd);
+    int ret = UTraceEnable(this->pd);
     EXPECT_EQ(ret, SUCCESS);
 
     sleep(1);
 
-    ret = UTraceDisable(pd);
+    ret = UTraceDisable(this->pd);
     EXPECT_EQ(ret, SUCCESS);
 
-    int len = UTraceRead(pd, &data);
+    int len = UTraceRead(this->pd, &data);
 
     ASSERT_NE(data, nullptr);
 }
 
 TEST_F(UTraceTest, OpenWithNullAttr)
 {
-    int pd = UTraceOpen(nullptr);
-    EXPECT_EQ(pd, -1);
+    this->pd = UTraceOpen(nullptr);
+    EXPECT_EQ(this->pd, -1);
 }
 
 TEST_F(UTraceTest, OpenWithInvalidSymbol)
 {
     std::string exePath = GetTestBinaryPath("test_utrace_app");
     SymbolSource srcs[] = {
-        {const_cast<char*>(exePath.c_str()), "non_existent_function"}};
+        {const_cast<char*>(exePath.c_str()), "non_existent_function"}
+    };
     int pidList[1] = {pid};
 
     struct UTraceAttr attr = {0};
@@ -198,8 +200,110 @@ TEST_F(UTraceTest, OpenWithInvalidSymbol)
     attr.pidList = pidList;
     attr.numPid = 1;
 
-    int pd = UTraceOpen(&attr);
-    EXPECT_EQ(pd, -1);
+    this->pd = UTraceOpen(&attr);
+    EXPECT_EQ(this->pd, -1);
     EXPECT_EQ(Perrorno(), LIBPERF_ERR_UTRACE_ELF_SCAN_FAILED);
     EXPECT_EQ(GetWarn(), LIBPERF_WARN_UTRACE_ELF_SCAN_FAILED);
+}
+
+TEST_F(UTraceTest, OpenWithMixedValidInvalidModules)
+{
+    std::string exePath = GetTestBinaryPath("test_utrace_app");
+    SymbolSource srcs[] = {
+        {const_cast<char*>(exePath.c_str()), "my_function"},
+        {const_cast<char*>("/nonexistent/path/to/binary"), "non_existent_function"}
+    };
+    int pidList[1] = {pid};
+
+    struct UTraceAttr attr = {0};
+    attr.symSrc = srcs;
+    attr.numSym = 2;
+    attr.pidList = pidList;
+    attr.numPid = 1;
+
+    this->pd = UTraceOpen(&attr);
+    ASSERT_GE(this->pd, 0) << "UTraceOpen should succeed with partial valid modules.";
+    EXPECT_EQ(GetWarn(), LIBPERF_WARN_UTRACE_ELF_SCAN_FAILED);
+}
+
+TEST_F(UTraceTest, OpenWithAllInvalidModules)
+{
+    SymbolSource srcs[] = {
+        {const_cast<char*>("/path/does/not/exist1"), "func1"},
+        {const_cast<char*>("/another/fake/path"), "func2"}
+    };
+    int pidList[1] = {pid};
+
+    struct UTraceAttr attr = {0};
+    attr.symSrc = srcs;
+    attr.numSym = 2;
+    attr.pidList = pidList;
+    attr.numPid = 1;
+
+    this->pd = UTraceOpen(&attr);
+    EXPECT_EQ(this->pd, -1);
+    EXPECT_EQ(Perrorno(), LIBPERF_ERR_UTRACE_ELF_SCAN_FAILED);
+    EXPECT_EQ(GetWarn(), LIBPERF_WARN_UTRACE_ELF_SCAN_FAILED);
+}
+
+TEST_F(UTraceTest, OpenWithNonExistentSinglePid)
+{
+    std::string exePath = GetTestBinaryPath("test_utrace_app");
+    SymbolSource srcs[] = {
+        {const_cast<char*>(exePath.c_str()), "my_function"}
+    };
+    
+    int nonExistentPid = 999999;
+    int pidList[1] = {nonExistentPid};
+
+    struct UTraceAttr attr = {0};
+    attr.symSrc = srcs;
+    attr.numSym = 1;
+    attr.pidList = pidList;
+    attr.numPid = 1;
+
+    this->pd = UTraceOpen(&attr);
+    EXPECT_EQ(this->pd, -1);
+    EXPECT_EQ(Perrorno(), LIBPERF_ERR_INVALID_PID);
+}
+
+TEST_F(UTraceTest, OpenWithMixedValidInvalidPids)
+{
+    std::string exePath = GetTestBinaryPath("test_utrace_app");
+    SymbolSource srcs[] = {
+        {const_cast<char*>(exePath.c_str()), "my_function"}
+    };
+
+    int pidList[2] = {pid, 999999};
+
+    struct UTraceAttr attr = {0};
+    attr.symSrc = srcs;
+    attr.numSym = 1;
+    attr.pidList = pidList;
+    attr.numPid = 2;
+
+    this->pd = UTraceOpen(&attr);
+    EXPECT_EQ(this->pd, -1);
+    EXPECT_EQ(Perrorno(), LIBPERF_ERR_INVALID_PID);
+}
+
+TEST_F(UTraceTest, OpenWithNegativePid)
+{
+    std::string exePath = GetTestBinaryPath("test_utrace_app");
+    SymbolSource srcs[] = {
+        {const_cast<char*>(exePath.c_str()), "my_function"}
+    };
+
+    int invalidPid = -1;
+    int pidList[1] = {invalidPid};
+
+    struct UTraceAttr attr = {0};
+    attr.symSrc = srcs;
+    attr.numSym = 1;
+    attr.pidList = pidList;
+    attr.numPid = 1;
+
+    this->pd = UTraceOpen(&attr);
+    EXPECT_EQ(this->pd, -1);
+    EXPECT_EQ(Perrorno(), LIBPERF_ERR_INVALID_PIDLIST);
 }
