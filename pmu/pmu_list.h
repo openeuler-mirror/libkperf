@@ -135,7 +135,7 @@ private:
     int PrepareCpuTopoList(
         const unsigned& pd, PmuTaskAttr* pmuTaskAttrHead, std::vector<CpuPtr>& cpuTopoList);
     int PrepareProcTopoList(PmuTaskAttr* pmuTaskAttrHead, std::vector<ProcPtr>& procTopoList, const int pd);
-    int CheckRlimit(const unsigned fdNum);
+    int CheckRlimit(const unsigned pd, const unsigned fdNum);
     static unsigned CalRequireFd(unsigned cpuSize, unsigned proSize, const unsigned collectType);
     static void AggregateData(const std::vector<PmuData>& evData, std::vector<PmuData>& newEvData);
     void AggregateUncoreData(const unsigned pd, const std::vector<PmuData> &evData, std::vector<PmuData> &newEvData);
@@ -145,6 +145,7 @@ private:
     unsigned long GetBranchSampleFilter(const unsigned pd);
     void OpenDummyEvent(PmuTaskAttr* taskParam, const unsigned pd);
     void EraseDummyEvent(const unsigned pd);
+    void EraseUnUseFd(const unsigned pd);
     int InitSymbolRecordModule(const unsigned pd, PmuTaskAttr* taskParam);
 
     static std::mutex pmuListMtx;
@@ -197,6 +198,8 @@ private:
     std::unordered_map<unsigned, volatile unsigned> analysisStatusList;
 
     std::unordered_map<unsigned, std::vector<ProcPtr>> pmuProcList;
+
+    std::unordered_map<unsigned, unsigned> pmuNeedFdList;
 };
 }   // namespace KUNPENG_PMU
 #endif

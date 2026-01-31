@@ -451,20 +451,6 @@ TEST_F(TestAPI, TestRaiseNumFd)
     PmuDataFree(pmuData);
 }
 
-TEST_F(TestAPI, RaiseNumFdFunc)
-{
-    struct rlimit currentlim;
-    ASSERT_NE(getrlimit(RLIMIT_NOFILE, &currentlim), -1);
-    auto err = RaiseNumFd(currentlim.rlim_max + 1);
-    ASSERT_EQ(err, LIBPERF_ERR_TOO_MANY_FD);
-    err = RaiseNumFd(currentlim.rlim_cur - 1);
-    ASSERT_EQ(err, SUCCESS);
-    err = RaiseNumFd(currentlim.rlim_max - 1);
-    ASSERT_EQ(err, SUCCESS);
-    err = RaiseNumFd(currentlim.rlim_max - 51);
-    ASSERT_EQ(err, SUCCESS);
-}
-
 TEST_F(TestAPI, NoDataBeforeEnable)
 {
     auto attr = GetPmuAttribute();

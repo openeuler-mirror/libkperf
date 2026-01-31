@@ -44,9 +44,39 @@ namespace KUNPENG_PMU {
     std::mutex PmuList::dataParentMtx;
     std::mutex PmuList::analysisStatusMtx;
 
-    int PmuList::CheckRlimit(const unsigned fdNum)
+    int PmuList::CheckRlimit(const unsigned pd, const unsigned fdNum)
     {
-        return RaiseNumFd(fdNum);
+        unsigned long extra = 50;
+        unsigned long curNeedFd = extra + fdNum;
+        struct rlimit currentlim;
+        if (getrlimit(RLIMIT_NOFILE, &currentlim) == -1) {
+            return LIBPERF_ERR_RAISE_FD;
+        }
+        pmuNeedFdList[pd] = curNeedFd;
+        unsigned totalFd = 0;
+        for (auto item : pmuNeedFdList) {
+            totalFd += item.second;
+        }
+
+        if (currentlim.rlim_cur > totalFd) {
+            return SUCCESS;
+        }
+
+        struct rlimit rlim {
+            .rlim_cur = currentlim.rlim_max, .rlim_max = currentlim.rlim_max,
+        };
+        if (currentlim.rlim_cur < totalFd && totalFd < currentlim.rlim_max) {
+            rlim.rlim_cur = totalFd;  
+        } else if (totalFd > currentlim.rlim_max) {
+            rlim.rlim_cur = totalFd;
+            rlim.rlim_max = totalFd;
+        }
+
+        if (setrlimit(RLIMIT_NOFILE, &rlim) != 0) {
+           return LIBPERF_ERR_RAISE_FD;
+        } else {
+            return SUCCESS;
+        }
     }
 
     unsigned PmuList::CalRequireFd(unsigned cpuSize, unsigned proSize, const unsigned collectType)
@@ -113,7 +143,7 @@ namespace KUNPENG_PMU {
 
         int err;
         if (!taskParam->pmuEvt->enableBpf) {  // in bpf mode, cpuSize * proSize whill exceed rlimit
-            err = CheckRlimit(fdNum);
+            err = CheckRlimit(pd, fdNum);
             if (err != SUCCESS) {
                 return err;
             }
@@ -517,6 +547,7 @@ namespace KUNPENG_PMU {
         RemoveEpollFd(pd);
         EraseSpeCpu(pd);
         EraseParentEventMap(pd);
+        EraseUnUseFd(pd);
         SymResolverDestroy();
         PmuEventListFree();
         TraceParser::FreeRawFieldMap();
@@ -631,6 +662,10 @@ namespace KUNPENG_PMU {
     void PmuList::EraseProcptrList(const unsigned pd)
     {
         pmuProcList.erase(pd);
+    }
+
+    void PmuList::EraseUnUseFd(const unsigned pd) {
+        pmuNeedFdList.erase(pd);
     }
 
     void PmuList::InsertDataEvtGroupList(const unsigned pd, groupMapPtr evtGroupList)
