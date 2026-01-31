@@ -803,6 +803,8 @@ struct UTraceData {
     int cpu;
     int64_t timestamp;
     uint64_t gPtr;
+    const char* func;
+    unsigned isRet;
 };
 
 /**

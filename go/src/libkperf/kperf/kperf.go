@@ -569,6 +569,8 @@ type UTraceData struct {
 	Cpu       int
 	Timestamp int64
 	GPtr      uint64
+	Func      string
+	IsRet     bool
 }
 
 func FreePmuAttr(attr *C.struct_PmuAttr) {
@@ -1629,6 +1631,8 @@ func UTraceRead(pd int) ([]UTraceData, *C.struct_UTraceData, error) {
 			Cpu:       int(elem.cpu),
 			Timestamp: int64(elem.timestamp),
 			GPtr:      uint64(elem.gPtr),
+			Func:      C.GoString(elem._func),
+			IsRet:     elem.isRet != 0,
 		}
 	}
 

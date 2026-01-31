@@ -61,7 +61,5 @@ private:
 
     std::string GenerateGroupName(const std::string &binaryPath) const;
 
-    std::string SanitizeSymbol(const std::string &rawName) const;
-
     std::string SanitizeStr(const std::string &input, size_t maxLen) const;
 };

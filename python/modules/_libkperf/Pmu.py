@@ -2547,6 +2547,8 @@ class CtypesUTraceData(ctypes.Structure):
         int cpu;
         int64_t timestamp;
         uint64_t gPtr;
+        const char* func;
+        unsigned isRet;
     };
     """
     _fields_ = [
@@ -2556,9 +2558,11 @@ class CtypesUTraceData(ctypes.Structure):
         ('cpu',       ctypes.c_int),
         ('timestamp', ctypes.c_int64),
         ('gPtr',      ctypes.c_uint64),
+        ('func',      ctypes.c_char_p),
+        ('isRet',     ctypes.c_uint),
     ]
 
-    def __init__(self, addr=0, comm='', tid=0, cpu=0, timestamp=0, gPtr=0, *args, **kw):
+    def __init__(self, addr=0, comm='', tid=0, cpu=0, timestamp=0, gPtr=0, func='', isRet=0, *args, **kw):
         super(CtypesUTraceData, self).__init__(*args, **kw)
 
         self.addr = ctypes.c_ulong(addr)
@@ -2567,18 +2571,22 @@ class CtypesUTraceData(ctypes.Structure):
         self.cpu = ctypes.c_int(cpu)
         self.timestamp = ctypes.c_int64(timestamp)
         self.gPtr = ctypes.c_uint64(gPtr)
+        self.func = ctypes.c_char_p(func.encode(UTF_8))
+        self.isRet = ctypes.c_uint(isRet)
 
 class UTraceData:
     __slots__ = ['__c_u_trace_data']
 
-    def __init__(self, addr=0, comm='', tid=0, cpu=0, timestamp=0, gPtr=0, *args, **kw):
+    def __init__(self, addr=0, comm='', tid=0, cpu=0, timestamp=0, gPtr=0, func='', isRet=0, *args, **kw):
         self.__c_u_trace_data = CtypesUTraceData(
             addr=addr,
             comm=comm,
             tid=tid,
             cpu=cpu,
             timestamp=timestamp,
-            gPtr=gPtr
+            gPtr=gPtr,
+            func=func,
+            isRet=isRet
         )
     
     @property
@@ -2608,6 +2616,14 @@ class UTraceData:
     @property
     def gPtr(self):
         return int(self.__c_u_trace_data.gPtr)
+    
+    @property
+    def func(self):
+        return self.__c_u_trace_data.func.decode(UTF_8)
+
+    @property
+    def isRet(self):
+        return bool(self.__c_u_trace_data.isRet)
 
     @classmethod
     def from_c_u_trace_data(cls, c_u_trace_data):

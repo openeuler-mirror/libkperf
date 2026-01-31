@@ -14,7 +14,9 @@
  ******************************************************************************/
 
 #include "trace_data_manager.h"
+#include "probe_alias_manager.h"
 #include "symbol.h"
+#include <cstring>
 
 UTraceData *TraceDataManager::ConvertToTraceData(int pd, PmuData *data, int len)
 {
@@ -28,7 +30,13 @@ UTraceData *TraceDataManager::ConvertToTraceData(int pd, PmuData *data, int len)
         if (GetFetchG(pd)) {
             PmuGetField(data[i].rawData, "g", &gPtr, sizeof(gPtr));
         }
-        traceData.push_back({data[i].stack->symbol->addr, data[i].comm, data[i].tid, data[i].cpu, data[i].ts, gPtr});
+
+        const char *colon = std::strchr(data[i].evt, ':');
+        if (colon && *(colon + 1)) {
+            const auto &binding = ProbeAliasManager::GetInstance().GetBinding(std::string(colon + 1));
+            traceData.push_back({data[i].stack->symbol->addr, data[i].comm, data[i].tid, data[i].cpu, data[i].ts, gPtr,
+                binding.originalSymRef->c_str(), binding.isRet});
+        }
     }
 
     pmu2trace_[data] = std::move(traceData);
