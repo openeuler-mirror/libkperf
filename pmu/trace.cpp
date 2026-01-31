@@ -26,14 +26,44 @@ extern int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr);
 extern struct PmuTaskAttr *AssignPmuTaskParam(enum PmuTaskType collectType, struct PmuAttr *attr);
 extern void PmuTaskAttrFree(PmuTaskAttr *taskAttr);
 
-int UTraceOpen(struct UTraceAttr *attr)
-{
-    pcerr::New(SUCCESS);
-    if (attr == nullptr) {
-        pcerr::New(LIBPERF_ERR_NULL_POINTER, "UTraceAttr cannot be null");
-        return -1;
+struct UTraceResourceGuard {
+    int pd;
+    bool probesInstalled = false;
+    bool commit = false;
+
+    int pendingError = SUCCESS;
+
+    void SetError(int err)
+    {
+        pendingError = err;
     }
 
+    UTraceResourceGuard(int pd) : pd(pd) {}
+
+    ~UTraceResourceGuard()
+    {
+        if (commit) {
+            return;
+        }
+
+        PmuList::GetInstance()->Close(pd);
+
+        if (probesInstalled) {
+            ProbeRegistrar::GetInstance().UninstallProbes(pd);
+        }
+        ProbeRegistrar::GetInstance().EraseProbeEvents(pd);
+
+        TraceDataManager::GetInstance().Erase(pd);
+
+        if (pendingError != SUCCESS) {
+            pcerr::New(pendingError);
+        }
+    }
+};
+
+static auto GetProbePoints(const UTraceAttr *attr)
+    -> std::unordered_map<std::string, std::vector<ProbePoints>>
+{
     std::unordered_map<std::string, std::vector<std::string>> module2Symbols;
     for (int i = 0; i < attr->numSym; ++i) {
         module2Symbols[attr->symSrc[i].moduleName].emplace_back(attr->symSrc[i].symbolName);
@@ -43,10 +73,36 @@ int UTraceOpen(struct UTraceAttr *attr)
     if (module2ProbePoints.empty()) {
         pcerr::New(LIBPERF_ERR_UTRACE_ELF_SCAN_FAILED, "No probe points resolved from ELF modules");
         pcerr::SetWarn(LIBPERF_WARN_UTRACE_ELF_SCAN_FAILED, elfScanFailures);
-        return -1;
+        return {};
     }
     if (!elfScanFailures.empty()) {
         pcerr::SetWarn(LIBPERF_WARN_UTRACE_ELF_SCAN_FAILED, elfScanFailures);
+    }
+    return module2ProbePoints;
+}
+
+static void GetEvtList(int pd, std::vector<std::string>& evtListCache, std::vector<char*>& evtPtrList)
+{
+    const auto &probeEvents = ProbeRegistrar::GetInstance().GetProbeEvents(pd);
+    evtListCache.reserve(probeEvents.size());
+    evtPtrList.reserve(probeEvents.size());
+
+    for (const auto &probeEvent : probeEvents) {
+        evtListCache.emplace_back(probeEvent.groupName + ":" + probeEvent.eventName);
+        evtPtrList.push_back(const_cast<char *>(evtListCache.back().c_str()));
+    }
+}
+
+int UTraceOpen(struct UTraceAttr *attr) {
+    pcerr::New(SUCCESS);
+    if (attr == nullptr) {
+        pcerr::New(LIBPERF_ERR_NULL_POINTER, "UTraceAttr cannot be null");
+        return -1;
+    }
+
+    auto module2ProbePoints = GetProbePoints(attr);
+    if (module2ProbePoints.empty()) {
+        return -1;
     }
 
     int pd = PmuList::GetInstance()->NewPd();
@@ -54,25 +110,21 @@ int UTraceOpen(struct UTraceAttr *attr)
         pcerr::New(LIBPERF_ERR_NO_AVAIL_PD);
         return -1;
     }
+    UTraceResourceGuard guard(pd);
 
     ProbeRegistrar::GetInstance().ConvertToProbeEvents(pd, module2ProbePoints);
     if (!ProbeRegistrar::GetInstance().InstallProbes(pd, attr->fetchG)) {
-        ProbeRegistrar::GetInstance().EraseProbeEvents(pd);
+        guard.SetError(Perrorno());
         return -1;
     }
+    guard.probesInstalled = true;
 
     std::vector<std::string> evtListCache;
-    for (const auto &probeEvent : ProbeRegistrar::GetInstance().GetProbeEvents(pd)) {
-        evtListCache.emplace_back(probeEvent.groupName + ":" + probeEvent.eventName);
-    }
     std::vector<char *> evtPtrList;
-    for (auto &evt : evtListCache) {
-        evtPtrList.push_back(const_cast<char *>(evt.c_str()));
-    }
-    char **evtList = evtPtrList.data();
+    GetEvtList(pd, evtListCache, evtPtrList);
 
     PmuAttr pmuAttr = {0};
-    pmuAttr.evtList = evtList;
+    pmuAttr.evtList = evtPtrList.data();
     pmuAttr.numEvt = evtPtrList.size();
     pmuAttr.pidList = attr->pidList;
     pmuAttr.numPid = attr->numPid;
@@ -81,14 +133,13 @@ int UTraceOpen(struct UTraceAttr *attr)
 
     int err = CheckAttr(SAMPLING, &pmuAttr);
     if (err != SUCCESS) {
-        pcerr::New(err);
-        ProbeRegistrar::GetInstance().UninstallProbes(pd);
-        ProbeRegistrar::GetInstance().EraseProbeEvents(pd);
+        guard.SetError(err);
         return -1;
     }
 
     std::unique_ptr<PmuTaskAttr, void (*)(PmuTaskAttr *)> pmuTaskAttrHead(AssignPmuTaskParam(SAMPLING, &pmuAttr), PmuTaskAttrFree);
     if (!pmuTaskAttrHead) {
+        guard.SetError(Perrorno());
         return -1;
     }
 
@@ -97,14 +148,13 @@ int UTraceOpen(struct UTraceAttr *attr)
     PmuList::GetInstance()->SetAnalysisStatus(pd, GOING_RESOLVE);
     err = PmuList::GetInstance()->Register(pd, pmuTaskAttrHead.get());
     if (err != SUCCESS) {
-        PmuList::GetInstance()->Close(pd);
-        ProbeRegistrar::GetInstance().UninstallProbes(pd);
-        ProbeRegistrar::GetInstance().EraseProbeEvents(pd);
-        pcerr::New(err);
+        guard.SetError(err);
         return -1;
     }
 
     TraceDataManager::GetInstance().SetFetchG(pd, attr->fetchG);
+
+    guard.commit = true;
     return pd;
 }
 
@@ -144,8 +194,6 @@ void UTraceDataFree(struct UTraceData *traceData)
 void UTraceClose(int pd)
 {
     pcerr::New(SUCCESS);
-    PmuList::GetInstance()->Close(pd);
-    ProbeRegistrar::GetInstance().UninstallProbes(pd);
-    ProbeRegistrar::GetInstance().EraseProbeEvents(pd);
-    TraceDataManager::GetInstance().Erase(pd);
+    UTraceResourceGuard guard(pd);
+    guard.probesInstalled = true;
 }
