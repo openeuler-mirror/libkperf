@@ -19,6 +19,7 @@
 #include "elf_scanner.h"
 #include "probe_registrar.h"
 #include "trace_data_manager.h"
+#include "probe_alias_manager.h"
 
 using namespace KUNPENG_PMU;
 
@@ -54,6 +55,8 @@ struct UTraceResourceGuard {
         ProbeRegistrar::GetInstance().EraseProbeEvents(pd);
 
         TraceDataManager::GetInstance().Erase(pd);
+
+        ProbeAliasManager::GetInstance().Erase(pd);
 
         if (pendingError != SUCCESS) {
             pcerr::New(pendingError);

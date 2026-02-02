@@ -14,6 +14,7 @@
  ******************************************************************************/
 
 #include "probe_registrar.h"
+#include "probe_alias_manager.h"
 #include "pcerr.h"
 #include <sstream>
 #include <algorithm>
@@ -38,11 +39,12 @@ void ProbeRegistrar::ConvertToProbeEvents(int pd, const std::unordered_map<std::
         std::string groupName = GenerateGroupName(binaryPath);
 
         for (const auto &probePoints : kv.second) {
-            std::string eventName = SanitizeSymbol(probePoints.symbolName);
-            pd2ProbeEvents_[pd].emplace_back(ProbeEvent{groupName, eventName, binaryPath, probePoints.entryOffset});
+            std::string entryAlias = ProbeAliasManager::GetInstance().GetEntryAlias(pd, probePoints.symbolName, probePoints.entryOffset);
+            pd2ProbeEvents_[pd].emplace_back(ProbeEvent{groupName, entryAlias, binaryPath, probePoints.entryOffset});
             for (size_t i = 0; i < probePoints.retOffsets.size(); ++i) {
+                std::string retAlias = ProbeAliasManager::GetInstance().GetRetAlias(pd, entryAlias, i, probePoints.retOffsets[i]);
                 pd2ProbeEvents_[pd].emplace_back(ProbeEvent{
-                    groupName, eventName + "_ret_" + std::to_string(i), binaryPath, probePoints.retOffsets[i]});
+                    groupName, retAlias, binaryPath, probePoints.retOffsets[i]});
             }
         }
     }
@@ -171,12 +173,7 @@ std::string ProbeRegistrar::GenerateGroupName(const std::string &binaryPath) con
 {
     size_t lastSlash = binaryPath.find_last_of('/');
     std::string fileName = (lastSlash == std::string::npos) ? binaryPath : binaryPath.substr(lastSlash + 1);
-    return "probe_" + SanitizeStr(fileName, 32);
-}
-
-std::string ProbeRegistrar::SanitizeSymbol(const std::string &rawName) const
-{
-    return SanitizeStr(rawName, 50);
+    return SanitizeStr(fileName, 32);
 }
 
 std::string ProbeRegistrar::SanitizeStr(const std::string &input, size_t maxLen) const
