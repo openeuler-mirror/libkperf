@@ -113,6 +113,9 @@ struct ProcTopology *GetProcTopology(pid_t pid)
     unique_ptr<ProcTopology, void (*)(ProcTopology *)> procTopo(new ProcTopology{0}, FreeProcTopo);
     procTopo->tid = pid;
     if (pid == 0) {
+        procTopo->pid = 0;
+        procTopo->comm = strdup("swapper");
+        procTopo->isMain = false;
         return procTopo.release();
     }
     try {
