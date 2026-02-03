@@ -33,10 +33,12 @@ struct UTraceResourceGuard {
     bool commit = false;
 
     int pendingError = SUCCESS;
+    std::string pendingErrMsg;
 
-    void SetError(int err)
+    void SetError(int err, const std::string& msg)
     {
         pendingError = err;
+        pendingErrMsg = msg;
     }
 
     UTraceResourceGuard(int pd) : pd(pd) {}
@@ -59,7 +61,7 @@ struct UTraceResourceGuard {
         ProbeAliasManager::GetInstance().Erase(pd);
 
         if (pendingError != SUCCESS) {
-            pcerr::New(pendingError);
+            pcerr::New(pendingError, pendingErrMsg);
         }
     }
 };
@@ -117,7 +119,7 @@ int UTraceOpen(struct UTraceAttr *attr) {
 
     ProbeRegistrar::GetInstance().ConvertToProbeEvents(pd, module2ProbePoints);
     if (!ProbeRegistrar::GetInstance().InstallProbes(pd, attr->fetchG)) {
-        guard.SetError(Perrorno());
+        guard.SetError(Perrorno(), Perror());
         return -1;
     }
     guard.probesInstalled = true;
@@ -136,13 +138,13 @@ int UTraceOpen(struct UTraceAttr *attr) {
 
     int err = CheckAttr(SAMPLING, &pmuAttr);
     if (err != SUCCESS) {
-        guard.SetError(err);
+        guard.SetError(err, Perror());
         return -1;
     }
 
     std::unique_ptr<PmuTaskAttr, void (*)(PmuTaskAttr *)> pmuTaskAttrHead(AssignPmuTaskParam(SAMPLING, &pmuAttr), PmuTaskAttrFree);
     if (!pmuTaskAttrHead) {
-        guard.SetError(Perrorno());
+        guard.SetError(Perrorno(), Perror());
         return -1;
     }
 
@@ -151,7 +153,7 @@ int UTraceOpen(struct UTraceAttr *attr) {
     PmuList::GetInstance()->SetAnalysisStatus(pd, GOING_RESOLVE);
     err = PmuList::GetInstance()->Register(pd, pmuTaskAttrHead.get());
     if (err != SUCCESS) {
-        guard.SetError(err);
+        guard.SetError(err, Perror());
         return -1;
     }
 

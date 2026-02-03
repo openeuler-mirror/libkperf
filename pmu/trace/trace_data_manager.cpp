@@ -35,7 +35,7 @@ UTraceData *TraceDataManager::ConvertToTraceData(int pd, PmuData *data, int len)
         if (colon && *(colon + 1)) {
             const auto &binding = ProbeAliasManager::GetInstance().GetBinding(std::string(colon + 1));
             traceData.push_back({data[i].stack->symbol->addr, data[i].comm, data[i].tid, data[i].cpu, data[i].ts, gPtr,
-                binding.originalSymRef->c_str(), binding.isRet});
+                data[i].stack->symbol->module, binding.originalSymRef->c_str(), binding.isRet});
         }
     }
 
