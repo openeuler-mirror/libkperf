@@ -39,6 +39,9 @@ void ProbeRegistrar::ConvertToProbeEvents(int pd, const std::unordered_map<std::
         std::string groupName = GenerateGroupName(binaryPath);
 
         for (const auto &probePoints : kv.second) {
+            if (probePoints.retOffsets.empty()) {
+                continue;
+            }
             std::string entryAlias = ProbeAliasManager::GetInstance().GetEntryAlias(pd, probePoints.symbolName, probePoints.entryOffset);
             pd2ProbeEvents_[pd].emplace_back(ProbeEvent{groupName, entryAlias, binaryPath, probePoints.entryOffset});
             for (size_t i = 0; i < probePoints.retOffsets.size(); ++i) {

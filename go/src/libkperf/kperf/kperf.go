@@ -569,6 +569,7 @@ type UTraceData struct {
 	Cpu       int
 	Timestamp int64
 	GPtr      uint64
+	Module    string
 	Func      string
 	IsRet     bool
 }
@@ -1631,6 +1632,7 @@ func UTraceRead(pd int) ([]UTraceData, *C.struct_UTraceData, error) {
 			Cpu:       int(elem.cpu),
 			Timestamp: int64(elem.timestamp),
 			GPtr:      uint64(elem.gPtr),
+			Module:    C.GoString(elem._module),
 			Func:      C.GoString(elem._func),
 			IsRet:     elem.isRet != 0,
 		}
