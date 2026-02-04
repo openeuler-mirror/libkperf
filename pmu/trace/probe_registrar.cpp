@@ -24,7 +24,8 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-void ProbeRegistrar::ConvertToProbeEvents(int pd, const std::unordered_map<std::string, std::vector<ProbePoints>> &module2ProbePoints)
+void ProbeRegistrar::ConvertToProbeEvents(
+    int pd, const std::unordered_map<std::string, std::vector<ProbePoints>> &module2ProbePoints)
 {
     size_t size = 0;
     for (const auto &kv : module2ProbePoints) {
@@ -42,12 +43,14 @@ void ProbeRegistrar::ConvertToProbeEvents(int pd, const std::unordered_map<std::
             if (probePoints.retOffsets.empty()) {
                 continue;
             }
-            std::string entryAlias = ProbeAliasManager::GetInstance().GetEntryAlias(pd, probePoints.symbolName, probePoints.entryOffset);
+            std::string entryAlias =
+                ProbeAliasManager::GetInstance().GetEntryAlias(pd, probePoints.symbolName, probePoints.entryOffset);
             pd2ProbeEvents_[pd].emplace_back(ProbeEvent{groupName, entryAlias, binaryPath, probePoints.entryOffset});
             for (size_t i = 0; i < probePoints.retOffsets.size(); ++i) {
-                std::string retAlias = ProbeAliasManager::GetInstance().GetRetAlias(pd, entryAlias, i, probePoints.retOffsets[i]);
-                pd2ProbeEvents_[pd].emplace_back(ProbeEvent{
-                    groupName, retAlias, binaryPath, probePoints.retOffsets[i]});
+                std::string retAlias =
+                    ProbeAliasManager::GetInstance().GetRetAlias(pd, entryAlias, i, probePoints.retOffsets[i]);
+                pd2ProbeEvents_[pd].emplace_back(
+                    ProbeEvent{groupName, retAlias, binaryPath, probePoints.retOffsets[i]});
             }
         }
     }
@@ -76,28 +79,29 @@ bool ProbeRegistrar::InstallProbes(int pd, bool fetchG)
         return false;
     }
 
-    std::stringstream ss;
     for (const auto &probeEvent : pd2ProbeEvents_[pd]) {
-        ss << ConvertToProbeStr(probeEvent, fetchG) << "\n";
-    }
-    std::string allProbeStrs = ss.str();
+        std::string probeStr = ConvertToProbeStr(probeEvent, fetchG);
 
-    ssize_t written = 0;
-    const char *p = allProbeStrs.c_str();
-    size_t total = allProbeStrs.size();
+        ssize_t written = 0;
+        const char *p = probeStr.c_str();
+        size_t total = probeStr.size();
 
-    while (written < static_cast<ssize_t>(total)) {
-        ssize_t n = write(fd, p + written, total - written);
-        if (n < 0) {
-            if (errno == EINTR) {
-                continue;
+        while (written < static_cast<ssize_t>(total)) {
+            ssize_t n = write(fd, p + written, total - written);
+            if (n < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                if (errno == EEXIST) {
+                    break;
+                }
+                pcerr::New(
+                    LIBPERF_ERR_UTRACE_PROBE_REGISTER_FAILED, "Failed to write to uprobe_events file for installation");
+                close(fd);
+                return false;
             }
-            pcerr::New(
-                LIBPERF_ERR_UTRACE_PROBE_REGISTER_FAILED, "Failed to write to uprobe_events file for installation");
-            close(fd);
-            return false;
+            written += n;
         }
-        written += n;
     }
 
     close(fd);
@@ -147,12 +151,15 @@ void ProbeRegistrar::UninstallProbes(int pd)
 std::string ProbeRegistrar::ConvertToProbeStr(const ProbeEvent &probeEvent, bool fetchG) const
 {
     std::stringstream ss;
+
     ss << "p:" << probeEvent.groupName << "/" << probeEvent.eventName << " " << probeEvent.binaryPath << ":0x"
        << std::hex << probeEvent.offset;
 
     if (fetchG) {
         ss << " g=%x28";
     }
+    ss << "\n";
+
     return ss.str();
 }
 
