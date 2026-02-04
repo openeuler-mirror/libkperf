@@ -135,6 +135,7 @@ int UTraceOpen(struct UTraceAttr *attr) {
     pmuAttr.numPid = attr->numPid;
     pmuAttr.cpuList = attr->cpuList;
     pmuAttr.numCpu = attr->numCpu;
+    pmuAttr.perThread = 1;
 
     int err = CheckAttr(SAMPLING, &pmuAttr);
     if (err != SUCCESS) {
