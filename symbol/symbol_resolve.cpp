@@ -419,6 +419,9 @@ void SymbolResolve::Clear()
     for (auto& item : strToCharMap) {
         free(item.second);
     }
+
+    Symbolizer.flush();
+
     delete this->instance;
     this->instance = nullptr;
 }
