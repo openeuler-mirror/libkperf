@@ -24,6 +24,8 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/DataExtractor.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Object/ELFObjectFile.h"
+#include "llvm/BinaryFormat/ELF.h"
 #include <algorithm>
 #include <cstdint>
 #include <memory>
@@ -79,6 +81,7 @@ SymbolizableObjectFile::create(object::ObjectFile *Obj,
       if (auto EC = res->addCoffExportSymbols(CoffObj))
         return EC;
   }
+  res->parsePLTSection(Obj);
   return std::move(res);
 }
 
@@ -222,6 +225,16 @@ DILineInfo SymbolizableObjectFile::symbolizeCode(uint64_t ModuleOffset,
                                                  FunctionNameKind FNKind,
                                                  bool UseSymbolTable) const {
   DILineInfo LineInfo;
+  PLTEntry PLTEntry;
+  if (isPLTAddr(ModuleOffset, &PLTEntry)) {
+      LineInfo.FunctionName = PLTEntry.Name;
+      LineInfo.FileName = ".plt";
+      LineInfo.Line = 0;
+      LineInfo.Column = 0;
+      LineInfo.CodeEndAddr = PLTEntry.Addr + PLTEntry.Size;
+      LineInfo.Offset = ModuleOffset - PLTEntry.Addr;
+      return LineInfo;
+  }
   if (DebugInfoContext) {
     LineInfo = DebugInfoContext->getLineInfoForAddress(
         ModuleOffset, getDILineInfoSpecifier(FNKind));
@@ -270,4 +283,199 @@ DIGlobal SymbolizableObjectFile::symbolizeData(uint64_t ModuleOffset) const {
   getNameFromSymbolTable(SymbolRef::ST_Data, ModuleOffset, Res.Name, Res.Start,
                          Res.Size);
   return Res;
+}
+
+
+static uint64_t getPLTEntrySize(Triple::ArchType Arch) {
+    switch (Arch) {
+        case Triple::x86:
+            return 16;
+        case Triple::x86_64:
+            return 16;
+        case Triple::aarch64:
+            return 16;
+        case Triple::arm:
+            return 12;
+        default:
+            return 16;
+    }
+}
+
+static uint64_t getFirstEntrySize(Triple::ArchType Arch) {
+    switch (Arch) {
+        case Triple::x86:
+            return 16;
+        case Triple::x86_64:
+            return 16;
+        case Triple::aarch64:
+            return 32;
+        case Triple::arm:
+            return 12;
+        default:
+            return 16;
+    }
+}
+
+static bool parseDynSym(StringRef Contents, std::vector<std::string>& DynSymbols, const char* DynstrTable, size_t DynstrSize) {
+    const size_t EntrySize = sizeof(ELF::Elf64_Sym);
+    const size_t EntryNum = Contents.size() / EntrySize;
+    if (Contents.size() % EntrySize != 0) {
+        return false;
+    }
+
+    for (size_t I = 0; I < EntryNum; I++) {
+        const char* EntryData = Contents.data() + I * EntrySize;
+        uint32_t StName;
+        memcpy(&StName, EntryData, sizeof(ELF::Elf64_Sym::st_name));
+        std::string Name;
+        if (StName < DynstrSize) {
+            const char* NamePtr = DynstrTable + StName;
+            Name = NamePtr;
+        }
+        DynSymbols.push_back(Name);
+    }
+    return true;
+}
+
+static bool parseRelaPLT(StringRef Contents, std::vector<uint32_t>& RelaEntries, bool HasGot, std::map<uint64_t, uint32_t>& GotToSymbol) {
+    const size_t EntrySize = sizeof(ELF::Elf64_Rela);
+    const size_t EntryNum = Contents.size() / EntrySize;
+    for (size_t I = 0; I < EntryNum; I++) {
+        const char* EntryData = Contents.data() + I * EntrySize;
+        uint64_t RInfo;
+        
+        memcpy(&RInfo, EntryData + sizeof(ELF::Elf64_Rela::r_offset), sizeof(ELF::Elf64_Rela::r_info));
+       
+        const uint32_t SymIndex = (RInfo >> 32);
+        RelaEntries.push_back(SymIndex);
+        if (HasGot) {
+           uint64_t ROffset;
+           memcpy(&ROffset, EntryData, sizeof(ELF::Elf64_Rela::r_offset));
+           GotToSymbol[ROffset] = SymIndex;
+        }
+    }
+    return true;
+}
+
+uint64_t ExtractGoTAddress(uint8_t* Code, uint64_t Addr) {
+    if (Code[0] == 0xff && Code[1] == 0x25) {
+        int32_t offset;
+        memcpy(&offset, &Code[2], 4);
+        uint64_t rip = Addr + 6;
+        return rip + offset;
+    }
+    return 0;
+}
+
+void SymbolizableObjectFile::parsePLTSection(const object::ObjectFile *Obj) {
+    if (!Obj->isELF()) {
+        return;
+    }
+    std::vector<std::string> DynSymbols;
+    std::vector<uint32_t> RelaEntries;
+    const char* DynstrTable = nullptr;
+    size_t DynstrSize = 0;
+    auto* ELFObj = dyn_cast<ELF64LEObjectFile>(Obj);
+    uint64_t PLTStart, PLTSize;
+    StringRef PLTContents, DynStrContents, DynsymContents, RelaPLTContents;
+    bool HasGot = false; // if .plt.got section exists, need got_symbols.
+    std::map<uint64_t, uint32_t> GotToSymbol;
+    for (const auto& Section : ELFObj->sections()) {
+        StringRef SecName;
+        if (Section.getName(SecName)) {
+            continue;
+        }
+        if (SecName.str() == ".plt") {
+            if (Section.getContents(PLTContents)) {
+                return;
+            }
+            PLTStart = Section.getAddress();
+            PLTSize = Section.getSize();
+        } else if (SecName.str() == ".dynstr") {
+            if (Section.getContents(DynStrContents)) {
+                return;
+            }
+            DynstrTable = DynStrContents.data();
+            DynstrSize = DynStrContents.size();
+        } else if (SecName.str() == ".rela.plt") {
+            if (Section.getContents(RelaPLTContents)) {
+                return;
+            }
+        } else if (SecName.str() == ".dynsym") {
+            if (Section.getContents(DynsymContents)) {
+                return;
+            }
+        } else if (SecName.str() == ".plt.got") {
+            HasGot = true;
+        }
+    }
+
+    if (!parseDynSym(DynsymContents, DynSymbols, DynstrTable, DynstrSize)) {
+        return;
+    }
+
+    if (!parseRelaPLT(RelaPLTContents, RelaEntries, HasGot, GotToSymbol)) {
+        return;
+    }
+
+    const uint64_t PLTEntrySize = getPLTEntrySize(Obj->getArch());
+    const uint64_t FirstEntrySize = getFirstEntrySize(Obj->getArch());
+    PLTSymbols[PLTStart] = {.Addr = PLTStart, .Name = "unkown@plt", .Size = FirstEntrySize};
+    const uint64_t BaseAddr = PLTStart + FirstEntrySize;
+    const size_t NumEntries = (PLTSize - FirstEntrySize) / PLTEntrySize;
+    for (size_t I = 0; I < NumEntries; ++I) {
+        const uint64_t Addr = BaseAddr + I * PLTEntrySize;
+        if (Addr < PLTStart + PLTSize) {
+            if (I >= RelaEntries.size()) {
+                return;
+            }
+            uint32_t SymIndex = 0;
+            if (HasGot) {
+               const char* EntryData = PLTContents.data() + I * PLTEntrySize + FirstEntrySize;
+               uint8_t* Ptr = (uint8_t*)EntryData;
+               std::vector<uint8_t> Code;
+               Code.assign(Ptr, Ptr + PLTEntrySize);
+               uint64_t GotAddr = ExtractGoTAddress(Ptr, Addr);
+               if (GotAddr > 0 && GotToSymbol.find(GotAddr) != GotToSymbol.end()) {
+                  SymIndex = GotToSymbol[GotAddr];
+               }
+            } else {
+               SymIndex = RelaEntries[I];
+            }
+            if (SymIndex >= DynSymbols.size()) {
+                continue;
+            }
+            auto SymName = DynSymbols[SymIndex];
+            if (SymName.empty()) {
+                SymName = "unkown@plt";
+            } else {
+                SymName = SymName + "@plt";
+            }
+            PLTEntry Entry;
+            Entry.Addr = Addr;
+            Entry.Name = SymName;
+            Entry.Size = PLTEntrySize;
+            PLTSymbols[Addr] = Entry;
+        }
+    }
+}
+
+bool SymbolizableObjectFile::isPLTAddr(uint64_t Address, PLTEntry *Entry) const {
+    auto It = PLTSymbols.lower_bound(Address);
+    if (It != PLTSymbols.end()) {
+        if (Address == It->first) {
+            if (Entry) *Entry = It->second;
+            return true;
+        }
+    }
+
+    if (It != PLTSymbols.begin()) {
+        --It;
+        if (Address >= It->first && Address < It->first + It->second.Size) {
+            if (Entry) *Entry = It->second;
+            return true;
+        }
+    }
+
+    return false;
 }
