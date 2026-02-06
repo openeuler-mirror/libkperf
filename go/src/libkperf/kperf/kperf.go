@@ -1632,7 +1632,7 @@ func UTraceRead(pd int) ([]UTraceData, *C.struct_UTraceData, error) {
 			Cpu:       int(elem.cpu),
 			Timestamp: int64(elem.timestamp),
 			GPtr:      uint64(elem.gPtr),
-			Module:    C.GoString(elem._module),
+			Module:    C.GoString(elem.module),
 			Func:      C.GoString(elem._func),
 			IsRet:     elem.isRet != 0,
 		}
