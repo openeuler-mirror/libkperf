@@ -558,7 +558,6 @@ type SymbolSource struct {
 type UTraceAttr struct {
 	SymSrc  []SymbolSource
 	PidList []int
-	CpuList []int
 	FetchG  bool
 }
 
@@ -1571,16 +1570,6 @@ func UTraceOpen(attr UTraceAttr) (int, error) {
 		}
 		cAttr.pidList = &cPidList[0]
 		cAttr.numPid  = C.uint(pidLen)
-	}
-
-	cpuLen := len(attr.CpuList)
-	if cpuLen > 0 {
-		cCpuList := make([]C.int, cpuLen)
-		for i, cpu := range(attr.CpuList) {
-			cCpuList[i] = C.int(cpu)
-		}
-		cAttr.cpuList = &cCpuList[0]
-		cAttr.numCpu  = C.uint(cpuLen)
 	}
 
 	if attr.FetchG {

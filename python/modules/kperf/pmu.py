@@ -433,13 +433,11 @@ class UTraceAttr(_libkperf.UTraceAttr):
         unsigned numSym;
         int *pidList;
         unsigned numPid;
-        int *cpuList;
-        unsigned numCpu;
         unsigned fetchG;
     };
     """
-    def __init__(self, symSrc=None, pidList=None, cpuList=None, fetchG=0):
-        super(UTraceAttr, self).__init__(symSrc=symSrc, pidList=pidList, cpuList=cpuList, fetchG=fetchG)
+    def __init__(self, symSrc=None, pidList=None, fetchG=0):
+        super(UTraceAttr, self).__init__(symSrc=symSrc, pidList=pidList, fetchG=fetchG)
 
 class UTraceData(_libkperf.UTraceData):
     pass
