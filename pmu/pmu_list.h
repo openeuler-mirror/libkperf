@@ -18,6 +18,7 @@
 #include <mutex>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <sys/epoll.h>
 #include "dummy_event.h"
 #include "evt_list.h"
@@ -41,6 +42,15 @@ struct PmuTaskAttr {
     int groupId;                   // event group id
     
     struct PmuTaskAttr* next;       // next task attribute
+};
+
+struct EvtInitCtx {
+    bool oneEvtInitOk = false;
+    int lastErr = SUCCESS;
+    std::unordered_map<int, struct EventGroupInfo> eventGroupInfoMap;
+    std::unordered_set<const EvtList*> removeEvt;
+    std::unordered_map<int, bool> groupLeaderOk;  // if the leader in group init successfully
+    std::unordered_map<int, bool> groupHasGroupedChild;  // if the group has at least one child init successfully
 };
 
 class PmuList {
@@ -107,6 +117,8 @@ private:
     void EraseProcptrList(const unsigned pd);
 
     std::pair<bool, std::shared_ptr<EvtList>> GetEvtGroupState(const int groupId, std::shared_ptr<EvtList> evtList, groupMapPtr eventGroupInfoMap);
+    int InitScanEvtLists(const int pd, std::vector<std::shared_ptr<EvtList>> &evtLists, EvtInitCtx &ctx);
+    int InitGroupChildren(const int pd, EvtInitCtx &ctx);
     int EvtInit(const bool groupEnable, const std::shared_ptr<EvtList> evtLeader, const int pd, const std::shared_ptr<EvtList> &evtList);
     int Init(const int pd);
 
