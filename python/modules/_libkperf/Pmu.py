@@ -2418,8 +2418,6 @@ class CtypesUTraceAttr(ctypes.Structure):
         unsigned numSym;
         int *pidList;
         unsigned numPid;
-        int *cpuList;
-        unsigned numCpu;
         unsigned fetchG;
     };
     """
@@ -2428,8 +2426,6 @@ class CtypesUTraceAttr(ctypes.Structure):
         ('numSym',  ctypes.c_uint),
         ('pidList', ctypes.POINTER(ctypes.c_int)),
         ('numPid',  ctypes.c_uint),
-        ('cpuList', ctypes.POINTER(ctypes.c_int)),
-        ('numCpu',  ctypes.c_uint),
         ('fetchG',  ctypes.c_uint),
     ]
 
@@ -2451,14 +2447,6 @@ class CtypesUTraceAttr(ctypes.Structure):
         else:
             self.pidList = None
             self.numPid = ctypes.c_uint(0)
-
-        if cpuList:
-            numCpu = len(cpuList)
-            self.cpuList = (ctypes.c_int * numCpu)(*cpuList)
-            self.numCpu = ctypes.c_uint(numCpu)
-        else:
-            self.cpuList = None
-            self.numCpu = ctypes.c_uint(0)
         
         self.fetchG = ctypes.c_uint(fetchG)
 
@@ -2511,24 +2499,6 @@ class UTraceAttr(object):
         else:
             self.c_u_trace_attr.pidList = None
             self.c_u_trace_attr.numPid = ctypes.c_uint(0)
-
-    @property
-    def numCpu(self):
-        return int(self.c_u_trace_attr.numCpu)
-
-    @property
-    def cpuList(self):
-        return [int(self.c_u_trace_attr.cpuList[i]) for i in range(self.numCpu)]
-
-    @cpuList.setter
-    def cpuList(self, cpuList):
-        if cpuList:
-            numCpu = len(cpuList)
-            self.c_u_trace_attr.cpuList = (ctypes.c_int * numCpu)(*cpuList)
-            self.c_u_trace_attr.numCpu = ctypes.c_uint(numCpu)
-        else:
-            self.c_u_trace_attr.cpuList = None
-            self.c_u_trace_attr.numCpu = ctypes.c_uint(0)
     
     @property
     def fetchG(self):

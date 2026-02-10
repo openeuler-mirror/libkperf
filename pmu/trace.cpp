@@ -133,8 +133,6 @@ int UTraceOpen(struct UTraceAttr *attr) {
     pmuAttr.numEvt = evtPtrList.size();
     pmuAttr.pidList = attr->pidList;
     pmuAttr.numPid = attr->numPid;
-    pmuAttr.cpuList = attr->cpuList;
-    pmuAttr.numCpu = attr->numCpu;
     pmuAttr.perThread = 1;
 
     int err = CheckAttr(SAMPLING, &pmuAttr);
