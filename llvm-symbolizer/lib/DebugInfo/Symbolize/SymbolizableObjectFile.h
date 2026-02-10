@@ -29,6 +29,12 @@ class DataExtractor;
 
 namespace symbolize {
 
+struct PLTEntry {
+  uint64_t Addr;
+  std::string Name;
+  uint64_t Size;
+};
+
 class SymbolizableObjectFile : public SymbolizableModule {
 public:
   static ErrorOr<std::unique_ptr<SymbolizableObjectFile>>
@@ -65,6 +71,12 @@ private:
 
   object::ObjectFile *Module;
   std::unique_ptr<DIContext> DebugInfoContext;
+
+  std::map<uint64_t, PLTEntry> PLTSymbols;
+
+  void parsePLTSection(const object::ObjectFile *Obj);
+  
+  bool isPLTAddr(uint64_t Address, PLTEntry *Entry = nullptr) const;
 
   struct SymbolDesc {
     uint64_t Addr;
