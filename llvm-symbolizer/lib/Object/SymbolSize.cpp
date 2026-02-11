@@ -43,10 +43,59 @@ llvm::object::computeSymbolSizes(const ObjectFile &O) {
 
   if (const auto *E = dyn_cast<ELFObjectFileBase>(&O)) {
     auto Syms = E->symbols();
-    if (Syms.begin() == Syms.end())
-      Syms = E->getDynamicSymbolIterators();
-    for (ELFSymbolRef Sym : Syms)
-      Ret.push_back({Sym, Sym.getSize()});
+    if (Syms.begin() == Syms.end()) {
+        Syms = E->getDynamicSymbolIterators();
+    }
+    std::vector<ELFSymbolRef> Symbols;
+    for (ELFSymbolRef Sym : Syms) {
+      auto SymbolTypeErr = Sym.getType();
+      if (SymbolTypeErr) {
+          auto SymbolType = *SymbolTypeErr;
+          if (SymbolType != SymbolRef::ST_Function && SymbolType != SymbolRef::ST_Data) {
+              continue;
+          }
+      }
+      Symbols.push_back(Sym);
+    }
+    std::sort(Symbols.begin(), Symbols.end(), [&](const ELFSymbolRef&A, const ELFSymbolRef &B)
+      {
+        return A.getValue() < B.getValue();
+      });
+    
+    for(size_t I = 0; I < Symbols.size(); ++I) {
+      uint64_t Size = Symbols[I].getSize();
+      if (Size == 0 && I + 1 < Symbols.size()) {
+        auto CurSection = Symbols[I].getSection();
+        auto NextSection = Symbols[I + 1].getSection();
+        if (!CurSection || !NextSection) {
+          continue;
+        }
+
+        if (*CurSection != E->section_end() && *NextSection != E->section_end() && *CurSection != *NextSection) {
+          const uint64_t SecSize = CurSection.get()->getSize();
+          const uint64_t StartAddr = CurSection.get()->getAddress();
+          auto SymAddrErr = Symbols[I].getAddress();
+          if (SymAddrErr) {
+            if (SecSize + StartAddr > *SymAddrErr) {
+              Size = SecSize + StartAddr - *SymAddrErr;
+            }
+          }
+        }
+
+        if (*CurSection != E->section_end() && *NextSection != E->section_end() && *CurSection == *NextSection) {
+          auto CurAddr = Symbols[I].getAddress();
+          auto NextAddr = Symbols[I + 1].getAddress();
+          if (!CurAddr || !NextAddr) {
+            continue;
+          }
+          
+          if (*NextAddr > *CurAddr) {
+            Size = *NextAddr - *CurAddr;
+          }
+        }
+      }
+      Ret.push_back({Symbols[I], Size});
+    }
     return Ret;
   }
 
