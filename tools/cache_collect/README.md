@@ -1,6 +1,6 @@
 # Cache Collect Tool
 ### 描述
-该工具用于收集 Go 程序的 L2I Cache 和 L2D Cache 信息。
+该工具用于收集程序的 L2I Cache 和 L2D Cache 信息。
 1. 从函数和指令两个角度生成热点统计数据。
 2. 报告每个进程的 L2I Cache 未命中率、L2D Cache 未命中率以及 IPC（每周期指令数）。
 
