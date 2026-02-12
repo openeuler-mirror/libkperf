@@ -122,6 +122,7 @@ namespace KUNPENG_PMU {
             current.ext->pa = rec->pa;
             current.ext->lat = rec->lat;
             current.ext->source = rec->source;
+            current.ext->op = rec->opType;
             current.ts = static_cast<int64_t>(rec->timestamp);
             current.comm = procTopo ? procTopo->comm : nullptr;
             // Assign pc, which will be parsed to Symbol in PmuRead.

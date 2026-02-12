@@ -70,7 +70,7 @@ int main()
         return -1;
     }
 
-    ret = pthread_create(&tids[0], NULL, inc_b, NULL);
+    ret = pthread_create(&tids[1], NULL, inc_b, NULL);
     if (ret != 0) {
         printf("pthread_create error: error code %d\n", ret);
         return -1;

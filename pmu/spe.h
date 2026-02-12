@@ -89,6 +89,7 @@ struct SpeRecord {
     uint64_t pc;
     uint16_t lat;
     uint16_t source;
+    uint32_t opType;
 };
 
 struct PerfEventSample {
