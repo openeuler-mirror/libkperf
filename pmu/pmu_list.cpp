@@ -16,6 +16,7 @@
 #include <memory>
 #include <algorithm>
 #include <numeric>
+#include <string>
 #include <sys/resource.h>
 #include "linked_list.h"
 #include "cpu_map.h"
@@ -163,72 +164,206 @@ namespace KUNPENG_PMU {
     {
         auto err = evtList->Init(groupEnable, evtLeader);
         if (err != SUCCESS) {
+            (void)evtList->Close();
             return err;
         }
 
         err = AddToEpollFd(pd, evtList);
         if (err != SUCCESS) {
+            (void)evtList->Close();
             return err;
         }
 
         return SUCCESS;
     }
 
-    int PmuList::Init(const int pd)
+    static inline bool IsNotInitFatalErr(int err) {
+        return err == LIBPERF_ERR_OPEN_INVALID_FILE;
+    }
+
+    int PmuList::InitScanEvtLists(const int pd, std::vector<std::shared_ptr<EvtList>> &evtLists, EvtInitCtx &ctx)
     {
-        std::unordered_map<int, struct EventGroupInfo> eventGroupInfoMap;
-        for (auto& evtList : GetEvtList(pd)) {
-            if (evtList->GetGroupId() == -1) {
-                auto err = EvtInit(false, nullptr, pd, evtList);
+        for (auto &evtList : evtLists) {
+            const int gid = evtList->GetGroupId();
+            // non-group events
+            if (gid == -1) {
+                int err = EvtInit(false, nullptr, pd, evtList);
                 if (err != SUCCESS) {
-                    return err;
+                    if (!IsNotInitFatalErr(err)) {
+                        return err;
+                    }
+                    ctx.lastErr = err;
+                    ctx.removeEvt.insert(evtList.get());
+                    continue;
+                } else {
+                    ctx.oneEvtInitOk = true;
                 }
                 continue;
-            } 
-            if (eventGroupInfoMap.find(evtList->GetGroupId()) == eventGroupInfoMap.end()) {
-                auto err = EvtInit(true, nullptr, pd, evtList);
+            }
+
+            // group leader init and child collection
+            if (ctx.eventGroupInfoMap.find(gid) == ctx.eventGroupInfoMap.end()) {
+                int err = EvtInit(true, nullptr, pd, evtList);
                 if (err != SUCCESS) {
-                    return err;
-                }
-                eventGroupInfoMap[evtList->GetGroupId()].evtLeader = evtList;
-                eventGroupInfoMap[evtList->GetGroupId()].uncoreState = static_cast<UncoreState>(UncoreState::InitState);
-            } else {
-                eventGroupInfoMap[evtList->GetGroupId()].evtGroupChildList.push_back(evtList);
-            }
-            if (evtList->GetPmuType() == static_cast<PMU_TYPE>(UNCORE_TYPE) || evtList->GetPmuType() == static_cast<PMU_TYPE>(UNCORE_RAW_TYPE)) {
-                eventGroupInfoMap[evtList->GetGroupId()].uncoreState = static_cast<UncoreState>(static_cast<int>(UncoreState::HasUncore) | 
-                                                                    static_cast<int>(eventGroupInfoMap[evtList->GetGroupId()].uncoreState));
-            } else {
-                eventGroupInfoMap[evtList->GetGroupId()].uncoreState = static_cast<UncoreState>(static_cast<int>(UncoreState::HasUncore) & 
-                                                    static_cast<int>(eventGroupInfoMap[evtList->GetGroupId()].uncoreState));
-            }
-        }
-        // handle the event group child event Init
-        for (auto evtGroup : eventGroupInfoMap) {
-            for (auto evtChild : evtGroup.second.evtGroupChildList) {
-                if (eventGroupInfoMap[evtChild.lock()->GetGroupId()].uncoreState == static_cast<UncoreState>(UncoreState::OnlyUncore)) {
-                    return LIBPERF_ERR_INVALID_GROUP_ALL_UNCORE;
-                }
-                int err = 0;
-                if (eventGroupInfoMap[evtChild.lock()->GetGroupId()].uncoreState == static_cast<UncoreState>(UncoreState::HasUncore)) {
-                    SetWarn(LIBPERF_WARN_INVALID_GROUP_HAS_UNCORE);
-                    err = EvtInit(false, nullptr, pd, evtChild.lock());
+                    if (!IsNotInitFatalErr(err)) {
+                        return err;
+                    }
+                    ctx.lastErr = err;
+                    ctx.removeEvt.insert(evtList.get());
+                    ctx.groupLeaderOk[gid] = false;
+                    ctx.eventGroupInfoMap[gid].uncoreState = static_cast<UncoreState>(UncoreState::InitState);
+                    continue;
                 } else {
-                    err = EvtInit(true, eventGroupInfoMap[evtChild.lock()->GetGroupId()].evtLeader.lock(), pd, evtChild.lock());
+                    ctx.eventGroupInfoMap[gid].evtLeader = evtList;
+                    ctx.eventGroupInfoMap[gid].uncoreState = static_cast<UncoreState>(UncoreState::InitState);
+                    ctx.groupLeaderOk[gid] = true;
+                    ctx.oneEvtInitOk = true;
+                }
+                ctx.groupHasGroupedChild[gid] = false;
+            } else {
+                ctx.eventGroupInfoMap[gid].evtGroupChildList.push_back(evtList);
+            }
+
+            // uncore state compute
+            if (evtList->GetPmuType() == static_cast<PMU_TYPE>(UNCORE_TYPE) || evtList->GetPmuType() == static_cast<PMU_TYPE>(UNCORE_RAW_TYPE)) {
+                ctx.eventGroupInfoMap[gid].uncoreState = static_cast<UncoreState>(static_cast<int>(UncoreState::HasUncore) |
+                                            static_cast<int>(ctx.eventGroupInfoMap[gid].uncoreState));
+            } else {
+                ctx.eventGroupInfoMap[gid].uncoreState = static_cast<UncoreState>(static_cast<int>(UncoreState::HasUncore) &
+                                            static_cast<int>(ctx.eventGroupInfoMap[gid].uncoreState));
+            }
+        }
+        return SUCCESS;
+    }
+
+    int PmuList::InitGroupChildren(const int pd, EvtInitCtx &ctx)
+    {
+        for (auto &kv : ctx.eventGroupInfoMap) {
+            const int gid = kv.first;
+            auto &grpInfo = kv.second;
+            if (grpInfo.uncoreState == static_cast<UncoreState>(UncoreState::OnlyUncore)) {
+                return LIBPERF_ERR_INVALID_GROUP_ALL_UNCORE;
+            }
+            std::shared_ptr<EvtList> leader = nullptr;
+            auto itLeaderOk = ctx.groupLeaderOk.find(gid);
+            if (itLeaderOk != ctx.groupLeaderOk.end() && itLeaderOk->second) {
+                leader = grpInfo.evtLeader.lock();
+            }
+
+            for (auto &evtChild : grpInfo.evtGroupChildList) {
+                auto child = evtChild.lock();
+                if (!child) {
+                    continue;
+                }
+                int err = SUCCESS;
+                if (grpInfo.uncoreState == static_cast<UncoreState>(UncoreState::HasUncore)) {
+                    SetWarn(LIBPERF_WARN_INVALID_GROUP_HAS_UNCORE);
+                    err = EvtInit(false, nullptr, pd, child);
+                } else {
+                    if (leader) {
+                        err = EvtInit(true, leader, pd, child);
+                        if (err == SUCCESS) {
+                            ctx.groupHasGroupedChild[gid] = true;
+                        }
+                    } else {
+                        err = EvtInit(false, nullptr, pd, child);
+                    }
                 }
                 if (err != SUCCESS) {
-                    return err;
+                    if (!IsNotInitFatalErr(err)) {
+                        return err;
+                    }
+                    ctx.lastErr = err;
+                    ctx.removeEvt.insert(child.get());
+                    continue;
+                } else {
+                    ctx.oneEvtInitOk = true;
                 }
             }
-            evtGroup.second.evtLeader.lock()->SetGroupInfo(evtGroup.second);
-        }
-        groupMapPtr eventDataEvtGroup = std::make_shared<std::unordered_map<int, EventGroupInfo>>(eventGroupInfoMap);
-        InsertDataEvtGroupList(pd, eventDataEvtGroup);
-        // after init move the init err perfEvt
-        for (auto& evtList : GetEvtList(pd)) {
-            evtList->RemoveInitErr();
         }
 
+        return SUCCESS;
+    }
+
+    static inline std::string GetRemoveEvtNames(const std::unordered_set<const EvtList*>& removeEvt)
+    {
+        std::vector<std::string> names;
+        names.reserve(removeEvt.size());
+        for (auto p : removeEvt) {
+            if (!p) {
+                continue;
+            }
+            names.emplace_back(p->GetPmuEvtName());
+        }
+        std::string out;
+        for (size_t i = 0; i < names.size(); ++i) {
+            if (i) {
+                out += ",";
+            }
+            out += names[i];
+        }
+        return out;
+    }
+
+    int PmuList::Init(const int pd)
+    {
+        EvtInitCtx ctx;
+        auto &evtLists = GetEvtList(pd);
+        int err = InitScanEvtLists(pd, evtLists, ctx);
+        if (err != SUCCESS) {
+            return err;
+        }
+        // handle the event group child Init
+        err = InitGroupChildren(pd, ctx);
+        if (err != SUCCESS) {
+            return err;
+        }
+        const std::string removedNames = GetRemoveEvtNames(ctx.removeEvt);
+        // remove invalid event
+        if (!ctx.removeEvt.empty()) {
+            evtLists.erase(std::remove_if(evtLists.begin(), evtLists.end(), [&](const std::shared_ptr<EvtList> &p) {
+                 return (!p) || (ctx.removeEvt.find(p.get()) != ctx.removeEvt.end());}), evtLists.end());
+        }
+
+        // add to dataEvtGroupList: leader ok and at least one child group init successfully
+        std::unordered_map<int, struct EventGroupInfo> processedGroupInfoMap;
+        for (auto &kv : ctx.eventGroupInfoMap) {
+            const int gid = kv.first;
+            auto &grpInfo = kv.second;
+            const bool leaderOk = ctx.groupLeaderOk.count(gid) && ctx.groupLeaderOk[gid];
+            const bool hasGroupedChild = ctx.groupHasGroupedChild.count(gid) && ctx.groupHasGroupedChild[gid];
+            auto leader = leaderOk ? grpInfo.evtLeader.lock() : nullptr;
+            if (leader && hasGroupedChild) {
+                EventGroupInfo newInfo = grpInfo;
+                newInfo.evtGroupChildList.clear();
+                for (auto &evt : grpInfo.evtGroupChildList) {
+                    auto sp = evt.lock();
+                    if (!sp) {
+                        continue;
+                    }
+                    if (ctx.removeEvt.count(sp.get())) {
+                        continue;
+                    }
+                    newInfo.evtGroupChildList.push_back(evt);
+                }
+                leader->SetGroupInfo(newInfo);
+                processedGroupInfoMap.emplace(gid, newInfo);
+            }
+        }
+        groupMapPtr eventDataEvtGroup = std::make_shared<std::unordered_map<int, EventGroupInfo>>(processedGroupInfoMap);
+        InsertDataEvtGroupList(pd, eventDataEvtGroup);
+        // after init move the init err perfEvt
+        for (auto &evtList : evtLists) {
+            if (evtList) {
+                evtList->RemoveInitErr();
+            }
+        }
+        if (!ctx.oneEvtInitOk) {
+            return ctx.lastErr;
+        }
+        if (ctx.lastErr != SUCCESS) {
+            SetWarn(ctx.lastErr, "Initialization failed: " + removedNames);
+        }
         return SUCCESS;
     }
 

@@ -188,7 +188,9 @@ void KUNPENG_PMU::EvtListDefault::FillFields(
             // For no group events or group leader.
             data[i].evt = this->pmuEvt->name.c_str();
         }
-        data[i].groupId = this->groupId;
+        // when leader event is invalid or only one valid event in this group, when groupId will be set to -1
+        bool groupEffective = (groupInfo != nullptr) && !groupInfo->evtGroupChildList.empty();
+        data[i].groupId = groupEffective ? this->groupId : -1;
         if (data[i].comm == nullptr) {
             if (procMap.find(data[i].tid) != procMap.end()) {
                 data[i].comm = procMap[data[i].tid]->comm;
