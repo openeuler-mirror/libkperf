@@ -475,8 +475,13 @@ static inline SampleInfo PrepSample(const PmuData& o)
 
     bool isLoad  = (o.ext->op & SPE_OP_LD) != 0;
     bool isStore = (o.ext->op & SPE_OP_ST) != 0;
+    bool isAtomic = (o.ext->op & SPE_OP_ATOMIC) != 0;
+    if (isAtomic) {
+        isStore = true;
+    }
+
     s.keepSt = isStore;
-    s.keepLd = isLoad && ((o.ext->event & SPE_FORWARD_HAZARD) && (o.ext->event & SPE_STRUCTURE_HAZARD));
+    s.keepLd = isLoad && ((o.ext->event & SPE_FORWARD_HAZARD) || (o.ext->event & SPE_STRUCTURE_HAZARD));
     s.va = o.ext->va;
     s.cpu = o.cpu;
     s.tid = o.tid;
