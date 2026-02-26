@@ -177,7 +177,7 @@ int main() {
     int len = PmuRead(pd, &data);
     for (int i = 0; i < len; ++i) {
         PmuData *d = &data[i];
-        std::cout << "evt=" << d->evt << "count=" << d->count << std::endl;
+        std::cout << "evt=" << d->evt << " count=" << d->count << std::endl;
     }
     // To free PmuData, call PmuDataFree.
     PmuDataFree(data);
@@ -253,28 +253,27 @@ from collections import defaultdict
 
 import kperf
 
-def Counting():
-    evtList = ["r11", "cycles"]
-    pmu_attr = kperf.PmuAttr(evtList=evtList)
-    pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
-    if pd == -1:
-        print(kperf.errorno())
-        print(kperf.error())
+evtList = ["r11", "cycles"]
+pmu_attr = kperf.PmuAttr(evtList=evtList)
+pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
+if pd == -1:
+    print(kperf.errorno())
+    print(kperf.error())
 
-    kperf.enable(pd)
+kperf.enable(pd)
 
-    for _ in range(3):
-        time.sleep(1)
-        data_iter = kperf.read(pd)
-        evtMap = defaultdict(int)
-        for data in data_iter.iter:
-            evtMap[data.evt] += data.count
+for _ in range(3):
+    time.sleep(1)
+    data_iter = kperf.read(pd)
+    evtMap = defaultdict(int)
+    for data in data_iter.iter:
+        evtMap[data.evt] += data.count
 
-        for evt, count in evtMap.items():
-            print(f"event: {evt} count: {count}")
+    for evt, count in evtMap.items():
+        print(f"event: {evt} count: {count}")
 
-    kperf.disable(pd)
-    kperf.close(pd)
+kperf.disable(pd)
+kperf.close(pd)
 ```
 
 * Go example

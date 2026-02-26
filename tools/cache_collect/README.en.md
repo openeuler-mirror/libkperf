@@ -1,6 +1,6 @@
 # Cache Collect Tool
 ### Description
-This tool is designed to collect L2I cache, l2D cache information of go program.
+This tool is designed to collect L2I cache, l2D cache information of program.
 
 1. It generates statistics of hotspots from the function and instruction perspectives. 
 
