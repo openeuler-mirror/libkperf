@@ -265,6 +265,7 @@ TEST_F(UTraceTest, OpenWithNonExistentSinglePid)
     this->pd = UTraceOpen(&attr);
     EXPECT_EQ(this->pd, -1);
     EXPECT_EQ(Perrorno(), LIBPERF_ERR_INVALID_PID);
+    EXPECT_EQ(Perror(), "failed to find process by pid");
 }
 
 TEST_F(UTraceTest, OpenWithMixedValidInvalidPids)
@@ -285,6 +286,7 @@ TEST_F(UTraceTest, OpenWithMixedValidInvalidPids)
     this->pd = UTraceOpen(&attr);
     EXPECT_EQ(this->pd, -1);
     EXPECT_EQ(Perrorno(), LIBPERF_ERR_INVALID_PID);
+    EXPECT_EQ(Perror(), "failed to find process by pid");
 }
 
 TEST_F(UTraceTest, OpenWithNegativePid)

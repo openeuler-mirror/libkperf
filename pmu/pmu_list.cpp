@@ -1221,6 +1221,7 @@ namespace KUNPENG_PMU {
             int numChild = 0;
             int* childTidList = GetChildTid(masterPid, &numChild);
             if (childTidList == nullptr) {
+                New(LIBPERF_ERR_INVALID_PID);
                 return LIBPERF_ERR_INVALID_PID;
             }
             bool foundProc = false;
