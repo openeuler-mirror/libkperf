@@ -17,10 +17,8 @@ bash build.sh
 ```
 2. 构建cache collect工具：
 ```
-cd tools/cache_collect
-mkdir build && cd build
-cmake ..
-make
+cd tools
+bash build_tools.sh cache_collect
 ```
 
 ### 运行
