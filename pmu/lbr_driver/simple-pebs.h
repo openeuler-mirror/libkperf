@@ -35,12 +35,17 @@
 #define KPERF_PEBS_DATACFG_LBR_SHIFT  24
 #define SIMPLE_PEBS_MAX_LBR     32
 
+/* freeze LBR updates on NMI */
+#define KPERF_MSR_IA32_DEBUGCTLMSR 0x00000345
+#define DEBUGCTLMSR_FREEZE_LBRS_ON_PMI (1UL << 11)
+
 /* Arch LBR register */
 #define KPERF_MSR_ARCH_LBR_CTL        0x000014ce
 #define KPERF_MSR_ARCH_LBR_DEPTH      0x000014cf
 #define KPERF_ICL_EVENTSEL_ADAPTIVE   (1ULL << 34)
 #define KPERF_CAP_PEBS_BASELINE  BIT_ULL(14)
 #define KPERF_ARCH_LBR_CTL_LBREN    BIT_ULL(0)
+#define KPERF_LBR_SELECT_MASK     0x3ffULL
 
 #define KPERF_LBR_CTL_KERNEL   BIT_ULL(1)
 #define KPERF_LBR_CTL_USER     BIT_ULL(2)
@@ -59,7 +64,7 @@
 #define PEBS_SIZE_BYTES(b) ((u16)((b)->format_size))
 
 /* refresh LBR record*/
-#define KPERF_GLOBAL_OVF_PMC0  BIT_ULL(0)
+#define KPERF_GLOBAL_PMC0  BIT_ULL(0)
 #define KPERF_GLOBAL_LBR_FRZ   BIT_ULL(58)
 #define KPERF_GLOBAL_OVF_BUF   BIT_ULL(62)
 

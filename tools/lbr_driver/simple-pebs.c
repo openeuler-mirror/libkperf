@@ -59,20 +59,20 @@
 #include <linux/fs.h>
 #include <linux/mm.h>
 #include <linux/uaccess.h>
-#include <linux/notifier.h>
 #include <linux/slab.h>
 #include <linux/cpu.h>
 #include <linux/poll.h>
 #include <linux/percpu.h>
 #include <linux/wait.h>
-#include <linux/kallsyms.h>
-#include <linux/version.h>
+#include <linux/irq_work.h>
+#include <linux/smp.h>
 #include <linux/pid_namespace.h>
 #include <linux/pid.h>
+#include <linux/nmi.h>
 #include <linux/rcupdate.h>
-#include <linux/rculist.h>
 #include <asm/msr.h>
-#include <asm/desc.h>
+#include <asm/apic.h>
+#include <asm/apicdef.h>
 #include <cpuid.h>
 
 #include "simple-pebs.h"
@@ -80,7 +80,7 @@
 #define MSR_IA32_PERFCTR0      0x000000c1
 #define MSR_IA32_EVNTSEL0      0x00000186
 
-#define MSR_IA32_PERF_CABABILITIES   0x00000345
+#define MSR_IA32_PERF_CAPABILITIES   0x00000345
 #define MSR_IA32_PERF_GLOBAL_STATUS   0x0000038e
 #define MSR_IA32_PERF_GLOBAL_CTRL  0x0000038f
 #define MSR_IA32_PERF_GLOBAL_OVF_CTRL  0x00000390
@@ -99,23 +99,7 @@
 #define FEAT1_PDCM BIT(15)
 #define FEAT2_DS  BIT(21)
 
-/* Deal with Gleixnerfication */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,8,0)
-
-/* No CPU hotplug / suspend with the mess in newer kernels. */
-
-static inline void register_cpu_notifier(struct notifier_block *n) {}
-static inline void unregister_cpu_notifier(struct notifier_block *n) {}
-
-#define CPU_STARTING 0
-#define CPU_DYING 1
-
-#endif
-
-static unsigned pebs_event; 
-static volatile int pebs_error;
-static int pebs_vector = 0xf0;
-static bool pebs_baseline;
+static unsigned pebs_event = 0x003c;
 
 static int lbr_depth = 32;
 module_param(lbr_depth, int, 0444);
@@ -134,17 +118,52 @@ struct s_debug_store {
     u64 pebs_reset[4];
 };
 
-static DEFINE_PER_CPU(void *, out_buffer_base);
-static DEFINE_PER_CPU(void *, out_buffer);
-static DEFINE_PER_CPU(void *, out_buffer_end);
+/* per-CPU runtime state for simple-pebs*/
+struct simple_pebs_cpu_state {
+    struct s_debug_store *ds;
+    void *pebs_buf;  /* PEBS record buffer */
 
-static DEFINE_PER_CPU(struct s_debug_store *, cpu_ds);
-static DEFINE_PER_CPU(unsigned long, cpu_old_ds);
+    /* Output buffer */
+    void *out_base;
+    void *out_ptr;
+    void *out_end;
 
-static DEFINE_PER_CPU(wait_queue_head_t, simple_pebs_wait);
+    wait_queue_head_t waitq; /* poll/select wait queue for user space readers */
+    struct irq_work wake_work; /* wakeup helper for NMI context */
 
-static DEFINE_PER_CPU(u64, old_lvtpc);
-static DEFINE_PER_CPU(int, cpu_initialized);
+    bool active; /* whether sampling is currently active on this CPU */
+    struct file *owner; /* the fd that started sampling on this CPU */
+    bool allocated; /* true if buffers were successfully allocated fot this CPU */
+
+    /* restore when stop */
+    u64 old_ds_area;
+    u64 old_pebs_data_cfg;
+    u64 old_debugctl;
+
+    u64 old_arch_lbr_ctl;
+    u64 old_arch_lbr_depth;
+
+    u64 old_pebs_enable;
+    u64 old_global_ctrl;
+    u64 old_evntsel;
+
+    u32 old_lvtpc;
+
+    /* programmed value for NMI delivery (APIC_DM_NMI, unmasked) */
+    u32 lvtpc_nmi;
+};
+static DEFINE_PER_CPU(struct simple_pebs_cpu_state, cpu_state);
+
+struct cpu_req {
+    struct file *file;
+    int ret;
+};
+
+/* reopen LVT and clear mask to allow the next NMI delivery */
+static inline void lvtpc_unmask(struct simple_pebs_cpu_state *st)
+{
+    apic_write(APIC_LVTPC, st->lvtpc_nmi & ~APIC_LVT_MASKED);
+}
 
 struct simple_pebs_file_ctx {
     int cpu;                    /* -1: not bound */
@@ -174,7 +193,7 @@ static void pebs_pidns_binding_rcu_free(struct rcu_head *rh)
 static bool check_cpu(void)
 {
     unsigned a, b, c, d;
-    unsigned max, model, fam;
+    unsigned max, fam;
     unsigned feat1, feat2;
     
     __cpuid(0, max, b, c, d);
@@ -184,39 +203,9 @@ static bool check_cpu(void)
     }
 
     __cpuid(1, a, b, feat1, feat2);
-    model = ((a >> 4) & 0xf);
     fam = (a >> 8) & 0xf;
-    if (fam == 6 || fam == 0xf)
-        model += ((a >> 16) & 0xf) << 4;
     if (fam != 6) {
         pr_err("Not an supported Intel CPU\n");
-        return false;
-    }
-    
-    switch (model) { 
-    case 58: /* IvyBridge */
-    case 63: /* Haswell_EP */
-    case 69: /* Haswell_ULT */
-    case 61: /* Broadwell client */
-    case 78: /* Skylake */
-    case 85: /* Skylake */
-    case 86: /* Broadwell */
-    case 94: /* Skylake */
-    case 142: /* Kabylake */
-    case 158: /* Kabylake */
-    case 207:
-        /* pebs_event = 0x1c2; for UOPS_RETIRED.ALL */
-        pebs_event = 0x003c; /*cycles*/
-        break;
-
-    case 55: /* Bay Trail */
-    case 76: /* Airmont */
-    case 77: /* Avoton */
-        pebs_event = 0x0c5; /* BR_MISP_RETIRED.ALL_BRANCHES */
-        break;
-
-    default:
-        pr_err("Unknown CPU model %d\n", model);
         return false;
     }
 
@@ -262,8 +251,6 @@ static bool check_cpu(void)
             pr_err("Unsupported PEBS format %d\n",format);
             return false;
         }
-        pebs_baseline = !!(cap & KPERF_CAP_PEBS_BASELINE) && (format >= 4);
-        pr_info("PERF_CAP=%llx pebs_format=%d baseline=%d\n", cap, format, pebs_baseline);
         /* Could check PEBS_TRAP */
     } else {
         pr_err("No PERF_CAPABILITIES support\n");
@@ -293,7 +280,7 @@ static int simple_pebs_mmap(struct file *file, struct vm_area_struct *vma)
         return -EIO;
 
     return remap_pfn_range(vma, vma->vm_start,
-                __pa(per_cpu(out_buffer_base, cpu)) >> PAGE_SHIFT,
+                __pa(per_cpu(cpu_state, cpu).out_base) >> PAGE_SHIFT,
                 OUT_BUFFER_SIZE,
                 vma->vm_page_prot);
 }
@@ -302,49 +289,17 @@ static unsigned int simple_pebs_poll(struct file *file, poll_table *wait)
 {
     struct simple_pebs_file_ctx *ctx = file->private_data;
     unsigned long cpu;
+    struct simple_pebs_cpu_state *st;
 
     if (!ctx || ctx->cpu < 0)
         return 0;
     cpu = (unsigned long)ctx->cpu;
+    st = &per_cpu(cpu_state, cpu);
 
-    poll_wait(file, &per_cpu(simple_pebs_wait, cpu), wait);
-    if (per_cpu(out_buffer, cpu) > per_cpu(out_buffer_base, cpu))
+    poll_wait(file, &st->waitq, wait);
+    if (READ_ONCE(st->out_ptr) > st->out_base)
         return POLLIN | POLLRDNORM;
     return 0;
-}
-
-static void status_dump(char *where)
-{
-#if 1
-    u64 val, val2;
-    rdmsrl(MSR_IA32_PERF_GLOBAL_STATUS, val);
-    rdmsrl(MSR_IA32_PERF_GLOBAL_CTRL, val2);
-    pr_debug("%d: %s: status %llx ctrl %llx counter %llx\n", smp_processor_id(), where, val, val2, __builtin_ia32_rdpmc(0));
-#endif
-}
-
-static void start_stop_cpu(void *arg)
-{
-    wrmsrl(MSR_IA32_PERF_GLOBAL_CTRL, arg ? 1 : 0);
-    status_dump("stop");
-}
-
-static void reset_buffer_cpu(void *arg)
-{
-    struct s_debug_store *ds = __this_cpu_read(cpu_ds);
-
-    wrmsrl(MSR_IA32_PERF_GLOBAL_CTRL, 0);
-
-    /* reset pebs_index, out_buffer, adn reinstall the counter */
-    if (ds) {
-        ds->pebs_index = ds->pebs_base;
-    }
-    __this_cpu_write(out_buffer, __this_cpu_read(out_buffer_base));
-    wrmsrl(MSR_IA32_PERFCTR0, -(long long)PERIOD);
-    wrmsrl(MSR_IA32_PERF_GLOBAL_OVF_CTRL,
-           KPERF_GLOBAL_OVF_BUF | KPERF_GLOBAL_LBR_FRZ | KPERF_GLOBAL_OVF_PMC0);
-
-    wrmsrl(MSR_IA32_PERF_GLOBAL_CTRL, 1);
 }
 
 static DEFINE_MUTEX(reset_mutex);
@@ -385,6 +340,11 @@ static int bind_cpu_pidns(struct file *file, int cpu, struct pid_namespace *pidn
     return 0;
 }
 
+
+static void simple_pebs_cpu_init(void *info);
+static void simple_pebs_cpu_stop(void *info);
+static void simple_pebs_cpu_reset(void *info);
+
 static int simple_pebs_open(struct inode *inode, struct file *file)
 {
     struct simple_pebs_file_ctx *ctx;
@@ -409,8 +369,9 @@ static int simple_pebs_release(struct inode *inode, struct file *file)
          * to reduce chance of PMI racing with teardown.
          */
         if (ctx->cpu >= 0 && ctx->cpu < NR_CPUS) {
+            struct cpu_req req = { .file = file, .ret = 0 };
             mutex_lock(&reset_mutex);
-            smp_call_function_single(ctx->cpu, start_stop_cpu, (void*)0, 1);
+            smp_call_function_single(ctx->cpu, simple_pebs_cpu_stop, &req, 1);
             mutex_unlock(&reset_mutex);
         }
 
@@ -453,42 +414,52 @@ static long simple_pebs_ioctl(struct file *file, unsigned int cmd,
          return 0;
     }
     case SIMPLE_PEBS_GET_SIZE:
-        return put_user(OUT_BUFFER_SIZE, (int *)arg);
+        return put_user(OUT_BUFFER_SIZE, (int __user *)arg);
     case SIMPLE_PEBS_GET_OFFSET: {
-        unsigned len;
         if (ctx->cpu < 0)
             return -EINVAL;
         cpu = (unsigned long)ctx->cpu;
-        len = per_cpu(out_buffer, cpu) - per_cpu(out_buffer_base, cpu);
-        return put_user(len, (unsigned *)arg);
+        {
+            struct simple_pebs_cpu_state *st = &per_cpu(cpu_state, cpu);
+            unsigned len = (unsigned)((char *)READ_ONCE(st->out_ptr) - (char *)st->out_base);
+            return put_user(len, (unsigned __user *)arg);
+        }
     }
     case SIMPLE_PEBS_START:
         /* reset out_buffer and pebs_index to get new data */
         if (ctx->cpu < 0)
             return -EINVAL;
         cpu = (unsigned long)ctx->cpu;
-        mutex_lock(&reset_mutex);
-        smp_call_function_single(cpu, reset_buffer_cpu, NULL, 1);
-        smp_call_function_single(cpu, start_stop_cpu, (void*)1, 1);
-        mutex_unlock(&reset_mutex);
-        return 0;
+        {
+            /* check permission/owner and get result */
+            struct cpu_req req = { .file = file, .ret = 0 };
+            mutex_lock(&reset_mutex);
+            smp_call_function_single(cpu, simple_pebs_cpu_init, &req, 1);
+            mutex_unlock(&reset_mutex);
+            return req.ret;
+        }
     case SIMPLE_PEBS_STOP:
         if (ctx->cpu < 0)
             return -EINVAL;
         cpu = (unsigned long)ctx->cpu;
-        mutex_lock(&reset_mutex);
-        smp_call_function_single(cpu, start_stop_cpu,
-                (void *)(long)(cmd == SIMPLE_PEBS_START), 1);
-        mutex_unlock(&reset_mutex);
-        return 0;
+        {
+            struct cpu_req req = { .file = file, .ret = 0 };
+            mutex_lock(&reset_mutex);
+            smp_call_function_single(cpu, simple_pebs_cpu_stop, &req, 1);
+            mutex_unlock(&reset_mutex);
+            return req.ret;
+        }
     case SIMPLE_PEBS_RESET:
         if (ctx->cpu < 0)
             return -EINVAL;
         cpu = (unsigned long)ctx->cpu;
-        mutex_lock(&reset_mutex);
-        smp_call_function_single(cpu, reset_buffer_cpu, NULL, 1);
-        mutex_unlock(&reset_mutex);
-        return 0;
+        {
+            struct cpu_req req = { .file = file, .ret = 0 };
+            mutex_lock(&reset_mutex);
+            smp_call_function_single(cpu, simple_pebs_cpu_reset, &req, 1);
+            mutex_unlock(&reset_mutex);
+            return req.ret;
+        }
     default:
         return -ENOTTY;
     }
@@ -510,138 +481,171 @@ static struct miscdevice simple_pebs_miscdev = {
     &simple_pebs_fops
 };
 
+/* notify poll/select waiters from irq_work context (not in NMI) */
+static void simple_pebs_wake_workfn(struct irq_work *w)
+{
+    struct simple_pebs_cpu_state *st = container_of(w, struct simple_pebs_cpu_state, wake_work);
+
+    wake_up_interruptible(&st->waitq);
+}
+
 /* Allocate DS and PEBS buffer */
 static int allocate_buffer(void)
 {
-    struct s_debug_store *ds;
+    int cpu;
+    int ret = 0;
 
-    ds = kmalloc(sizeof(struct s_debug_store), GFP_KERNEL);
-    if (!ds) {
-        pr_err("Cannot allocate DS\n");
-        return -ENOMEM;
+    for_each_possible_cpu(cpu) {
+        struct simple_pebs_cpu_state *st = &per_cpu(cpu_state, cpu);
+        unsigned long out_addr;
+
+        memset(st, 0, sizeof(*st));
+        st->ds = (struct s_debug_store *)__get_free_pages(GFP_KERNEL | __GFP_ZERO, 0);
+        if (!st->ds) {
+            ret = -ENOMEM;
+            goto fail;
+        }
+        st->pebs_buf = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO, get_order(S_PEBS_BUFFER_SIZE));
+        if (!st->pebs_buf) {
+            ret = -ENOMEM;
+            goto fail;
+        }
+        out_addr = __get_free_pages(GFP_KERNEL | __GFP_ZERO, get_order(OUT_BUFFER_SIZE));
+        if (!out_addr) {
+            ret = -ENOMEM;
+            goto fail;
+        }
+
+        st->out_base = (void *)out_addr;
+        st->out_ptr  = st->out_base;
+        st->out_end  = (void *)(out_addr + OUT_BUFFER_SIZE);
+
+        init_waitqueue_head(&st->waitq);  /* poll/select wait queue*/
+        init_irq_work(&st->wake_work, simple_pebs_wake_workfn);
+
+        st->active = false;
+        st->owner  = NULL;
+        st->allocated = true;
     }
-    memset(ds, 0, sizeof(*ds));
-
-    ds->pebs_base = (unsigned long)kmalloc(S_PEBS_BUFFER_SIZE, GFP_KERNEL);
-    if (!ds->pebs_base) {
-        pr_err("Cannot allocate PEBS buffer\n");
-        kfree(ds);
-        return -ENOMEM;
-    }
-
-    memset((void *)ds->pebs_base, 0, S_PEBS_BUFFER_SIZE);
-
-    ds->pebs_index = ds->pebs_base;
-    ds->pebs_max = ds->pebs_base + S_PEBS_BUFFER_SIZE;
-    ds->pebs_thresh = ds->pebs_base + (S_PEBS_BUFFER_SIZE * 9) / 10;
-
-    /* Counter reset value */
-    ds->pebs_reset[0] = -(long long)PERIOD;
-
-    __this_cpu_write(cpu_ds, ds);
-
-    status_dump("allocate_buffer");
     return 0;
+
+fail:
+    for_each_possible_cpu(cpu) {
+        struct simple_pebs_cpu_state *st;
+        st = &per_cpu(cpu_state, cpu);
+        if (!st->allocated)
+            continue;
+
+        if (st->out_base) {
+            free_pages((unsigned long)st->out_base, get_order(OUT_BUFFER_SIZE));
+            st->out_base = NULL;
+            st->out_ptr = NULL;
+            st->out_end = NULL;
+        }
+        if (st->pebs_buf) {
+            free_pages((unsigned long)st->pebs_buf, get_order(S_PEBS_BUFFER_SIZE));
+            st->pebs_buf = NULL;
+        }
+        if (st->ds) {
+            free_pages((unsigned long)st->ds, 0);
+            st->ds = NULL;
+        }
+    }
+    return ret;
 }
 
-static int allocate_out_buf(void)
+static void free_buffer(void)
 {
-    unsigned long addr;
-    /* for physical continuous memory */
-    addr = __get_free_pages(GFP_KERNEL | __GFP_ZERO, get_order(OUT_BUFFER_SIZE));
-    if (!addr) {
-        pr_err("Cannot allocate out buffer\n");
-        return -ENOMEM;
-    }
+    int cpu;
+    for_each_possible_cpu(cpu) {
+        struct simple_pebs_cpu_state *st = &per_cpu(cpu_state, cpu);
+        if (!st->allocated)
+            continue;
 
-    __this_cpu_write(out_buffer_base, (void *)addr);
-    __this_cpu_write(out_buffer, (void *)addr);
-    __this_cpu_write(out_buffer_end, (void *)(addr + OUT_BUFFER_SIZE));
-    return 0;
+        if (st->out_base) {
+            free_pages((unsigned long)st->out_base, get_order(OUT_BUFFER_SIZE));
+            st->out_base = NULL;
+            st->out_ptr = NULL;
+            st->out_end = NULL;
+        }
+        if (st->pebs_buf) {
+            free_pages((unsigned long)st->pebs_buf, get_order(S_PEBS_BUFFER_SIZE));
+            st->pebs_buf = NULL;
+        }
+        if (st->ds) {
+            free_pages((unsigned long)st->ds, 0);
+            st->ds = NULL;
+        }
+    }
 }
 
-extern void simple_pebs_entry(void);
-
-#ifdef CONFIG_64BIT
-
-asm("    .globl simple_pebs_entry\n"
-    "simple_pebs_entry:\n"
-    "    cld\n"
-    "    testq $3,8(%rsp)\n"
-    "    jz    1f\n"
-    "    swapgs\n"
-    "1:\n"
-    "    pushq $0\n" /* error code */
-    "    pushq %rdi\n"
-    "    pushq %rsi\n"
-    "    pushq %rdx\n"
-    "    pushq %rcx\n"
-    "    pushq %rax\n"
-    "    pushq %r8\n"
-    "    pushq %r9\n"
-    "    pushq %r10\n"
-    "    pushq %r11\n"
-    "    pushq %rbx\n"
-    "    pushq %rbp\n"
-    "    pushq %r12\n"
-    "    pushq %r13\n"
-    "    pushq %r14\n"
-    "    pushq %r15\n"
-    "1:    call simple_pebs_pmi\n"
-    "    popq %r15\n"
-    "    popq %r14\n"
-    "    popq %r13\n"
-    "    popq %r12\n"
-    "    popq %rbp\n"
-    "    popq %rbx\n"
-    "    popq %r11\n"
-    "    popq %r10\n"
-    "    popq %r9\n"
-    "    popq %r8\n"
-    "    popq %rax\n"
-    "    popq %rcx\n"
-    "    popq %rdx\n"
-    "    popq %rsi\n"
-    "    popq %rdi\n"
-    "    addq $8,%rsp\n" /* error code */
-    "    testq $3,8(%rsp)\n"
-    "    jz 2f\n"
-    "    swapgs\n"
-    "2:\n"
-    "    iretq");
-
-#else
-#error write me
-#endif
+static inline u8 clamp_lbr_depth(int v)
+{
+    if (v < 1) {
+        v = 1;
+    }
+    if (v > 32) {
+        v = 32;
+    }
+    return (u8)v;
+}
 
 static int pebs_group_lbr_depth(u64 format_size)
 {
     return ((format_size >> KPERF_PEBS_DATACFG_LBR_SHIFT) & 0xff) + 1;
 }
 
-void simple_pebs_pmi(void)
+static int simple_pebs_nmi_handler(unsigned int val, struct pt_regs *regs)
 {
     struct s_debug_store *ds;
     u8 *p, *end;
     u8 *outp, *outend;
 
-    wrmsrl(MSR_IA32_PERF_GLOBAL_CTRL, 0);
+    struct simple_pebs_cpu_state *st = this_cpu_ptr(&cpu_state);
+    u64 status, ctrl_before, ctrl_disable;
+    u8 depth_req;
+    bool has_ovf, has_pebs;
 
-    ds = __this_cpu_read(cpu_ds);
-    p = (u8 *)ds->pebs_base;
-    end = (u8 *)ds->pebs_index;
+    (void)val;
+    (void)regs;
 
-    outp = (u8 *)__this_cpu_read(out_buffer);
-    outend = (u8 *)__this_cpu_read(out_buffer_end);
+    if (!READ_ONCE(st->active))
+        return NMI_DONE;
+
+    ds = READ_ONCE(st->ds);
+    if (!ds)
+        return NMI_DONE;
+
+    rdmsrl(MSR_IA32_PERF_GLOBAL_STATUS, status);
+
+    has_ovf  = !!(status & (KPERF_GLOBAL_PMC0 | KPERF_GLOBAL_OVF_BUF | KPERF_GLOBAL_LBR_FRZ));
+    has_pebs = (READ_ONCE(ds->pebs_index) != READ_ONCE(ds->pebs_base));
+
+    if (!has_ovf && !has_pebs) {
+        lvtpc_unmask(st);
+        return NMI_HANDLED;
+    }
+
+    rdmsrl(MSR_IA32_PERF_GLOBAL_CTRL, ctrl_before);
+    ctrl_disable = ctrl_before & ~KPERF_GLOBAL_PMC0;
+    wrmsrl(MSR_IA32_PERF_GLOBAL_CTRL, ctrl_disable);
+
+    p = (u8 *)(unsigned long)READ_ONCE(ds->pebs_base);
+    end = (u8 *)(unsigned long)READ_ONCE(ds->pebs_index);
+    outp = (u8 *)READ_ONCE(st->out_ptr);
+    outend = (u8 *)READ_ONCE(st->out_end);
+
+    depth_req = clamp_lbr_depth(lbr_depth);
 
     while (p + sizeof(struct pebs_basic) <= end) {
         u64 group;
         u16 sz;
-        int depth, real_depth, i;
-        size_t rec_size, max_lbr_by_sz;
+        int depth = 0, real_depth = 0, i;
         struct pebs_basic *b;
         struct simple_pebs_out_rec *r;
         struct pebs_lbr_entry *lbr;
+        size_t rec_size = sizeof(*r);
+        size_t lbr_bytes;
 
         b = (struct pebs_basic *)p;
         group = PEBS_GROUP(b);
@@ -651,14 +655,6 @@ void simple_pebs_pmi(void)
             break;
         }
 
-        /* depth from PEBS group (if LBRS present) */
-        depth = 0;
-        if (group & KPERF_PEBS_DATACFG_LBRS) {
-            depth = pebs_group_lbr_depth(group);
-        }
-        depth = min(depth, SIMPLE_PEBS_MAX_LBR);
-
-        rec_size = sizeof(struct simple_pebs_out_rec);
         if (outp + rec_size > outend)
             break;
 
@@ -687,28 +683,26 @@ void simple_pebs_pmi(void)
             continue;
         }
 
-        if (depth) {
-            max_lbr_by_sz = 0;
-            if (sz > sizeof(struct pebs_basic)) {
-                max_lbr_by_sz =
-                    (sz - sizeof(struct pebs_basic)) / sizeof(struct pebs_lbr_entry);
-            } else {
-                max_lbr_by_sz = 0;
-            }
-            depth = min(depth, (int)max_lbr_by_sz);
+        if ((group & KPERF_PEBS_DATACFG_LBRS) != 0) {
+            depth = pebs_group_lbr_depth(group);
+            if (depth > SIMPLE_PEBS_MAX_LBR)
+                depth = SIMPLE_PEBS_MAX_LBR;
+            if (depth > depth_req)
+                depth = depth_req;
         }
 
-        real_depth = 0;
-        if (depth) {
-            lbr = (struct pebs_lbr_entry *)(b + 1);
-            for (i = 0; i < depth; i++) {
-                if (lbr[i].from == 0 && lbr[i].to == 0) {
-                    break;
+        if (depth > 0) {
+            lbr_bytes = (size_t)depth * sizeof(struct pebs_lbr_entry);
+            if (sz >= sizeof(*b) + lbr_bytes) {
+                lbr = (struct pebs_lbr_entry *)(p + sz - lbr_bytes);
+                for (i = 0; i < depth; i++) {
+                    if (lbr[i].from == 0 && lbr[i].to == 0)
+                        break;
+                    r->lbr_from[i] = lbr[i].from;
+                    r->lbr_to[i]   = lbr[i].to;
+                    r->lbr_info[i] = lbr[i].info;
+                    real_depth++;
                 }
-                r->lbr_from[i] = lbr[i].from;
-                r->lbr_to[i]   = lbr[i].to;
-                r->lbr_info[i] = lbr[i].info;
-                real_depth++;
             }
         }
         r->lbr_depth = (u8)real_depth;
@@ -717,73 +711,24 @@ void simple_pebs_pmi(void)
         p += sz;
     }
 
-    __this_cpu_write(out_buffer, outp);
-    ds->pebs_index = ds->pebs_base;
+    WRITE_ONCE(st->out_ptr, outp);
+    WRITE_ONCE(ds->pebs_index, ds->pebs_base);
 
-    /* handle overflow control */
+    /* handle overflow control + reload counter */
     wrmsrl(MSR_IA32_PERF_GLOBAL_OVF_CTRL,
-            KPERF_GLOBAL_OVF_BUF | KPERF_GLOBAL_LBR_FRZ | KPERF_GLOBAL_OVF_PMC0);
-    apic_eoi();
-    apic_write(APIC_LVTPC, pebs_vector);
-    wrmsrl(MSR_IA32_PERF_GLOBAL_CTRL, 1);
+           KPERF_GLOBAL_OVF_BUF | KPERF_GLOBAL_LBR_FRZ | KPERF_GLOBAL_PMC0);
+    wrmsrl(MSR_IA32_PERFCTR0, -(long long)PERIOD);
+
+    /* re-enable */
+    wrmsrl(MSR_IA32_PERF_GLOBAL_CTRL, ctrl_before);
+
+    lvtpc_unmask(st);
+
+    irq_work_queue(&st->wake_work);
+    return NMI_HANDLED;
 }
 
-unsigned long *vectors;
-
-/* Get vector */
-static int simple_pebs_get_vector(void)
-{
-    gate_desc desc, *idt;
-    /* find interrupt vector occupation bitmap */
-    vectors = (unsigned long *)kallsyms_lookup_name("used_vectors");
-    if (!vectors)
-        vectors = (unsigned long *)kallsyms_lookup_name("system_vectors");
-    if (!vectors) {
-        pr_err("Could not resolve system/used vectors. Missing CONFIG_KALLSYMS_ALL?\n");
-        return -1;
-    }
-
-    /* No locking */
-    while (test_bit(pebs_vector, vectors)) {
-        if (pebs_vector == 0x40) {
-            pr_err("No free vector found\n");
-            return -1;
-        }
-        pebs_vector--;
-    }
-    set_bit(pebs_vector, vectors);
-    idt = (gate_desc *)kallsyms_lookup_name("idt_table");
-    if (!idt) {
-        pr_err("Could not resolve idt_table. Did you enable CONFIG_KALLSYMS_ALL?\n");
-        return -1;
-    }
-
-    pack_gate(&desc, GATE_INTERRUPT, (unsigned long)simple_pebs_entry,
-            0, 0, 0);
-    write_idt_entry(idt, pebs_vector,&desc);
-    return 0;
-}
-
-static void simple_pebs_free_vector(void)
-{
-    if (vectors) {
-        clear_bit(pebs_vector, vectors);
-    }
-    /* Not restoring the IDT. Assume the kernel always inits when it reallocates */
-}
-
-static inline u8 clamp_lbr_depth(int v)
-{
-    if (v < 1) {
-        v = 1;
-    }
-    if (v > 32) {
-        v = 32;
-    }
-    return (u8)v;
-}
-
-static void setup_pebs_data_cfg(void)
+static void setup_pebs_data_cfg(struct simple_pebs_cpu_state *st)
 {
     u64 cfg = 0;
     u8 depth = clamp_lbr_depth(lbr_depth);
@@ -791,125 +736,182 @@ static void setup_pebs_data_cfg(void)
     cfg |= KPERF_PEBS_DATACFG_LBRS;
     cfg |= ((u64)(depth - 1) & 0xff) << KPERF_PEBS_DATACFG_LBR_SHIFT;
 
+    rdmsrl(KPERF_MSR_PEBS_DATA_CFG, st->old_pebs_data_cfg);
     wrmsrl(KPERF_MSR_PEBS_DATA_CFG, cfg);
-
-    rdmsrl(KPERF_MSR_PEBS_DATA_CFG, cfg);
-    pr_info("cpu%d PEBS_DATA_CFG=%llx (lbr_depth=%u)\n",
-            smp_processor_id(), cfg, depth);
 }
 
-static void setup_arch_lbr(u8 depth)
+static void setup_arch_lbr(struct simple_pebs_cpu_state *st, u8 depth)
 {
     u64 ctl = KPERF_ARCH_LBR_CTL_LBREN | KPERF_LBR_CTL_USER | KPERF_LBR_CTL_ANY; /*KPERF_LBR_CTL_KERNEL*/
+    u64 debugctl;
 
     /* safe on CPUs that don't support it */
+    rdmsrl(KPERF_MSR_IA32_DEBUGCTLMSR, st->old_debugctl);
+    debugctl = st->old_debugctl | DEBUGCTLMSR_FREEZE_LBRS_ON_PMI;
+    rdmsrl_safe(KPERF_MSR_ARCH_LBR_CTL, &st->old_arch_lbr_ctl);
+    rdmsrl_safe(KPERF_MSR_ARCH_LBR_DEPTH, &st->old_arch_lbr_depth);
     if (!wrmsrl_safe(KPERF_MSR_ARCH_LBR_DEPTH, depth))
         wrmsrl_safe(KPERF_MSR_ARCH_LBR_CTL, ctl);
+    wrmsrl(KPERF_MSR_IA32_DEBUGCTLMSR, debugctl);
 }
 
-static void simple_pebs_cpu_init(void *arg)
+static void simple_pebs_cpu_init(void *info)
 {
-    u64 val, evtsel;
-    unsigned long old_ds;
+    u64 val, evtsel, ctrl, pebs_enable;
+    struct cpu_req *req = info;
+    struct simple_pebs_cpu_state *st = this_cpu_ptr(&cpu_state);
+    struct s_debug_store *ds = st->ds;
 
-    /* Set up DS and buffer */
-    if (__this_cpu_read(cpu_ds) == NULL) {
-        if (allocate_buffer() < 0) {
-            pebs_error = 1;
-            return;
-        }
+    if (!ds || !st->pebs_buf || !st->out_base) {
+        req->ret = -ENOMEM;
+        return;
     }
 
-    if (__this_cpu_read(out_buffer) == NULL) {
-        if (allocate_out_buf() < 0) { 
-            pebs_error = 1;
-            return;
-        }
+    if (st->active) {
+        req->ret = (st->owner == req->file) ? 0 : -EBUSY;
+        return;
     }
-
-    init_waitqueue_head(this_cpu_ptr(&simple_pebs_wait));
 
     /* Check if someone else is using the PMU */
     rdmsrl(MSR_IA32_EVNTSEL0, val);
     if (val & EVTSEL_EN) {
-        pr_err("Someone else using perf counter 0\n");
-        pebs_error = 1;
+        req->ret = -EBUSY;
+        return;
+    }
+    rdmsrl(MSR_IA32_PEBS_ENABLE, pebs_enable);
+    if (pebs_enable != 0) {
+        req->ret = -EBUSY;
         return;
     }
 
-    /* Set up DS */
-    rdmsrl(MSR_IA32_DS_AREA, old_ds);
-    __this_cpu_write(cpu_old_ds, old_ds);
-    wrmsrl(MSR_IA32_DS_AREA, (unsigned long)__this_cpu_read(cpu_ds));
+    /* save old status */
+    rdmsrl(MSR_IA32_DS_AREA, st->old_ds_area);
+    rdmsrl(MSR_IA32_PEBS_ENABLE, st->old_pebs_enable);
+    rdmsrl(MSR_IA32_PERF_GLOBAL_CTRL, st->old_global_ctrl);
+    rdmsrl(MSR_IA32_EVNTSEL0, st->old_evntsel);
+
+    /* Set up DS and buffer */
+    ds->pebs_base  = (u64)(unsigned long)st->pebs_buf;
+    ds->pebs_index = ds->pebs_base;
+    ds->pebs_max   = ds->pebs_base + S_PEBS_BUFFER_SIZE;
+    ds->pebs_thresh = ds->pebs_max - 4096; /* threshold is set to the end of buffer to get more records */
+    if (ds->pebs_thresh < ds->pebs_base + 4096)
+        ds->pebs_thresh = ds->pebs_base + 4096;
+    if (ds->pebs_thresh >= ds->pebs_max)
+        ds->pebs_thresh = ds->pebs_max - 1;
+    memset(ds->pebs_reset, 0, sizeof(ds->pebs_reset));
+    ds->pebs_reset[0] = -(long long)PERIOD;
+    wrmsrl(MSR_IA32_DS_AREA, (u64)(unsigned long)ds);
+    WRITE_ONCE(st->out_ptr, st->out_base);
 
     /* Set up LVT */
-    __this_cpu_write(old_lvtpc, apic_read(APIC_LVTPC));
-    apic_write(APIC_LVTPC, pebs_vector);
+    st->old_lvtpc = apic_read(APIC_LVTPC);
+    st->lvtpc_nmi = (st->old_lvtpc & ~APIC_MODE_MASK) | APIC_DM_NMI;
+    st->lvtpc_nmi &= ~APIC_LVT_MASKED;
+    apic_write(APIC_LVTPC, st->lvtpc_nmi);
 
     /* Initialize lbr */
-    setup_pebs_data_cfg();
-    setup_arch_lbr(clamp_lbr_depth(lbr_depth));
+    setup_arch_lbr(st, clamp_lbr_depth(lbr_depth));
+    setup_pebs_data_cfg(st);
 
     /* First disable PMU to avoid races */
-    wrmsrl(MSR_IA32_PERF_GLOBAL_CTRL, 0);
+    rdmsrl(MSR_IA32_PERF_GLOBAL_CTRL, ctrl);
+    wrmsrl(MSR_IA32_PERF_GLOBAL_CTRL, ctrl & ~KPERF_GLOBAL_PMC0);
 
-    wrmsrl(MSR_IA32_PERFCTR0, -PERIOD); /* ? sign extension on width ? */
+    wrmsrl(MSR_IA32_PERFCTR0, -(long long)PERIOD);
 
-    evtsel = pebs_event | EVTSEL_EN | EVTSEL_USR | EVTSEL_INT; /* EVTSEL_OS */
-    if (pebs_baseline) {
-        evtsel |= KPERF_ICL_EVENTSEL_ADAPTIVE;
+    evtsel = pebs_event | EVTSEL_EN | EVTSEL_USR | EVTSEL_INT;  /* add EVTSEL_OS if need*/
+    if (!wrmsrl_safe(MSR_IA32_EVNTSEL0, evtsel | KPERF_ICL_EVENTSEL_ADAPTIVE)) {
+    } else {
+        wrmsrl(MSR_IA32_EVNTSEL0, evtsel);
     }
-    wrmsrl(MSR_IA32_EVNTSEL0, evtsel);
 
-    /* Enable PEBS for counter 0 */
-    wrmsrl(MSR_IA32_PEBS_ENABLE, 1);
+    /* Enable PEBS for counter 0*/
+    wrmsrl(MSR_IA32_PEBS_ENABLE, KPERF_GLOBAL_PMC0);
+    wrmsrl(MSR_IA32_PERF_GLOBAL_OVF_CTRL,
+           KPERF_GLOBAL_OVF_BUF | KPERF_GLOBAL_LBR_FRZ | KPERF_GLOBAL_PMC0);
 
-    wrmsrl(MSR_IA32_PERF_GLOBAL_CTRL, 1);
-    __this_cpu_write(cpu_initialized, 1);
+    st->owner = req->file;
+    WRITE_ONCE(st->active, true);
+
+    rdmsrl(MSR_IA32_PERF_GLOBAL_CTRL, ctrl);
+    wrmsrl(MSR_IA32_PERF_GLOBAL_CTRL, ctrl | KPERF_GLOBAL_PMC0);
+
+    req->ret = 0;
 }
 
-static void simple_pebs_cpu_reset(void *arg)
+static void simple_pebs_cpu_stop(void *info)
 {
-    if (__this_cpu_read(cpu_initialized)) {
-        wrmsrl(MSR_IA32_PERF_GLOBAL_CTRL, 0);
-        wrmsrl(MSR_IA32_PEBS_ENABLE, 0);
-        wrmsrl(MSR_IA32_EVNTSEL0, 0);
-        wrmsrl(MSR_IA32_PERFCTR0, 0);
-        wrmsrl(MSR_IA32_DS_AREA, __this_cpu_read(cpu_old_ds));
-        apic_write(APIC_LVTPC, __this_cpu_read(old_lvtpc));
-        __this_cpu_write(cpu_initialized, 0);
+    struct cpu_req *req = info;
+    struct simple_pebs_cpu_state *st = this_cpu_ptr(&cpu_state);
+    u64 ctrl;
+    u32 lvtpc;
+
+    if (!st->active) {
+        req->ret = 0;
+        return;
     }
-    if (__this_cpu_read(out_buffer_base)) {
-        free_pages((unsigned long)__this_cpu_read(out_buffer_base),
-                get_order(OUT_BUFFER_SIZE));
-        __this_cpu_write(out_buffer_base, NULL);
-        __this_cpu_write(out_buffer, NULL);
-        __this_cpu_write(out_buffer_end, NULL);
+    if (req->file && st->owner != req->file) {
+        req->ret = 0;
+        return;
     }
-    if (__this_cpu_read(cpu_ds)) {
-        struct s_debug_store *ds = __this_cpu_read(cpu_ds);
-        kfree((void *)ds->pebs_base);
-        kfree(ds);
-        __this_cpu_write(cpu_ds, 0);
-    }
+
+    rdmsrl(MSR_IA32_PERF_GLOBAL_CTRL, ctrl);
+    wrmsrl(MSR_IA32_PERF_GLOBAL_CTRL, ctrl & ~KPERF_GLOBAL_PMC0);
+
+    /* mask LVTPC*/
+    lvtpc = apic_read(APIC_LVTPC);
+    apic_write(APIC_LVTPC, lvtpc | APIC_LVT_MASKED);
+
+    /* restore PEBS */
+    wrmsrl(MSR_IA32_PEBS_ENABLE, st->old_pebs_enable);
+    wrmsrl(MSR_IA32_EVNTSEL0, st->old_evntsel);
+
+    wrmsrl(MSR_IA32_DS_AREA, st->old_ds_area);
+    wrmsrl(KPERF_MSR_PEBS_DATA_CFG, st->old_pebs_data_cfg);
+
+    /* lbr restore */
+    wrmsrl_safe(KPERF_MSR_ARCH_LBR_CTL, st->old_arch_lbr_ctl);
+    wrmsrl_safe(KPERF_MSR_ARCH_LBR_DEPTH, st->old_arch_lbr_depth);
+    wrmsrl(KPERF_MSR_IA32_DEBUGCTLMSR, st->old_debugctl);
+    /* restore LVTPC */
+    apic_write(APIC_LVTPC, st->old_lvtpc);
+
+    wrmsrl(MSR_IA32_PERF_GLOBAL_CTRL, st->old_global_ctrl);
+
+    st->owner = NULL;
+    WRITE_ONCE(st->active, false);
+    req->ret = 0;
 }
 
-static int simple_pebs_cpu(struct notifier_block *nb, unsigned long action, void *v)
+static void simple_pebs_cpu_reset(void *info)
 {
-    switch (action) {
-    case CPU_STARTING:
-        simple_pebs_cpu_init(NULL);
-        break;
-    case CPU_DYING:
-        simple_pebs_cpu_reset(NULL);
-        break;
-    }
-    return NOTIFY_OK;
-}
+    struct cpu_req *req = info;
+    struct simple_pebs_cpu_state *st = this_cpu_ptr(&cpu_state);
+    struct s_debug_store *ds = st->ds;
+    u64 ctrl;
 
-static struct notifier_block cpu_notifier = {
-    .notifier_call = simple_pebs_cpu,
-};
+    if (!ds) {
+        req->ret = -EINVAL;
+        return;
+    }
+
+    rdmsrl(MSR_IA32_PERF_GLOBAL_CTRL, ctrl);
+    wrmsrl(MSR_IA32_PERF_GLOBAL_CTRL, ctrl & ~KPERF_GLOBAL_PMC0);
+
+    ds->pebs_index = ds->pebs_base;
+    WRITE_ONCE(st->out_ptr, st->out_base);
+
+    wrmsrl(MSR_IA32_PERFCTR0, -(long long)PERIOD);
+    wrmsrl(MSR_IA32_PERF_GLOBAL_OVF_CTRL,
+           KPERF_GLOBAL_OVF_BUF | KPERF_GLOBAL_LBR_FRZ | KPERF_GLOBAL_PMC0);
+
+    if (READ_ONCE(st->active))
+        lvtpc_unmask(st);
+
+    wrmsrl(MSR_IA32_PERF_GLOBAL_CTRL, ctrl);
+    req->ret = 0;
+}
 
 static int simple_pebs_init(void)
 {
@@ -918,34 +920,29 @@ static int simple_pebs_init(void)
     if (!check_cpu())
         return -EIO;
 
-    err = simple_pebs_get_vector();
-    if (err < 0)
-        return -EIO;
+    err = allocate_buffer();
+    if (err)
+        goto out_free;
 
-    get_online_cpus();
-    on_each_cpu(simple_pebs_cpu_init, NULL, 1);
-    register_cpu_notifier(&cpu_notifier);
-    put_online_cpus();
-    if (pebs_error) {
-        pr_err("PEBS initialization failed\n");
-        err = -EIO;
-        goto out_notifier;
+    err = register_nmi_handler(NMI_LOCAL, simple_pebs_nmi_handler, 0, "simple-pebs");
+    if (err) {
+        pr_err("register_nmi_handler failed: %d\n", err);
+        goto out_free;
     }
 
     err = misc_register(&simple_pebs_miscdev);
-    if (err < 0) {
-        pr_err("Cannot register simple-pebs device\n");
-        goto out_notifier;
+    if (err) {
+        pr_err("misc_register failed: %d\n", err);
+        unregister_nmi_handler(NMI_LOCAL, "simple-pebs");
+        goto out_free;
     }
-    pr_info("Initialized\n");
+    pr_info("Initialized: device=/dev/simple-pebs\n");
 
     return 0;
 
-out_notifier:
-    unregister_cpu_notifier(&cpu_notifier);
-    on_each_cpu(simple_pebs_cpu_reset, NULL, 1);
-    simple_pebs_free_vector();
-    return err; 
+out_free:
+    free_buffer();
+    return err;
 }
 module_init(simple_pebs_init);
 
@@ -953,11 +950,11 @@ static void simple_pebs_exit(void)
 {
     int cpu;
     misc_deregister(&simple_pebs_miscdev);
-    get_online_cpus();
-    on_each_cpu(simple_pebs_cpu_reset, NULL, 1);
-    unregister_cpu_notifier(&cpu_notifier);
-    put_online_cpus();
-    simple_pebs_free_vector();
+    for_each_online_cpu(cpu) {
+        struct cpu_req req = { .file = NULL, .ret = 0 };
+        smp_call_function_single(cpu, simple_pebs_cpu_stop, &req, 1);
+    }
+    unregister_nmi_handler(NMI_LOCAL, "simple-pebs");
     /* Clear all bindings and wait for RCU callbacks before module unload */
     for_each_possible_cpu(cpu) {
         struct pebs_pidns_binding *old;
@@ -967,10 +964,9 @@ static void simple_pebs_exit(void)
             call_rcu(&old->rcu, pebs_pidns_binding_rcu_free);
         }
     }
-    rcu_barrier();
+    synchronize_rcu();
 
-    /* Could PMI still be pending? For now just wait a bit. (XXX) */
-    schedule_timeout(HZ);
+    free_buffer();
     pr_info("Exited\n");
 }
 

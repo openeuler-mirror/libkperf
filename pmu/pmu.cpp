@@ -725,7 +725,7 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
             FreeEvtList(previousEventList.first, previousEventList.second);
         // use pebs driver to collect data when LBR sampling is unavailable
         #ifdef IS_X86
-            if (attr->branchSampleFilter != 0) {
+            if (attr->branchSampleFilter != 0 && err == LIBPERF_ERR_INVALID_EVENT) {
                 int driverPd = PebsDriverManager::Instance().Open(attr);
                 if (driverPd >= 0) {
                     return driverPd;

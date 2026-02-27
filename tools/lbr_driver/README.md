@@ -16,8 +16,6 @@
 Tested CPU:
 - **Emerald Rapids** (Architectural LBR)
 
-To add support for a new CPU model, add its **model ID** in the `check_cpu()` function in the driver source.
-
 ## Build
 
 ```shell
@@ -48,12 +46,8 @@ dmesg | tail -n 200 | grep -i pebs
 ```
 You should see output similar to:
 ```shell
-[14725.398928] simple_pebs: Adaptive PEBS (v4) detected
-...
-[14725.587040] simple_pebs: cpu20 PEBS_DATA_CFG=1f000008 (lbr_depth=32)
-[14725.587040] simple_pebs: 72: allocate_buffer: status 0 ctrl 0 counter 0
-...
-[14725.587040] simple_pebs: Initialized
+[23533.195839] simple_pebs: Adaptive PEBS (v4) detected
+[23533.198653] simple_pebs: Initialized: device=/dev/simple-pebs
 ```
 
 ## Uninstall
@@ -63,6 +57,11 @@ sudo modprobe -r simple-pebs
 Or, in a debug environment:
 ```shell
 sudo rmmod simple-pebs
+```
+
+Check `dmesg`, you can see the exit infomation:
+```shell
+[23629.530629] simple_pebs: Exited
 ```
 
 ## Usage
