@@ -20,10 +20,8 @@ bash build.sh
 
 then:
 ```
-cd tools/cache_collect
-mkdir build && cd build
-cmake ..
-make
+cd tools
+bash build_tools.sh cache_collect
 ```
 
 ### Run

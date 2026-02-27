@@ -34,11 +34,11 @@ bash build.sh
 2. 项目提供统一脚本`build_tools.sh`进行全量编译，命令如下：
 ```bash
 cd tools
-./build_tools.sh
+bash build_tools.sh
 ```
 如只需要编译某个工具，添加名称：
 ```bash
-./build_tools.sh pmu_datasrc
+bash build_tools.sh pmu_datasrc
 ```
 
 所有生成的可执行文件会输出到 `tools/bin`目录
