@@ -353,10 +353,8 @@ void collectMiss(CollectArgs& args)
     EventConfig cfg = buildEventConfig(dataCollect, summaryCollect);
 
     PmuAttr attr = {0};
-    attr.evtAttr = cfg.groupId.data();
     attr.evtList = cfg.evtList.data();
     attr.numEvt = cfg.baseEvents.size();
-    attr.numEvtAttr = cfg.baseEvents.size();
     attr.callStack = 1;
     attr.excludeKernel = true;
     attr.symbolMode = RESOLVE_DELAY_DWARF;
