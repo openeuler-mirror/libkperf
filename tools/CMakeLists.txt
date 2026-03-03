@@ -15,6 +15,10 @@ find_library(SYM_LIB   NAMES sym   PATHS "${LIB_DIR}" NO_DEFAULT_PATH)
 find_library(KPERF_LIB NAMES kperf PATHS "${LIB_DIR}" NO_DEFAULT_PATH)
 target_link_libraries(tools_deps INTERFACE "${SYM_LIB}" "${KPERF_LIB}")
 
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+target_link_libraries(tools_deps INTERFACE Threads::Threads)
+
 add_subdirectory(cache_collect)
 add_subdirectory(case)
 
