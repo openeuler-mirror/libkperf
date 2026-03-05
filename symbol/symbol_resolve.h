@@ -123,7 +123,7 @@ namespace KUNPENG_SYM {
         struct StackAsm* MapAsmCode(const char* moduleName, unsigned long startAddr, unsigned long endAddr);
         struct Symbol* MapCodeAddr(const char* moduleName, unsigned long startAddr);
         int GetBuildId(const char *moduleName, char **buildId);
-
+        int GetAsmCodeByAddr(const char* moduleName, unsigned long startAddr, unsigned long endAddr, char** asmCode);
     private:
         char* GetCharFromStr(const std::string& str);
         struct Symbol* MapKernelAddr(unsigned long addr);

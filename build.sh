@@ -80,6 +80,13 @@ for arg in "$@"; do
     esac
 done
 
+ARCH_TARGET="AArch64"
+ARCH=$(uname -m)
+case "$ARCH" in
+    x86_64|amd64) ARCH_TARGET="X86" ;;
+    aarch64|arm64) ARCH_TARGET="AArch64" ;;
+esac
+
 if [[ "$INCLUDE_TEST" == "true" ]]; then
     build_googletest $THIRD_PARTY
 fi
@@ -122,7 +129,7 @@ function build_symbolizer()
     cd $PROJECT_DIR/llvm-symbolizer
     mkdir build
     cd build
-    cmake -DCMKAE_BUILD_TYPE=Release ..
+    cmake -DCMKAE_BUILD_TYPE=Release -DLLVM_TARGETS_TO_BUILD="${ARCH_TARGET}" ..
     make -j ${cpu_core_num}
 }
 
@@ -138,6 +145,7 @@ build_libkperf()
         "-DCMAKE_INSTALL_PREFIX=${INSTALL_PATH}"
         "-DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
         "-DBPF=${BPF}"
+        "-DARCH_TARGET=${ARCH_TARGET}"
     )
     if [ ! -z ${PYTHON_EXE} ];then
          CMAKE_ARGS+=("-DPYTHON_KPERF=${PYTHON_EXE}")

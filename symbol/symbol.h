@@ -116,6 +116,19 @@ void FreeModuleData(int pid);
 void FreeAsmStack(struct StackAsm* stackAsm);
 
 int SymGetBuildId(const char *moduleName, char **buildId);
+
+/**
+ * get asm code by start address and end address
+ * parameters:
+ *   moduleName  the real path of a file
+ *   startAddr   disassemble beginning at address
+ *   endAddr     disassemble end at address
+ *   asmCode     Assembly code string output, need delete 
+ * return:
+ *   0 success
+ *   other failed
+ */
+int GetAsmCodeByAddr(const char* moduleName, unsigned long startAddr, unsigned long endAddr, char** asmCode);
 #ifdef __cplusplus
 }
 #endif

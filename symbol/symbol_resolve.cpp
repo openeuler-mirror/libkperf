@@ -947,6 +947,32 @@ std::vector<std::shared_ptr<ModuleMap>> SymbolResolve::FindDiffMaps(
     return diffMaps;
 }
 
+int SymbolResolve::GetAsmCodeByAddr(const char* moduleName, unsigned long startAddr, unsigned long endAddr, char** asmCode) {
+    if (!ExistPath(moduleName)) {
+        pcerr::New(LIBSYM_ERR_FILE_INVALID, "libsym can't find the file: " + std::string(moduleName));
+        return LIBSYM_ERR_FILE_INVALID;
+    }
+
+    if (startAddr > endAddr) {
+        pcerr::New(LIBSYM_ERR_START_SMALLER_END, "libsym find that the start address is greater than the end address");
+        return LIBSYM_ERR_START_SMALLER_END;
+    }
+
+    Expected<std::string> codeOrErr = Symbolizer.getAsmCode(moduleName, startAddr, endAddr);
+    if (codeOrErr) {
+        if (codeOrErr.get().find("LLVM_ASM_RESOLVE_FAILED") != std::string::npos) {
+            pcerr::New(LIBSYM_ERR_ASM_RESOLVE_FAILED, codeOrErr.get());
+            return LIBSYM_ERR_ASM_RESOLVE_FAILED;
+        }
+        *asmCode = InitChar(codeOrErr.get().size());
+        strcpy(*asmCode, codeOrErr.get().c_str());
+    } else {
+        pcerr::New(LIBSYM_ERR_ASM_RESOLVE_FAILED, "libsym find can't resolve asm code");
+        return LIBSYM_ERR_ASM_RESOLVE_FAILED;
+    }
+    return 0;
+}
+
 SymbolResolve* SymbolResolve::instance = nullptr;
 std::mutex SymbolResolve::mutex;
 std::mutex SymbolResolve::kernelMutex;
