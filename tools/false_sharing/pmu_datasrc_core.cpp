@@ -1101,7 +1101,7 @@ static void PrintResults(const StatContext &context, const PcBucketMap &pcGlobal
     }
 }
 
-int main(int argc, char** argv)
+int pmu_datasrc_run(int argc, char** argv)
 {
     ArgsContext act;
 
