@@ -8,6 +8,7 @@ foreach(src ${EXAMPLE_SRCS})
   set(target "${name}")
   add_executable("${target}" "${src}")
   target_link_libraries("${target}" PRIVATE tools_deps)
+  target_compile_options("${target}" PRIVATE -g)
   set_target_properties("${target}" PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CASE_BIN_DIR}")
 endforeach()
 

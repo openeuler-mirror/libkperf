@@ -12,13 +12,6 @@
  * Create: 2025-10-21
  * Description: data source analyze for spe sampling.
  ******************************************************************************/
-/**
-g++ -g pmu_datasrc.cpp -I ../output/include/ -L ../output/lib/ -lkperf -lsym -O3 -o pmu_datasrc
-cd case
-g++ -o falsesharing_demo falsesharing_demo.cpp -lpthread
-cd ..
-./pmu_datasrc -d 2 case/falsesharing_demo
-*/
 #include "pmu_datasrc_core.h"
 
 int main(int argc, char** argv) {
