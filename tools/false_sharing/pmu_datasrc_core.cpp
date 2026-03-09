@@ -12,13 +12,6 @@
  * Create: 2025-10-21
  * Description: data source analyze for spe sampling.
  ******************************************************************************/
-/**
-g++ -g pmu_datasrc.cpp -I ../output/include/ -L ../output/lib/ -lkperf -lsym -O3 -o pmu_datasrc
-cd case
-g++ -o falsesharing_demo falsesharing_demo.cpp -lpthread
-cd ..
-./pmu_datasrc -d 2 case/falsesharing_demo
-*/
 #include <iostream>
 #include <stdio.h>
 #include <cstring>
@@ -232,10 +225,7 @@ static inline bool ReadMemProcessVM(pid_t pid, ulong addr, void* out, size_t n)
 static inline bool ReadInsn32(pid_t pid, ulong pc, uint32_t &insn)
 {
     insn = 0;
-    if (ReadMemProcessVM(pid, pc, &insn, sizeof(insn))) {
-        return true;
-    }
-    return false;
+    return ReadMemProcessVM(pid, pc, &insn, sizeof(insn));
 }
 
 // return the number of bytes accessed by ld/st instruction
@@ -495,6 +485,7 @@ static inline SampleInfo PrepSample(const PmuData& o)
 
 static bool CollectPmuData(const ArgsContext &act, int &pd, PmuData* &data, int &len, PcAccessBytesMap* outPc2accessBytes)
 {
+    (void)outPc2accessBytes;
     PmuAttr attr = {0};
     static char* cgroupNameList[1];
     static int pidList[1];
@@ -532,10 +523,6 @@ static bool CollectPmuData(const ArgsContext &act, int &pd, PmuData* &data, int 
 
     PrintTime("start collect");
     int num = act.duration * 100;
-    int lastLen = 0;
-    if (outPc2accessBytes) {
-        outPc2accessBytes->reserve(RESERVED_SISE);
-    }
     if (!act.isLaunch) {
         PmuEnable(pd);
     }
@@ -551,26 +538,6 @@ static bool CollectPmuData(const ArgsContext &act, int &pd, PmuData* &data, int 
         int curLen = PmuAppendData(fromData, &data);
         if (curLen) {
             len = curLen;
-        }
-        if (outPc2accessBytes && act.pid > 0 && curLen > lastLen) {
-            pid_t pidForRead = (pid_t)act.pid;
-            for (int k = lastLen; k < curLen; ++k) {
-                const auto &o2 = data[k];
-                SampleInfo si = PrepSample(o2);
-                if (!si.hasSym) {
-                    continue;
-                }
-                if (!si.keepLd && !si.keepSt) {
-                    continue;
-                }
-                if (outPc2accessBytes->find(si.pc) != outPc2accessBytes->end()) {
-                    continue;
-                }
-                (void)ResolveAccessBytesCachedMap(*outPc2accessBytes, pidForRead, si.pc, 4);
-            }
-        }
-        if (curLen > lastLen) {
-            lastLen = curLen;
         }
     }
     PrintTime("end collect");
@@ -601,7 +568,7 @@ static void BuildAggregations(const ArgsContext &act, PmuData* data, int len, St
     if (seedPc2accessBytes && !seedPc2accessBytes->empty()) {
         context.pc2accessBytes.insert(seedPc2accessBytes->begin(), seedPc2accessBytes->end());
     }
-
+    const bool needSourceSummary = !act.format;
     for (int i = 0; i < len; i++) {
         const auto &o = data[i];
         SampleInfo si = PrepSample(o);
@@ -609,30 +576,36 @@ static void BuildAggregations(const ArgsContext &act, PmuData* data, int len, St
             continue;
         }
         uint16_t src = si.src;
-        // source summary
-        context.sourceList[src] += 1;
-        if (si.hasSym) {
-            std::string symStr = ParseSymbol(si.sym);
-            auto &item = context.sourceSymList[src][symStr];
-            item.cnt++;
-            item.vas[si.va]++;
-            item.pc = si.pc;
-            if (si.pc != 0 && context.pc2sym.find(si.pc) == context.pc2sym.end()) {
-                context.pc2sym[si.pc] = symStr;
+        const std::string* symStrPtr = nullptr;
+        if (si.hasSym && si.pc != 0) {
+            auto itSym = context.pc2sym.find(si.pc);
+            if (itSym == context.pc2sym.end()) {
+                auto ret = context.pc2sym.emplace(si.pc, ParseSymbol(si.sym));
+                symStrPtr = &ret.first->second;
+            } else {
+                symStrPtr = &itSym->second;
             }
         }
+        if (needSourceSummary) {
+            context.sourceList[src] += 1;
+            if (si.hasSym && symStrPtr != nullptr) {
+                auto &item = context.sourceSymList[src][*symStrPtr];
+                item.cnt++;
+                item.vas[si.va]++;
+                item.pc = si.pc;
+            }
+        }
+
         if (!(act.computeFs || act.computeTs)) {
             continue;
         }
         if (!si.keepLd && !si.keepSt) {
             continue;
         }
-        if (!si.hasSym) {
+        if (!si.hasSym || si.pc == 0) {
             continue;
         }
-        if (si.pc == 0) {
-            continue;
-        }
+
         ulong pc = si.pc;
         ulong va = si.va;
         ulong lineKey = va >> CACHELINE_SHIFT;
@@ -745,85 +718,6 @@ struct PcCpuTidRef {
     const PcBucket *b;
 };
 
-static void ComputeSharingFromCachelines(const LineCpuTidPcBucketMap &lineCpuTidPcBucket, RacePcMap &racepc, bool needTS)
-{
-    racepc.reserve(RESERVED_SISE);
-    for (const auto &lineEntry : lineCpuTidPcBucket) {
-        const auto &cpuMap = lineEntry.second;
-        if (cpuMap.size() < 2) {
-            continue;
-        }
-        std::vector<PcCpuTidRef> stores;
-        std::vector<PcCpuTidRef> loads;
-        for (const auto &cpuEntry : cpuMap) {
-            int cpu = cpuEntry.first;
-            for (const auto &tidEntry : cpuEntry.second) {
-                int tid = tidEntry.first;
-                for (const auto &kv : tidEntry.second) {
-                    if (HasStore(kv.second)) {
-                        stores.push_back({cpu, tid, kv.first, &kv.second});
-                    }
-                    if (HasLoad(kv.second)) {
-                        loads.push_back({cpu, tid, kv.first, &kv.second});
-                    }
-                }
-            }
-        }
-
-        if (stores.empty()) {
-            continue;
-        }
-
-        // store-store
-        for (size_t i = 0; i < stores.size(); ++i) {
-            for (size_t j = i + 1; j < stores.size(); ++j) {
-                if (stores[i].cpu == stores[j].cpu || stores[i].tid == stores[j].tid) {
-                    continue;
-                }
-                bool overlap = (stores[i].b->stMask & stores[j].b->stMask) != 0;
-                if (needTS ? !overlap : overlap) {
-                    continue;
-                }
-                int score = std::min((int)stores[i].b->stCnt, (int)stores[j].b->stCnt);
-                if (score > 0) {
-                    racepc[MakePcPair(stores[i].pc, stores[j].pc)] += score;
-                }
-            }
-        }
-
-        // store-load
-        for (size_t i = 0; i < stores.size(); ++i) {
-            for (size_t j = 0; j < loads.size(); ++j) {
-                if (stores[i].cpu == loads[j].cpu || stores[i].tid == loads[j].tid) {
-                    continue;
-                }
-                bool overlap = (stores[i].b->stMask & loads[j].b->ldMask) != 0;
-                if (needTS ? !overlap : overlap) {
-                    continue;
-                }
-                int score = std::min((int)stores[i].b->stCnt, (int)loads[j].b->ldCnt);
-                if (score > 0) {
-                    racepc[MakePcPair(stores[i].pc, loads[j].pc)] += score;
-                }
-            }
-        }
-    }
-}
-
-static std::vector<std::pair<PcPair, int>> SortRacePc(const RacePcMap &racepc)
-{
-    std::vector<std::pair<PcPair, int>> sortedList;
-    sortedList.reserve(racepc.size());
-    for (const auto &kv : racepc) {
-        sortedList.push_back(kv);
-    }
-
-    std::sort(sortedList.begin(), sortedList.end(),
-              [](const auto &a, const auto &b) { return a.second > b.second; });
-    return sortedList;
-}
-
-// cacheline details for TOP pairs
 enum class PairKind : uint8_t {
     STORE_STORE = 0,
     STORE_LOAD = 1
@@ -853,13 +747,11 @@ struct AccessRef {
     ulong va;
 };
 
-static void CollectCacheLineDetails(const LineCpuTidPcBucketMap &lineCpuTidPcBucket,
-                                    const std::vector<PcPair> &topPairs,
-                                    PairLineBucketMap &out,
-                                    bool needTS)
+static void ComputeSharingAndDetails(const LineCpuTidPcBucketMap &lineCpuTidPcBucket,
+                                     RacePcMap &racepc, PairLineBucketMap &pairLineBucket, bool needTS)
 {
-    std::unordered_set<PcPair, PcPairHash, PcPairEq> topSet(topPairs.begin(), topPairs.end());
-
+    racepc.reserve(RESERVED_SISE);
+    pairLineBucket.reserve(RESERVED_SISE);
     for (const auto &lineEntry : lineCpuTidPcBucket) {
         ulong lineKey = lineEntry.first;
         const auto &cpuMap = lineEntry.second;
@@ -892,8 +784,8 @@ static void CollectCacheLineDetails(const LineCpuTidPcBucketMap &lineCpuTidPcBuc
         std::unordered_map<PcPair, LineBucket, PcPairHash, PcPairEq> lineAccum;
         lineAccum.reserve(64);
 
-        auto updateLineAccum = [&](const PcPair &pair, int score,
-                                   const AccessRef &r1, const AccessRef &r2, PairKind kind) {
+        auto updatePair = [&](const PcPair &pair, int score, const AccessRef &r1, const AccessRef &r2, PairKind kind) {
+            racepc[pair] += score;
             auto &lb = lineAccum[pair];
             lb.totalScore += score;
             if (score > lb.bestScore) {
@@ -926,18 +818,18 @@ static void CollectCacheLineDetails(const LineCpuTidPcBucketMap &lineCpuTidPcBuc
                 }
 
                 PcPair pair = MakePcPair(stores[i].pc, stores[j].pc);
-                if (!topSet.count(pair)) {
-                    continue;
-                }
+                AccessRef r1{
+                    stores[i].cpu, stores[i].tid, stores[i].pc, stores[i].b,
+                    stores[i].b->stMask,
+                    (stores[i].b->sampleStVa != 0) ? stores[i].b->sampleStVa : stores[i].b->sampleVa
+                };
+                AccessRef r2{
+                    stores[j].cpu, stores[j].tid, stores[j].pc, stores[j].b,
+                    stores[j].b->stMask,
+                    (stores[j].b->sampleStVa != 0) ? stores[j].b->sampleStVa : stores[j].b->sampleVa
+                };
 
-                AccessRef r1{stores[i].cpu, stores[i].tid, stores[i].pc, stores[i].b,
-                             stores[i].b->stMask,
-                             (stores[i].b->sampleStVa != 0) ? stores[i].b->sampleStVa : stores[i].b->sampleVa};
-                AccessRef r2{stores[j].cpu, stores[j].tid, stores[j].pc, stores[j].b,
-                             stores[j].b->stMask,
-                             (stores[j].b->sampleStVa != 0) ? stores[j].b->sampleStVa : stores[j].b->sampleVa};
-
-                updateLineAccum(pair, score, r1, r2, PairKind::STORE_STORE);
+                updatePair(pair, score, r1, r2, PairKind::STORE_STORE);
             }
         }
 
@@ -956,25 +848,25 @@ static void CollectCacheLineDetails(const LineCpuTidPcBucketMap &lineCpuTidPcBuc
                     continue;
                 }
                 PcPair pair = MakePcPair(stores[i].pc, loads[j].pc);
-                if (!topSet.count(pair)) {
-                    continue;
-                }
-                AccessRef st{stores[i].cpu, stores[i].tid, stores[i].pc, stores[i].b,
-                             stores[i].b->stMask,
-                             (stores[i].b->sampleStVa != 0) ? stores[i].b->sampleStVa : stores[i].b->sampleVa};
-                AccessRef ld{loads[j].cpu, loads[j].tid, loads[j].pc, loads[j].b,
-                             loads[j].b->ldMask,
-                             (loads[j].b->sampleLdVa != 0) ? loads[j].b->sampleLdVa : loads[j].b->sampleVa};
+                AccessRef st{
+                    stores[i].cpu, stores[i].tid, stores[i].pc, stores[i].b,
+                    stores[i].b->stMask,
+                    (stores[i].b->sampleStVa != 0) ? stores[i].b->sampleStVa : stores[i].b->sampleVa
+                };
+                AccessRef ld{
+                    loads[j].cpu, loads[j].tid, loads[j].pc, loads[j].b,
+                    loads[j].b->ldMask,
+                    (loads[j].b->sampleLdVa != 0) ? loads[j].b->sampleLdVa : loads[j].b->sampleVa
+                };
 
-                updateLineAccum(pair, score, st, ld, PairKind::STORE_LOAD);
+                updatePair(pair, score, st, ld, PairKind::STORE_LOAD);
             }
         }
 
         for (auto &kv : lineAccum) {
             const PcPair &pair = kv.first;
             const LineBucket &lb = kv.second;
-
-            auto &best = out[pair];
+            auto &best = pairLineBucket[pair];
             if (best.lineKey == 0 || lb.totalScore > best.lb.totalScore) {
                 best.lineKey = lineKey;
                 best.lb = lb;
@@ -983,8 +875,20 @@ static void CollectCacheLineDetails(const LineCpuTidPcBucketMap &lineCpuTidPcBuc
     }
 }
 
-static inline void ByteRangeInLine(ulong off, int accessBytes,
-                                  int &begin, int &end, bool &crossLine)
+static std::vector<std::pair<PcPair, int>> SortRacePc(const RacePcMap &racepc)
+{
+    std::vector<std::pair<PcPair, int>> sortedList;
+    sortedList.reserve(racepc.size());
+    for (const auto &kv : racepc) {
+        sortedList.push_back(kv);
+    }
+
+    std::sort(sortedList.begin(), sortedList.end(),
+              [](const auto &a, const auto &b) { return a.second > b.second; });
+    return sortedList;
+}
+
+static inline void ByteRangeInLine(ulong off, int accessBytes, int &begin, int &end, bool &crossLine)
 {
     if (accessBytes <= 0) {
         accessBytes = 1;
@@ -1006,7 +910,8 @@ static inline void ByteRangeInLine(ulong off, int accessBytes,
     }
 }
 
-static void PrintSharingFormatResults(const char* prefix, const std::vector<std::pair<PcPair, int>> &sortedList, const PairLineBucketMap &pairLineBucket)
+static void PrintSharingFormatResults(const char* prefix, const std::vector<std::pair<PcPair, int>> &sortedList,
+                                      const PairLineBucketMap &pairLineBucket, const StatContext &context)
 {
     for (size_t idx = 0; idx < sortedList.size(); ++idx) {
         const auto &race = sortedList[idx];
@@ -1019,8 +924,18 @@ static void PrintSharingFormatResults(const char* prefix, const std::vector<std:
             lineAddr = (itPair->second.lineKey << CACHELINE_SHIFT);
             kindStr = (itPair->second.lb.kind == PairKind::STORE_STORE) ? "SS" : "SL";
         }
-        std::cout << prefix << "," << (idx + 1) << ",0x" << std::hex << pc1 << ",0x" << std::hex
-                  << pc2 << std::dec << "," << kindStr << ",0x" << std::hex << lineAddr << std::dec << "\n";
+        std::string symA_str = "UNKNOWN";
+        std::string symB_str = "UNKNOWN";
+        auto itA = context.pc2sym.find(pc1);
+        if (itA != context.pc2sym.end()) {
+            symA_str = itA->second;
+        }
+        auto itB = context.pc2sym.find(pc2);
+        if (itB != context.pc2sym.end()) {
+            symB_str = itB->second;
+        }
+        std::cout << prefix << "," << (idx + 1) << "," << symA_str << "," << symB_str 
+                  << "," << kindStr << ",0x" << std::hex << lineAddr << std::dec << "\n";
     }
 }
 
@@ -1072,9 +987,13 @@ static void PrintResults(const StatContext &context, const PcBucketMap &pcGlobal
         auto symB = context.pc2sym.find(pc2);
         if (symA != context.pc2sym.end()) {
             std::cout << "\n    A: " << symA->second;
+        } else {
+            std::cout << "\n    A: UNKNOWN";
         }
         if (symB != context.pc2sym.end()) {
             std::cout << "\n    B: " << symB->second;
+        } else {
+            std::cout << "\n    B: UNKNOWN";
         }
         std::cout << std::endl;
 
@@ -1087,21 +1006,22 @@ static void PrintResults(const StatContext &context, const PcBucketMap &pcGlobal
             ulong offA = (la.vaA >= lineAddr) ? (la.vaA - lineAddr) : 0;
             ulong offB = (la.vaB >= lineAddr) ? (la.vaB - lineAddr) : 0;
             const char* kindStr = (la.kind == PairKind::STORE_STORE) ? "SS" : "SL";
-            int aBeg=0, aEnd=0, bBeg=0, bEnd=0;
-            bool aCross=false, bCross=false;
+
+            int aBeg = 0, aEnd = 0, bBeg = 0, bEnd = 0;
+            bool aCross = false, bCross = false;
             ByteRangeInLine(offA, bytesA, aBeg, aEnd, aCross);
             ByteRangeInLine(offB, bytesB, bBeg, bEnd, bCross);
             std::cout << "    line=0x" << std::hex << lineAddr << std::dec << " kind=" << kindStr
-                    << " A_va=0x" << std::hex << la.vaA << std::dec << "(+0x" << std::hex << offA << std::dec << ")"
-                    << " cacheline bytes=" << aBeg << "-" << aEnd << (aCross ? "(cross)" : "")
-                    << ", B_va=0x" << std::hex << la.vaB << std::dec << "(+0x" << std::hex << offB << std::dec << ")"
-                    << " cacheline bytes=" << bBeg << "-" << bEnd << (bCross ? "(cross)" : "") << std::endl;
+                      << " A_va=0x" << std::hex << la.vaA << std::dec << "(+0x" << std::hex << offA << std::dec << ")"
+                      << " cacheline bytes=" << aBeg << "-" << aEnd << (aCross ? "(cross)" : "") << ", B_va=0x" << std::hex << la.vaB << std::dec
+                      << "(+0x" << std::hex << offB << std::dec << ")" << " cacheline bytes=" << bBeg << "-" << bEnd << (bCross ? "(cross)" : "")
+                      << std::endl;
         }
         std::cout << std::endl;
     }
 }
 
-int main(int argc, char** argv)
+int pmu_datasrc_run(int argc, char** argv)
 {
     ArgsContext act;
 
@@ -1124,59 +1044,41 @@ int main(int argc, char** argv)
     int pd = -1;
     PmuData* data = nullptr;
     int len = 0;
-    bool needSharing = (act.computeFs || act.computeTs);
-    PcAccessBytesMap seedPc2accessBytes;
-    if (!CollectPmuData(act, pd, data, len, needSharing ? &seedPc2accessBytes : nullptr)) {
+    if (!CollectPmuData(act, pd, data, len, nullptr)) {
         KillApp(act.pid, act.isLaunch);
         return -1;
     }
 
     StatContext context;
-    BuildAggregations(act, data, len, context, needSharing ? &seedPc2accessBytes : nullptr);
+    BuildAggregations(act, data, len, context, nullptr);
     if (!act.format) {
         PrintSourceSummary(context);
     }
 
     if (act.computeFs) {
         RacePcMap racepc;
-        ComputeSharingFromCachelines(context.lineCpuTidPcBucketFs, racepc, false);
-        auto sortedList = SortRacePc(racepc);
-        std::vector<PcPair> topPairs;
-        topPairs.reserve(sortedList.size());
-        for (auto &x : sortedList) {
-            topPairs.push_back(x.first);
-        }
         PairLineBucketMap pairLineBucket;
-        pairLineBucket.reserve(topPairs.size());
-        CollectCacheLineDetails(context.lineCpuTidPcBucketFs, topPairs, pairLineBucket, false);
+        ComputeSharingAndDetails(context.lineCpuTidPcBucketFs, racepc, pairLineBucket, false);
+        auto sortedList = SortRacePc(racepc);
+
         if (!act.format) {
             std::cout << "Possible false sharing:" << std::endl;
             PrintResults(context, context.pcGlobalBucketFs, sortedList, pairLineBucket);
         } else {
-            PrintSharingFormatResults("FS", sortedList, pairLineBucket);
+            PrintSharingFormatResults("FS", sortedList, pairLineBucket, context);
         }
     }
 
     if (act.computeTs) {
         RacePcMap racepc;
-        ComputeSharingFromCachelines(context.lineCpuTidPcBucketTs, racepc, true);
-        auto sortedList = SortRacePc(racepc);
-
-        std::vector<PcPair> topPairs;
-        topPairs.reserve(sortedList.size());
-        for (auto &x : sortedList) {
-            topPairs.push_back(x.first);
-        }
-
         PairLineBucketMap pairLineBucket;
-        pairLineBucket.reserve(topPairs.size());
-        CollectCacheLineDetails(context.lineCpuTidPcBucketTs, topPairs, pairLineBucket, true);
-
+        ComputeSharingAndDetails(context.lineCpuTidPcBucketTs, racepc, pairLineBucket, true);
+        auto sortedList = SortRacePc(racepc);
         if (!act.format) {
             std::cout << "Possible true sharing:" << std::endl;
             PrintResults(context, context.pcGlobalBucketTs, sortedList, pairLineBucket);
         } else {
-            PrintSharingFormatResults("TS", sortedList, pairLineBucket);
+            PrintSharingFormatResults("TS", sortedList, pairLineBucket, context);
         }
     }
 

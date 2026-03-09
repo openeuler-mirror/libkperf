@@ -19,11 +19,11 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 target_link_libraries(tools_deps INTERFACE Threads::Threads)
 
+set(LIBKPERF_BUILD_PMU_DATASRC_BIN ON CACHE BOOL "" FORCE)
 add_subdirectory(cache_collect)
 add_subdirectory(case)
+add_subdirectory(false_sharing)
 
-add_executable(pmu_datasrc "${CMAKE_CURRENT_LIST_DIR}/pmu_datasrc.cpp")
-target_link_libraries(pmu_datasrc PRIVATE tools_deps)
 add_executable(pmu_hotspot "${CMAKE_CURRENT_LIST_DIR}/pmu_hotspot/pmu_hotspot.cpp")
 target_link_libraries(pmu_hotspot PRIVATE tools_deps)
 add_executable(pmu_perfdata "${CMAKE_CURRENT_LIST_DIR}/pmu_perfdata.cpp")
