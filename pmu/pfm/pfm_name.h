@@ -72,6 +72,7 @@ extern const char* MINOR_FAULTS;
 extern const char* PAGE_FAULTS;
 extern const char* FAULTS;
 extern const char* TASK_CLOCK;
+extern const char* CGROUP_SWITCHES;
 }
 namespace HIP_A {
 namespace CORE {
