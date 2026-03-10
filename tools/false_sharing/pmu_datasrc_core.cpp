@@ -429,6 +429,13 @@ std::string ParseSymbol(Symbol* sym)
     return ss.str();
 }
 
+std::string ParseSymbolForFormat(Symbol* sym)
+{
+    std::stringstream ss;
+    ss << "0x" << std::hex << sym->codeMapAddr << " " << sym->symbolName << "@" << sym->module << " " << std::dec << sym->lineNum;
+    return ss.str();
+}
+
 typedef std::pair<std::string, Item> SYMBOL_NUM_PAIR;
 
 bool SortBySymValue(const SYMBOL_NUM_PAIR& t1, const SYMBOL_NUM_PAIR& t2)
@@ -502,6 +509,7 @@ static bool CollectPmuData(const ArgsContext &act, int &pd, PmuData* &data, int 
     attr.dataFilter = SPE_DATA_ALL;
     attr.evFilter = SPE_EVENT_RETIRED;
     attr.symbolMode = SymbolMode::RESOLVE_ELF_DWARF;
+    attr.excludeKernel = true;
     if (act.isLaunch) {
         attr.enableOnExec = 1;
     }
@@ -522,12 +530,12 @@ static bool CollectPmuData(const ArgsContext &act, int &pd, PmuData* &data, int 
     }
 
     PrintTime("start collect");
-    int num = act.duration * 100;
+    int num = act.duration * 10;
     if (!act.isLaunch) {
         PmuEnable(pd);
     }
     for (int i = 0; i < num; i++) {
-        usleep(100 * 100);
+        usleep(100 * 1000);
         if (execErrNo) {
             std::cout << "exec failed:" << strerror(execErrNo) << std::endl;
             PmuClose(pd);
@@ -580,7 +588,8 @@ static void BuildAggregations(const ArgsContext &act, PmuData* data, int len, St
         if (si.hasSym && si.pc != 0) {
             auto itSym = context.pc2sym.find(si.pc);
             if (itSym == context.pc2sym.end()) {
-                auto ret = context.pc2sym.emplace(si.pc, ParseSymbol(si.sym));
+                std::string symStr = act.format ? ParseSymbolForFormat(si.sym) : ParseSymbol(si.sym);
+                auto ret = context.pc2sym.emplace(si.pc, std::move(symStr));
                 symStrPtr = &ret.first->second;
             } else {
                 symStrPtr = &itSym->second;
