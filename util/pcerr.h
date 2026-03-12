@@ -21,14 +21,14 @@
 #include "pcerrc.h"
 
 namespace pcerr {
-    void [[nodiscard]] New(int code);
-    void [[nodiscard]] New(int code, const std::string& msg);
-    void [[nodiscard]] SetWarn(int warn);
-    void [[nodiscard]] SetWarn(int warn, const std::string& msg);
+    void New(int code);
+    void New(int code, const std::string& msg);
+    void SetWarn(int warn);
+    void SetWarn(int warn, const std::string& msg);
     /**
      * @brief used to store custom information of the inner layer, The New interface is used to obtain the information
      */
-    void [[nodiscard]] SetCustomErr(int code, const std::string& msg);
+    void SetCustomErr(int code, const std::string& msg);
 }  // namespace pcerr
 
 #endif
