@@ -13,11 +13,15 @@
 
 
 set(CMAKE_CXX_FLAGS_DEBUG " -O0 -g -Wall -pg -fno-gnu-unique -DDEBUG")
-set(CMAKE_CXX_FLAGS_RELEASE " -O3 -DNDEBUG -fstack-protector-all -Wl,-z,relro,-z,now -Wall -fPIE -s -fno-gnu-unique")
+set(CMAKE_CXX_FLAGS_RELEASE " -O3 -DNDEBUG -fstack-protector-all -Wl,-z,relro,-z,now -Wall -fPIE -s")
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    string(APPEND CMAKE_CXX_FLAGS_DEBUG   " -fno-gnu-unique")
+    string(APPEND CMAKE_CXX_FLAGS_RELEASE " -fno-gnu-unique")
+endif()
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 -g")
 set(CMAKE_CXX_FLAGS_MINSIZEREL "-Os -DNDEBUG")
-set(CMAKE_C_FLAGS_DEBUG " -O0 -g -Wall -pg -fno-gnu-unique -DDEBUG")
-set(CMAKE_C_FLAGS_RELEASE " -O3 -DNDEBUG -fstack-protector-all -Wl,-z,relro,-z,now -Wall -fPIE -s -fno-gnu-unique")
+set(CMAKE_C_FLAGS_DEBUG " -O0 -g -Wall -pg -DDEBUG")
+set(CMAKE_C_FLAGS_RELEASE " -O3 -DNDEBUG -fstack-protector-all -Wl,-z,relro,-z,now -Wall -fPIE -s")
 set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O3 -g")
 set(CMAKE_C_FLAGS_MINSIZEREL "-Os -DNDEBUG")
 

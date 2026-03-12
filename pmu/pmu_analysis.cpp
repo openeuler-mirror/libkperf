@@ -169,7 +169,7 @@ namespace KUNPENG_PMU {
         return syscallTable[NR_SYSCALL].c_str();
     }
 
-    std::vector<PmuTraceData>& PmuAnalysis::AnalyzeRawTraceData(int pd, PmuData *pmuData, unsigned len)
+    std::vector<PmuTraceData>& PmuAnalysis::AnalyzeRawTraceData(unsigned pd, PmuData *pmuData, unsigned len)
     {
         vector<PmuTraceData> traceData;
         const int pairNum = 2;
@@ -226,7 +226,7 @@ namespace KUNPENG_PMU {
         return inserted.first->second.data;
     }
 
-    std::vector<PmuTraceData>& PmuAnalysis::AnalyzeTraceData(int pd, PmuData *pmuData, unsigned len)
+    std::vector<PmuTraceData>& PmuAnalysis::AnalyzeTraceData(unsigned pd, PmuData *pmuData, unsigned len)
     {
         int oriDataLen = len;
         vector<string>& funList = funcsList.at(pd);

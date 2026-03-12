@@ -170,7 +170,7 @@ struct EventGroupInfo {
         * scan the event List, if found the uncore event, the uncoreState is configured with the high bit set to 1;
         * if find the other event, the uncoreState is config the low bit set to 0.
     */
-    enum class UncoreState uncoreState;  
+    enum UncoreState uncoreState;  
 };
 
 // store event group id and event group info
