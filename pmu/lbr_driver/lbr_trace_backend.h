@@ -10,7 +10,7 @@
  * See the Mulan PSL v2 for more details.
  * Author: Wu
  * Create: 2026-01-23
- * Description: definition of pebs collection of lbr in Intel environment
+ * Description: definition of LBR collection in Intel environment
  ******************************************************************************/
 #include <atomic>
 #include <mutex>
@@ -19,22 +19,37 @@
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 #include <poll.h>
-#include "simple-pebs.h"
+#include "simple-lbr-trace.h"
 #include "pmu.h"
 
-struct PebsDriverSession {
+struct CpuChunk {
+    int cpu = -1;
+    uint64_t beginSeq = 0;
+    uint64_t endSeq = 0;
+
+    CpuChunk(int c, uint64_t b, uint64_t e)
+        : cpu(c), beginSeq(b), endSeq(e) {}
+};
+
+struct LbrDriverSession {
+    int fd = -1;                  // single owner fd
     int cpuNum = 0;
     int driverMapSize = 0;
-    std::vector<int> fds;
+    int targetPid = 0;
+
     std::vector<void*> maps;
-    std::vector<pollfd> pfds;  // monitor POLLIN
+    std::vector<uint64_t> consumedSeq;    // userspace consumed seq per cpu
+    std::vector<uint64_t> lastTailSeq;    // last valid tail, for debug/warn
+    std::vector<uint64_t> lastOverwritten;
+    std::vector<uint64_t> lastFailures;
+    pollfd pfd{.fd = -1, .events = POLLIN, .revents = 0};
     bool running = false;
 };
 
-class PebsDriverManager {
+class LbrDriverManager {
 public:
-    static PebsDriverManager& Instance() {
-        static PebsDriverManager inst;
+    static LbrDriverManager& Instance() {
+        static LbrDriverManager inst;
         return inst;
     }
 
@@ -50,14 +65,13 @@ public:
     void Close(int pd);
 
 private:
-    PebsDriverManager() = default;
+    LbrDriverManager() = default;
 
-    bool ProbeDevice(int* out_size);  // check whether /dev/simple-pebs exists, readable and can get size
-    bool OpenCpu(PebsDriverSession& s, int cpu);  // open set mmap for one cpu
-    void StopAll(PebsDriverSession& s);           // ioctl stop for all cpus
-    void ResetAll(PebsDriverSession& s);          // ioctl reset for all cpus
+    bool ProbeDevice(int* out_size, int* out_cpus);
+    bool OpenDevice(LbrDriverSession& s, int targetPid);
+    void Stop(LbrDriverSession& s);
+    std::shared_ptr<LbrDriverSession> GetSession(int pid);
 
-    std::mutex driverMu;
     std::atomic<int> nextDriverPd{kPdBase + 1};  // distinguished from PMU pd
-    std::unordered_map<int, PebsDriverSession> sess;  // key: driver pd, value: PebsDriverSession
+    std::unordered_map<int, std::shared_ptr<LbrDriverSession>> sess;  // key: driver pd, value: LbrDriverSession
 };

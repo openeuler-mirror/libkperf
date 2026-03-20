@@ -292,7 +292,7 @@ void KUNPENG_PMU::PerfSampler::ReadRingBuffer(EventData &eventData)
         __u32 sampleType = event->header.type;
         switch (sampleType) {
             case PERF_RECORD_SAMPLE: {
-                eventData.data.emplace_back(PmuData{0});
+                eventData.data.emplace_back(PmuData{});
                 auto& current = eventData.data.back();
                 eventData.sampleIps.emplace_back(PerfSampleIps());
                 auto& ips = eventData.sampleIps.back();

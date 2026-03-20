@@ -275,9 +275,13 @@ private:
         sample->header.type = PERF_RECORD_SAMPLE;
         sample->header.misc = PERF_RECORD_MISC_USER;
         sample->header.size = sizeof(PerfSample) + branchNr * sizeof(perf_branch_entry);
-        if (d.stack && d.stack->symbol) {
-            sample->ip = d.stack->symbol->addr;
-            modules.insert(d.stack->symbol->module);
+        if (d.ip != -1) {
+            sample->ip = d.ip;
+        } else {
+            if (d.stack && d.stack->symbol) {
+                sample->ip = d.stack->symbol->addr;
+                modules.insert(d.stack->symbol->module);
+            }
         }
         sample->tid = d.tid;
         sample->pid = d.pid;
