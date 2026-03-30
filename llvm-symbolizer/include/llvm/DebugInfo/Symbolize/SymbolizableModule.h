@@ -39,6 +39,8 @@ public:
   // Returns the preferred base of the module, i.e. where the loader would place
   // it in memory assuming there were no conflicts.
   virtual uint64_t getModulePreferredBase() const = 0;
+  // Return assembly code by start address and end address.
+  virtual std::string getAsmCode(uint64_t StartAddr, uint64_t EndAddr) const = 0;
 };
 
 } // end namespace symbolize

@@ -129,6 +129,16 @@ Expected<DIGlobal> LLVMSymbolizer::symbolizeData(const std::string &ModuleName,
   return Global;
 }
 
+Expected<std::string> LLVMSymbolizer::getAsmCode(const std::string &ModuleName, uint64_t StartAddr, uint64_t EndAddr) {
+    SymbolizableModule *Info;
+    if (auto InfoOrErr = getOrCreateModuleInfo(ModuleName))
+        Info = InfoOrErr.get();
+    else 
+        return InfoOrErr.takeError();
+    return Info->getAsmCode(StartAddr, EndAddr);
+}
+
+
 void LLVMSymbolizer::flush() {
   ObjectForUBPathAndArch.clear();
   BinaryForPath.clear();

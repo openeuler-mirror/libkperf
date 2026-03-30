@@ -163,3 +163,7 @@ void FreeAsmStack(struct StackAsm* stackAsm)
 {
     SymbolUtils::FreeStackAsm(&stackAsm);
 }
+
+int GetAsmCodeByAddr(const char* moduleName, unsigned long startAddr, unsigned long endAddr, char** asmCode) {
+    return SymbolResolve::GetInstance()->GetAsmCodeByAddr(moduleName, startAddr, endAddr, asmCode);
+}
