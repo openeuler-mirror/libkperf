@@ -78,10 +78,8 @@ func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error)
       branchSampleMode = kperf.BranchSampleFilter.KPERF_SAMPLE_BRANCH_ANY | kperf.BranchSampleFilter.KPERF_SAMPLE_BRANCH_USER
       pmu_attr = kperf.PmuAttr(sampleRate=1000, useFreq=True, pidList=pidList, evtList=evtList, branchSampleFilter=branchSampleMode)
       仅支持SAMPLING模式, 其中KPERF_SAMPLE_BRANCH_USER， KPERF_SAMPLE_BRANCH_KERNEL， KPERF_SAMPLE_BRANCH_HV使用时必须搭配KPERF_SAMPLE_BRANCH_ANY或者KPERF_SAMPLE_BRANCH_ANY之后的值一起使用
-  * char** cgroupNameList;
+  * CgroupNameList []string;
     采集cgroup的名称列表
-  * int numCgroup;
-    采集cgroup的个数
   * EnableUserAccess bool
     是否直接读取寄存器，仅支持COUNTING模式
   * EnableBpf bool
