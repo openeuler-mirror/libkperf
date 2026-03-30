@@ -75,6 +75,11 @@ file(GLOB STATIC_LLVM_FILES
         ${LLVM_LIB_DIR}/libLLVMDemangle.a
         ${LLVM_LIB_DIR}/libLLVMMCDisassembler.a)
 
+list(APPEND CMAKE_PREFIX_PATH "${PROJECT_TOP_DIR}/third_party/local/capstone")
+find_package(Capstone REQUIRED)
+target_link_libraries(sym capstone::capstone_static)
+target_link_libraries(sym_static capstone::capstone_static)
+
 install(TARGETS sym DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)
 install(TARGETS sym_static DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)
 install(FILES ${SYMBOL_FILE_DIR}/symbol.h DESTINATION ${CMAKE_INSTALL_PREFIX}/include)

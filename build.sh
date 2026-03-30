@@ -96,6 +96,8 @@ if [[ "$BPF" == "true" ]]; then
     build_skel_files $BPF_DIR $THIRD_PARTY
 fi
 
+build_capstone $THIRD_PARTY
+
 function build_elfin() {
   local cmake_target_dir=$THIRD_PARTY/local/elfin-parser
   rm -rf ${cmake_target_dir}
