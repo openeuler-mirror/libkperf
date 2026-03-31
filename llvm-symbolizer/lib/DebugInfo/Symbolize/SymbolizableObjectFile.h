@@ -55,6 +55,8 @@ public:
   uint64_t getModulePreferredBase() const override;
   // Return assembly code by start address and end address.
   std::string getAsmCode(uint64_t StartAddr, uint64_t EndAddr) const override;
+  // Return plt symbol
+  DILineInfo getPLTSymbol(uint64_t ModuleOffset) const override;
 
 private:
   bool shouldOverrideWithSymbolTable(FunctionNameKind FNKind,

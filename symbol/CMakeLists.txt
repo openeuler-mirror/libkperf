@@ -21,6 +21,7 @@ set_target_properties(sym_static PROPERTIES OUTPUT_NAME "sym")
 
 target_link_libraries(sym
         pthread
+        elf_static
         ${LLVM_LIB_DIR}/libLLVMTarget.a
         ${LLVM_LIB_DIR}/libLLVMDebugInfoDWARF.a
         ${LLVM_LIB_DIR}/libLLVMDemangle.a
@@ -48,34 +49,6 @@ target_link_libraries(sym
         ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}Utils.a
         z)
 
-file(GLOB STATIC_LLVM_FILES 
-        ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}AsmPrinter.a
-        ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}AsmParser.a
-        ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}Desc.a
-        ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}Disassembler.a
-        ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}Info.a
-        ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}Utils.a
-
-        ${LLVM_LIB_DIR}/libLLVMTarget.a
-        ${LLVM_LIB_DIR}/libLLVMDebugInfoDWARF.a
-        ${LLVM_LIB_DIR}/libLLVMDemangle.a
-        ${LLVM_LIB_DIR}/libLLVMObject.a
-        ${LLVM_LIB_DIR}/libLLVMOption.a
-        ${LLVM_LIB_DIR}/libLLVMSupport.a
-        ${LLVM_LIB_DIR}/libLLVMSymbolize.a
-        ${LLVM_LIB_DIR}/libLLVMDebugInfoDWARF.a
-        ${LLVM_LIB_DIR}/libLLVMObject.a
-        ${LLVM_LIB_DIR}/libLLVMBitReader.a
-        ${LLVM_LIB_DIR}/libLLVMCore.a
-        ${LLVM_LIB_DIR}/libLLVMMCParser.a
-        ${LLVM_LIB_DIR}/libLLVMMC.a
-        ${LLVM_LIB_DIR}/libLLVMDebugInfoCodeView.a
-        ${LLVM_LIB_DIR}/libLLVMBinaryFormat.a
-        ${LLVM_LIB_DIR}/libLLVMSupport.a
-        ${LLVM_LIB_DIR}/libLLVMDemangle.a
-        ${LLVM_LIB_DIR}/libLLVMMCDisassembler.a)
-
 install(TARGETS sym DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)
 install(TARGETS sym_static DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)
 install(FILES ${SYMBOL_FILE_DIR}/symbol.h DESTINATION ${CMAKE_INSTALL_PREFIX}/include)
-install(FILES ${STATIC_LLVM_FILES} DESTINATION  ${CMAKE_INSTALL_PREFIX}/lib)

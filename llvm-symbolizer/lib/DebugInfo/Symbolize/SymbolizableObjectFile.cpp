@@ -202,6 +202,8 @@ bool SymbolizableObjectFile::getNameFromSymbolTable(SymbolRef::Type Type,
   if (SymbolIterator->first.Size != 0 &&
       SymbolIterator->first.Addr + SymbolIterator->first.Size <= Address)
     return false;
+  if (SymbolIterator->first.Size == 0 && SymbolIterator->first.Addr == Address)
+    return false;
   Name = SymbolIterator->second.str();
   Addr = SymbolIterator->first.Addr;
   Size = SymbolIterator->first.Size;
@@ -216,6 +218,20 @@ bool SymbolizableObjectFile::shouldOverrideWithSymbolTable(
   // generally only contain the names of exported symbols.
   return FNKind == FunctionNameKind::LinkageName && UseSymbolTable &&
          isa<DWARFContext>(DebugInfoContext.get());
+}
+
+DILineInfo SymbolizableObjectFile::getPLTSymbol(uint64_t ModuleOffset) const {
+    DILineInfo LineInfo;
+    PLTEntry PLTEntry;
+    if (isPLTAddr(ModuleOffset, &PLTEntry)) {
+        LineInfo.FunctionName = PLTEntry.Name;
+        LineInfo.FileName = ".plt";
+        LineInfo.Line = 0;
+        LineInfo.Column = 0;
+        LineInfo.CodeEndAddr = PLTEntry.Addr + PLTEntry.Size;
+        LineInfo.Offset = ModuleOffset - PLTEntry.Addr;
+    }
+    return LineInfo;
 }
 
 DILineInfo SymbolizableObjectFile::symbolizeCode(uint64_t ModuleOffset,

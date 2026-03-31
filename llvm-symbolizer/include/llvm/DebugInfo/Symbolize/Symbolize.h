@@ -57,6 +57,9 @@ public:
     flush();
   }
 
+  Expected<DILineInfo> getPLTCode(const std::string &ModuleName,
+                                  uint64_t ModuleOffset);
+
   Expected<DILineInfo> symbolizeCode(const std::string &ModuleName,
                                      uint64_t ModuleOffset,
                                      StringRef DWPName = "");
