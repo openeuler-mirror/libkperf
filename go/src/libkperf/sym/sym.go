@@ -18,7 +18,7 @@ package sym
 /*
 #cgo CFLAGS: -I ../include
 #cgo !static LDFLAGS: -L ../lib -lsym
-#cgo static LDFLAGS: -L ../static_lib -lsym -lLLVMDebugInfoDWARF -lLLVMDemangle -lLLVMObject -lLLVMOption -lLLVMSupport -lLLVMSymbolize -lLLVMDebugInfoDWARF -lLLVMObject -lLLVMBitReader -lLLVMCore -lLLVMMCParser -lLLVMMC -lLLVMDebugInfoCodeView -lLLVMBinaryFormat -lLLVMSupport -lLLVMDemangle -lz -lm -lstdc++
+#cgo static LDFLAGS: -L ../static_lib -lsym -lz -lm -lstdc++
 
 #include "symbol.h"
 #include "pcerrc.h"

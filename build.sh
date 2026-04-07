@@ -21,6 +21,7 @@ BUILD_DIR=${PROJECT_DIR}/_build
 THIRD_PARTY=${PROJECT_DIR}/third_party/
 INSTALL_PATH=${PROJECT_DIR}/output/
 BPF_DIR=${PROJECT_DIR}/pmu/bpf
+LLVM_LIB_DIR=${PROJECT_DIR}/llvm-symbolizer/build/lib
 BUILD_TYPE=Release
 # Python module are not compiled by default.
 PYTHON=false
@@ -76,6 +77,9 @@ for arg in "$@"; do
             ;;
         asan=*)
             ASAN="${arg#*=}"
+            ;;
+        elf_llvm=*)
+            ELF_LLVM="${arg#*=}"
             ;;
     esac
 done
@@ -146,6 +150,7 @@ build_libkperf()
         "-DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
         "-DBPF=${BPF}"
         "-DARCH_TARGET=${ARCH_TARGET}"
+        "-DELF_LLVM=${ELF_LLVM}"
     )
     if [ ! -z ${PYTHON_EXE} ];then
          CMAKE_ARGS+=("-DPYTHON_KPERF=${PYTHON_EXE}")
@@ -173,6 +178,53 @@ build_libkperf()
     echo "build libkperf success"
 }
 
+function merge_libsym()
+{
+    set +x
+    cd ${INSTALL_PATH}lib
+    
+    echo "CREATE libsym_bak.a" > merge.mri
+    echo "ADDLIB ${THIRD_PARTY}/local/elfin-parser/libelf++.a" >> merge.mri
+    echo "ADDLIB ${INSTALL_PATH}lib/libsym.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}AsmPrinter.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}AsmParser.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}Desc.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}Disassembler.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}Info.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}Utils.a" >> merge.mri
+
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMTarget.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMDebugInfoDWARF.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMDemangle.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMObject.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMOption.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMSupport.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMSymbolize.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMDebugInfoDWARF.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMObject.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMBitReader.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMCore.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMMCParser.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMMC.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMDebugInfoCodeView.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMBinaryFormat.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMSupport.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMDemangle.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMMCDisassembler.a" >> merge.mri
+    echo "SAVE" >> merge.mri
+    echo "END" >> merge.mri
+    #执行合并
+    ar -M < merge.mri
+    rm merge.mri
+    if [ ! -z libsym.a ];then
+        rm libsym.a
+    fi
+    mv libsym_bak.a libsym.a
+    if [ "${GO}" = "true" ];then
+        cp libsym.a ${PROJECT_DIR}/go/src/libkperf/static_lib/
+    fi
+}
+
 function build_test()
 {
     if [ "$INCLUDE_TEST" = "true" ]; then
@@ -182,9 +234,10 @@ function build_test()
 
 main() {
     build_symbolizer
-    # build_elfin
+    build_elfin
     build_libkperf
     build_test
+    merge_libsym
 }
 
 # bash build.sh test=true installPath=/home/ build_type=Release .The last three settings are optional.

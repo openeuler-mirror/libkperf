@@ -41,6 +41,8 @@ public:
   virtual uint64_t getModulePreferredBase() const = 0;
   // Return assembly code by start address and end address.
   virtual std::string getAsmCode(uint64_t StartAddr, uint64_t EndAddr) const = 0;
+  // Return plt symbol
+  virtual DILineInfo getPLTSymbol(uint64_t ModuleOffset) const = 0;
 };
 
 } // end namespace symbolize

@@ -26,6 +26,7 @@
 #include "pcerr.h"
 #include "symbol_resolve.h"
 #include "common.h"
+#include "name_resolve.h"
 
 using namespace KUNPENG_SYM;
 constexpr __u64 MAX_LINE_LENGTH = 1024;
@@ -302,6 +303,109 @@ void SymbolUtils::StrCpy(char* dst, int dstLen, const char* src)
     dst[dstLen] = '\0';
 }
 
+#ifndef ELF_LLVM
+static inline void ElfInfoRecord(ParserElf& myElf, const elf::section& sec)
+{
+    for (const auto& sym : sec.as_symtab()) {
+        auto& data = sym.get_data();
+        if (data.type() != elf::stt::func){
+            continue;
+        }
+        myElf.Emplace(data.value, sym);
+    }
+}
+
+ELF_SYM* ParserElf::FindSymbol(unsigned long addr)
+{
+    if (symTab.empty()) {
+        return nullptr;
+    }
+    auto it = symTab.upper_bound(addr);
+    if(it == symTab.cbegin()) {
+        return nullptr;
+    }
+    --it;
+    if(addr > it->first + it->second.get_data().size) {
+        return nullptr;
+    }
+    return &it->second;
+}
+
+void ParserElf::Emplace(unsigned long addr, const ELF_SYM& elfSym)
+{
+    this->symTab.emplace(addr, elfSym);
+}
+
+int SymbolResolve::RecordElf(const char* fileName)
+{
+    std::string file = fileName;
+    elfSafeHandler.tryLock(file);
+
+    if (this->elfMap.find(fileName) != this->elfMap.end()) {
+        pcerr::New(0, "success");
+        elfSafeHandler.releaseLock(file);
+        return 0;
+    }
+
+    if (!SymbolUtils::IsFile(fileName)) {
+        pcerr::New(LIBSYM_ERR_FILE_NOT_RGE, "libsym detects that the input parameter fileName is not a file");
+        elfSafeHandler.releaseLock(file);
+        return LIBSYM_ERR_FILE_NOT_RGE;
+    }
+
+    /** symbol cache logic should be implemented after this line */
+    int fd = open(fileName, O_RDONLY);
+    if (fd < 0) {
+        pcerr::New(LIBSYM_ERR_OPEN_FILE_FAILED,
+                   "libsym can't open file named " + file + " because of " + std::string{strerror(errno)});
+        elfSafeHandler.releaseLock(file);
+        return LIBSYM_ERR_OPEN_FILE_FAILED;
+    }
+
+    try {
+        std::shared_ptr<elf::loader> efLoader = elf::create_mmap_loader(fd);
+        elf::elf ef(efLoader);
+        ParserElf myElf(ef);
+        for (const auto& sec : ef.sections()) {
+            if (sec.get_hdr().type != elf::sht::symtab && sec.get_hdr().type != elf::sht::dynsym) {
+                continue;
+            }
+            ElfInfoRecord(myElf, sec);
+        }
+        this->elfMap.emplace(file, myElf);
+    } catch (std::exception& error) {
+        pcerr::New(LIBSYM_ERR_ELFIN_FOMAT_FAILED, "libsym record elf format error: " + std::string{error.what()});
+        elfSafeHandler.releaseLock(file);
+        return LIBSYM_ERR_ELFIN_FOMAT_FAILED;
+    }
+
+    pcerr::New(0, "success");
+    elfSafeHandler.releaseLock(file);
+    return 0;
+}
+
+void SymbolResolve::SearchElfInfo(ParserElf& myElf, unsigned long addr, struct Symbol* symbol, unsigned long* offset)
+{
+    ELF_SYM *elfSym = myElf.FindSymbol(addr);
+    if (elfSym == nullptr) {
+        return;
+    }
+    symbol->codeMapEndAddr = elfSym->get_data().value + elfSym->get_data().size;
+    *offset = addr - elfSym->get_data().value;
+    std::string symName = elfSym->get_name();
+    symbol->mangleName = GetCharFromStr(symName);
+    char *name = CppNamedDemangle(symName.c_str());
+    if (name) {
+        symbol->symbolName = GetCharFromStr(name);
+        free(name);
+        name = nullptr;
+        return;
+    }
+    symbol->symbolName = GetCharFromStr(symName);
+    return;
+}
+#endif
+
 int SymbolResolve::RecordModule(int pid, RecordModuleType recordModuleType)
 {
     if (pid < 0) {
@@ -323,9 +427,20 @@ int SymbolResolve::RecordModule(int pid, RecordModuleType recordModuleType)
     ReadProcPidMap(file, modVec);
     std::string mntPoint = GetMntPoint(pid);
     for (auto& item : modVec) {
+        std::string moduleName = item->moduleName;
         if (!mntPoint.empty()) {
             item->mntPoint = mntPoint;
+            moduleName = mntPoint + "/" + moduleName;
         }
+        MyElf myElf(moduleName);
+        int ret = myElf.LoadMmap();
+        if (ret != SUCCESS) {
+            return ret;
+        }
+        item->isExecFile = myElf.IsExecFile();
+#ifndef ELF_LLVM
+        this->RecordElf(moduleName.c_str());
+#endif
         item->moduleType = recordModuleType;
     }
     this->moduleMap.insert({pid, modVec});
@@ -368,9 +483,20 @@ int SymbolResolve::UpdateModule(int pid, RecordModuleType recordModuleType)
     auto diffModVec = FindDiffMaps(oldModVec, newModVec);
     // Load modules.
     for (auto& item : diffModVec) {
+        std::string moduleName = item->moduleName;
         if (!mntPoint.empty()) {
             item->mntPoint = mntPoint;
+            moduleName = mntPoint + "/" + moduleName;
         }
+        MyElf myElf(moduleName);
+        int ret = myElf.LoadMmap();
+        if (ret != SUCCESS) {
+            continue;
+        }
+        item->isExecFile = myElf.IsExecFile();
+#ifndef ELF_LLVM
+        this->RecordElf(moduleName.c_str());
+#endif
     }
     for (auto& mod : diffModVec) {
         oldModVec.emplace_back(mod);
@@ -541,7 +667,7 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
     struct Symbol* symbol = InitializeSymbol(addr);
     symbol->module = GetCharFromStr(module->moduleName);
     unsigned long addrToSearch = addr;
-    if (addrToSearch > 0xFFFFFF) {
+    if (!module->isExecFile) {
         addrToSearch = addrToSearch - module->start;
     }
 
@@ -551,8 +677,31 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
         moduleName = module->mntPoint + "/" + module->moduleName;
     }
 
-    auto ResOrErr = Symbolizer.symbolizeCode(moduleName, addrToSearch);
+#ifndef ELF_LLVM
+    if (this->elfMap.find(moduleName) != this->elfMap.end()) {
+        ParserElf& myElf = this->elfMap.at(moduleName);
+        this->SearchElfInfo(myElf, addrToSearch, symbol, &symbol->offset);
+        if (symbol->symbolName == UNKNOWN) {
+            auto ResOrErr = Symbolizer.getPLTCode(moduleName, addrToSearch);
+            if (ResOrErr && ResOrErr->FileName == ".plt") {
+                symbol->symbolName = GetCharFromStr(ResOrErr->FunctionName);
+                symbol->mangleName = GetCharFromStr(ResOrErr->MangleName);
+                symbol->offset = ResOrErr->Offset;
+                symbol->codeMapEndAddr = ResOrErr->CodeEndAddr;
+            }
+        }
+    }
 
+    if (module->moduleType == RecordModuleType::RECORD_ALL) {
+        auto ResOrErr = Symbolizer.symbolizeCode(moduleName, addrToSearch);
+        if (ResOrErr->FileName != "<invalid>") {
+            symbol->lineNum = ResOrErr->Line;
+            symbol->fileName = GetCharFromStr(ResOrErr->FileName);
+            symbol->firstLine = ResOrErr->StartLine;
+        }
+    }
+#else
+    auto ResOrErr = Symbolizer.symbolizeCode(moduleName, addrToSearch);
     if (ResOrErr) {
         if (module->moduleType == RecordModuleType::RECORD_ALL) {
             if (ResOrErr->FileName != "<invalid>") {
@@ -569,6 +718,7 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
             symbol->codeMapEndAddr = ResOrErr->CodeEndAddr;
         }
     }
+#endif
     symbol->codeMapAddr = addrToSearch;
     this->symbolMap.at(pid).insert({addr, symbol});
     pcerr::New(0, "success");
@@ -655,6 +805,12 @@ int SymbolResolve::UpdateModule(int pid, const char* moduleName, unsigned long s
         return LIBSYM_ERR_FILE_NOT_RGE;
     }
 
+    MyElf myElf(recordModule);
+    int ret = myElf.LoadMmap();
+    if (ret != SUCCESS) {
+        return ret;
+    }
+    data->isExecFile = myElf.IsExecFile();
     if (this->moduleMap.find(pid) == this->moduleMap.end()) {
         int ret = RecordModule(pid, recordModuleType);
         if (ret != 0) {
@@ -690,7 +846,42 @@ struct Symbol* SymbolResolve::MapCodeAddr(const char* moduleName, unsigned long 
     }
     struct Symbol* symbol = InitializeSymbol(startAddr);
     symbol->module = GetCharFromStr(moduleName);
-    
+    symbol->codeMapAddr = startAddr;
+
+#ifndef ELF_LLVM
+    if (startAddr > KERNEL_START_ADDR) {
+        pcerr::New(LIBSYM_ERR_MAP_CODE_KERNEL_NOT_SUPPORT,
+                   "libsym The current version does not support kernel source code matching.");
+        return nullptr;
+    } else {
+        int ret = RecordElf(moduleName);
+        if (ret != 0) {
+            return nullptr;
+        }
+        if (this->elfMap.find(moduleName) != this->elfMap.end()) {
+            this->SearchElfInfo(this->elfMap.at(moduleName), startAddr, symbol, &symbol->offset);
+            if (symbol->symbolName == UNKNOWN) {
+                auto ResOrErr = Symbolizer.getPLTCode(moduleName, startAddr);
+                if (ResOrErr && ResOrErr->FileName == ".plt") {
+                    symbol->symbolName = GetCharFromStr(ResOrErr->FunctionName);
+                    symbol->mangleName = GetCharFromStr(ResOrErr->MangleName);
+                    symbol->offset = ResOrErr->Offset;
+                    symbol->codeMapEndAddr = ResOrErr->CodeEndAddr;
+                }
+            }
+        }
+    }
+
+    auto ResOrErr = Symbolizer.symbolizeCode(moduleName, startAddr);
+
+    if (ResOrErr) {
+        if (ResOrErr->FileName != "<invalid>") {
+            symbol->lineNum = ResOrErr->Line;
+            symbol->firstLine = ResOrErr->StartLine;
+            symbol->fileName = GetCharFromStr(ResOrErr->FileName);
+        }
+    }
+#else 
     auto ResOrErr = Symbolizer.symbolizeCode(moduleName, startAddr);
 
     if (ResOrErr) {
@@ -706,7 +897,8 @@ struct Symbol* SymbolResolve::MapCodeAddr(const char* moduleName, unsigned long 
             symbol->codeMapEndAddr = ResOrErr->CodeEndAddr;
         }
     }
-    symbol->codeMapAddr = startAddr;
+
+#endif
     return symbol;
 }
 
@@ -785,6 +977,23 @@ int MyElf::ElfGetBuildId(char** buildId)
         return ElfParser<Elf64_Ehdr, Elf64_Phdr, Elf64_Shdr>(buildId);
     }
     return LIBSYM_ERR_READ_BUILDID;
+}
+
+bool MyElf::IsExecFile() 
+{
+    if (elfHdr->elfClass == ELFCLASS32) {
+        return CheckIsExecFile<Elf32_Ehdr>();
+    } else if(elfHdr->elfClass == ELFCLASS64) {
+        return CheckIsExecFile<Elf64_Ehdr>();
+    }
+    return false;
+}
+
+template<typename Ehdr>
+bool MyElf::CheckIsExecFile()
+{
+    Ehdr* ehdr = reinterpret_cast<Ehdr*>(base);
+    return ehdr->e_type == ET_EXEC;
 }
 
 template<typename Ehdr, typename Phdr, typename Shdr>

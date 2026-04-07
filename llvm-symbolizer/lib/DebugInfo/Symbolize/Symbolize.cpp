@@ -47,6 +47,19 @@
 namespace llvm {
 namespace symbolize {
 
+Expected<DILineInfo> LLVMSymbolizer::getPLTCode(const std::string &ModuleName,
+                                                uint64_t ModuleOffset) {
+  SymbolizableModule *Info;
+  if (auto InfoOrErr = getOrCreateModuleInfo(ModuleName, ""))
+    Info = InfoOrErr.get();
+  else
+    return InfoOrErr.takeError();                                      
+  if (!Info) {
+      return DILineInfo();
+  }
+  return Info->getPLTSymbol(ModuleOffset);      
+}
+
 Expected<DILineInfo>
 LLVMSymbolizer::symbolizeCode(const std::string &ModuleName,
                               uint64_t ModuleOffset, StringRef DWPName) {
