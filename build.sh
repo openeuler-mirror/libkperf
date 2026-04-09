@@ -182,9 +182,12 @@ function merge_libsym()
 {
     set +x
     cd ${INSTALL_PATH}lib
-    
     echo "CREATE libsym_bak.a" > merge.mri
-    echo "ADDLIB ${THIRD_PARTY}/local/elfin-parser/libelf++.a" >> merge.mri
+    #copy avoid ++ error
+    if [ ! -f "${THIRD_PARTY}/local/elfin-parser/libelf.a" ];then
+        cp "${THIRD_PARTY}/local/elfin-parser/libelf++.a" "${THIRD_PARTY}/local/elfin-parser/libelf.a"
+    fi
+    echo "ADDLIB ${THIRD_PARTY}/local/elfin-parser/libelf.a" >> merge.mri
     echo "ADDLIB ${INSTALL_PATH}lib/libsym.a" >> merge.mri
     echo "ADDLIB ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}AsmPrinter.a" >> merge.mri
     echo "ADDLIB ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}AsmParser.a" >> merge.mri
