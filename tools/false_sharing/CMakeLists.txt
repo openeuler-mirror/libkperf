@@ -13,9 +13,7 @@ target_include_directories(pmu_datasrc_core PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}/../../symbol"
 )
 
-if (TARGET tools_deps)
-    target_link_libraries(pmu_datasrc_core PUBLIC tools_deps)
-endif()
+target_link_libraries(pmu_datasrc_core PUBLIC tools_perf_deps)
 
 if (LIBKPERF_BUILD_PMU_DATASRC_BIN)
     add_executable(pmu_datasrc "${CMAKE_CURRENT_LIST_DIR}/pmu_datasrc_main.cpp")
