@@ -1129,6 +1129,14 @@ int GetCgroupFd(std::string& cgroupName) {
     return cgroupFd;
 }
 
+static inline int BuildScopedGroupId(int groupId, int cgroupFd)
+{
+    if (groupId < 0 || cgroupFd < 0) {
+        return groupId;
+    }
+    return ((cgroupFd & 0xffff) << 16) | (groupId & 0xffff);
+}
+
 static EvtAttr ResolveEvtAttrParams(struct PmuAttr *attr, int index) {
     // numEvt must be greater than numEvtAttr.The excludeUser, excluderKernel,and period attributes in PmuAttr have higher priority than those in EvtAttr. 
     int groupId = index >= attr->numEvtAttr? -1 : attr->evtAttr[index].groupId;
@@ -1186,7 +1194,7 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
      */
     PrepareCpuList(attr, taskParam.get(), pmuEvt);
 
-    taskParam->groupId = evtAttrDto.groupId;
+    taskParam->groupId = BuildScopedGroupId(evtAttrDto.groupId, cgroupFd);
 
     taskParam->pmuEvt = shared_ptr<PmuEvt>(pmuEvt, PmuEvtFree);
     taskParam->pmuEvt->useFreq = attr->useFreq;
