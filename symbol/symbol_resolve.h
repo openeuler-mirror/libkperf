@@ -47,6 +47,7 @@ namespace KUNPENG_SYM {
         std::string mntPoint;
         bool isExecFile = false;
         RecordModuleType moduleType;
+        bool isFile = true;
     };
 
 #ifndef ELF_LLVM

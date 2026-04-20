@@ -435,7 +435,8 @@ int SymbolResolve::RecordModule(int pid, RecordModuleType recordModuleType)
         MyElf myElf(moduleName);
         int ret = myElf.LoadMmap();
         if (ret != SUCCESS) {
-            return ret;
+            item->isFile = false;
+            continue;
         }
         item->isExecFile = myElf.IsExecFile();
 #ifndef ELF_LLVM
@@ -491,6 +492,7 @@ int SymbolResolve::UpdateModule(int pid, RecordModuleType recordModuleType)
         MyElf myElf(moduleName);
         int ret = myElf.LoadMmap();
         if (ret != SUCCESS) {
+            item->isFile = false;
             continue;
         }
         item->isExecFile = myElf.IsExecFile();
@@ -666,6 +668,10 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
     }
     struct Symbol* symbol = InitializeSymbol(addr);
     symbol->module = GetCharFromStr(module->moduleName);
+    if (!module->isFile) {
+        pcerr::New(0, "success");
+        return symbol;
+    }
     unsigned long addrToSearch = addr;
     if (!module->isExecFile) {
         addrToSearch = addrToSearch - module->start;
