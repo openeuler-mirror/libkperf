@@ -314,7 +314,7 @@ bool DWARFFormValue::extractValue(const DWARFDataExtractor &Data,
     default:
       // DWARFFormValue::skipValue() will have caught this and caused all
       // DWARF DIEs to fail to be parsed, so this code is not be reachable.
-      llvm_unreachable("unsupported form");
+      return false;
     }
   } while (Indirect);
 
