@@ -320,3 +320,39 @@ go build -tags="static"
 ```shell
 export LD_LIBRARY_PATH=/XXX/libkperf/output/lib:$LD_LIBRARY_PATH
 ```
+
+#### FAQ
+##### 1、Q：如何正确使用launch app模式进行进程采集
+  * PmuOpen之后，再通过信号，唤醒子进程调用application
+  * 无需调用PmuEnable
+  * 推荐使用单fd打开，可显著降低多线程场景下的采集开销
+  * 参考文档：[详细使用参考](./docs/Details_Usage.md#%E9%80%9A%E8%BF%87%E4%BD%BF%E8%83%BDenableexecon%E7%9A%84%E6%96%B9%E5%BC%8F%E9%87%87%E9%9B%86%E8%BF%9B%E7%A8%8B)
+
+##### 2、Q：为何多线程应用采集时会出现数据丢失
+  * 原因：PmuOpen/PmuEnable/PmuDisable等操作在采集多线程应用场景时，其中每个线程加载和使能存在先后
+  * 当前解决方案：
+    * 使用launch模式（单fd打开，已验证可提高PmuOpen效率）[详细使用参考](./docs/Details_Usage.md#%E9%80%9A%E8%BF%87%E4%BD%BF%E8%83%BDenableexecon%E7%9A%84%E6%96%B9%E5%BC%8F%E9%87%87%E9%9B%86%E8%BF%9B%E7%A8%8B)
+    * 使用--per-thread模式 （fd数量=事件数 X 线程数），减少核级数开销 参考
+
+##### 3、Q：如何提升符号解析速度？尤其在压测场景下？
+  * 问题：原DWARF解析耗时>1s,影响性能
+  * 已优化方案：
+    * 集成llvm-symbolizer，目前行号解析效率提升30X
+    * 支持配置模式，symbolMode使用RESOLVE_ELF模式，将不再去解析获取源文件和行号
+
+##### 4、Q：如何支持Cgroup采集？存在哪些限制？
+  * 限制：
+    * uncore与core事件需分两次PmuOpen
+    * PA事件不支持在采集进程模式下与core事件共用PmuOpen
+  * 建议：采集时注意事件分离，避免错误合并
+
+##### 5、Q：SPE采集时为何PmuRead耗时长？如何优化
+  * 原因：SPE模式下，PmuRead会自动调用PmuDisable，读取完数据会自动调用PmuEnable
+  * 建议：
+    * 单线程顺序执行PmuOpen/PmuCollect/PmuClose.
+
+##### 6、Q：如何采集HITM事件（Flase Sharing）并保证数据稳定性
+  * 采集方式： 指定CPU核心进行采集
+  * 稳定性：
+    * 指定cpu采集： 数据稳定、地址正确
+    * 指定pid采集： 存在不一致，建议优先使用指定cpu采集
