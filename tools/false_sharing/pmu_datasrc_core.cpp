@@ -1228,7 +1228,7 @@ static inline std::string SanitizeFormatField(const std::string& s)
 {
     std::string out = s;
     for (char& ch : out) {
-        if (ch == ',' || ch == '|' || ch == '\n' || ch == '\r') {
+        if (ch == '|' || ch == '\n' || ch == '\r') {
             ch = ' ';
         }
     }
@@ -1340,10 +1340,10 @@ static void PrintSharingFormatResults(const char* memType, const std::vector<Iss
         const uint64_t cacheLineAddr = issue.lineKey * CACHELINE_SIZE;
         const std::string hint = MakeSuggestionHint(issue.repVaA, bytesA, issue.repVaB, bytesB, cacheLineAddr);
 
-        std::cout << memType << "," << (i + 1) << ","
-                  << MakeFormatEndpointField(issue.repPcA, metaA) << ","
-                  << MakeFormatEndpointField(issue.repPcB, metaB) << ","
-                  << issue.kind << "," << ToHex(cacheLineAddr) << "," << hint << "\n";
+        std::cout << memType << "|" << (i + 1) << "|"
+                  << MakeFormatEndpointField(issue.repPcA, metaA) << "|"
+                  << MakeFormatEndpointField(issue.repPcB, metaB) << "|"
+                  << issue.kind << "|" << ToHex(cacheLineAddr) << "|" << hint << "\n";
     }
 }
 
