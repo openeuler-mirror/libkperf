@@ -433,10 +433,19 @@ static std::string ToHex(ulong v)
 }
 
 static volatile int execErrNo;
+static volatile sig_atomic_t g_stopRequested = 0;
 
 static void ExecFailedSignal(int signo, siginfo_t* info, void* ucontext)
 {
+    (void)signo;
+    (void)ucontext;
     execErrNo = info->si_value.sival_int;
+}
+
+static void StopCollectSignal(int signo)
+{
+    (void)signo;
+    g_stopRequested = 1;
 }
 
 int ExecCommand(std::vector<std::string>& comms, int fd[2])
@@ -607,84 +616,6 @@ static inline SampleInfo PrepSample(const PmuData& o)
     return s;
 }
 
-static bool CollectPmuData(const ArgsContext& act, int& pd, PmuData*& data, int& len)
-{
-    PmuAttr attr = {0};
-    static char* cgroupNameList[1];
-    static int pidList[1];
-    cgroupNameList[0] = act.cgroupName;
-    pidList[0] = act.pid;
-    if (act.cgroupName != nullptr) {
-        attr.cgroupNameList = cgroupNameList;
-        attr.numCgroup = 1;
-    } else {
-        attr.pidList = pidList;
-        attr.numPid = 1;
-    }
-    attr.period = 256;
-    attr.dataFilter = SPE_DATA_ALL;
-    attr.minLatency = 10;
-    attr.evFilter = SPE_EVENT_RETIRED;
-    attr.symbolMode = SymbolMode::RESOLVE_ELF_DWARF;
-    attr.excludeKernel = true;
-    if (act.isLaunch) {
-        attr.enableOnExec = 1;
-    }
-
-    pd = PmuOpen(SPE_SAMPLING, &attr);
-    if (pd == -1) {
-        std::cout << "kperf pmu open spe failed, err is: " << Perror() << std::endl;
-        return false;
-    }
-
-    if (act.isLaunch) {
-        int ret = write(act.fd[1], "data", 4);
-        if (ret < 0) {
-            std::cout << "write error" << std::endl;
-            PmuClose(pd);
-            return false;
-        }
-    }
-
-    PrintTime("start collect");
-    int num = act.duration * 10;
-    if (!act.isLaunch) {
-        PmuEnable(pd);
-    }
-    for (int i = 0; i < num; i++) {
-        usleep(100 * 1000);
-        if (execErrNo) {
-            std::cout << "exec failed:" << strerror(execErrNo) << std::endl;
-            PmuClose(pd);
-            return false;
-        }
-        PmuData* fromData = nullptr;
-        PmuRead(pd, &fromData);
-        int curLen = PmuAppendData(fromData, &data);
-        if (curLen) {
-            len = curLen;
-        }
-    }
-    PrintTime("end collect");
-    return true;
-}
-
-// detect datasrc capability
-static bool DetectfilterFsByHitm(PmuData* data, int len)
-{
-    for (int i = 0; i < std::min(50, len); ++i) {
-        auto &o = data[i];
-        if (!o.ext) {
-            continue;
-        }
-        uint16_t src = NormalizeHipSrc(o.ext->source);
-        if (src != HIP_UNKNOWN) {
-            return true;
-        }
-    }
-    return false;
-}
-
 static inline void UpdateWindowBucket(LineWindowCpuTidPcBucketMap& lineWindowCpuTidPcBucket, ulong lineKey, uint64_t windowId,
                                       int cpu, int tid, ulong pc, const SampleInfo& si, const ByteMask& mask)
 {
@@ -744,7 +675,6 @@ static inline void UpdateGlobalPcBucket(PcBucketMap& pcGlobalBucket, ulong pc, c
 
 static void BuildAggregations(const ArgsContext& act, PmuData* data, int len, StatContext& context)
 {
-    (void)act;
     context.Reserve();
     for (int i = 0; i < len; i++) {
         const auto& o = data[i];
@@ -799,6 +729,136 @@ static void BuildAggregations(const ArgsContext& act, PmuData* data, int len, St
         ls.cpus.Add(si.cpu);
         ls.tids.Add(si.tid);
     }
+}
+
+// detect datasrc capability
+static bool DetectfilterFsByHitm(PmuData* data, int len)
+{
+    for (int i = 0; i < std::min(50, len); ++i) {
+        auto &o = data[i];
+        if (!o.ext) {
+            continue;
+        }
+        uint16_t src = NormalizeHipSrc(o.ext->source);
+        if (src != HIP_UNKNOWN) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static inline void ProcessChunk(const ArgsContext& act, PmuData* chunk, int chunkLen, StatContext& context, bool& useDataSrc)
+{
+    if (chunk == nullptr || chunkLen <= 0) {
+        return;
+    }
+    if (!useDataSrc) {
+        useDataSrc = DetectfilterFsByHitm(chunk, chunkLen);
+    }
+    BuildAggregations(act, chunk, chunkLen, context);
+}
+
+static bool CollectPmuData(const ArgsContext& act, int& pd, StatContext& context, bool& useDataSrc)
+{
+    PmuAttr attr = {0};
+    static char* cgroupNameList[1];
+    static int pidList[1];
+    cgroupNameList[0] = act.cgroupName;
+    pidList[0] = act.pid;
+    if (act.cgroupName != nullptr) {
+        attr.cgroupNameList = cgroupNameList;
+        attr.numCgroup = 1;
+    } else {
+        attr.pidList = pidList;
+        attr.numPid = 1;
+    }
+    attr.period = 256;
+    attr.dataFilter = SPE_DATA_ALL;
+    attr.minLatency = 10;
+    attr.evFilter = SPE_EVENT_RETIRED;
+    attr.symbolMode = SymbolMode::RESOLVE_ELF_DWARF;
+    attr.excludeKernel = true;
+    if (act.isLaunch) {
+        attr.enableOnExec = 1;
+    }
+    pd = -1;
+    bool launchFdClosed = false;
+
+    auto closeLaunchFd = [&]() {
+        if (!launchFdClosed && act.fd[1] >= 0) {
+            close(act.fd[1]);
+            launchFdClosed = true;
+        }
+    };
+
+    auto closePd = [&]() {
+        if (pd != -1) {
+            PmuClose(pd);
+            pd = -1;
+        }
+    };
+
+    auto readAndProcessOneChunk = [&]() {
+        PmuData* chunk = nullptr;
+        int chunkLen = PmuRead(pd, &chunk);
+        if (chunkLen > 0 && chunk != nullptr) {
+            ProcessChunk(act, chunk, chunkLen, context, useDataSrc);
+        }
+        if (chunk != nullptr) {
+            PmuDataFree(chunk);
+            chunk = nullptr;
+        }
+    };
+
+    pd = PmuOpen(SPE_SAMPLING, &attr);
+    if (pd == -1) {
+        std::cout << "PmuOpen failed, err is: " << Perror() << std::endl;
+        return false;
+    }
+
+    if (act.isLaunch) {
+        int ret = write(act.fd[1], "data", 4);
+        closeLaunchFd();
+        if (ret < 0) {
+            std::cout << "write error" << std::endl;
+            closePd();
+            return false;
+        }
+    }
+
+    PrintTime("start collect");
+    int num = act.duration * 10;
+    if (!act.isLaunch) {
+        PmuEnable(pd);
+    }
+
+    for (int i = 0; i < num; ++i) {
+        if (g_stopRequested) {
+            PrintTime("stop requested by SIGINT");
+            break;
+        }
+        usleep(100 * 1000);
+        if (g_stopRequested) {
+            PrintTime("stop requested by SIGINT");
+            break;
+        }
+        if (execErrNo) {
+            std::cout << "exec failed:" << strerror(execErrNo) << std::endl;
+            closePd();
+            return false;
+        }
+        readAndProcessOneChunk();
+    }
+    if (pd != -1) {
+        PmuDisable(pd);
+    }
+    readAndProcessOneChunk();
+    if (g_stopRequested) {
+        PrintTime("collect interrupted, output partial results");
+    } else {
+        PrintTime("end collect");
+    }
+    return true;
 }
 
 static void PrintSourceSummary(const StatContext& context)
@@ -1168,7 +1228,7 @@ static inline std::string SanitizeFormatField(const std::string& s)
 {
     std::string out = s;
     for (char& ch : out) {
-        if (ch == ',' || ch == '|' || ch == '\n' || ch == '\r') {
+        if (ch == '|' || ch == '\n' || ch == '\r') {
             ch = ' ';
         }
     }
@@ -1280,10 +1340,10 @@ static void PrintSharingFormatResults(const char* memType, const std::vector<Iss
         const uint64_t cacheLineAddr = issue.lineKey * CACHELINE_SIZE;
         const std::string hint = MakeSuggestionHint(issue.repVaA, bytesA, issue.repVaB, bytesB, cacheLineAddr);
 
-        std::cout << memType << "," << (i + 1) << ","
-                  << MakeFormatEndpointField(issue.repPcA, metaA) << ","
-                  << MakeFormatEndpointField(issue.repPcB, metaB) << ","
-                  << issue.kind << "," << ToHex(cacheLineAddr) << "," << hint << "\n";
+        std::cout << memType << "|" << (i + 1) << "|"
+                  << MakeFormatEndpointField(issue.repPcA, metaA) << "|"
+                  << MakeFormatEndpointField(issue.repPcB, metaB) << "|"
+                  << issue.kind << "|" << ToHex(cacheLineAddr) << "|" << hint << "\n";
     }
 }
 
@@ -1356,11 +1416,18 @@ static void PrintResults(const std::vector<IssueGroup>& issues, const PcBucketMa
 int pmu_datasrc_run(int argc, char** argv)
 {
     ArgsContext act;
+    execErrNo = 0;
+    g_stopRequested = 0;
 
     int err = ParseArgv(argc, argv, act);
     if (err == -1) {
         return -1;
     }
+    struct sigaction saInt{};
+    saInt.sa_handler = StopCollectSignal;
+    sigemptyset(&saInt.sa_mask);
+    saInt.sa_flags = 0;
+    sigaction(SIGINT, &saInt, NULL);
 
     if (act.pid == -1 && act.cgroupName == nullptr) {
         PrintHelp();
@@ -1374,16 +1441,22 @@ int pmu_datasrc_run(int argc, char** argv)
     }
 
     int pd = -1;
-    PmuData* data = nullptr;
-    int len = 0;
-    if (!CollectPmuData(act, pd, data, len)) {
+    StatContext context;
+    bool useDataSrc = false;
+
+    auto cleanup = [&]() {
+        if (pd != -1) {
+            PmuClose(pd);
+            pd = -1;
+        }
         KillApp(act.pid, act.isLaunch);
+    };
+
+    if (!CollectPmuData(act, pd, context, useDataSrc)) {
+        cleanup();
         return -1;
     }
 
-    StatContext context;
-    bool useDataSrc = DetectfilterFsByHitm(data, len);
-    BuildAggregations(act, data, len, context);
     if (!act.format) {
         PrintSourceSummary(context);
     }
@@ -1406,7 +1479,6 @@ int pmu_datasrc_run(int argc, char** argv)
         }
     }
 
-    KillApp(act.pid, act.isLaunch);
-    PmuClose(pd);
+    cleanup();
     return 0;
 }

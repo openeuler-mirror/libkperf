@@ -519,6 +519,8 @@ perf record -e arm_spe_0/load_filter=1/
 ```
 该命令是对系统进行spe采样，关于linux spe采样的详细介绍，可以参考[这里](https://www.man7.org/linux/man-pages/man1/perf-arm-spe.1.html)。
 
+> **注意：** 容器内使用SPE采集指定进程时，若未使用宿主机PID namespace，可能因无法匹配到目标PID导致无数据。建议在宿主机进行采集。
+
 对于libkperf，可以这样设置PmuAttr：
 ```c++
 // c++代码示例
@@ -966,6 +968,9 @@ perf stat -e "{cycles,branch-loads,branch-load-misses,iTLB-loads}",inst_retired
 ```
 perf stat -e "{inst_retired,inst_spec,cycles}","{inst_retired,cycles}"
 ```
+
+> **注意：** 设置事件分组的情况下采集多个cgroup，groupId将会被设置为内部键值
+
 用libkperf可以这样实现：
 ```c++
 #include <iostream>
@@ -1106,7 +1111,8 @@ attr.includeNewFork = 1;
 pmu_attr = kperf.PmuAttr(evtList=evtList, includeNewFork=True)
 ```
 然后，通过PmuRead获取到的PmuData，便能包含子线程计数信息了。
-注意，该功能是针对Counting模式，因为Sampling和SPE Sampling本身就会采集子线程的数据。
+
+> **注意：** 该功能是针对Counting模式，因为Sampling和SPE Sampling本身就会采集子线程的数据。
 
 ### 采集DDRC带宽
 鲲鹏上提供了DDRC的pmu设备，用于采集DDR的性能数据，比如带宽等。libkperf提供了API，用于获取每个channel的DDR带宽数据。
@@ -1840,6 +1846,8 @@ perf record -e arm_spe_0/load_filter=1/ -G test_cgroup
 ```
 其中counting和sampling模式下支持多个cgroup同时采集多个事件，SPE模式仅支持指定单个事件和单个cgroup。
 对于嵌套的cgroup，请使用完整的层级路径格式（父控制组/子控制组），例如"parent_cgroup/child_cgroup"。
+
+> **注意：** 设置事件分组的情况下采集多个cgroup，groupId将会被设置为内部键值
 
 以counting模式为例，可以像这样设置PmuAttr：
 ```c++

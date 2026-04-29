@@ -28,6 +28,9 @@
 #include <linux/types.h>
 #include "safe_handler.h"
 #include "linked_list.h"
+#ifndef ELF_LLVM
+#include <elf++.hh>
+#endif
 #include "symbol.h"
 
 using namespace llvm;
@@ -42,8 +45,32 @@ namespace KUNPENG_SYM {
         unsigned long end;
         std::string moduleName;
         std::string mntPoint;
+        bool isExecFile = false;
         RecordModuleType moduleType;
+        bool isFile = true;
     };
+
+#ifndef ELF_LLVM
+    struct ElfMap {
+        unsigned long start;
+        unsigned long end;
+        std::string symbolName;
+    } __attribute__((aligned(8)));
+
+    using ELF_SYM = elf::sym;
+    using ELF = elf::elf;
+
+    class ParserElf
+    {
+    public:
+        explicit ParserElf(const ELF &elf) : elf(elf){};
+        ELF_SYM *FindSymbol(unsigned long addr);
+        void Emplace(unsigned long addr, const ELF_SYM &elfSym);
+    private:
+        ELF elf;
+        std::map<unsigned long, ELF_SYM> symTab;
+    };
+#endif
 
     struct ElfHdr {
         char elfFormat[4];
@@ -69,9 +96,12 @@ namespace KUNPENG_SYM {
         int LoadMmap();
         const void* Load(off_t offset, size_t size);
         int ElfGetBuildId(char** buildId);
+        bool IsExecFile();
     private:
         template<typename Ehdr, typename Phdr, typename Shdr>
         int ElfParser(char** buildId);
+        template<typename Ehdr>
+        bool CheckIsExecFile();
         int CheckElfHeader();
         ElfHdr* elfHdr = nullptr;
         void* base;
@@ -85,7 +115,10 @@ namespace KUNPENG_SYM {
     using SYMBOL_UNMAP = std::vector<Symbol*>;
     using STACK_MAP = std::unordered_map<pid_t, std::unordered_map<std::string, struct Stack*>>;
     using MODULE_MAP = std::unordered_map<pid_t, std::vector<std::shared_ptr<ModuleMap>>>;
-    
+#ifndef ELF_LLVM
+    using ELF_MAP = std::unordered_map<std::string, ParserElf>;
+#endif
+
     class SymbolUtils final {
     public:
         SymbolUtils() = default;
@@ -124,7 +157,13 @@ namespace KUNPENG_SYM {
         struct Symbol* MapCodeAddr(const char* moduleName, unsigned long startAddr);
         int GetBuildId(const char *moduleName, char **buildId);
         int GetAsmCodeByAddr(const char* moduleName, unsigned long startAddr, unsigned long endAddr, char** asmCode);
+#ifndef ELF_LLVM
+        int RecordElf(const char* fileName);
+#endif
     private:
+#ifndef ELF_LLVM
+        void SearchElfInfo(ParserElf &myElf, unsigned long addr, struct Symbol* symbol, unsigned long *offset);
+#endif
         char* GetCharFromStr(const std::string& str);
         struct Symbol* MapKernelAddr(unsigned long addr);
         struct Symbol* MapUserAddr(int pid, unsigned long addr);
@@ -146,6 +185,9 @@ namespace KUNPENG_SYM {
 
         ~SymbolResolve()
         {}
+#ifndef ELF_LLVM
+        ELF_MAP elfMap{};
+#endif
         SafeHandler<int> moduleSafeHandler;
         SafeHandler<std::string> dwarfSafeHandler;
         SafeHandler<std::string> elfSafeHandler;

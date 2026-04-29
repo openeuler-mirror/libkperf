@@ -347,3 +347,39 @@ In this case, You need to add the directory of 'libkperf.so' to the 'LD_LIBRARY_
 ```shell
 export LD_LIBRARY_PATH=/XXX/libkperf/output/lib:$LD_LIBRARY_PATH
 ```
+
+#### FAQ
+##### 1、Q: How to correctly use launch app mode for process profiling?
+  * After PmuOpen, use a signal to wake up the child process to invoke the application
+  * No need to call PmuEnable
+  * Recommended to use a single fd for opening, which can significantly reduce profiling overhead in multi-threaded scenarios
+  * Reference document: [Detailed Usage Guide](./docs/Details_Usage.md#profiling-processes-via-enableexecon)
+
+##### 2、Q: Why does data loss occur when profiling multi-threaded applications?
+  * Cause: Operations such as PmuOpen/PmuEnable/PmuDisable have timing differences in loading and enabling each thread when profiling multi-threaded applications
+  * Current solutions:
+    * Use launch mode (single fd opening, verified to improve PmuOpen efficiency) — [Detailed Usage Guide](./docs/Details_Usage.md#profiling-processes-via-enableexecon)
+    * Use --per-thread mode (number of fds = number of events × number of threads) to reduce core-level overhead — see reference
+
+##### 3、Q: How to improve symbol resolution speed, especially in stress testing scenarios?
+  * Problem: Original DWARF resolution takes >1 second, impacting performance
+  * Optimized solutions:
+    * Integrated llvm-symbolizer, currently improves line number resolution efficiency by 30x
+    * Supports configurable mode: using RESOLVE_ELF mode in symbolMode will skip source file and line number resolution
+
+##### 4、Q: How to support Cgroup profiling? What are the limitations?
+  * Limitations:
+    * Uncore and core events require two separate PmuOpen calls
+    * PA events cannot be mixed with core events in a single PmuOpen when profiling a process
+  * Suggestion: Keep events separated during profiling to avoid incorrect merging
+
+##### 5、Q: Why does PmuRead take a long time during SPE profiling? How to optimize?
+  * Cause: In SPE mode, PmuRead automatically calls PmuDisable, and after reading data, automatically calls PmuEnable
+  * Suggestions:
+    * Execute PmuOpen/PmuCollect/PmuClose sequentially in a single thread
+
+##### 6、Q: How to profile HITM events (False Sharing) and ensure data stability?
+  * Profiling method: Specify a CPU core for profiling
+  * Stability:
+    * Profiling by specifying a CPU core: data is stable, addresses are correct
+    * Profiling by specifying a PID: inconsistencies may occur; using CPU-core profiling is recommended
