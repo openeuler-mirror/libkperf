@@ -980,3 +980,600 @@ static inline void UpdatePairAgg(std::unordered_map<PcPair, PairAgg, PcPairHash,
         agg.best = cand;
     }
 }
+
+static inline bool BetterRepCandidate(const PcPair& candPair, const PairAgg& candAgg, const PcPair* bestPair,
+                                      const PairAgg* bestAgg, const StatContext& context)
+{
+    if (bestPair == nullptr || bestAgg == nullptr) {
+        return true;
+    }
+
+    if (candAgg.totalScore != bestAgg->totalScore) {
+        return candAgg.totalScore > bestAgg->totalScore;
+    }
+    if (candAgg.evidenceScore != bestAgg->evidenceScore) {
+        return candAgg.evidenceScore > bestAgg->evidenceScore;
+    }
+    if (candAgg.conflictWindows != bestAgg->conflictWindows) {
+        return candAgg.conflictWindows > bestAgg->conflictWindows;
+    }
+
+    int candBias = PairModuleBias(context, candPair.a, candPair.b);
+    int bestBias = PairModuleBias(context, bestPair->a, bestPair->b);
+    if (candBias != bestBias) {
+        return candBias > bestBias;
+    }
+
+    int candKindBias = KindBias(candAgg.best.kind);
+    int bestKindBias = KindBias(bestAgg->best.kind);
+    if (candKindBias != bestKindBias) {
+        return candKindBias > bestKindBias;
+    }
+
+    if (candPair.a != bestPair->a) {
+        return candPair.a < bestPair->a;
+    }
+    return candPair.b < bestPair->b;
+}
+
+static std::vector<IssueGroup> ComputeSharingIssues(
+    const LineWindowCpuTidPcBucketMap& lineWindowCpuTidPcBucket,
+    SharingMode mode,
+    bool useDataSrc,
+    const StatContext& context)
+{
+    std::vector<IssueGroup> issues;
+    issues.reserve(lineWindowCpuTidPcBucket.size());
+
+    for (const auto& lineEntry : lineWindowCpuTidPcBucket) {
+        ulong lineKey = lineEntry.first;
+
+        auto itLineStat = context.lineStats.find(lineKey);
+        if (itLineStat == context.lineStats.end()) {
+            continue;
+        }
+        if (!itLineStat->second.tids.HasAtLeast2()) {
+            continue;
+        }
+
+        bool lineCrossCpu = itLineStat->second.cpus.HasAtLeast2();
+        std::unordered_map<PcPair, PairAgg, PcPairHash, PcPairEq> pairMap;
+        pairMap.reserve(64);
+
+        IssueGroup issue;
+        issue.lineKey = lineKey;
+
+        for (const auto& windowEntry : lineEntry.second) {
+            const auto& cpuMap = windowEntry.second;
+
+            std::vector<AccessRef> stores;
+            std::vector<AccessRef> loads;
+            Distinct2 windowTids;
+            Distinct2 windowCpus;
+
+            for (const auto& cpuEntry : cpuMap) {
+                int cpu = cpuEntry.first;
+                windowCpus.Add(cpu);
+                for (const auto& tidEntry : cpuEntry.second) {
+                    int tid = tidEntry.first;
+                    windowTids.Add(tid);
+                    for (const auto& pcEntry : tidEntry.second) {
+                        ulong pc = pcEntry.first;
+                        for (const auto& maskEntry : pcEntry.second) {
+                            const WindowBucket& b = maskEntry.second;
+                            if (b.stCnt > 0) {
+                                stores.push_back({
+                                    cpu,
+                                    tid,
+                                    pc,
+                                    &b,
+                                    b.mask,
+                                    (b.sampleStVa != 0) ? b.sampleStVa : b.sampleVa,
+                                });
+                            }
+                            if (HasLoadForMode(b, mode)) {
+                                loads.push_back({
+                                    cpu,
+                                    tid,
+                                    pc,
+                                    &b,
+                                    b.mask,
+                                    LoadSampleVaForMode(b, useDataSrc),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (stores.empty()) {
+                continue;
+            }
+            if (!windowTids.HasAtLeast2()) {
+                continue;
+            }
+            if (mode == SharingMode::FALSE_SHARING && !(windowCpus.HasAtLeast2() || lineCrossCpu)) {
+                continue;
+            }
+
+            int windowBestScore = 0;
+            int windowBestEvidence = 0;
+            std::unordered_set<PcPair, PcPairHash, PcPairEq> seenPairs;
+            seenPairs.reserve(32);
+
+            for (size_t i = 0; i < stores.size(); ++i) {
+                for (size_t j = i + 1; j < stores.size(); ++j) {
+                    if (stores[i].tid == stores[j].tid) {
+                        continue;
+                    }
+
+                    bool overlap = stores[i].mask.Overlaps(stores[j].mask);
+                    if (mode == SharingMode::TRUE_SHARING ? !overlap : overlap) {
+                        continue;
+                    }
+
+                    if (mode == SharingMode::FALSE_SHARING &&
+                        !(stores[i].cpu != stores[j].cpu || lineCrossCpu)) {
+                        continue;
+                    }
+
+                    int score = std::min((int)stores[i].b->stCnt, (int)stores[j].b->stCnt);
+                    if (score <= 0) {
+                        continue;
+                    }
+
+                    PcPair pair = MakePcPair(stores[i].pc, stores[j].pc);
+                    UpdatePairAgg(pairMap, pair, lineKey, stores[i], stores[j], "SS", score, 0);
+                    seenPairs.insert(pair);
+
+                    if (score > windowBestScore) {
+                        windowBestScore = score;
+                        windowBestEvidence = 0;
+                    }
+                }
+            }
+
+            for (size_t i = 0; i < stores.size(); ++i) {
+                for (size_t j = 0; j < loads.size(); ++j) {
+                    if (stores[i].tid == loads[j].tid) {
+                        continue;
+                    }
+
+                    bool overlap = stores[i].mask.Overlaps(loads[j].mask);
+                    if (mode == SharingMode::TRUE_SHARING ? !overlap : overlap) {
+                        continue;
+                    }
+
+                    if (mode == SharingMode::FALSE_SHARING &&
+                        !(stores[i].cpu != loads[j].cpu || lineCrossCpu)) {
+                        continue;
+                    }
+
+                    int score = std::min((int)stores[i].b->stCnt, (int)LoadCountForMode(*loads[j].b, mode));
+                    if (score <= 0) {
+                        continue;
+                    }
+
+                    int evidence = EvidenceForLoad(*loads[j].b, score, useDataSrc);
+                    PcPair pair = MakePcPair(stores[i].pc, loads[j].pc);
+                    UpdatePairAgg(pairMap, pair, lineKey, stores[i], loads[j], "SL", score, evidence);
+                    seenPairs.insert(pair);
+
+                    if (score > windowBestScore ||
+                        (score == windowBestScore && evidence > windowBestEvidence)) {
+                        windowBestScore = score;
+                        windowBestEvidence = evidence;
+                    }
+                }
+            }
+
+            if (windowBestScore > 0) {
+                issue.totalScore += windowBestScore;
+                issue.evidenceScore += windowBestEvidence;
+                issue.conflictWindows += 1;
+                for (const auto& pair : seenPairs) {
+                    pairMap[pair].conflictWindows += 1;
+                }
+            }
+        }
+
+        if (issue.totalScore <= 0) {
+            continue;
+        }
+        if (issue.conflictWindows < MIN_CONFLICT_WINDOWS) {
+            continue;
+        }
+
+        const PcPair* bestPair = nullptr;
+        const PairAgg* bestAgg = nullptr;
+        for (const auto& kv : pairMap) {
+            if (BetterRepCandidate(kv.first, kv.second, bestPair, bestAgg, context)) {
+                bestPair = &kv.first;
+                bestAgg = &kv.second;
+            }
+        }
+
+        if (bestPair == nullptr || bestAgg == nullptr) {
+            continue;
+        }
+
+        issue.repPcA = bestPair->a;
+        issue.repPcB = bestPair->b;
+        issue.repVaA = bestAgg->best.vaA;
+        issue.repVaB = bestAgg->best.vaB;
+        issue.kind = bestAgg->best.kind;
+        issues.push_back(issue);
+    }
+
+    std::sort(
+        issues.begin(),
+        issues.end(),
+        [](const IssueGroup& x, const IssueGroup& y) {
+            if (x.totalScore != y.totalScore) {
+                return x.totalScore > y.totalScore;
+            }
+            if (x.evidenceScore != y.evidenceScore) {
+                return x.evidenceScore > y.evidenceScore;
+            }
+            if (x.conflictWindows != y.conflictWindows) {
+                return x.conflictWindows > y.conflictWindows;
+            }
+            return x.lineKey < y.lineKey;
+        });
+
+    return issues;
+}
+
+static inline std::string SanitizeFormatField(const std::string& s)
+{
+    std::string out = s;
+    for (char& ch : out) {
+        if (ch == '|' || ch == '\n' || ch == '\r') {
+            ch = ' ';
+        }
+    }
+    return out;
+}
+
+static std::string MakeFuncModule(const PcMeta* meta)
+{
+    if (meta == nullptr) {
+        return "UNKNOWN";
+    }
+
+    if (!meta->func.empty() && !meta->module.empty()) {
+        return meta->func + "@" + meta->module;
+    }
+    if (!meta->func.empty()) {
+        return meta->func;
+    }
+    return "UNKNOWN";
+}
+
+static std::string MakeLineField(const PcMeta* meta)
+{
+    if (meta == nullptr || meta->line <= 0) {
+        return "UNKNOWN";
+    }
+
+    return std::to_string(meta->line);
+}
+
+static std::string MakeFormatEndpointField(ulong pc, const PcMeta* meta)
+{
+    std::ostringstream ss;
+    ss << ToHex(pc) << "|" << SanitizeFormatField(MakeFuncModule(meta)) << "|" << SanitizeFormatField(MakeLineField(meta));
+    return ss.str();
+}
+
+static inline void ByteRangeInLine(uint64_t off, int accessBytes, int& begin, int& end, bool& crossLine)
+{
+    if (accessBytes <= 0) {
+        accessBytes = 1;
+    }
+
+    begin = (int)off;
+    end = begin + accessBytes - 1;
+    crossLine = (end >= (int)CACHELINE_SIZE);
+    if (begin < 0) {
+        begin = 0;
+    }
+    if (begin > (int)CACHELINE_SIZE - 1) {
+        begin = (int)CACHELINE_SIZE - 1;
+    }
+    if (end < 0) {
+        end = 0;
+    }
+    if (end > (int)CACHELINE_SIZE - 1) {
+        end = (int)CACHELINE_SIZE - 1;
+    }
+}
+
+static int GetNumaNodeCount()
+{
+    DIR *dir = opendir(NUMA_PATH.c_str());
+    if (dir == nullptr) {
+        return -1;
+    }
+
+    int numaNodeCount = 0;
+    struct dirent* entry;
+    while((entry = readdir(dir)) != nullptr) {
+        if (entry->d_type == DT_DIR && strncmp(entry->d_name, "node", 4) == 0) {
+            ++numaNodeCount;
+        }
+    }
+    closedir(dir);
+    return numaNodeCount;
+}
+
+bool InitCpuType()
+{
+    static std::mutex mtx;
+    std::lock_guard<std::mutex> lock(mtx);
+    std::ifstream cpuFile(MIDR_EL1);
+    std::string cpuId;
+    cpuFile >> cpuId;
+    auto findCpu = chipMap.find(cpuId);
+    if (findCpu == chipMap.end()) {
+        pcerr::New(LIBPERF_ERR_CHIP_TYPE_INVALID, "invalid chip type");
+        return false;
+    }
+    g_chipType = findCpu->second;
+    return true;
+}
+
+CHIP_TYPE GetCpuType()
+{
+#ifdef IS_X86
+    return HIPX86;
+#else
+    if (g_chipType == UNDEFINED_TYPE && !InitCpuType()) {
+        return UNDEFINED_TYPE;
+    }
+    return g_chipType;
+#endif
+}
+
+unsigned* GetCoreList(int start) {
+    lock_guard<mutex> lg(pmuCoreListMtx);
+    if (coreArray.empty()) {
+        for (unsigned i = 0; i < MAX_CPU_NUM; ++i) {
+            coreArray.emplace_back(i);
+        }
+    }
+    return &coreArray[start];
+}
+
+static void InitialzeCpuOfNumaList()
+{
+    lock_guard<mutex> lock(pmuCoreListMtx);
+    if (cpuNumaMapInit) {
+        return;
+    }
+    unsigned maxNode = GetNumaNodeCount();
+    numaCoreLists.resize(maxNode);
+    for (unsigned nodeId = 0; nodeId < maxNode; ++nodeId) {
+        std::string nodeListFile = "/sys/devices/system/node/node" + to_string(nodeId) + "/cpulist";
+        ifstream in(nodeListFile);
+        if (!in.is_open()) {
+            continue;
+        }
+        std::string cpulist;
+        getline(in, cpulist);
+        in.close();
+        vector<unsigned> cores;
+        auto rangeList = SplitStringByDelimiter(cpulist, ',');
+        for (const auto& range : rangeList) {
+            auto split = SplitStringByDelimiter(range, '-');
+            if (split.size() == 1) {
+                auto cpu = stoi(split[0]);
+                cores.push_back(cpu);
+                cpuOfNumaNodeMap[cpu] = nodeId;
+            } else if (split.size() == 2) {
+                auto start = stoul(split[0]);
+                auto end = stoul(split[1]);
+                for (auto i = start; i <= end; ++i) {
+                    cores.push_back(i);
+                    cpuOfNumaNodeMap[i] = nodeId;
+                }
+            }
+        }
+        numaCoreLists[nodeId] = move(cores);
+    }
+    cpuNumaMapInit = true;
+}
+
+static int GetAccessBytesForPc(const StatContext& context, ulong pc, int fallbackBytes = 4)
+{
+    auto it = context.pc2accessBytes.find(pc);
+    if (it != context.pc2accessBytes.end() && it->second > 0) {
+        return it->second;
+    }
+    return fallbackBytes;
+}
+
+static std::string MakeSuggestionHint(ulong vaA, int bytesA, ulong vaB, int bytesB, ulong cacheLineAddr)
+{
+    if (cacheLineAddr == 0 || vaA < cacheLineAddr || vaB < cacheLineAddr) {
+        return "same-line";
+    }
+
+    ulong offA = vaA - cacheLineAddr;
+    ulong offB = vaB - cacheLineAddr;
+
+    bool adjacent = false;
+    if (bytesA > 0 && bytesB > 0) {
+        adjacent = (offA + (ulong)bytesA == offB) || (offB + (ulong)bytesB == offA);
+    }
+
+    std::ostringstream oss;
+    oss << (adjacent ? "adjacent" : "same-line")
+        << ";+0x" << std::hex << offA << "/+0x" << offB << std::dec
+        << ";" << bytesA << "B/" << bytesB << "B";
+    return oss.str();
+}
+
+static void PrintSharingFormatResults(const char* memType, const std::vector<IssueGroup>& issues, const StatContext& context)
+{
+    for (size_t i = 0; i < issues.size(); ++i) {
+        const auto& issue = issues[i];
+        const PcMeta* metaA = nullptr;
+        const PcMeta* metaB = nullptr;
+
+        auto itA = context.pcMeta.find(issue.repPcA);
+        if (itA != context.pcMeta.end()) {
+            metaA = &itA->second;
+        }
+        auto itB = context.pcMeta.find(issue.repPcB);
+        if (itB != context.pcMeta.end()) {
+            metaB = &itB->second;
+        }
+
+        const int bytesA = GetAccessBytesForPc(context, issue.repPcA, 4);
+        const int bytesB = GetAccessBytesForPc(context, issue.repPcB, 4);
+        const uint64_t cacheLineAddr = issue.lineKey * CACHELINE_SIZE;
+        const std::string hint = MakeSuggestionHint(issue.repVaA, bytesA, issue.repVaB, bytesB, cacheLineAddr);
+
+        std::cout << memType << "|" << (i + 1) << "|"
+                  << MakeFormatEndpointField(issue.repPcA, metaA) << "|"
+                  << MakeFormatEndpointField(issue.repPcB, metaB) << "|"
+                  << issue.kind << "|" << ToHex(cacheLineAddr) << "|" << hint << "\n";
+    }
+}
+
+static void PrintResults(const std::vector<IssueGroup>& issues, const PcBucketMap& pcGlobalBucket, const StatContext& context)
+{
+    long long totalScore = 0;
+    for (const auto& issue : issues) {
+        totalScore += issue.totalScore;
+    }
+
+    for (const auto& issue : issues) {
+        ulong pc1 = issue.repPcA;
+        ulong pc2 = issue.repPcB;
+        PcBucket a{}, b{};
+        auto itGA = pcGlobalBucket.find(pc1);
+        if (itGA != pcGlobalBucket.end()) {
+            a = itGA->second;
+        }
+        auto itGB = pcGlobalBucket.find(pc2);
+        if (itGB != pcGlobalBucket.end()) {
+            b = itGB->second;
+        }
+
+        int bytesA = 4;
+        int bytesB = 4;
+        auto itBytesA = context.pc2accessBytes.find(pc1);
+        if (itBytesA != context.pc2accessBytes.end()) {
+            bytesA = itBytesA->second;
+        }
+        auto itBytesB = context.pc2accessBytes.find(pc2);
+        if (itBytesB != context.pc2accessBytes.end()) {
+            bytesB = itBytesB->second;
+        }
+
+        float pct = (totalScore > 0) ? (issue.totalScore * 100.0f / (float)totalScore) : 0.0f;
+        std::cout << std::hex << pc1 << "<->" << pc2 << std::dec << " [" << issue.totalScore << " "
+                  << std::fixed << std::setprecision(4) << pct << "%]"
+                  << " A(cnt/ld/st=" << (a.ldCntAll + a.stCnt) << "/" << a.ldCntAll << "/" << a.stCnt << ")"
+                  << " B(cnt/ld/st=" << (b.ldCntAll + b.stCnt) << "/" << b.ldCntAll << "/" << b.stCnt << ")"
+                  << " A_sz=" << bytesA << "B" << " B_sz=" << bytesB << "B" << "\n";
+
+        auto itA = context.pcMeta.find(pc1);
+        if (itA != context.pcMeta.end()) {
+            std::cout << "    A: " << itA->second.display << "\n";
+        } else {
+            std::cout << "    A: UNKNOWN\n";
+        }
+        auto itB = context.pcMeta.find(pc2);
+        if (itB != context.pcMeta.end()) {
+            std::cout << "    B: " << itB->second.display << "\n";
+        } else {
+            std::cout << "    B: UNKNOWN\n";
+        }
+
+        uint64_t lineAddr = issue.lineKey * CACHELINE_SIZE;
+        ulong offA = (issue.repVaA >= lineAddr) ? (issue.repVaA - lineAddr) : 0;
+        ulong offB = (issue.repVaB >= lineAddr) ? (issue.repVaB - lineAddr) : 0;
+        int aBeg = 0, aEnd = 0, bBeg = 0, bEnd = 0;
+        bool aCross = false, bCross = false;
+
+        ByteRangeInLine(offA, bytesA, aBeg, aEnd, aCross);
+        ByteRangeInLine(offB, bytesB, bBeg, bEnd, bCross);
+        std::cout << "    line=" << ToHex(lineAddr) << " kind=" << issue.kind << " A_va=" << ToHex(issue.repVaA)
+                  << "(+0x" << std::hex << offA << std::dec << ")" << " cacheline bytes=" << aBeg << "-" << aEnd << (aCross ? "(cross)" : "")
+                  << ", B_va=" << ToHex(issue.repVaB) << "(+0x" << std::hex << offB << std::dec << ")"
+                  << " cacheline bytes=" << bBeg << "-" << bEnd << (bCross ? "(cross)" : "") << "\n";
+    }
+}
+
+int pmu_datasrc_run(int argc, char** argv)
+{
+    ArgsContext act;
+    execErrNo = 0;
+    g_stopRequested = 0;
+
+    int err = ParseArgv(argc, argv, act);
+    if (err == -1) {
+        return -1;
+    }
+    struct sigaction saInt{};
+    saInt.sa_handler = StopCollectSignal;
+    sigemptyset(&saInt.sa_mask);
+    saInt.sa_flags = 0;
+    sigaction(SIGINT, &saInt, NULL);
+
+    if (act.pid == -1 && act.cgroupName == nullptr) {
+        PrintHelp();
+        return -1;
+    }
+
+    if (act.pid > 0 && act.cgroupName != nullptr) {
+        KillApp(act.pid, act.isLaunch);
+        std::cout << "Cannot specify both cgroup and pid. Please use only one" << std::endl;
+        return -1;
+    }
+
+    int pd = -1;
+    StatContext context;
+    bool useDataSrc = false;
+
+    auto cleanup = [&]() {
+        if (pd != -1) {
+            PmuClose(pd);
+            pd = -1;
+        }
+        KillApp(act.pid, act.isLaunch);
+    };
+
+    if (!CollectPmuData(act, pd, context, useDataSrc)) {
+        cleanup();
+        return -1;
+    }
+
+    if (!act.format) {
+        PrintSourceSummary(context);
+    }
+
+    if (act.computeFs) {
+        auto issues = ComputeSharingIssues(context.lineWindowCpuTidPcBucket, SharingMode::FALSE_SHARING, useDataSrc, context);
+        if (!act.format) {
+            PrintResults(issues, context.pcGlobalBucket, context);
+        } else {
+            PrintSharingFormatResults("FS", issues, context);
+        }
+    }
+
+    if (act.computeTs) {
+        auto issues = ComputeSharingIssues(context.lineWindowCpuTidPcBucket, SharingMode::TRUE_SHARING, false, context);
+        if (!act.format) {
+            PrintResults(issues, context.pcGlobalBucket, context);
+        } else {
+            PrintSharingFormatResults("TS", issues, context);
+        }
+    }
+
+    cleanup();
+    return 0;
+}
