@@ -34,6 +34,8 @@ BPF=false
 # ASAN
 ASAN=false
 
+UTRACE=false
+
 source ${PROJECT_DIR}/build/common.sh
 
 creat_dir "${BUILD_DIR}"
@@ -81,6 +83,9 @@ for arg in "$@"; do
         elf_llvm=*)
             ELF_LLVM="${arg#*=}"
             ;;
+        utrace=*)
+            UTRACE="${arg#*=}"
+            ;;
     esac
 done
 
@@ -100,7 +105,9 @@ if [[ "$BPF" == "true" ]]; then
     build_skel_files $BPF_DIR $THIRD_PARTY
 fi
 
-build_capstone $THIRD_PARTY
+if [[ "$UTRACE" == "true" ]]; then
+    build_capstone $THIRD_PARTY
+fi
 
 function build_elfin() {
   local cmake_target_dir=$THIRD_PARTY/local/elfin-parser
@@ -173,6 +180,9 @@ build_libkperf()
             "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address"
             "-DCAMKE_SHARED_LINKPER_FLAGS=-fsanitize=address"
        )
+    fi
+    if [ "${UTRACE}" = "true" ];then
+       CMAKE_ARGS+=("-DUTRACE=${UTRACE}")
     fi
     cmake "${CMAKE_ARGS[@]}" ..
     make -j ${cpu_core_num}

@@ -14,6 +14,9 @@
  ******************************************************************************/
 
 #include "elf_scanner.h"
+
+#ifdef UTRACE
+
 #include "pcerr.h"
 #include <cstring>
 #include <sys/mman.h>
@@ -301,3 +304,21 @@ std::string ElfScanner::FormatFailures()
     }
     return result;
 }
+
+#else
+
+std::unordered_map<std::string, std::string> ElfScanner::failedElf2Reason_;
+std::unordered_map<std::string, std::vector<std::string>> ElfScanner::elf2FailedSymbols_;
+
+std::unordered_map<std::string, std::vector<ProbePoints>> ElfScanner::ResolveElfs(
+    const std::unordered_map<std::string, std::vector<std::string>> &module2Symbols) 
+{
+    return std::unordered_map<std::string, std::vector<ProbePoints>>();
+}
+
+std::string ElfScanner::FormatFailures()
+{
+    return "";
+}
+
+#endif
