@@ -36,6 +36,8 @@ ASAN=false
 
 UTRACE=false
 
+JAVA_AGENT=false
+
 source ${PROJECT_DIR}/build/common.sh
 
 creat_dir "${BUILD_DIR}"
@@ -85,6 +87,9 @@ for arg in "$@"; do
             ;;
         utrace=*)
             UTRACE="${arg#*=}"
+            ;;
+        java_agent=*)
+            JAVA_AGENT="${arg#*=}"
             ;;
     esac
 done
@@ -155,6 +160,7 @@ build_libkperf()
         "-DINCLUDE_TEST=${INCLUDE_TEST}"
         "-DPYTHON=${PYTHON}"
         "-DGO=${GO}"
+        "-DJAVA_AGENT=${JAVA_AGENT}"
         "-DCMAKE_INSTALL_PREFIX=${INSTALL_PATH}"
         "-DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
         "-DBPF=${BPF}"
