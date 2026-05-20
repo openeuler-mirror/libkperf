@@ -34,6 +34,10 @@ BPF=false
 # ASAN
 ASAN=false
 
+UTRACE=false
+
+JAVA_AGENT=false
+
 source ${PROJECT_DIR}/build/common.sh
 
 creat_dir "${BUILD_DIR}"
@@ -81,6 +85,12 @@ for arg in "$@"; do
         elf_llvm=*)
             ELF_LLVM="${arg#*=}"
             ;;
+        utrace=*)
+            UTRACE="${arg#*=}"
+            ;;
+        java_agent=*)
+            JAVA_AGENT="${arg#*=}"
+            ;;
     esac
 done
 
@@ -98,6 +108,10 @@ fi
 if [[ "$BPF" == "true" ]]; then
     build_libbpf $THIRD_PARTY
     build_skel_files $BPF_DIR $THIRD_PARTY
+fi
+
+if [[ "$UTRACE" == "true" ]]; then
+    build_capstone $THIRD_PARTY
 fi
 
 function build_elfin() {
@@ -146,6 +160,7 @@ build_libkperf()
         "-DINCLUDE_TEST=${INCLUDE_TEST}"
         "-DPYTHON=${PYTHON}"
         "-DGO=${GO}"
+        "-DJAVA_AGENT=${JAVA_AGENT}"
         "-DCMAKE_INSTALL_PREFIX=${INSTALL_PATH}"
         "-DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
         "-DBPF=${BPF}"
@@ -171,6 +186,9 @@ build_libkperf()
             "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address"
             "-DCAMKE_SHARED_LINKPER_FLAGS=-fsanitize=address"
        )
+    fi
+    if [ "${UTRACE}" = "true" ];then
+       CMAKE_ARGS+=("-DUTRACE=${UTRACE}")
     fi
     cmake "${CMAKE_ARGS[@]}" ..
     make -j ${cpu_core_num}

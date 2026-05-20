@@ -85,6 +85,14 @@ namespace KUNPENG_SYM {
         int type;
     };
 
+    struct JavaEntry {
+        unsigned long start;
+        unsigned long end;
+        std::string symbolName;
+        std::string fileName;
+        unsigned int line;
+    };
+
     class MyElf {
     public:
         MyElf(const std::string& filePath) : filePath(filePath){};
@@ -107,6 +115,18 @@ namespace KUNPENG_SYM {
         void* base;
         size_t lim;
         std::string filePath;
+    };
+
+    class JavaElf
+    {
+    public:
+        JavaElf() = default;
+        explicit JavaElf(int pid) : pid(pid) {};
+        int FindElf(unsigned long addr, struct JavaEntry& entry);
+    private:
+        volatile bool hasLoad = false;
+        int pid = -1;
+        std::map<unsigned long, JavaEntry> symbolList;
     };
 
     static LLVMSymbolizer Symbolizer;
@@ -170,7 +190,7 @@ namespace KUNPENG_SYM {
         struct StackAsm* MapAsmCodeStack(const std::string& moduleName, unsigned long startAddr, unsigned long endAddr);
         std::vector<std::shared_ptr<ModuleMap>> FindDiffMaps(const std::vector<std::shared_ptr<ModuleMap>>& oldMaps,
                                                              const std::vector<std::shared_ptr<ModuleMap>>& newMaps) const;
-
+        std::map<int, JavaElf> javaElfArr;
         std::map<std::string, char*> strToCharMap;
         SYMBOL_MAP symbolMap{};
         SYMBOL_UNMAP symbolUnmap{};

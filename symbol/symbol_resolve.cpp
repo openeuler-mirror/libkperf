@@ -24,9 +24,10 @@
 #include <set>
 #include <elf.h>
 #include "pcerr.h"
-#include "symbol_resolve.h"
 #include "common.h"
 #include "name_resolve.h"
+#include "java_symbol.h"
+#include "symbol_resolve.h"
 
 using namespace KUNPENG_SYM;
 constexpr __u64 MAX_LINE_LENGTH = 1024;
@@ -426,11 +427,15 @@ int SymbolResolve::RecordModule(int pid, RecordModuleType recordModuleType)
     std::vector<std::shared_ptr<ModuleMap>> modVec;
     ReadProcPidMap(file, modVec);
     std::string mntPoint = GetMntPoint(pid);
+    bool hasJava = false;
     for (auto& item : modVec) {
         std::string moduleName = item->moduleName;
         if (!mntPoint.empty()) {
             item->mntPoint = mntPoint;
             moduleName = mntPoint + "/" + moduleName;
+        }
+        if (strstr(moduleName.c_str(), "libjvm.so")) {
+            hasJava = true;
         }
         MyElf myElf(moduleName);
         int ret = myElf.LoadMmap();
@@ -443,6 +448,13 @@ int SymbolResolve::RecordModule(int pid, RecordModuleType recordModuleType)
         this->RecordElf(moduleName.c_str());
 #endif
         item->moduleType = recordModuleType;
+    }
+    if (hasJava) {
+        int ret = attach_java_process(pid);
+        if (ret == 0) {
+            JavaElf javaElf(pid);
+            javaElfArr[pid] = javaElf;
+        }
     }
     this->moduleMap.insert({pid, modVec});
     pcerr::New(0, "success");
@@ -726,9 +738,77 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
     }
 #endif
     symbol->codeMapAddr = addrToSearch;
+    if (symbol->symbolName == UNKNOWN) {
+        auto it = javaElfArr.find(pid);
+        if (it != javaElfArr.end()) {
+            JavaEntry entry;
+            int javaRet = javaElfArr[pid].FindElf(addr, entry);
+            if (javaRet == 0) {
+                symbol->codeMapAddr = addr;
+                symbol->offset = addr - entry.start;
+                symbol->codeMapEndAddr = entry.end;
+                symbol->symbolName = GetCharFromStr(entry.symbolName);
+                symbol->mangleName = GetCharFromStr(entry.symbolName);
+                symbol->fileName = GetCharFromStr(entry.fileName);
+                symbol->lineNum = entry.line;
+            }
+        }
+    }
     this->symbolMap.at(pid).insert({addr, symbol});
     pcerr::New(0, "success");
     return symbol;
+}
+
+int JavaElf::FindElf(unsigned long addr, struct JavaEntry& javaEntry) {
+    if (!hasLoad) {
+        std::string path = "/tmp/perf-" + std::to_string(pid) + ".map";
+        
+        std::ifstream fileTmp(path.c_str());
+        if (!fileTmp.is_open()) {
+            return -1;
+        }
+        std::string line;
+        while(getline(fileTmp, line)) {
+            char name[MAX_LINUX_SYMBOL_LEN];
+            unsigned long addr;
+            unsigned long size;
+            if (sscanf(line.c_str(), "%llx %llx %s %*s", &addr, &size, name) == EOF) {
+                continue;
+            }
+            std::string symbolName;
+            std::string fileName = UNKNOWN;
+            int lineNum = 0;
+            std::string symName = {name};
+            size_t index = symName.find('(');
+            if (index != std::string::npos) {
+                symbolName = symName.substr(0, index);
+                size_t lastIndex = symName.find(')');
+                std::string lineStr = symName.substr(index + 1, lastIndex - index);
+                auto vec = SplitStringByDelimiter(lineStr, ':');
+                if (!vec.empty() && vec.size() == 2) {
+                    fileName = vec[0];
+                    ConvertStrToInt(vec[1], lineNum);
+                }
+            } else {
+                symbolName = symName;
+            }
+            JavaEntry entry = {.start=addr, .end=addr + size, .symbolName=symbolName, .fileName=fileName, .line=(unsigned int)lineNum};
+            symbolList[addr] = entry;
+        }
+        if (!symbolList.empty()) {
+            hasLoad = true;
+        }
+    }
+    auto it = symbolList.upper_bound(addr);
+    if (it == symbolList.cbegin()) {
+        return -1;
+    }
+    --it;
+    if (addr > it->second.end) {
+        return -1;
+    }
+    javaEntry = it->second;
+    return 0;
 }
 
 struct Symbol* SymbolResolve::MapAddr(int pid, unsigned long addr)

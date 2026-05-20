@@ -165,3 +165,17 @@ function build_skel_files() {
     echo "generate: ${src_name}.skel.h"
   done
 }
+
+function build_capstone() {
+  local open_source_dir=$1
+  local cmake_target_dir=$1/local/capstone
+  if [ -d "${cmake_target_dir}" ];then
+    return
+  fi
+  cd "$open_source_dir/capstone"
+  mkdir -p build
+  pushd build
+  cmake -DCMAKE_INSTALL_PREFIX=$cmake_target_dir -DCMAKE_POSITION_INDEPENDENT_CODE=ON ..
+  make -j ${cpu_core_num}
+  make install
+}
