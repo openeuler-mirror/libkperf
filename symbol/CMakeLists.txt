@@ -21,6 +21,7 @@ set_target_properties(sym_static PROPERTIES OUTPUT_NAME "sym")
 
 target_link_libraries(sym
         pthread
+        dl
         elf_static
         ${LLVM_LIB_DIR}/libLLVMTarget.a
         ${LLVM_LIB_DIR}/libLLVMDebugInfoDWARF.a
