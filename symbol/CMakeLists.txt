@@ -29,6 +29,7 @@ endif()
 
 target_link_libraries(sym
         pthread
+        dl
         elf_static
         ${LLVM_LIB_DIR}/libLLVMTarget.a
         ${LLVM_LIB_DIR}/libLLVMDebugInfoDWARF.a
