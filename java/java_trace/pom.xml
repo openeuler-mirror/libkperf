@@ -1,0 +1,76 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.libkperf.tracex</groupId>
+  <artifactId>trace-java-parent</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+
+  <name>trace java parent</name>
+
+  <modules>
+    <module>trace_cli</module>
+    <module>trace_agent</module>
+  </modules>
+
+  <properties>
+      <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+      <jdk.version>1.8</jdk.version>
+      <maven.compiler.source>1.8</maven.compiler.source>
+      <maven.compiler.target>1.8</maven.compiler.target>
+      <asm.version>9.7.1</asm.version>
+      <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
+      <maven.jar.plugin.version>3.4.2</maven.jar.plugin.version>
+      <maven.shade.plugin.version>3.5.2</maven.shade.plugin.version>
+      <!-- 默认输出目录，可设置-Dlibkperf.java.out.dir=xxx 覆盖 -->
+      <libkperf.java.out.dir>${maven.multiModuleProjectDirectory}/../../output/lib/java</libkperf.java.out.dir>
+  </properties>
+
+  <build>
+      <plugins>
+          <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-compiler-plugin</artifactId>
+              <version>${maven.compiler.plugin.version}</version>
+              <configuration>
+                  <source>${maven.compiler.source}</source>
+                  <target>${maven.compiler.target}</target>
+                  <encoding>${project.build.sourceEncoding}</encoding>
+              </configuration>
+          </plugin>
+
+          <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-jar-plugin</artifactId>
+              <version>${maven.jar.plugin.version}</version>
+              <configuration>
+                  <outputDirectory>${libkperf.java.out.dir}</outputDirectory>
+              </configuration>
+          </plugin>
+      </plugins>
+  </build>
+
+  <profiles>
+      <profile>
+          <id>jdk9-plus-release-8</id>
+          <activation>
+              <jdk>[9,)</jdk>
+          </activation>
+          <build>
+              <plugins>
+                  <plugin>
+                      <groupId>org.apache.maven.plugins</groupId>
+                      <artifactId>maven-compiler-plugin</artifactId>
+                      <version>${maven.compiler.plugin.version}</version>
+                      <configuration>
+                          <release>8</release>
+                          <encoding>${project.build.sourceEncoding}</encoding>
+                      </configuration>
+                  </plugin>
+              </plugins>
+          </build>
+      </profile>
+  </profiles>
+</project>

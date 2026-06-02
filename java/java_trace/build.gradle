@@ -1,0 +1,43 @@
+allprojects {
+    group = 'com.libkperf.tracex'
+    version = '1.0.0'
+    repositories {
+        mavenCentral()
+    }
+}
+
+def currentJavaVersion = JavaVersion.current()
+println "Current Gradle JVM version: ${currentJavaVersion}"
+
+subprojects {
+    apply plugin: 'java'
+
+    if (currentJavaVersion.isJava8()) {
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    } else {
+        java {
+            toolchain {
+                languageVersion = JavaLanguageVersion.of(currentJavaVersion.majorVersion.toInteger())
+            }
+        }
+    }
+
+    tasks.withType(JavaCompile) {
+        options.encoding = 'UTF-8'
+        if (!currentJavaVersion.isJava8()) {
+            options.release = 8
+        }
+    }
+
+    def defaultJavaOutDir = "${rootProject.projectDir}/../../build/lib/java"
+    def javaOutDir = providers
+        .gradleProperty("libkperfJavaOutDir")
+        .orElse(providers.environmentVariable("LIBKPERF_JAVA_OUT_DIR"))
+        .orElse(defaultJavaOutDir)
+
+    tasks.withType(Jar) {
+        destinationDirectory.set(file(javaOutDir.get()))
+        archiveVersion.set("")
+    }
+}

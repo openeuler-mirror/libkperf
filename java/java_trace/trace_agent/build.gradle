@@ -1,0 +1,71 @@
+plugins {
+    id 'java-library'
+}
+
+dependencies {
+    implementation 'org.ow2.asm:asm:9.7.1'
+    implementation 'org.ow2.asm:asm-commons:9.7.1'
+}
+
+tasks.named('jar') {
+    archiveBaseName = 'trace_agent'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+
+    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
+
+    manifest {
+        attributes(
+            'Premain-Class': 'com.libkperf.tracex.agent.TraceAgent',
+            'Agent-Class': 'com.libkperf.tracex.agent.TraceAgent',
+            'Can-Retransform-Classes': 'true',
+            'Can-Redefine-Classes': 'true'
+        )
+    }
+}
+
+// build thread info native lib
+def defaultNativeOutDir = file("${rootProject.projectDir}/../../output/lib/java")
+def nativeOutDir = providers
+    .gradleProperty("libkperfNativeOutDir")
+    .map { file(it) }
+    .orElse(defaultNativeOutDir)
+
+def nativeLib = nativeOutDir.map {
+    new File(it, "libtracex_threadinfo.so")
+}
+
+tasks.register("buildNativeThreadInfo", Exec) {
+    def javaHome = System.getenv("JAVA_HOME")
+    if (javaHome == null || javaHome.isEmpty()) {
+        javaHome = org.gradle.internal.jvm.Jvm.current().javaHome.absolutePath
+    }
+
+    inputs.file("${projectDir}/src/main/native/tracex_threadinfo.c")
+    outputs.file(nativeLib)
+
+    doFirst {
+        def outDir = nativeOutDir.get()
+        def outLib = nativeLib.get()
+        outDir.mkdirs()
+
+        commandLine "bash", "-c", """
+            set -e
+            gcc -shared -fPIC -D_GNU_SOURCE -Wl,-z,relro,-z,now -ftrapv\\
+              -fstack-protector-all -D_FORTIFY_SOURCE=2 -O2 -s \\
+              -I'${javaHome}/include' \\
+              -I'${javaHome}/include/linux' \\
+              '${projectDir}/src/main/native/tracex_threadinfo.c' \\
+              -o '${outLib.absolutePath}'
+        """
+
+        println "[trace_agent] native lib output: ${outLib.absolutePath}"
+    }
+}
+
+tasks.named("jar") {
+    dependsOn tasks.named("buildNativeThreadInfo")
+}

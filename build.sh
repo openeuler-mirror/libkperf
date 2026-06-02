@@ -38,6 +38,8 @@ UTRACE=false
 
 JAVA_AGENT=false
 
+JAVA_TRACE=false
+
 source ${PROJECT_DIR}/build/common.sh
 
 creat_dir "${BUILD_DIR}"
@@ -91,6 +93,9 @@ for arg in "$@"; do
         java_agent=*)
             JAVA_AGENT="${arg#*=}"
             ;;
+        java_trace=*)
+            JAVA_TRACE="${arg#*=}"
+            ;;
     esac
 done
 
@@ -112,6 +117,14 @@ fi
 
 if [[ "$UTRACE" == "true" ]]; then
     build_capstone $THIRD_PARTY
+fi
+
+if [ "${JAVA_TRACE}" = "true" ];then
+    build_java_trace $INSTALL_PATH
+    if [ $? -ne 0 ]; then
+        echo "ERROR: failed to build java trace jar" >&2
+        exit 1
+    fi
 fi
 
 function build_elfin() {
@@ -164,6 +177,7 @@ build_libkperf()
         "-DCMAKE_INSTALL_PREFIX=${INSTALL_PATH}"
         "-DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
         "-DBPF=${BPF}"
+        "-DJAVA_TRACE=${JAVA_TRACE}"
         "-DARCH_TARGET=${ARCH_TARGET}"
         "-DELF_LLVM=${ELF_LLVM}"
     )
@@ -264,4 +278,3 @@ main() {
 
 # bash build.sh test=true installPath=/home/ build_type=Release .The last three settings are optional.
 main $@
-
