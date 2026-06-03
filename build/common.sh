@@ -179,3 +179,80 @@ function build_capstone() {
   make -j ${cpu_core_num}
   make install
 }
+
+function build_java_trace() {
+  echo "enable java trace compilation"
+  local install_path=$1
+  local root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  local java_trace_dir="${root_dir}/java/java_trace"
+  local trace_java_lib_dir="${install_path}/lib/java"
+  local trace_java_conf_dir="${install_path}/conf"
+  if [ ! -d "${java_trace_dir}" ]; then
+    echo "ERROR: java trace directory not found: ${java_trace_dir}" >&2
+    return 1
+  fi
+  mkdir -p "${trace_java_lib_dir}"
+  mkdir -p "${trace_java_conf_dir}"
+  pushd "${java_trace_dir}" >/dev/null || return 1
+  local build_ok=1
+
+  # try gradle
+  echo "try to build java-trace with Gradle"
+  local gradle_cmd="$(command -v gradle 2>/dev/null)"
+  if [ -n "${gradle_cmd}" ]; then
+    echo "using Gradle: ${gradle_cmd}"
+    if "${gradle_cmd}" clean build -PlibkperfJavaOutDir="${trace_java_lib_dir}"; then
+      build_ok=0
+    else
+      build_ok=$?
+      echo "Gradle build failed, exit code: ${build_ok}"
+    fi
+  else
+    echo "Gradle not found, skip Gradle build"
+    build_ok=1
+  fi
+
+  # try maven
+  if [ ${build_ok} -ne 0 ]; then
+    echo "try to build java-trace with Maven"
+    local maven_cmd="$(command -v mvn 2>/dev/null)"
+    if [ -n "${maven_cmd}" ]; then
+      echo "using Maven: ${maven_cmd}"
+      if "${maven_cmd}" clean package -Dlibkperf.java.out.dir="${trace_java_lib_dir}"; then
+        build_ok=0
+      else
+        build_ok=$?
+        echo "Maven build failed, exit code: ${build_ok}"
+      fi
+    else
+      echo "Maven not found, skip Maven build"
+      build_ok=1
+    fi
+  fi
+
+  popd >/dev/null || return 1
+  if [ ${build_ok} -ne 0 ]; then
+    echo "ERROR: java-trace build failed with both Gradle and Maven" >&2
+    return 1
+  fi
+
+  if [ ! -f "${trace_java_lib_dir}/trace_agent.jar" ]; then
+    echo "ERROR: missing ${trace_java_lib_dir}/trace_agent.jar" >&2
+    return 1
+  fi
+  if [ ! -f "${trace_java_lib_dir}/trace_cli.jar" ]; then
+    echo "ERROR: missing ${trace_java_lib_dir}/trace_cli.jar" >&2
+    return 1
+  fi
+
+  if [ -f "${java_trace_dir}/trace_filter.conf" ]; then
+    cp -f "${java_trace_dir}/trace_filter.conf" "${trace_java_conf_dir}/trace_filter.conf"
+    echo "trace_filter.conf copied to ${trace_java_conf_dir}/"
+  else
+    echo "WARNING: trace_filter.conf not found in ${java_trace_dir}" >&2
+  fi
+
+  echo "java trace jars generated:"
+  echo "  ${trace_java_lib_dir}/trace_agent.jar"
+  echo "  ${trace_java_lib_dir}/trace_cli.jar"
+}

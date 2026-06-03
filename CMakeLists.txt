@@ -63,14 +63,34 @@ endif()
 message("TOP_DIR is ${TOP_DIR}")
 include(${CMAKE_CURRENT_LIST_DIR}/Common.cmake)
 add_subdirectory(symbol)
+
+option(JAVA_TRACE "Enable java trace" OFF)
+message(STATUS "JAVA trace support: ${JAVA_TRACE}")
+if (JAVA_TRACE)
+    set(JAVA_TRACE_CONFIG_H "${CMAKE_BINARY_DIR}/java_trace_config.h")
+    set(JAVA_TRACE_AGENT_JAR "${LIBKPERF_JAVA_HOME}/trace_agent.jar")
+    set(JAVA_TRACE_CLI_JAR "${LIBKPERF_JAVA_HOME}/trace_cli.jar")
+    set(JAVA_TRACE_NATIVE_LIB "${LIBKPERF_JAVA_HOME}/libtracex_threadinfo.so")
+    configure_file(
+        "${PROJECT_TOP_DIR}/java/java_trace/java_trace_config.h.in"
+        "${JAVA_TRACE_CONFIG_H}"
+        @ONLY
+    )
+    message(STATUS "Generated java_trace_config.h -> ${JAVA_TRACE_CONFIG_H}")
+endif()
+
 add_subdirectory(pmu)
+
 if (JAVA_AGENT)
-    add_subdirectory(java_agent)
+    add_subdirectory(java/java_agent)
 endif()
 
 if (PYTHON)
     add_subdirectory(python)
 endif()
+
+option(BPF "Enable BPF mode" OFF)
+message(STATUS "BPF support: ${BPF}")
 
 if (GO)
     add_subdirectory(go)
@@ -79,8 +99,5 @@ endif()
 if (INCLUDE_TEST)
     add_subdirectory(test)
 endif()
-
-option(BPF "Enable BPF mode" OFF)
-message(STATUS "BPF support: ${BPF}")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS True)
