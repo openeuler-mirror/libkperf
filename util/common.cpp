@@ -261,5 +261,41 @@ std::string GetMntPoint(int pid)
     return mntPoint;
 }
 
+static std::string ReadAll(const std::string& path)
+{
+    std::ifstream in(path);
+    if (!in) {
+        return "";
+    }
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    return ss.str();
+}
 
+static bool FileContainsLine(const std::string& path, const std::string& key)
+{
+    std::ifstream in(path);
+    if (!in) {
+        return false;
+    }
 
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.find(key) != std::string::npos) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool IsJvmProcess(int pid)
+{
+    const std::string procPath = "/proc/" + std::to_string(pid);
+    const std::string cmdline = ReadAll(procPath + "/cmdline");
+    if (cmdline.find("java") != std::string::npos ||
+        cmdline.find("jdk") != std::string::npos) {
+        return true;
+    }
+    return FileContainsLine(procPath + "/maps", "libjvm.so");
+}

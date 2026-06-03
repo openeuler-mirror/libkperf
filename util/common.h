@@ -58,4 +58,5 @@ int GetParanoidVal();
 std::string GetCgroupPath(const std::string& cgroupName);
 bool CheckCurKernelConfig(const std::string& configName);
 std::string GetMntPoint(int pid);
+bool IsJvmProcess(int pid);
 #endif  // LIBKPROF_COMMON_H

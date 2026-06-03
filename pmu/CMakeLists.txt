@@ -49,6 +49,11 @@ else ()
     set(BPF_SOURCES "")
 endif()
 
+if (JAVA_TRACE)
+    include_directories(${CMAKE_BINARY_DIR})
+    add_compile_definitions(JAVA_TRACE)
+endif()
+
 ADD_LIBRARY(kperf SHARED ${PMU_SRC} ${UTIL_SRC} ${PFM_SRC} ${TRACE_SRC} ${PMU_DECODER_SRC} ${BPF_SOURCES} ${DRIVER_SRC})
 ADD_LIBRARY(kperf_static STATIC ${PMU_SRC} ${UTIL_SRC} ${PFM_SRC} ${TRACE_SRC} ${PMU_DECODER_SRC} ${BPF_SOURCES} ${DRIVER_SRC})
 
