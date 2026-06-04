@@ -59,9 +59,9 @@ ADD_LIBRARY(kperf_static STATIC ${PMU_SRC} ${UTIL_SRC} ${PFM_SRC} ${TRACE_SRC} $
 
 set_target_properties(kperf_static PROPERTIES OUTPUT_NAME "kperf")
 if (BPF)
-    target_link_libraries(kperf sym bpf)
+    target_link_libraries(kperf sym bpf rt)
 else ()
-    target_link_libraries(kperf sym)
+    target_link_libraries(kperf sym rt)
 endif()
 target_compile_options(kperf PRIVATE -fPIC)
 install(TARGETS kperf  DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)

@@ -331,15 +331,18 @@ template <typename T> static T LoadAt(const uint8_t *p, size_t offset)
 
 template <typename T> static T LoadAtAcquire(const uint8_t *p, size_t offset)
 {
-    T v = LoadAt<T>(p, offset);
-    std::atomic_thread_fence(std::memory_order_acquire);
-    return v;
+    static_assert(std::is_integral<T>::value || std::is_enum<T>::value,
+                  "LoadAtAcquire only supports integral or enum types");
+    const volatile T *addr = reinterpret_cast<const volatile T *>(p + offset);
+    return __atomic_load_n(addr, __ATOMIC_ACQUIRE);
 }
 
-static void StoreAt(uint8_t *p, size_t offset, uint32_t v)
+template <typename T> static void StoreAtRelease(uint8_t *p, size_t offset, T v)
 {
-    std::atomic_thread_fence(std::memory_order_release);
-    std::memcpy(p + offset, &v, sizeof(v));
+    static_assert(std::is_integral<T>::value || std::is_enum<T>::value,
+                  "StoreAtRelease only supports integral or enum types");
+    volatile T *addr = reinterpret_cast<volatile T *>(p + offset);
+    __atomic_store_n(addr, v, __ATOMIC_RELEASE);
 }
 
 static std::string ReadFixedString(const uint8_t *base, size_t offset, size_t cap)
@@ -642,16 +645,16 @@ int JavaBackendEnable(JavaBackendImpl *impl)
     }
 
     auto *mem = static_cast<uint8_t *>(impl->mapped);
-    StoreAt(mem, kHeaderActive, 1);
+    StoreAtRelease<uint32_t>(mem, kHeaderActive, 1);
 
    std::string cmd = BuildEnableCommand(*impl);
     if (cmd.empty()) {
-        StoreAt(mem, kHeaderActive, 0);
+        StoreAtRelease<uint32_t>(mem, kHeaderActive, 0);
         return -1;
     }
     int ret = RunCommand(cmd);
     if (ret != 0) {
-        StoreAt(mem, kHeaderActive, 0);
+        StoreAtRelease<uint32_t>(mem, kHeaderActive, 0);
         (void)JavaBackendRestoreRuntime(impl);
         return ret;
     }
@@ -667,7 +670,7 @@ int JavaBackendDisable(JavaBackendImpl *impl)
         return -1;
     }
     auto *mem = static_cast<uint8_t *>(impl->mapped);
-    StoreAt(mem, kHeaderActive, 0);
+    StoreAtRelease<uint32_t>(mem, kHeaderActive, 0);
     uint64_t writeSeq = LoadAtAcquire<uint64_t>(mem, kHeaderWriteSeq);
     uint64_t dropped = LoadAtAcquire<uint64_t>(mem, kHeaderDropped);
     uint32_t slotCount = LoadAtAcquire<uint32_t>(mem, kHeaderSlotCount);
@@ -799,7 +802,7 @@ void JavaBackendClose(JavaBackendImpl *impl)
     }
     if (impl->mapped && impl->shm_size) {
         auto *mem = static_cast<uint8_t *>(impl->mapped);
-        StoreAt(mem, kHeaderActive, 0);
+        StoreAtRelease<uint32_t>(mem, kHeaderActive, 0);
         munmap(impl->mapped, impl->shm_size);
         impl->mapped = nullptr;
     }

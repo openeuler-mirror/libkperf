@@ -115,9 +115,11 @@ static void CloseNativeBackendPd(int &pd)
         return;
     }
 
-    UTraceResourceGuard guard(pd);
-    guard.probesInstalled = true;
+    int oldPd = pd;
     pd = -1;
+
+    UTraceResourceGuard guard(oldPd);
+    guard.probesInstalled = true;
 }
 
 static void CloseJavaBackendPd(int &pd)
@@ -126,8 +128,11 @@ static void CloseJavaBackendPd(int &pd)
         return;
     }
 
-    JavaTraceManager::GetInstance().Close(pd);
+    int oldPd = pd;
     pd = -1;
+
+    JavaTraceManager::GetInstance().Close(oldPd);
+    PmuList::GetInstance()->Close(oldPd);
 }
 
 struct JvmTraceSessionGuard {
@@ -402,10 +407,6 @@ static int UTraceOpenJvm(struct UTraceAttr *attr)
         }
     }
 
-    if (session.javaPd < 0 && session.nativePd < 0) {
-        pcerr::New(LIBPERF_ERR_NULL_POINTER, "Java tracing failed: No backend opened");
-        return -1;
-    }
     PmuList::GetInstance()->FillPidList(pd, attr->numPid, attr->pidList);
     jvmTraceSessions[pd] = session;
 
@@ -677,11 +678,11 @@ void UTraceClose(int pd)
     if (session != nullptr) {
         CloseJavaBackendPd(session->javaPd);
         CloseNativeBackendPd(session->nativePd);
-        jvmTraceSessions.erase(pd);
-        PmuList::GetInstance()->Close(pd);
+
+        UTraceResourceGuard guard(pd);
+        guard.probesInstalled = false;
         return;
     }
-
     UTraceResourceGuard guard(pd);
     guard.probesInstalled = true;
 }
