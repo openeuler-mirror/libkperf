@@ -603,11 +603,7 @@ int JavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules)
     }
     impl->filter_config_path = FilterConfigPath();
     impl->contextDepth = ReadEnvInt(LIBKPERF_JAVA_CONTEXT_DEPTH_ENV, LIBKPERF_JAVA_DEFAULT_CONTEXT_DEPTH);
-    impl->contextMaxMethods =
-        ReadEnvInt(LIBKPERF_JAVA_CONTEXT_MAX_METHODS_ENV, LIBKPERF_JAVA_DEFAULT_CONTEXT_MAX_METHODS);
-    std::fprintf(stderr, "[trace-java] contextDepth=%d, contextMaxMethods=%d (from env, -1 means use config file)\n",
-        impl->contextDepth, impl->contextMaxMethods);
-
+    impl->contextMaxMethods = ReadEnvInt(LIBKPERF_JAVA_CONTEXT_MAX_METHODS_ENV, LIBKPERF_JAVA_DEFAULT_CONTEXT_MAX_METHODS);
     impl->shm_name = "/utrace_java_" + std::to_string(pid) + "_" + TimestampSuffix();
     impl->shm_path = "/dev/shm" + impl->shm_name;
     impl->shm_fd = shm_open(impl->shm_name.c_str(), O_CREAT | O_RDWR, 0600);

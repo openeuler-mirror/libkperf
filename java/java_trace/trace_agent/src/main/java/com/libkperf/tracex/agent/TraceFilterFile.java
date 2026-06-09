@@ -27,6 +27,7 @@ public final class TraceFilterFile {
     public final List<FilterRule> excludes = new ArrayList<FilterRule>();
     public int contextDepth = -1;
     public int contextMaxMethods = -1;
+    public boolean includeAll = false;
 
     public static TraceFilterFile load(String path) {
         TraceFilterFile out = new TraceFilterFile();
@@ -58,6 +59,8 @@ public final class TraceFilterFile {
                         out.contextDepth = parseInt(v, out.contextDepth);
                     } else if ("context_max_methods".equals(k) || "contextmaxmethods".equals(k)) {
                         out.contextMaxMethods = parseInt(v, out.contextMaxMethods);
+                    } else if ("include_all".equals(k) || "includeall".equals(k)) {
+                        out.includeAll = "true".equals(v.trim());
                     } else if ("include".equals(k) || "whitelist".equals(k) || "white".equals(k)) {
                         addRules(out.includes, v);
                     } else if ("exclude".equals(k) || "blacklist".equals(k) || "black".equals(k)) {

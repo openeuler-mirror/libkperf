@@ -28,9 +28,9 @@ public final class FilterRule {
         this.classPattern = normalizeClass(classPattern);
         this.methodPattern = normalizeMethod(methodPattern);
         this.descPattern = normalizeDescriptor(descPattern);
-        this.classRegex = wildcardRegex(this.classPattern);
-        this.methodRegex = wildcardRegex(this.methodPattern);
-        this.descRegex = wildcardRegex(this.descPattern);
+        this.classRegex = compileClassWildcardRegex(this.classPattern);
+        this.methodRegex = compileSimpleWildcardRegex(this.methodPattern);
+        this.descRegex = compileSimpleWildcardRegex(this.descPattern);
     }
 
     public static FilterRule parse(String raw) {
@@ -77,13 +77,14 @@ public final class FilterRule {
 
     public boolean matchesClass(String classNameInternal) {
         String name = normalizeClass(classNameInternal);
-        if ("*".equals(classPattern) || classPattern.length() == 0) {
+
+        if (classPattern.length() == 0 || "*".equals(classPattern) || "**".equals(classPattern)) {
             return true;
         }
         if (classRegex != null) {
             return classRegex.matcher(name).matches();
         }
-        return name.equals(classPattern) || name.startsWith(classPattern + "/");
+        return name.equals(classPattern);
     }
 
     public boolean matchesMethod(String owner, String name, String desc) {
@@ -92,15 +93,23 @@ public final class FilterRule {
         }
         String m = name == null ? "" : name;
         String d = desc == null ? "" : desc;
-        boolean methodOk = "*".equals(methodPattern) || methodPattern.length() == 0 ||
-            (methodRegex == null ? methodPattern.equals(m) : methodRegex.matcher(m).matches());
-        boolean descOk = descPattern.length() == 0 || "*".equals(descPattern) ||
-            (descRegex == null ? descPattern.equals(d) : descRegex.matcher(d).matches());
+
+        boolean methodOk = methodPattern.length() == 0
+                || "*".equals(methodPattern)
+                || "**".equals(methodPattern)
+                || (methodRegex == null ? methodPattern.equals(m) : methodRegex.matcher(m).matches());
+
+        boolean descOk = descPattern.length() == 0
+                || "*".equals(descPattern)
+                || "**".equals(descPattern)
+                || (descRegex == null ? descPattern.equals(d) : descRegex.matcher(d).matches());
+
         return methodOk && descOk;
     }
 
     public boolean isClassOnly() {
-        return (methodPattern.length() == 0 || "*".equals(methodPattern)) && descPattern.length() == 0;
+        return (methodPattern.length() == 0 || "*".equals(methodPattern) || "**".equals(methodPattern))
+                && descPattern.length() == 0;
     }
 
     private static Split splitExplicit(String s) {
@@ -134,13 +143,13 @@ public final class FilterRule {
         }
         String owner = s.substring(0, p);
         String tail = s.substring(p + 1);
-        if (!looksLikeMethodTail(s, owner, tail, sep)) {
+        if (!looksLikeMethodTail(owner, tail, sep)) {
             return null;
         }
         return new Split(owner, tail);
     }
 
-    private static boolean looksLikeMethodTail(String full, String owner, String tail, char sep) {
+    private static boolean looksLikeMethodTail(String owner, String tail, char sep) {
         if (tail == null || tail.length() == 0) {
             return false;
         }
@@ -148,31 +157,18 @@ public final class FilterRule {
             return true;
         }
         String prev = previousSegment(owner, sep);
-        if ("*".equals(tail)) {
-            // java.* / javax.* / org.springframework.* are class/package filters.
-            // com.foo.Bar.* or com.foo.*.* are method filters.
-            return "*".equals(prev) || startsUpper(prev) || owner.indexOf('*') >= 0;
+        if ("*".equals(tail) || "**".equals(tail)) {
+            return startsUpper(prev);
         }
-        if (startsUpper(prev) || "*".equals(prev)) {
+        if (startsUpper(prev)) {
             return true;
         }
-        char c = tail.charAt(0);
-        return Character.isLowerCase(c) && hasEnoughSegments(owner, sep, 2) && startsUpper(prev);
+        return false;
     }
 
     private static String previousSegment(String s, char sep) {
         int p = s.lastIndexOf(sep);
         return p < 0 ? s : s.substring(p + 1);
-    }
-
-    private static boolean hasEnoughSegments(String s, char sep, int count) {
-        int n = 1;
-        for (int i = 0; i < s.length(); i++) {
-            if (s.charAt(i) == sep) {
-                n++;
-            }
-        }
-        return n >= count;
     }
 
     private static boolean startsUpper(String s) {
@@ -199,23 +195,58 @@ public final class FilterRule {
         return value == null ? "" : value.trim();
     }
 
-    private static Pattern wildcardRegex(String pattern) {
+    private static Pattern compileClassWildcardRegex(String pattern) {
         if (pattern == null || pattern.indexOf('*') < 0) {
             return null;
         }
         StringBuilder sb = new StringBuilder();
+        sb.append('^');
         for (int i = 0; i < pattern.length(); i++) {
             char c = pattern.charAt(i);
             if (c == '*') {
-                sb.append(".*");
-            } else {
-                if ("\\.[]{}()+-^$?|".indexOf(c) >= 0) {
-                    sb.append('\\');
+                boolean doubleStar = i + 1 < pattern.length() && pattern.charAt(i + 1) == '*';
+                if (doubleStar) {
+                    sb.append(".*");
+                    i++;
+                } else {
+                    sb.append("[^/]*");
                 }
-                sb.append(c);
+                continue;
             }
+            appendEscapedRegexChar(sb, c);
         }
+        sb.append('$');
         return Pattern.compile(sb.toString());
+    }
+
+    private static Pattern compileSimpleWildcardRegex(String pattern) {
+        if (pattern == null || pattern.indexOf('*') < 0) {
+            return null;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append('^');
+
+        for (int i = 0; i < pattern.length(); i++) {
+            char c = pattern.charAt(i);
+            if (c == '*') {
+                while (i + 1 < pattern.length() && pattern.charAt(i + 1) == '*') {
+                    i++;
+                }
+                sb.append(".*");
+                continue;
+            }
+            appendEscapedRegexChar(sb, c);
+        }
+        sb.append('$');
+        return Pattern.compile(sb.toString());
+    }
+
+    private static void appendEscapedRegexChar(StringBuilder sb, char c) {
+        if ("\\.[]{}()+-^$?|".indexOf(c) >= 0) {
+            sb.append('\\');
+        }
+        sb.append(c);
     }
 
     private static final class Split {

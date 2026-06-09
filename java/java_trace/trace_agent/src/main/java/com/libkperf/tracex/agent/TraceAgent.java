@@ -88,7 +88,10 @@ public final class TraceAgent {
 
         List<Class<?>> candidates = collectCandidates(inst, transformer);
         System.err.println("[trace_agent] retransform candidates=" + candidates.size()
-            + ", includeRules=" + config.includeRules.size() + ", excludeRules=" + config.excludeRules.size());
+            + ", requiredIncludeRules=" + config.requiredIncludeRules.size()
+            + ", configIncludeRules=" + config.includeRules.size()
+            + ", excludeRules=" + config.excludeRules.size()
+            + ", includeAll=" + config.includeAll);
         if (!candidates.isEmpty()) {
             try {
                 inst.retransformClasses(candidates.toArray(new Class<?>[0]));

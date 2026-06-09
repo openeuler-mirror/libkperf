@@ -35,7 +35,9 @@ public final class TraceConfig {
     public final String configFile;
     public final int contextDepth;
     public final int contextMaxMethods;
+    public final boolean includeAll;
 
+    public final List<FilterRule> requiredIncludeRules;
     public final List<FilterRule> includeRules;
     public final List<FilterRule> excludeRules;
 
@@ -52,11 +54,27 @@ public final class TraceConfig {
         TraceFilterFile filterFile = TraceFilterFile.load(configFile);
         int argDepth = parseInt(get(args, "contextDepth", "-1"), -1);
         int argMax = parseInt(get(args, "contextMaxMethods", "-1"), -1);
-        this.contextDepth = argDepth >= 0 ? argDepth : (filterFile.contextDepth >= 0 ? filterFile.contextDepth : 1);
-        this.contextMaxMethods = argMax >= 0 ? argMax : (filterFile.contextMaxMethods >= 0 ? filterFile.contextMaxMethods : 128);
+
+        this.contextDepth = argDepth >= 0
+                ? argDepth
+                : (filterFile.contextDepth >= 0 ? filterFile.contextDepth : 1);
+
+        this.contextMaxMethods = argMax >= 0
+                ? argMax
+                : (filterFile.contextMaxMethods >= 0 ? filterFile.contextMaxMethods : 128);
+
+        String includeAllArg = get(args, "includeAll", null);
+        this.includeAll = includeAllArg == null ? filterFile.includeAll : "true".equals(includeAllArg.trim());
+
+        List<FilterRule> required = new ArrayList<FilterRule>();
+        addRules(required, readIncludeFile(includeFile));
+        addRules(required, get(args, "hotRules", ""));
+        addRules(required, get(args, "requiredIncludes", ""));
+        addRules(required, get(args, "includeRules", ""));
+
+        this.requiredIncludeRules = Collections.unmodifiableList(required);
 
         List<FilterRule> inc = new ArrayList<FilterRule>();
-        addRules(inc, readIncludeFile(includeFile));
         inc.addAll(filterFile.includes);
         this.includeRules = Collections.unmodifiableList(inc);
 
@@ -81,43 +99,45 @@ public final class TraceConfig {
         if (isExcludedClass(classNameInternal)) {
             return false;
         }
-        if (includeRules.isEmpty()) {
+        if (matchesRequiredIncludeClass(classNameInternal)) {
             return true;
         }
-        for (FilterRule r : includeRules) {
-            if (r.matchesClass(classNameInternal)) {
-                return true;
-            }
+        if (matchesConfigIncludeClass(classNameInternal)) {
+            return true;
         }
-        Set<MethodId> ctx = contextMethods;
-        for (MethodId id : ctx) {
-            if (id.owner.equals(classNameInternal)) {
-                return true;
-            }
+        if (hasContextMethodInClass(classNameInternal)) {
+            return true;
         }
-        return false;
+        return includeAll;
     }
 
     public boolean shouldTransformMethod(String owner, String name, String desc) {
         if (isExcludedMethod(owner, name, desc)) {
             return false;
         }
-        if (includeRules.isEmpty()) {
+        if (matchesRequiredIncludeMethod(owner, name, desc)) {
             return true;
         }
-        for (FilterRule r : includeRules) {
-            if (r.matchesMethod(owner, name, desc)) return true;
+        if (matchesConfigIncludeMethod(owner, name, desc)) {
+            return true;
         }
-        return contextMethods.contains(new MethodId(owner, name, desc));
+        if (contextMethods.contains(new MethodId(owner, name, desc))) {
+            return true;
+        }
+        return includeAll;
     }
 
     public boolean matchesUserInclude(String owner, String name, String desc) {
-        if (isExcludedMethod(owner, name, desc)) return false;
-        if (includeRules.isEmpty()) return true;
-        for (FilterRule r : includeRules) {
-            if (r.matchesMethod(owner, name, desc)) return true;
+        if (isExcludedMethod(owner, name, desc)) {
+            return false;
         }
-        return false;
+        if (matchesRequiredIncludeMethod(owner, name, desc)) {
+            return true;
+        }
+        if (matchesConfigIncludeMethod(owner, name, desc)) {
+            return true;
+        }
+        return includeAll;
     }
 
     public void addContextMethods(Set<MethodId> methods) {
@@ -129,16 +149,66 @@ public final class TraceConfig {
         contextMethods = Collections.unmodifiableSet(merged);
     }
 
+    private boolean matchesRequiredIncludeClass(String owner) {
+        for (FilterRule r : requiredIncludeRules) {
+            if (r.matchesClass(owner)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean matchesRequiredIncludeMethod(String owner, String name, String desc) {
+        for (FilterRule r : requiredIncludeRules) {
+            if (r.matchesMethod(owner, name, desc)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean matchesConfigIncludeClass(String owner) {
+        for (FilterRule r : includeRules) {
+            if (r.matchesClass(owner)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean matchesConfigIncludeMethod(String owner, String name, String desc) {
+        for (FilterRule r : includeRules) {
+            if (r.matchesMethod(owner, name, desc)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasContextMethodInClass(String owner) {
+        Set<MethodId> ctx = contextMethods;
+        for (MethodId id : ctx) {
+            if (id.owner.equals(owner)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private boolean isExcludedClass(String owner) {
         for (FilterRule r : excludeRules) {
-            if (r.matchesClass(owner)) return true;
+            if (r.matchesClass(owner)) {
+                return true;
+            }
         }
         return false;
     }
 
     private boolean isExcludedMethod(String owner, String name, String desc) {
         for (FilterRule r : excludeRules) {
-            if (r.matchesMethod(owner, name, desc)) return true;
+            if (r.matchesMethod(owner, name, desc)) {
+                return true;
+            }
         }
         return false;
     }
@@ -162,8 +232,12 @@ public final class TraceConfig {
             } else if (c == '=' && cur == key) {
                 cur = val;
             } else if (c == ';') {
-                if (key.length() > 0) out.put(key.toString(), val.toString());
-                key.setLength(0); val.setLength(0); cur = key;
+                if (key.length() > 0) {
+                    out.put(key.toString(), val.toString());
+                }
+                key.setLength(0);
+                val.setLength(0);
+                cur = key;
             } else {
                 cur.append(c);
             }
@@ -172,18 +246,29 @@ public final class TraceConfig {
     }
 
     private static void addRules(List<FilterRule> out, String text) {
-        if (text == null || text.length() == 0) return;
+        if (text == null || text.length() == 0) {
+            return;
+        }
+
         String[] parts = text.split("[,\\n\\r]");
+
         for (String p : parts) {
             FilterRule r = FilterRule.parse(p);
-            if (r != null) out.add(r);
+            if (r != null) {
+                out.add(r);
+            }
         }
     }
 
     private static String readIncludeFile(String path) {
-        if (path == null || path.length() == 0) return "";
+        if (path == null || path.length() == 0) {
+            return "";
+        }
+
         StringBuilder sb = new StringBuilder();
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(path), StandardCharsets.UTF_8))) {
+
+        try (BufferedReader br = new BufferedReader(
+                new InputStreamReader(new FileInputStream(path), StandardCharsets.UTF_8))) {
             String line;
             while ((line = br.readLine()) != null) {
                 sb.append(line).append('\n');

@@ -14,6 +14,8 @@
  ******************************************************************************/
 #include <jni.h>
 #include <sched.h>
+#include <time.h>
+#include <stdint.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -30,4 +32,15 @@ Java_com_libkperf_tracex_runtime_NativeThreadInfo_currentCpu0(JNIEnv* env, jclas
     (void) cls;
     int cpu = sched_getcpu();
     return cpu < 0 ? -1 : (jint) cpu;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_libkperf_tracex_runtime_NativeThreadInfo_currentTimeNanos0(JNIEnv* env, jclass cls) {
+    (void) env;
+    (void) cls;
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+        return 0;
+    }
+    return (jlong) ts.tv_sec * 1000000000LL + (jlong) ts.tv_nsec;
 }
