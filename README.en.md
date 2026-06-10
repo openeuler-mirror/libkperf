@@ -308,12 +308,7 @@ go test -v -test.run TestCount # Run a specified test case.
 bash build.sh install_path=/path/to/install java_agent=true
 ```
 
-After the build completes, `libkperfmap.so` is generated in the `lib` subdirectory of the installation path. Before using Java symbol resolution, set:
-
-```shell
-export KPERF_JAVA_AGENT_LIB="/path/to/install/lib:libkperfmap.so"
-```
-
+After the build completes, `libkperfmap.so` is generated in the `lib` subdirectory of the installation path. Just set the `LD_LIBRARY_PATH` of this directory.
 **Build Java Trace**:
 
 ```shell
