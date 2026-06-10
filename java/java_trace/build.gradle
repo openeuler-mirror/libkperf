@@ -33,7 +33,6 @@ subprojects {
     def defaultJavaOutDir = "${rootProject.projectDir}/../../build/lib/java"
     def javaOutDir = providers
         .gradleProperty("libkperfJavaOutDir")
-        .orElse(providers.environmentVariable("LIBKPERF_JAVA_OUT_DIR"))
         .orElse(defaultJavaOutDir)
 
     tasks.withType(Jar) {

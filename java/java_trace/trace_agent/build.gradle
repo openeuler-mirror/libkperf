@@ -39,10 +39,7 @@ def nativeLib = nativeOutDir.map {
 }
 
 tasks.register("buildNativeThreadInfo", Exec) {
-    def javaHome = System.getenv("JAVA_HOME")
-    if (javaHome == null || javaHome.isEmpty()) {
-        javaHome = org.gradle.internal.jvm.Jvm.current().javaHome.absolutePath
-    }
+    def javaHome = org.gradle.internal.jvm.Jvm.current().javaHome.absolutePath
 
     inputs.file("${projectDir}/src/main/native/tracex_threadinfo.c")
     outputs.file(nativeLib)

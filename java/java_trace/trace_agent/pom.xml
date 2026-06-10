@@ -56,9 +56,9 @@
                   set -e
                   native_src="${project.basedir}/src/main/native/tracex_threadinfo.c"
                   native_out="${project.build.directory}/native"
-                  java_home="${env.JAVA_HOME}"
-                  if [ -z "$java_home" ] || [ ! -d "$java_home" ]; then
-                    java_home="${java.home}"
+                  java_home="${java.home}"
+                  if [ ! -d "$java_home/include" ] &amp;&amp; [ -d "$java_home/../include" ]; then
+                    java_home="$(cd "$java_home/.." &amp;&amp; pwd)"
                   fi
                   mkdir -p "$native_out"
                   gcc -shared -fPIC -D_GNU_SOURCE -Wl,-z,relro,-z,now -ftrapv \

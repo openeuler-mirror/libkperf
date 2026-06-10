@@ -16,16 +16,22 @@ package com.libkperf.tracex.runtime;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.nio.ByteBuffer;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import java.lang.reflect.Field;
 import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 final class SharedEventSink implements AutoCloseable {
 
+    // Shared memory ABI. The C++ reader in pmu/trace/java_backend.cpp uses the same offsets
     static final long MAGIC = 0x5554524356415731L; // UTRCVAW1
     static final int VERSION = 1;
 
@@ -53,99 +59,292 @@ final class SharedEventSink implements AutoCloseable {
     static final int SLOT_FUNC = 240;
     static final int SLOT_FUNC_LEN = 256;
 
-    private final MappedByteBuffer buffer;
+    private static final int DEFAULT_SLOT_COUNT = 1048576;
+    private static final int MAX_SLOT_COUNT = 67108864;
+    private static final int SLOTS_PER_SEGMENT = 1048576;
+
+    private final MappedByteBuffer headerBuffer;
+    private final MappedByteBuffer[] slotBuffers;
     private final int slotCount;
+    private final AtomicLong nextSequence = new AtomicLong(1L);
+    private final AtomicLong publishedSequence = new AtomicLong(0L);
+    private final AtomicLong droppedEvents = new AtomicLong(0L);
+    private final AtomicBoolean publishing = new AtomicBoolean(false);
     private volatile boolean closed;
 
     SharedEventSink(String shmPath, int slotCount) throws IOException {
-        this.slotCount = slotCount > 0 ? slotCount : 4096;
-
+        this.slotCount = clampSlotCount(slotCount);
         Path p = Paths.get(shmPath).toAbsolutePath().normalize();
         long size = HEADER_SIZE + (long) this.slotCount * SLOT_SIZE;
+        int segmentCount = (this.slotCount + SLOTS_PER_SEGMENT - 1) / SLOTS_PER_SEGMENT;
 
         try (RandomAccessFile raf = new RandomAccessFile(p.toFile(), "rw");
              FileChannel channel = raf.getChannel()) {
             raf.setLength(size);
-            this.buffer = channel.map(FileChannel.MapMode.READ_WRITE, 0, size);
-            this.buffer.order(ByteOrder.nativeOrder());
-        }
+            this.headerBuffer = channel.map(FileChannel.MapMode.READ_WRITE, 0, HEADER_SIZE);
+            this.headerBuffer.order(ByteOrder.nativeOrder());
 
+            MappedByteBuffer[] segments = new MappedByteBuffer[segmentCount];
+            for (int i = 0; i < segmentCount; i++) {
+                int firstSlot = i * SLOTS_PER_SEGMENT;
+                int slotsInSegment = Math.min(SLOTS_PER_SEGMENT, this.slotCount - firstSlot);
+                long segmentOffset = HEADER_SIZE + (long) firstSlot * SLOT_SIZE;
+                long segmentSize = (long) slotsInSegment * SLOT_SIZE;
+                MappedByteBuffer segment = channel.map(FileChannel.MapMode.READ_WRITE, segmentOffset, segmentSize);
+                segment.order(ByteOrder.nativeOrder());
+                segments[i] = segment;
+            }
+            this.slotBuffers = segments;
+        }
         initHeader();
     }
 
     private void initHeader() {
-        buffer.putLong(HEADER_MAGIC, MAGIC);
-        buffer.putInt(HEADER_VERSION, VERSION);
-        buffer.putInt(HEADER_ACTIVE, 1);
-        buffer.putInt(HEADER_SLOT_COUNT, slotCount);
-        buffer.putInt(HEADER_SLOT_SIZE, SLOT_SIZE);
-        buffer.putLong(HEADER_WRITE_SEQ, 0L);
-        buffer.putLong(HEADER_DROPPED, 0L);
+        headerBuffer.putLong(HEADER_MAGIC, MAGIC);
+        headerBuffer.putInt(HEADER_VERSION, VERSION);
+        headerBuffer.putInt(HEADER_ACTIVE, 0);
+        headerBuffer.putInt(HEADER_SLOT_COUNT, slotCount);
+        headerBuffer.putInt(HEADER_SLOT_SIZE, SLOT_SIZE);
+        headerBuffer.putLong(HEADER_WRITE_SEQ, 0L);
+        headerBuffer.putLong(HEADER_DROPPED, 0L);
+        putIntRelease(HEADER_ACTIVE, 1);
     }
 
-    synchronized boolean isActive() {
+    boolean isActive() {
         if (closed) {
             return false;
         }
-        return buffer.getInt(HEADER_ACTIVE) != 0;
+        return getIntAcquire(HEADER_ACTIVE) != 0;
     }
 
-    synchronized void record(long addr, String comm, int tid, int cpu, long timestamp,
-                             long gPtr, String module, String func, int isRet) {
+    boolean record(long addr, String comm, int tid, int cpu, long timestamp,
+                   long gPtr, String module, String func, int isRet) {
         if (!isActive()) {
-            return;
+            return false;
         }
 
-        long seq = buffer.getLong(HEADER_WRITE_SEQ) + 1;
-        int slotIndex = (int) ((seq - 1) % slotCount);
-        int base = HEADER_SIZE + slotIndex * SLOT_SIZE;
+        long seq = claimSequence();
+        if (seq <= 0L) {
+            return false;
+        }
 
-        buffer.putLong(base + SLOT_ADDR, addr);
-        buffer.putInt(base + SLOT_TID, tid);
-        buffer.putInt(base + SLOT_CPU, cpu);
-        buffer.putLong(base + SLOT_TIMESTAMP, timestamp);
-        buffer.putLong(base + SLOT_GPTR, gPtr);
-        buffer.putInt(base + SLOT_IS_RET, isRet);
+        int slotIndex = (int) ((seq - 1L) % slotCount);
+        MappedByteBuffer slotBuffer = slotBuffer(slotIndex);
+        int base = slotOffset(slotIndex);
 
-        writeString(base + SLOT_COMM, SLOT_COMM_LEN, comm);
-        writeString(base + SLOT_MODULE, SLOT_MODULE_LEN, module);
-        writeString(base + SLOT_FUNC, SLOT_FUNC_LEN, func);
+        slotBuffer.putLong(base + SLOT_ADDR, addr);
+        slotBuffer.putInt(base + SLOT_TID, tid);
+        slotBuffer.putInt(base + SLOT_CPU, cpu);
+        slotBuffer.putLong(base + SLOT_TIMESTAMP, timestamp);
+        slotBuffer.putLong(base + SLOT_GPTR, gPtr);
+        slotBuffer.putInt(base + SLOT_IS_RET, isRet);
 
-        buffer.putLong(base + SLOT_SEQ, seq);
-        buffer.putLong(HEADER_WRITE_SEQ, seq);
+        writeString(slotBuffer, base + SLOT_COMM, SLOT_COMM_LEN, comm);
+        writeString(slotBuffer, base + SLOT_MODULE, SLOT_MODULE_LEN, module);
+        writeString(slotBuffer, base + SLOT_FUNC, SLOT_FUNC_LEN, func);
+        // Publish this slot after all slot fields are written.
+        putLongRelease(slotBuffer, base + SLOT_SEQ, seq);
+        drainPublished();
+        return true;
     }
 
-    private void writeString(int offset, int cap, String value) {
-        ByteBuffer dup = buffer.duplicate();
-        dup.position(offset);
-
-        byte[] bytes = value == null
-                ? new byte[0]
-                : value.getBytes(StandardCharsets.UTF_8);
-
-        int len = Math.min(bytes.length, cap - 1);
-        dup.put(bytes, 0, len);
-
-        for (int i = len; i < cap; i++) {
-            dup.put((byte) 0);
+    private long claimSequence() {
+        while (!closed) {
+            long published = publishedSequence.get();
+            long next = nextSequence.get();
+            if (next - published > slotCount) {
+                incrementDropped();
+                return -1L;
+            }
+            if (nextSequence.compareAndSet(next, next + 1L)) {
+                return next;
+            }
         }
+        return -1L;
+    }
+
+    private void drainPublished() {
+        while (!publishing.compareAndSet(false, true)) {
+            if (closed) {
+                return;
+            }
+            Thread.yield();
+        }
+        try {
+            long seq = publishedSequence.get();
+            while (!closed) {
+                long next = seq + 1L;
+                if (next >= nextSequence.get()) {
+                    return;
+                }
+                int slotIndex = (int) ((next - 1L) % slotCount);
+                MappedByteBuffer slotBuffer = slotBuffer(slotIndex);
+                int base = slotOffset(slotIndex);
+                if (getLongAcquire(slotBuffer, base + SLOT_SEQ) != next) {
+                    return;
+                }
+                putLongRelease(HEADER_WRITE_SEQ, next);
+                publishedSequence.set(next);
+                seq = next;
+            }
+        } finally {
+            publishing.set(false);
+        }
+    }
+
+    private MappedByteBuffer slotBuffer(int slotIndex) {
+        return slotBuffers[slotIndex / SLOTS_PER_SEGMENT];
+    }
+
+    private int slotOffset(int slotIndex) {
+        return (slotIndex % SLOTS_PER_SEGMENT) * SLOT_SIZE;
+    }
+
+    private void writeString(MappedByteBuffer target, int offset, int cap, String value) {
+        byte[] bytes = value == null ? new byte[0] : value.getBytes(StandardCharsets.UTF_8);
+        int len = Math.min(bytes.length, cap - 1);
+        for (int i = 0; i < len; i++) {
+            target.put(offset + i, bytes[i]);
+        }
+        for (int i = len; i < cap; i++) {
+            target.put(offset + i, (byte) 0);
+        }
+    }
+
+    private void incrementDropped() {
+        long dropped = droppedEvents.incrementAndGet();
+        putLongRelease(HEADER_DROPPED, dropped);
+    }
+
+    private static int clampSlotCount(int value) {
+        if (value <= 0) {
+            return DEFAULT_SLOT_COUNT;
+        }
+        return Math.min(value, MAX_SLOT_COUNT);
+    }
+
+    private int getIntAcquire(int offset) {
+        int value = headerBuffer.getInt(offset);
+        MemoryFence.acquireFence();
+        return value;
+    }
+
+    private long getLongAcquire(int offset) {
+        return getLongAcquire(headerBuffer, offset);
+    }
+
+    private long getLongAcquire(MappedByteBuffer target, int offset) {
+        long value = target.getLong(offset);
+        MemoryFence.acquireFence();
+        return value;
+    }
+
+    private void putIntRelease(int offset, int value) {
+        MemoryFence.releaseFence();
+        headerBuffer.putInt(offset, value);
+    }
+
+    private void putLongRelease(int offset, long value) {
+        putLongRelease(headerBuffer, offset, value);
+    }
+
+    private void putLongRelease(MappedByteBuffer target, int offset, long value) {
+        MemoryFence.releaseFence();
+        target.putLong(offset, value);
     }
 
     @Override
-    public synchronized void close() {
+    public void close() {
         if (closed) {
             return;
         }
         closed = true;
 
         try {
-            buffer.putInt(HEADER_ACTIVE, 0);
+            putIntRelease(HEADER_ACTIVE, 0);
         } catch (Throwable ignored) {
         }
 
         try {
-            buffer.force();
+            headerBuffer.force();
+            for (MappedByteBuffer slotBuffer : slotBuffers) {
+                slotBuffer.force();
+            }
         } catch (Throwable ignored) {
+        }
+    }
+
+    private static final class MemoryFence {
+        private static final MethodHandle ACQUIRE_FENCE = findAcquireFence();
+        private static final MethodHandle RELEASE_FENCE = findReleaseFence();
+
+        private MemoryFence() {
+        }
+
+        static void acquireFence() {
+            MethodHandle fence = ACQUIRE_FENCE;
+            if (fence == null) {
+                return;
+            }
+            try {
+                fence.invoke();
+            } catch (Throwable ignored) {
+            }
+        }
+
+        static void releaseFence() {
+            MethodHandle fence = RELEASE_FENCE;
+            if (fence == null) {
+                return;
+            }
+
+            try {
+                fence.invoke();
+            } catch (Throwable ignored) {
+            }
+        }
+
+        private static MethodHandle findAcquireFence() {
+            MethodHandle fence = findVarHandleFence("acquireFence");
+            if (fence != null) {
+                return fence;
+            }
+            return findUnsafeFence("loadFence");
+        }
+
+        private static MethodHandle findReleaseFence() {
+            MethodHandle fence = findVarHandleFence("releaseFence");
+            if (fence != null) {
+                return fence;
+            }
+            return findUnsafeFence("storeFence");
+        }
+
+        private static MethodHandle findVarHandleFence(String name) {
+            try {
+                Class<?> varHandleClass = Class.forName("java.lang.invoke.VarHandle");
+                return MethodHandles.publicLookup().findStatic(
+                    varHandleClass,
+                    name,
+                    MethodType.methodType(void.class)
+                );
+            } catch (Throwable ignored) {
+                return null;
+            }
+        }
+
+        private static MethodHandle findUnsafeFence(String name) {
+            try {
+                Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+                Field f = unsafeClass.getDeclaredField("theUnsafe");
+                f.setAccessible(true);
+                Object unsafe = f.get(null);
+                return MethodHandles.lookup()
+                    .findVirtual(unsafeClass, name, MethodType.methodType(void.class))
+                    .bindTo(unsafe);
+            } catch (Throwable ignored) {
+                return null;
+            }
         }
     }
 }

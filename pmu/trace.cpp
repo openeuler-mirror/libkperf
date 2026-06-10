@@ -21,11 +21,15 @@
 #include "trace_data_manager.h"
 #include "probe_alias_manager.h"
 #include "java_trace_manager.h"
+#include "java_trace_util.h"
 #include "common.h"
 
 #include <algorithm>
-#include <cstring>
-#include <regex>
+#include <cstdlib>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 using namespace KUNPENG_PMU;
 
@@ -36,22 +40,6 @@ extern void PmuTaskAttrFree(PmuTaskAttr *taskAttr);
 struct JvmTraceSession {
     int javaPd = -1;
     int nativePd = -1;
-};
-
-struct SplitTraceAttr {
-    std::vector<std::string> javaModules;
-    std::vector<std::string> javaSymbols;
-    std::vector<SymbolSource> javaSymSrc;
-
-    std::vector<std::string> nativeModules;
-    std::vector<std::string> nativeSymbols;
-    std::vector<SymbolSource> nativeSymSrc;
-};
-
-struct JavaFunc {
-    bool valid = false;
-    std::string className;
-    std::string methodName;
 };
 
 static std::unordered_map<int, JvmTraceSession> g_jvmTraceSessions;
@@ -71,67 +59,35 @@ static void EraseJvmTraceSession(int pd)
     g_jvmTraceSessions.erase(pd);
 }
 
-static char *DupCString(const char *s)
-{
-    if (s == nullptr) {
-        return nullptr;
-    }
-
-    size_t len = std::strlen(s);
-    char *p = static_cast<char *>(std::malloc(len + 1));
-    if (p == nullptr) {
-        return nullptr;
-    }
-
-    std::memcpy(p, s, len + 1);
-    return p;
-}
-
-static UTraceData DeepCopyTraceData(const UTraceData &src)
-{
-    UTraceData dst = src;
-    dst.comm = DupCString(src.comm);
-    dst.module = DupCString(src.module);
-    dst.func = DupCString(src.func);
-    return dst;
-}
-
-static UTraceData *MergeTraceData(UTraceData *nativeData, int nativeLen,
-                                  UTraceData *javaData, int javaLen)
+// merge Java and native trace streams by timestamp order
+static UTraceData *MergeTraceData(UTraceData *nativeData, int nativeLen, UTraceData *javaData, int javaLen)
 {
     int nLen = nativeLen > 0 ? nativeLen : 0;
     int jLen = javaLen > 0 ? javaLen : 0;
     int total = nLen + jLen;
-
     if (total <= 0) {
         return nullptr;
     }
-
-    if ((nLen > 0 && nativeData == nullptr) ||
-        (jLen > 0 && javaData == nullptr)) {
+    if ((nLen > 0 && nativeData == nullptr) || (jLen > 0 && javaData == nullptr)) {
         pcerr::New(LIBPERF_ERR_NULL_POINTER, "Trace data is null while trace length is positive");
         return nullptr;
     }
 
-    UTraceData *merged = static_cast<UTraceData *>(
-        std::calloc(total, sizeof(UTraceData)));
+    UTraceData *merged = static_cast<UTraceData *>(std::calloc(total, sizeof(UTraceData)));
     if (merged == nullptr) {
         pcerr::New(COMMON_ERR_NOMEM, "calloc merged UTraceData failed");
         return nullptr;
     }
 
     int idx = 0;
-
     for (int i = 0; i < nLen; ++i) {
         merged[idx++] = DeepCopyTraceData(nativeData[i]);
     }
-
     for (int i = 0; i < jLen; ++i) {
         merged[idx++] = DeepCopyTraceData(javaData[i]);
     }
 
-    std::stable_sort(merged, merged + total,
-        [](const UTraceData &a, const UTraceData &b) {
+    std::stable_sort(merged, merged + total, [](const UTraceData &a, const UTraceData &b) {
             if (a.timestamp != b.timestamp) {
                 return a.timestamp < b.timestamp;
             }
@@ -140,7 +96,6 @@ static UTraceData *MergeTraceData(UTraceData *nativeData, int nativeLen,
             }
             return a.isRet < b.isRet;
         });
-
     g_mergedTraceLens[merged] = total;
     return merged;
 }
@@ -154,13 +109,9 @@ static bool FreeMergedTraceData(UTraceData *traceData)
 
     int len = it->second;
     g_mergedTraceLens.erase(it);
-
     for (int i = 0; i < len; ++i) {
-        std::free(const_cast<char *>(traceData[i].comm));
-        std::free(const_cast<char *>(traceData[i].module));
-        std::free(const_cast<char *>(traceData[i].func));
+        FreeTraceDataFields(traceData[i]);
     }
-
     std::free(traceData);
     return true;
 }
@@ -208,10 +159,8 @@ static void CloseNativeBackendPd(int &pd)
     if (pd < 0) {
         return;
     }
-
     int oldPd = pd;
     pd = -1;
-
     UTraceResourceGuard guard(oldPd);
     guard.probesInstalled = true;
 }
@@ -221,10 +170,8 @@ static void CloseJavaBackendPd(int &pd)
     if (pd < 0) {
         return;
     }
-
     int oldPd = pd;
     pd = -1;
-
     JavaTraceManager::GetInstance().Close(oldPd);
     PmuList::GetInstance()->Close(oldPd);
 }
@@ -240,165 +187,10 @@ struct JvmTraceSessionGuard {
         if (commit) {
             return;
         }
-
         CloseJavaBackendPd(session.javaPd);
         CloseNativeBackendPd(session.nativePd);
     }
 };
-
-static std::string StripJavaClassName(const std::string &s)
-{
-    if (s.size() >= 2 && s.front() == 'L' && s.back() == ';') {
-        return s.substr(1, s.size() - 2);
-    }
-    return s;
-}
-
-static JavaFunc ParseJavaFunction(const SymbolSource &src)
-{
-    JavaFunc out;
-
-    const char *moduleName = src.moduleName;
-    const char *symbolName = src.symbolName;
-
-    /*
-     * Format 1:
-     *   symbolName = Lorg/example/Foo;::bar
-     *   symbolName = Lorg/example/Foo;::bar(Ljava/lang/String;)V
-     */
-    if (symbolName != nullptr && symbolName[0] != '\0') {
-        static const std::regex javaFuncRe(R"(L([^;]+);::([^()\s]+))");
-        std::cmatch match;
-
-        if (std::regex_search(symbolName, match, javaFuncRe) && match.size() >= 3) {
-            out.valid = true;
-            out.className = match[1].str();
-            out.methodName = match[2].str();
-            return out;
-        }
-    }
-
-    /*
-     * Format 2:
-     *   moduleName = Lorg/example/Foo;
-     *   symbolName = bar
-     */
-    if (moduleName != nullptr && moduleName[0] == 'L' &&
-        symbolName != nullptr && symbolName[0] != '\0') {
-        std::string cls = StripJavaClassName(moduleName);
-        if (!cls.empty()) {
-            out.valid = true;
-            out.className = cls;
-            out.methodName = symbolName;
-            return out;
-        }
-    }
-
-    return out;
-}
-
-static void AddSplitSymbol(std::vector<std::string> &modules,
-                           std::vector<std::string> &symbols,
-                           std::vector<SymbolSource> &out,
-                           const std::string &module,
-                           const std::string &symbol)
-{
-    modules.emplace_back(module);
-    symbols.emplace_back(symbol);
-
-    SymbolSource src = {0};
-    src.moduleName = const_cast<char *>(modules.back().c_str());
-    src.symbolName = const_cast<char *>(symbols.back().c_str());
-    out.emplace_back(src);
-}
-
-static SplitTraceAttr SplitSymbolsByRegex(const UTraceAttr *attr)
-{
-    SplitTraceAttr out;
-
-    if (attr == nullptr || attr->symSrc == nullptr || attr->numSym == 0) {
-        return out;
-    }
-
-    out.javaModules.reserve(attr->numSym);
-    out.javaSymbols.reserve(attr->numSym);
-    out.javaSymSrc.reserve(attr->numSym);
-
-    out.nativeModules.reserve(attr->numSym);
-    out.nativeSymbols.reserve(attr->numSym);
-    out.nativeSymSrc.reserve(attr->numSym);
-
-    for (unsigned i = 0; i < attr->numSym; ++i) {
-        SymbolSource &src = attr->symSrc[i];
-
-        JavaFunc javaFunc = ParseJavaFunction(src);
-        if (javaFunc.valid) {
-            if (javaFunc.className.empty() || javaFunc.methodName.empty()) {
-                continue;
-            }
-            AddSplitSymbol(out.javaModules, out.javaSymbols, out.javaSymSrc,
-                           javaFunc.className, javaFunc.methodName);
-            continue;
-        }
-
-        std::string module = src.moduleName == nullptr ? "" : src.moduleName;
-        std::string symbol = src.symbolName == nullptr ? "" : src.symbolName;
-
-        if (module.empty() || symbol.empty()) {
-            continue;
-        }
-
-        AddSplitSymbol(out.nativeModules, out.nativeSymbols, out.nativeSymSrc,
-                       module, symbol);
-    }
-
-    return out;
-}
-
-static UTraceAttr MakeSubAttr(const UTraceAttr *src, std::vector<SymbolSource> &symSrc)
-{
-    UTraceAttr out = *src;
-    out.symSrc = symSrc.empty() ? nullptr : symSrc.data();
-    out.numSym = static_cast<unsigned>(symSrc.size());
-    return out;
-}
-
-static std::string BuildJavaSymSrc(const UTraceAttr *attr)
-{
-    if (attr == nullptr || attr->symSrc == nullptr || attr->numSym == 0) {
-        return "";
-    }
-
-    std::unordered_set<std::string> includes;
-
-    for (unsigned i = 0; i < attr->numSym; ++i) {
-        const char *module = attr->symSrc[i].moduleName;
-        const char *symbol = attr->symSrc[i].symbolName;
-
-        if (module == nullptr || module[0] == '\0') {
-            continue;
-        }
-
-        std::string mod = StripJavaClassName(module);
-        std::string sym = symbol == nullptr ? "" : symbol;
-
-        if (!sym.empty() && sym != "*") {
-            includes.emplace(mod + "/" + sym);
-        } else {
-            includes.emplace(mod);
-        }
-    }
-
-    std::string result;
-    for (const auto &include : includes) {
-        if (!result.empty()) {
-            result += ",";
-        }
-        result += include;
-    }
-
-    return result;
-}
 
 static auto GetProbePoints(const UTraceAttr *attr)
     -> std::unordered_map<std::string, std::vector<ProbePoints>>
@@ -514,51 +306,26 @@ static int OpenJavaBackend(UTraceAttr *attr)
         pcerr::New(LIBPERF_ERR_NULL_POINTER, "Java UTraceAttr pidList is empty");
         return -1;
     }
-
     int pd = PmuList::GetInstance()->NewPd();
     if (pd == -1) {
         pcerr::New(LIBPERF_ERR_NO_AVAIL_PD);
         return -1;
     }
 
-    /*
-     * If java symbol list is empty, includeRules will be nullptr.
-     * In that case Java agent uses its default config/filter file.
-     */
+    // if java symbol list is empty, includeRules will be nullptr
     std::string includeRules = BuildJavaSymSrc(attr);
-
-    int err = JavaTraceManager::GetInstance().Open(
-        pd,
-        attr->pidList[0],
-        includeRules.empty() ? nullptr : includeRules.c_str());
-
+    int err = JavaTraceManager::GetInstance().Open(pd, attr->pidList[0], includeRules.empty() ? nullptr : includeRules.c_str());
     if (err != 0) {
         PmuList::GetInstance()->Close(pd);
         return -1;
     }
-
     return pd;
 }
 
 static int UTraceOpenJvm(UTraceAttr *attr)
 {
     SplitTraceAttr split = SplitSymbolsByRegex(attr);
-
     bool hasNative = !split.nativeSymSrc.empty();
-
-    /*
-     * For JVM process, Java backend is always opened.
-     * If user does not provide Java symbols, Java backend will use default Java filter config.
-     * Native backend is opened only when native symbols exist.
-     */
-    bool needJava = true;
-
-    if (!needJava && !hasNative) {
-        pcerr::New(LIBPERF_ERR_UTRACE_JAVA_PROCESS_FAILED,
-                   "No valid UTrace symbols");
-        return -1;
-    }
-
     int pd = PmuList::GetInstance()->NewPd();
     if (pd == -1) {
         pcerr::New(LIBPERF_ERR_NO_AVAIL_PD);
@@ -566,45 +333,28 @@ static int UTraceOpenJvm(UTraceAttr *attr)
     }
 
     UTraceResourceGuard parentGuard(pd);
-
     JvmTraceSession session;
     JvmTraceSessionGuard sessionGuard(session);
-
+    // Java backend is mandatory. Native backend is opened only when native symbols exist
     if (hasNative) {
         UTraceAttr nativeAttr = MakeSubAttr(attr, split.nativeSymSrc);
         session.nativePd = OpenNativeBackend(&nativeAttr);
-
         if (session.nativePd < 0) {
             session.nativePd = -1;
-            pcerr::SetWarn(LIBPERF_WARN_UTRACE_ELF_SCAN_FAILED,
-                           "OpenNativeBackend failed in JVM trace; continue with Java trace only");
+            pcerr::SetWarn(LIBPERF_WARN_UTRACE_ELF_SCAN_FAILED, "OpenNativeBackend failed in JVM trace; continue with Java trace only");
         }
     }
-
-    if (needJava) {
-        UTraceAttr javaAttr = MakeSubAttr(attr, split.javaSymSrc);
-        session.javaPd = OpenJavaBackend(&javaAttr);
-
-        if (session.javaPd < 0) {
-            pcerr::New(LIBPERF_ERR_UTRACE_JAVA_PROCESS_FAILED,
-                       "OpenJavaBackend failed in JVM trace");
-            return -1;
-        }
-    }
-
-    if (session.javaPd < 0 && session.nativePd < 0) {
-        pcerr::New(LIBPERF_ERR_UTRACE_JAVA_PROCESS_FAILED,
-                   "No JVM trace backend opened");
+    UTraceAttr javaAttr = MakeSubAttr(attr, split.javaSymSrc);
+    session.javaPd = OpenJavaBackend(&javaAttr);
+    if (session.javaPd < 0) {
+        pcerr::New(LIBPERF_ERR_UTRACE_JAVA_PROCESS_FAILED, "OpenJavaBackend failed in JVM trace");
         return -1;
     }
 
     PmuList::GetInstance()->FillPidList(pd, attr->numPid, attr->pidList);
-
     g_jvmTraceSessions[pd] = session;
-
     sessionGuard.commit = true;
     parentGuard.commit = true;
-
     return pd;
 }
 
@@ -615,17 +365,14 @@ int UTraceOpen(struct UTraceAttr *attr)
         pcerr::New(LIBPERF_ERR_NULL_POINTER, "UTraceAttr cannot be null");
         return -1;
     }
-
     if (attr->pidList == nullptr || attr->numPid == 0) {
         pcerr::New(LIBPERF_ERR_NULL_POINTER, "UTraceAttr pidList cannot be null");
         return -1;
     }
-
     if (attr->numSym == 0 || attr->symSrc == nullptr) {
         pcerr::New(LIBPERF_ERR_NULL_POINTER, "UTraceAttr symSrc cannot be null");
         return -1;
     }
-
     bool isJvm = IsJvmProcess(attr->pidList[0]);
     if (isJvm) {
         return UTraceOpenJvm(attr);
@@ -641,11 +388,10 @@ int UTraceEnable(int pd)
     if (session != nullptr) {
         int nativeRet = 0;
         int javaRet = 0;
-
+        // enable native first, then Java. If Java attach fails, native sampling is rolled back
         if (session->nativePd >= 0) {
             nativeRet = PmuEnable(session->nativePd);
         }
-
         if (nativeRet != 0) {
             return nativeRet;
         }
@@ -653,14 +399,12 @@ int UTraceEnable(int pd)
         if (session->javaPd >= 0) {
             javaRet = JavaTraceManager::GetInstance().Enable(session->javaPd);
         }
-
         if (javaRet != 0) {
             if (session->nativePd >= 0) {
                 PmuDisable(session->nativePd);
             }
             return javaRet;
         }
-
         return 0;
     }
 
@@ -675,19 +419,16 @@ int UTraceDisable(int pd)
     if (session != nullptr) {
         int javaRet = 0;
         int nativeRet = 0;
-
+        // disable native first
         if (session->javaPd >= 0) {
             javaRet = JavaTraceManager::GetInstance().Disable(session->javaPd);
         }
-
         if (session->nativePd >= 0) {
             nativeRet = PmuDisable(session->nativePd);
         }
-
         if (nativeRet != 0) {
             return nativeRet;
         }
-
         return javaRet;
     }
 
@@ -697,9 +438,8 @@ int UTraceDisable(int pd)
 int UTraceRead(int pd, struct UTraceData **traceData)
 {
     pcerr::New(SUCCESS);
-
     if (traceData == nullptr) {
-        pcerr::New(LIBPERF_ERR_NULL_POINTER, "UTraceData output cannot be null");
+        pcerr::New(LIBPERF_ERR_NULL_POINTER, "UTraceData cannot be null");
         return -1;
     }
 
@@ -709,24 +449,18 @@ int UTraceRead(int pd, struct UTraceData **traceData)
     if (session != nullptr) {
         UTraceData *javaData = nullptr;
         UTraceData *nativeData = nullptr;
-
         int javaLen = 0;
         int nativeLen = 0;
-
         if (session->javaPd >= 0) {
-            int err = JavaTraceManager::GetInstance().Read(
-                session->javaPd, &javaData, &javaLen);
+            int err = JavaTraceManager::GetInstance().Read(session->javaPd, &javaData, &javaLen);
             if (err != 0) {
                 return -1;
             }
-
             if (javaLen < 0) {
                 return javaLen;
             }
-
             if (javaLen > 0 && javaData == nullptr) {
-                pcerr::New(LIBPERF_ERR_NULL_POINTER,
-                           "Java trace data is null while trace length is positive");
+                pcerr::New(LIBPERF_ERR_NULL_POINTER, "Java trace data is null while trace length is positive");
                 return -1;
             }
         }
@@ -734,85 +468,63 @@ int UTraceRead(int pd, struct UTraceData **traceData)
         if (session->nativePd >= 0) {
             PmuData *pmuData = nullptr;
             nativeLen = PmuRead(session->nativePd, &pmuData);
-
             if (nativeLen < 0) {
                 if (javaData != nullptr) {
                     JavaTraceManager::GetInstance().FreeData(javaData);
                 }
                 return nativeLen;
             }
-
             if (nativeLen > 0) {
                 if (pmuData == nullptr) {
                     if (javaData != nullptr) {
                         JavaTraceManager::GetInstance().FreeData(javaData);
                     }
-                    pcerr::New(LIBPERF_ERR_NULL_POINTER,
-                               "Native PMU data is null while trace length is positive");
+                    pcerr::New(LIBPERF_ERR_NULL_POINTER, "Native PMU data is null while trace length is positive");
                     return -1;
                 }
-
-                nativeData = TraceDataManager::GetInstance().ConvertToTraceData(
-                    session->nativePd, pmuData, nativeLen);
-
+                nativeData = TraceDataManager::GetInstance().ConvertToTraceData(session->nativePd, pmuData, nativeLen);
                 if (nativeData == nullptr) {
                     if (javaData != nullptr) {
                         JavaTraceManager::GetInstance().FreeData(javaData);
                     }
-                    pcerr::New(LIBPERF_ERR_NULL_POINTER,
-                               "Convert native PMU data to UTraceData failed");
+                    pcerr::New(LIBPERF_ERR_NULL_POINTER, "Convert native PMU data to UTraceData failed");
                     return -1;
                 }
             }
         }
-
-        int totalLen = (nativeLen > 0 ? nativeLen : 0) +
-                       (javaLen > 0 ? javaLen : 0);
-
-        UTraceData *merged = MergeTraceData(nativeData, nativeLen,
-                                            javaData, javaLen);
-
+        // merge native trace data and java trace data
+        int totalLen = (nativeLen > 0 ? nativeLen : 0) + (javaLen > 0 ? javaLen : 0);
+        UTraceData *merged = MergeTraceData(nativeData, nativeLen, javaData, javaLen);
         if (nativeData != nullptr) {
             TraceDataManager::GetInstance().FreeTraceData(nativeData);
         }
-
         if (javaData != nullptr) {
             JavaTraceManager::GetInstance().FreeData(javaData);
         }
-
         if (merged == nullptr && totalLen > 0) {
             return -1;
         }
-
         *traceData = merged;
         return totalLen;
     }
 
     PmuData *pmuData = nullptr;
     int len = PmuRead(pd, &pmuData);
-
     if (len < 0) {
         return len;
     }
-
     if (len == 0) {
         return 0;
     }
-
     if (pmuData == nullptr) {
-        pcerr::New(LIBPERF_ERR_NULL_POINTER,
-                   "PMU data is null while trace length is positive");
+        pcerr::New(LIBPERF_ERR_NULL_POINTER, "PMU data is null while trace length is positive");
         return -1;
     }
-
-    UTraceData *data = TraceDataManager::GetInstance().ConvertToTraceData(
-        pd, pmuData, len);
+    UTraceData *data = TraceDataManager::GetInstance().ConvertToTraceData(pd, pmuData, len);
     if (data == nullptr) {
-        pcerr::New(LIBPERF_ERR_NULL_POINTER,
-                   "Convert PMU data to UTraceData failed");
+        pcerr::New(LIBPERF_ERR_NULL_POINTER, "Convert PMU data to UTraceData failed");
         return -1;
     }
-
     *traceData = data;
     return len;
 }
@@ -839,11 +551,11 @@ void UTraceClose(int pd)
         CloseJavaBackendPd(session->javaPd);
         CloseNativeBackendPd(session->nativePd);
         EraseJvmTraceSession(pd);
-
         UTraceResourceGuard parentGuard(pd);
         parentGuard.probesInstalled = false;
         return;
     }
+
     UTraceResourceGuard guard(pd);
     guard.probesInstalled = true;
 }

@@ -22,6 +22,7 @@ public final class TraceRuntime {
 
     private static volatile SharedEventSink sink;
 
+    // prevent self-recursion at runtime
     private static final ThreadLocal<Integer> RUNTIME_DEPTH = new ThreadLocal<Integer>() {
         @Override
         protected Integer initialValue() {
@@ -29,6 +30,7 @@ public final class TraceRuntime {
         }
     };
 
+    // method call depth
     private static final ThreadLocal<Integer> CALL_DEPTH = new ThreadLocal<Integer>() {
         @Override
         protected Integer initialValue() {
@@ -93,7 +95,7 @@ public final class TraceRuntime {
                 return Context.SKIPPED;
             }
             SharedEventSink s = sink;
-            if (s == null || !s.isActive()) {
+            if (s == null) {
                 return Context.SKIPPED;
             }
 
@@ -103,15 +105,16 @@ public final class TraceRuntime {
                 String module = classNameInternal.replace('/', '.');
                 String func = methodName + descriptor;
                 long addr = fnv1a64(module + "!" + func) & 0x0000FFFFFFFFFFFFL;
-                long ts = System.nanoTime();
+                long ts = NativeThreadInfo.currentTimeNanosSafe();
                 String comm = currentThreadName();
                 int tid = NativeThreadInfo.currentTidSafe();
                 int cpu = NativeThreadInfo.currentCpuSafe();
                 long gPtr = 0L;
-                Context context = new Context(s, addr, gPtr, module, func, comm, tid, cpu, depth, false);
-                s.record(addr, comm, tid, cpu, ts, gPtr, module, func, 0);
+                if (!s.record(addr, comm, tid, cpu, ts, gPtr, module, func, 0)) {
+                    return Context.SKIPPED;
+                }
                 CALL_DEPTH.set(depth + 1);
-                return context;
+                return new Context(s, addr, gPtr, module, func, comm, tid, cpu, depth, false);
             } finally {
                 RUNTIME_DEPTH.set(runtimeDepth);
             }
@@ -134,13 +137,14 @@ public final class TraceRuntime {
                 return;
             }
             SharedEventSink s = context.sink;
-            if (s == null || !s.isActive()) {
+            if (s == null) {
                 return;
             }
             RUNTIME_DEPTH.set(runtimeDepth + 1);
             try {
-                long ts = System.nanoTime();
-                s.record(context.addr, context.comm, context.tid, context.cpu, ts,
+                long ts = NativeThreadInfo.currentTimeNanosSafe();
+                int cpu = NativeThreadInfo.currentCpuSafe();
+                s.record(context.addr, context.comm, context.tid, cpu, ts,
                          context.gPtr, context.module, context.func, 1);
             } finally {
                 RUNTIME_DEPTH.set(runtimeDepth);
