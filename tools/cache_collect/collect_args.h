@@ -28,6 +28,12 @@ enum class BoltOption {
     ALL
 };
 
+enum class HotspotSortOption {
+    CYCLES,
+    L1,
+    L2
+};
+
 class CollectArgs {
 public:
     int duration = 10;
@@ -37,6 +43,7 @@ public:
     bool enableData = false;
     bool enableInst = false;
     BoltOption boltOption = BoltOption::NONE;
+    HotspotSortOption hotspotSortOption = HotspotSortOption::CYCLES;
     std::vector<pid_t> pids;
 
     bool ParseOption(int argc, char* argv[]);
@@ -47,5 +54,6 @@ private:
     bool ParsePidList();
     bool ParsePositiveIntArg(const char* arg, const std::string& paramName, int& outValue, int minValue = 1);
     BoltOption ParseBoltOption(const std::string& value);
+    HotspotSortOption ParseHotspotSortOption(const std::string& value);
 };
 #endif

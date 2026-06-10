@@ -289,11 +289,7 @@ go test -v -test.run TestCount #指定运行的用例
 bash build.sh install_path=/path/to/install java_agent=true
 ```
 
-编译完成后，会在安装目录的 `lib` 子目录生成 `libkperfmap.so`。使用 Java 符号解析功能前，需要设置：
-
-```shell
-export KPERF_JAVA_AGENT_LIB="/path/to/install/lib:libkperfmap.so"
-```
+编译完成后，会在安装目录的 `lib` 子目录生成 `libkperfmap.so`。该目录设置LD_LIBRARY_PATH即可。
 
 **编译 Java Trace**：
 
