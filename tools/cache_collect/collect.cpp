@@ -365,7 +365,7 @@ static void PrintHotSpot(std::vector<HotspotFunc>& hotSpotData)
                           << std::setw(12) << pid
                           << std::setw(18) << std::hex << beginAddr
                           << std::setw(18) << std::hex << hs.codeMapEndAddr
-                          << std::setw(18) << std::hex << funcLength << std::dec;
+                          << std::setw(18) << std::dec << funcLength;
             }
 
             std::cout << std::setw(20) << hs.l1RefillPeriod
