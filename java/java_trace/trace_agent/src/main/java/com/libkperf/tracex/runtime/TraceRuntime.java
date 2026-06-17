@@ -22,7 +22,16 @@ public final class TraceRuntime {
 
     private static volatile SharedEventSink sink;
 
-    private static final ThreadLocal<Integer> REENTRANT_DEPTH = new ThreadLocal<Integer>() {
+    // prevent self-recursion at runtime
+    private static final ThreadLocal<Integer> RUNTIME_DEPTH = new ThreadLocal<Integer>() {
+        @Override
+        protected Integer initialValue() {
+            return 0;
+        }
+    };
+
+    // method call depth
+    private static final ThreadLocal<Integer> CALL_DEPTH = new ThreadLocal<Integer>() {
         @Override
         protected Integer initialValue() {
             return 0;
@@ -33,12 +42,6 @@ public final class TraceRuntime {
     }
 
     public static synchronized void reconfigure(String shmPath, int slotCount) throws Exception {
-        reconfigure(shmPath, slotCount, 0L);
-    }
-
-    public static synchronized void reconfigure(String shmPath,
-                                                int slotCount,
-                                                long durationMs) throws Exception {
         ENABLED.set(false);
 
         SharedEventSink old = sink;
@@ -55,11 +58,8 @@ public final class TraceRuntime {
         SharedEventSink next = new SharedEventSink(shmPath, slotCount);
         sink = next;
 
-        System.err.println("[trace-runtime] reconfigured"
-                + ", shmPath=" + shmPath
-                + ", slotCount=" + slotCount
-                + ", durationMs=" + durationMs
-                + ", active=" + next.isActive());
+        System.err.println("[trace-runtime] reconfigured" + ", shmPath=" + shmPath + 
+                            ", slotCount=" + slotCount + ", active=" + next.isActive());
 
         ENABLED.set(true);
     }
@@ -90,32 +90,34 @@ public final class TraceRuntime {
             if (!ENABLED.get()) {
                 return Context.SKIPPED;
             }
-
-            int depth = REENTRANT_DEPTH.get();
-            if (depth > 0) {
+            int runtimeDepth = RUNTIME_DEPTH.get();
+            if (runtimeDepth > 0) {
                 return Context.SKIPPED;
             }
-
             SharedEventSink s = sink;
-            if (s == null || !s.isActive()) {
+            if (s == null) {
                 return Context.SKIPPED;
             }
 
-            REENTRANT_DEPTH.set(depth + 1);
-
-            String module = classNameInternal.replace('/', '.');
-            String func = methodName + descriptor;
-            long addr = fnv1a64(module + "!" + func) & 0x0000FFFFFFFFFFFFL;
-            long ts = System.nanoTime();
-            String comm = currentThreadName();
-            int tid = NativeThreadInfo.currentTidSafe();
-            int cpu = NativeThreadInfo.currentCpuSafe();
-            long gPtr = 0L;
-
-            Context context = new Context(s, addr, gPtr, module, func, comm, tid, cpu, false);
-            s.record(addr, comm, tid, cpu, ts, gPtr, module, func, 0);
-
-            return context;
+            RUNTIME_DEPTH.set(runtimeDepth + 1);
+            try {
+                int depth = CALL_DEPTH.get();
+                String module = classNameInternal.replace('/', '.');
+                String func = methodName + descriptor;
+                long addr = fnv1a64(module + "!" + func) & 0x0000FFFFFFFFFFFFL;
+                long ts = NativeThreadInfo.currentTimeNanosSafe();
+                String comm = currentThreadName();
+                int tid = NativeThreadInfo.currentTidSafe();
+                int cpu = NativeThreadInfo.currentCpuSafe();
+                long gPtr = 0L;
+                if (!s.record(addr, comm, tid, cpu, ts, gPtr, module, func, 0)) {
+                    return Context.SKIPPED;
+                }
+                CALL_DEPTH.set(depth + 1);
+                return new Context(s, addr, gPtr, module, func, comm, tid, cpu, depth, false);
+            } finally {
+                RUNTIME_DEPTH.set(runtimeDepth);
+            }
         } catch (Throwable ignored) {
             return Context.SKIPPED;
         }
@@ -123,35 +125,31 @@ public final class TraceRuntime {
 
     public static void exit(Context context) {
         try {
-            REENTRANT_DEPTH.set(Math.max(0, REENTRANT_DEPTH.get() - 1));
-
             if (context == null || context.skipped) {
                 return;
             }
-
+            CALL_DEPTH.set(Math.max(0, CALL_DEPTH.get() - 1));
             if (!ENABLED.get()) {
                 return;
             }
-
-            SharedEventSink s = context.sink;
-            if (s == null || !s.isActive()) {
+            int runtimeDepth = RUNTIME_DEPTH.get();
+            if (runtimeDepth > 0) {
                 return;
             }
-
-            long ts = System.nanoTime();
-            s.record(
-                    context.addr,
-                    context.comm,
-                    context.tid,
-                    context.cpu,
-                    ts,
-                    context.gPtr,
-                    context.module,
-                    context.func,
-                    1
-            );
+            SharedEventSink s = context.sink;
+            if (s == null) {
+                return;
+            }
+            RUNTIME_DEPTH.set(runtimeDepth + 1);
+            try {
+                long ts = NativeThreadInfo.currentTimeNanosSafe();
+                int cpu = NativeThreadInfo.currentCpuSafe();
+                s.record(context.addr, context.comm, context.tid, cpu, ts,
+                         context.gPtr, context.module, context.func, 1);
+            } finally {
+                RUNTIME_DEPTH.set(runtimeDepth);
+            }
         } catch (Throwable ignored) {
-            
         }
     }
 
@@ -172,8 +170,7 @@ public final class TraceRuntime {
     }
 
     public static final class Context {
-        static final Context SKIPPED =
-                new Context(null, 0L, 0L, "", "", "", 0, -1, true);
+        static final Context SKIPPED = new Context(null, 0L, 0L, "", "", "", 0, -1, 0, true);
 
         final SharedEventSink sink;
         final long addr;
@@ -183,17 +180,11 @@ public final class TraceRuntime {
         final String comm;
         final int tid;
         final int cpu;
+        final int depth;
         final boolean skipped;
 
-        Context(SharedEventSink sink,
-                long addr,
-                long gPtr,
-                String module,
-                String func,
-                String comm,
-                int tid,
-                int cpu,
-                boolean skipped) {
+        Context(SharedEventSink sink, long addr, long gPtr, String module, String func,
+                String comm, int tid, int cpu, int depth, boolean skipped) {
             this.sink = sink;
             this.addr = addr;
             this.gPtr = gPtr;
@@ -202,6 +193,7 @@ public final class TraceRuntime {
             this.comm = comm;
             this.tid = tid;
             this.cpu = cpu;
+            this.depth = depth;
             this.skipped = skipped;
         }
     }

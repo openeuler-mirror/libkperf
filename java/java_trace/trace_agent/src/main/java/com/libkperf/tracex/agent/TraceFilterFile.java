@@ -25,8 +25,10 @@ import java.util.List;
 public final class TraceFilterFile {
     public final List<FilterRule> includes = new ArrayList<FilterRule>();
     public final List<FilterRule> excludes = new ArrayList<FilterRule>();
+    public long slotCount = -1;
     public int contextDepth = -1;
     public int contextMaxMethods = -1;
+    public boolean includeAll = false;
 
     public static TraceFilterFile load(String path) {
         TraceFilterFile out = new TraceFilterFile();
@@ -42,7 +44,7 @@ public final class TraceFilterFile {
         try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8))) {
             String line;
             while ((line = br.readLine()) != null) {
-                String s = stripComment(line).trim();
+                String s = Util.stripComment(line).trim();
                 if (s.length() == 0) {
                     continue;
                 }
@@ -54,64 +56,34 @@ public final class TraceFilterFile {
                 if (eq > 0) {
                     String k = s.substring(0, eq).trim().toLowerCase();
                     String v = s.substring(eq + 1).trim();
-                    if ("context_depth".equals(k) || "contextdepth".equals(k)) {
-                        out.contextDepth = parseInt(v, out.contextDepth);
+                    if ("slot_count".equals(k) || "slotcount".equals(k)) {
+                        out.slotCount = Util.parseLong(v, out.slotCount);
+                    } else if ("context_depth".equals(k) || "contextdepth".equals(k)) {
+                        out.contextDepth = Util.parseInt(v, out.contextDepth);
                     } else if ("context_max_methods".equals(k) || "contextmaxmethods".equals(k)) {
-                        out.contextMaxMethods = parseInt(v, out.contextMaxMethods);
+                        out.contextMaxMethods = Util.parseInt(v, out.contextMaxMethods);
+                    } else if ("include_all".equals(k) || "includeall".equals(k)) {
+                        out.includeAll = "true".equals(v.trim());
                     } else if ("include".equals(k) || "whitelist".equals(k) || "white".equals(k)) {
-                        addRules(out.includes, v);
+                        Util.addRules(out.includes, v);
                     } else if ("exclude".equals(k) || "blacklist".equals(k) || "black".equals(k)) {
-                        addRules(out.excludes, v);
+                        Util.addRules(out.excludes, v);
                     }
                     continue;
                 }
                 if (s.startsWith("+")) {
-                    addRules(out.includes, s.substring(1));
+                    Util.addRules(out.includes, s.substring(1));
                 } else if (s.startsWith("-")) {
-                    addRules(out.excludes, s.substring(1));
+                    Util.addRules(out.excludes, s.substring(1));
                 } else if ("exclude".equals(section) || "blacklist".equals(section) || "black".equals(section)) {
-                    addRules(out.excludes, s);
+                    Util.addRules(out.excludes, s);
                 } else {
-                    addRules(out.includes, s);
+                    Util.addRules(out.includes, s);
                 }
             }
         } catch (Exception e) {
             System.err.println("[trace_agent] read filter config failed: " + path + ", " + e);
         }
         return out;
-    }
-
-    private static String stripComment(String line) {
-        int hash = line.indexOf('#');
-        int slashes = line.indexOf("//");
-        int end = line.length();
-        if (hash >= 0) {
-            end = Math.min(end, hash);
-        }
-        if (slashes >= 0) {
-            end = Math.min(end, slashes);
-        }
-        return line.substring(0, end);
-    }
-
-    private static void addRules(List<FilterRule> target, String csv) {
-        if (csv == null || csv.length() == 0) {
-            return;
-        }
-        String[] parts = csv.split(",");
-        for (String p : parts) {
-            FilterRule r = FilterRule.parse(p);
-            if (r != null) {
-                target.add(r);
-            }
-        }
-    }
-
-    private static int parseInt(String v, int fallback) {
-        try {
-            return Integer.parseInt(v.trim());
-        } catch (Exception ignored) {
-            return fallback;
-        }
     }
 }

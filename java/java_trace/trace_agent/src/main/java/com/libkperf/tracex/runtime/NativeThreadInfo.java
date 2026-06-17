@@ -30,7 +30,7 @@ public final class NativeThreadInfo {
         loadTried = true;
 
         if (absolutePath == null || absolutePath.isEmpty()) {
-            System.err.println("[java-trace-agent] native lib path is empty, fallback to Java thread id");
+            System.err.println("[java-trace-agent] native lib path is empty, fallback to Java thread id/time");
             return;
         }
 
@@ -68,7 +68,21 @@ public final class NativeThreadInfo {
         }
     }
 
+    public static long currentTimeNanosSafe() {
+        if (!loaded) {
+            return System.nanoTime();
+        }
+
+        try {
+            return currentTimeNanos0();
+        } catch (Throwable t) {
+            return System.nanoTime();
+        }
+    }
+
     private static native int currentTid0();
 
     private static native int currentCpu0();
+
+    private static native long currentTimeNanos0();
 }

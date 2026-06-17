@@ -32,10 +32,7 @@ public final class TraceCliMain {
         return v;
     }
 
-    private static String escape(String value) {
-        return value.replace("\\", "\\\\").replace(";", "\\;").replace("=", "\\=");
-    }
-
+    // agent args format: key=value;key=value
     private static void appendArg(StringBuilder sb, String key, String value) {
         if (value == null || value.length() == 0) {
             return;
@@ -43,7 +40,7 @@ public final class TraceCliMain {
         if (sb.length() > 0) {
             sb.append(';');
         }
-        sb.append(key).append('=').append(escape(value));
+        sb.append(key).append('=').append(value.replace("\\", "\\\\").replace(";", "\\;").replace("=", "\\="));
     }
 
     private static Map<String, String> parseArgs(String[] args) {
@@ -69,13 +66,10 @@ public final class TraceCliMain {
         StringBuilder agentArgs = new StringBuilder();
         appendArg(agentArgs, "action", action);
         if ("start".equals(action)) {
-            appendArg(agentArgs, "slotCount", opts.get("--slot-count"));
             appendArg(agentArgs, "shmPath", opts.get("--shm-path"));
             appendArg(agentArgs, "nativeLibPath", opts.get("--native-lib"));
             appendArg(agentArgs, "includeFile", opts.get("--include-file"));
             appendArg(agentArgs, "configFile", opts.get("--config-file"));
-            appendArg(agentArgs, "contextDepth", opts.get("--context-depth"));
-            appendArg(agentArgs, "contextMaxMethods", opts.get("--context-max-methods"));
         }
         System.out.println("Agent arguments: " + agentArgs.toString());
 
@@ -91,6 +85,7 @@ public final class TraceCliMain {
         }
     }
 
+    // load through reflection, which ensures compatibility of JDK 8 and JDK 9+
     private static final class VirtualMachineAccess {
         private final Class<?> vmClass;
         private final Method attach;
@@ -108,6 +103,7 @@ public final class TraceCliMain {
             try {
                 return new VirtualMachineAccess(Class.forName("com.sun.tools.attach.VirtualMachine"));
             } catch (ClassNotFoundException ignored) {
+                // continue try JDK 8
             }
 
             // JDK8 common case when running with plain java -jar: attach classes live in tools.jar.
@@ -116,8 +112,7 @@ public final class TraceCliMain {
                 ClassLoader loader = new URLClassLoader(new URL[] { toolsJar.toURI().toURL() }, TraceCliMain.class.getClassLoader());
                 return new VirtualMachineAccess(Class.forName("com.sun.tools.attach.VirtualMachine", true, loader));
             }
-            throw new ClassNotFoundException("JVM attach API not found. For JDK8 run with a JDK, not a JRE, "
-                + "or put $JAVA_HOME/lib/tools.jar on the classpath.");
+            throw new ClassNotFoundException("JVM attach API not found");
         }
 
         private Object attach(String pid) throws Exception {
@@ -136,8 +131,7 @@ public final class TraceCliMain {
             String javaHome = System.getProperty("java.home");
             File[] candidates = new File[] {
                 new File(javaHome, "lib/tools.jar"),
-                new File(javaHome, "../lib/tools.jar"),
-                new File(System.getenv("JAVA_HOME") == null ? "" : System.getenv("JAVA_HOME"), "lib/tools.jar")
+                new File(javaHome, "../lib/tools.jar")
             };
             for (File c : candidates) {
                 if (c.isFile()) {

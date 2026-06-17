@@ -20,8 +20,6 @@ import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
 import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Modifier;
 import java.util.ArrayDeque;
@@ -39,18 +37,30 @@ public final class CallGraphIndex {
     private final Map<MethodId, Set<MethodId>> callers = new HashMap<MethodId, Set<MethodId>>();
     private final Set<MethodId> methods = new HashSet<MethodId>();
 
+    // owner + name + desc
     public static CallGraphIndex build(Instrumentation inst, TraceClassFileTransformer transformer, TraceConfig config) {
         CallGraphIndex idx = new CallGraphIndex();
         for (Class<?> c : inst.getAllLoadedClasses()) {
             try {
-                if (c == null || c.getClassLoader() == null || !inst.isModifiableClass(c)) continue;
+                if (c == null || c.getClassLoader() == null || !inst.isModifiableClass(c)) {
+                    continue;
+                }
                 int m = c.getModifiers();
-                if (Modifier.isInterface(m) || c.isAnnotation() || c.isArray() || c.isPrimitive()) continue;
-                String internal = c.getName().replace('.', '/');
-                if (transformer.isStructuralExcluded(internal)) continue;
-                byte[] bytes = readClassBytes(c, internal);
-                if (bytes == null) continue;
-                idx.accept(bytes);
+                if (Modifier.isInterface(m) || c.isAnnotation() || c.isArray() || c.isPrimitive()) {
+                    continue;
+                }
+                String internal = Util.internalName(c);
+                if (transformer.isStructuralExcluded(internal)) {
+                    continue;
+                }
+                if (config.isExcludedClass(internal)) {
+                    continue;
+                }
+                byte[] bytes = Util.readClassBytes(c.getClassLoader(), internal);
+                if (bytes == null) {
+                    continue;
+                }
+                idx.accept(bytes, config);
             } catch (Throwable t) {
                 System.err.println("[trace_agent] skip call graph class " + c + ": " + t);
             }
@@ -58,6 +68,7 @@ public final class CallGraphIndex {
         return idx;
     }
 
+    // expand context based on the specified function
     public Set<MethodId> expandContext(TraceConfig config) {
         if (config.contextDepth <= 0 || config.contextMaxMethods == 0) {
             return Collections.emptySet();
@@ -72,18 +83,24 @@ public final class CallGraphIndex {
         Set<MethodId> out = new HashSet<MethodId>(roots);
         ArrayDeque<MethodId> q = new ArrayDeque<MethodId>(roots);
         Map<MethodId, Integer> depth = new HashMap<MethodId, Integer>();
-        for (MethodId r : roots) depth.put(r, 0);
+        for (MethodId r : roots) {
+            depth.put(r, 0);
+        }
         while (!q.isEmpty()) {
             MethodId cur = q.removeFirst();
             int d = depth.get(cur);
-            if (d >= config.contextDepth) continue;
+            if (d >= config.contextDepth) {
+                continue;
+            }
             List<MethodId> next = new ArrayList<MethodId>();
             Set<MethodId> cs = callees.get(cur);
             if (cs != null) next.addAll(cs);
             Set<MethodId> rs = callers.get(cur);
             if (rs != null) next.addAll(rs);
             for (MethodId n : next) {
-                if (!methods.contains(n)) continue;
+                if (!methods.contains(n)) {
+                    continue;
+                }
                 if (out.add(n)) {
                     if (config.contextMaxMethods > 0 && out.size() >= config.contextMaxMethods) {
                         return out;
@@ -96,7 +113,7 @@ public final class CallGraphIndex {
         return out;
     }
 
-    private void accept(byte[] bytes) {
+    private void accept(byte[] bytes, final TraceConfig config) {
         ClassReader cr = new ClassReader(bytes);
         cr.accept(new ClassVisitor(Opcodes.ASM9) {
             String owner;
@@ -108,12 +125,20 @@ public final class CallGraphIndex {
 
             @Override
             public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
-                if ((access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0) return null;
+                if ((access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0) {
+                    return null;
+                }
+                if (config.isExcludedMethod(owner, name, descriptor)) {
+                    return null;
+                }
                 final MethodId id = new MethodId(owner, name, descriptor);
                 methods.add(id);
                 return new MethodVisitor(Opcodes.ASM9) {
                     @Override
                     public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
+                        if (config.isExcludedMethod(owner, name, descriptor)) {
+                            return;
+                        }
                         MethodId callee = new MethodId(owner, name, descriptor);
                         addEdge(id, callee);
                     }
@@ -124,25 +149,14 @@ public final class CallGraphIndex {
 
     private void addEdge(MethodId caller, MethodId callee) {
         Set<MethodId> a = callees.get(caller);
-        if (a == null) { a = new HashSet<MethodId>(); callees.put(caller, a); }
+        if (a == null) {
+            a = new HashSet<MethodId>(); callees.put(caller, a);
+        }
         a.add(callee);
         Set<MethodId> b = callers.get(callee);
-        if (b == null) { b = new HashSet<MethodId>(); callers.put(callee, b); }
-        b.add(caller);
-    }
-
-    private static byte[] readClassBytes(Class<?> c, String internalName) throws Exception {
-        ClassLoader loader = c.getClassLoader();
-        InputStream in = loader.getResourceAsStream(internalName + ".class");
-        if (in == null) return null;
-        try {
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            byte[] buf = new byte[8192];
-            int n;
-            while ((n = in.read(buf)) >= 0) bos.write(buf, 0, n);
-            return bos.toByteArray();
-        } finally {
-            try { in.close(); } catch (Exception ignored) {}
+        if (b == null) {
+            b = new HashSet<MethodId>(); callers.put(callee, b);
         }
+        b.add(caller);
     }
 }

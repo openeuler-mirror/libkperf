@@ -14,10 +14,6 @@
  ******************************************************************************/
 package com.libkperf.tracex.agent;
 
-import java.io.BufferedReader;
-import java.io.FileInputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -27,6 +23,10 @@ import java.util.Map;
 import java.util.Set;
 
 public final class TraceConfig {
+    private static final int DEFAULT_SLOT_COUNT = 1048576;
+    private static final int MAX_SLOT_COUNT = 67108864;
+    private static final String AGENT_PACKAGE_PREFIX = "com/libkperf/tracex/";
+
     public final String shmPath;
     public final int slotCount;
     public final String nativeLibPath;
@@ -35,28 +35,38 @@ public final class TraceConfig {
     public final String configFile;
     public final int contextDepth;
     public final int contextMaxMethods;
+    public final boolean includeAll;
 
+    public final List<FilterRule> requiredIncludeRules;
     public final List<FilterRule> includeRules;
     public final List<FilterRule> excludeRules;
 
     private volatile Set<MethodId> contextMethods = Collections.emptySet();
 
     private TraceConfig(Map<String, String> args) {
-        this.shmPath = get(args, "shmPath", "/tmp/utrace-java-default.shm");
-        this.slotCount = parseInt(get(args, "slotCount", "65536"), 65536);
-        this.nativeLibPath = get(args, "nativeLibPath", "");
-        this.action = get(args, "action", "start");
-        this.includeFile = get(args, "includeFile", "");
-        this.configFile = get(args, "configFile", "");
+        this.shmPath = Util.get(args, "shmPath", "/tmp/utrace-java-default.shm");
+        this.nativeLibPath = Util.get(args, "nativeLibPath", "");
+        this.action = Util.get(args, "action", "start");
+        this.includeFile = Util.get(args, "includeFile", "");
+        this.configFile = Util.get(args, "configFile", "");
 
         TraceFilterFile filterFile = TraceFilterFile.load(configFile);
-        int argDepth = parseInt(get(args, "contextDepth", "-1"), -1);
-        int argMax = parseInt(get(args, "contextMaxMethods", "-1"), -1);
-        this.contextDepth = argDepth >= 0 ? argDepth : (filterFile.contextDepth >= 0 ? filterFile.contextDepth : 1);
-        this.contextMaxMethods = argMax >= 0 ? argMax : (filterFile.contextMaxMethods >= 0 ? filterFile.contextMaxMethods : 128);
+        this.slotCount = clampSlotCount(filterFile.slotCount > 0 ? filterFile.slotCount : DEFAULT_SLOT_COUNT);
+        this.contextMaxMethods = filterFile.contextMaxMethods >= 0 ? filterFile.contextMaxMethods : 128;
+
+        this.includeAll = filterFile.includeAll;
+        int configuredContextDepth = filterFile.contextDepth >= 0 ? filterFile.contextDepth : 1;
+        this.contextDepth = this.includeAll ? 0 : configuredContextDepth;
+
+        List<FilterRule> required = new ArrayList<FilterRule>();
+        Util.addRules(required, Util.readTextFile(includeFile, "[trace-java-agent] read include file failed: "));
+        Util.addRules(required, Util.get(args, "hotRules", ""));
+        Util.addRules(required, Util.get(args, "requiredIncludes", ""));
+        Util.addRules(required, Util.get(args, "includeRules", ""));
+
+        this.requiredIncludeRules = Collections.unmodifiableList(required);
 
         List<FilterRule> inc = new ArrayList<FilterRule>();
-        addRules(inc, readIncludeFile(includeFile));
         inc.addAll(filterFile.includes);
         this.includeRules = Collections.unmodifiableList(inc);
 
@@ -81,19 +91,17 @@ public final class TraceConfig {
         if (isExcludedClass(classNameInternal)) {
             return false;
         }
-        if (includeRules.isEmpty()) {
+        if (includeAll) {
             return true;
         }
-        for (FilterRule r : includeRules) {
-            if (r.matchesClass(classNameInternal)) {
-                return true;
-            }
+        if (matchesRequiredIncludeClass(classNameInternal)) {
+            return true;
         }
-        Set<MethodId> ctx = contextMethods;
-        for (MethodId id : ctx) {
-            if (id.owner.equals(classNameInternal)) {
-                return true;
-            }
+        if (matchesConfigIncludeClass(classNameInternal)) {
+            return true;
+        }
+        if (hasContextMethodInClass(classNameInternal)) {
+            return true;
         }
         return false;
     }
@@ -102,20 +110,30 @@ public final class TraceConfig {
         if (isExcludedMethod(owner, name, desc)) {
             return false;
         }
-        if (includeRules.isEmpty()) {
+        if (includeAll) {
             return true;
         }
-        for (FilterRule r : includeRules) {
-            if (r.matchesMethod(owner, name, desc)) return true;
+        if (matchesRequiredIncludeMethod(owner, name, desc)) {
+            return true;
         }
-        return contextMethods.contains(new MethodId(owner, name, desc));
+        if (matchesConfigIncludeMethod(owner, name, desc)) {
+            return true;
+        }
+        if (contextMethods.contains(new MethodId(owner, name, desc))) {
+            return true;
+        }
+        return false;
     }
 
     public boolean matchesUserInclude(String owner, String name, String desc) {
-        if (isExcludedMethod(owner, name, desc)) return false;
-        if (includeRules.isEmpty()) return true;
-        for (FilterRule r : includeRules) {
-            if (r.matchesMethod(owner, name, desc)) return true;
+        if (isExcludedMethod(owner, name, desc)) {
+            return false;
+        }
+        if (matchesRequiredIncludeMethod(owner, name, desc)) {
+            return true;
+        }
+        if (matchesConfigIncludeMethod(owner, name, desc)) {
+            return true;
         }
         return false;
     }
@@ -129,18 +147,81 @@ public final class TraceConfig {
         contextMethods = Collections.unmodifiableSet(merged);
     }
 
-    private boolean isExcludedClass(String owner) {
-        for (FilterRule r : excludeRules) {
-            if (r.matchesClass(owner)) return true;
+    private boolean matchesRequiredIncludeClass(String owner) {
+        for (FilterRule r : requiredIncludeRules) {
+            if (r.matchesClass(owner)) {
+                return true;
+            }
         }
         return false;
     }
 
-    private boolean isExcludedMethod(String owner, String name, String desc) {
-        for (FilterRule r : excludeRules) {
-            if (r.matchesMethod(owner, name, desc)) return true;
+    private boolean matchesRequiredIncludeMethod(String owner, String name, String desc) {
+        for (FilterRule r : requiredIncludeRules) {
+            if (r.matchesMethod(owner, name, desc)) {
+                return true;
+            }
         }
         return false;
+    }
+
+    private boolean matchesConfigIncludeClass(String owner) {
+        for (FilterRule r : includeRules) {
+            if (r.matchesClass(owner)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean matchesConfigIncludeMethod(String owner, String name, String desc) {
+        for (FilterRule r : includeRules) {
+            if (r.matchesMethod(owner, name, desc)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasContextMethodInClass(String owner) {
+        Set<MethodId> ctx = contextMethods;
+        for (MethodId id : ctx) {
+            if (id.owner.equals(owner)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    boolean isExcludedClass(String owner) {
+        if (isHardExcludedOwner(owner)) {
+            return true;
+        }
+        for (FilterRule r : excludeRules) {
+            if (r.matchesClass(owner)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    boolean isExcludedMethod(String owner, String name, String desc) {
+        if (isHardExcludedOwner(owner)) {
+            return true;
+        }
+        for (FilterRule r : excludeRules) {
+            if (r.matchesMethod(owner, name, desc)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isHardExcludedOwner(String owner) {
+        if (owner == null || owner.length() == 0) {
+            return true;
+        }
+        return owner.replace('.', '/').startsWith(AGENT_PACKAGE_PREFIX);
     }
 
     private static Map<String, String> parseKv(String agentArgs) {
@@ -162,8 +243,12 @@ public final class TraceConfig {
             } else if (c == '=' && cur == key) {
                 cur = val;
             } else if (c == ';') {
-                if (key.length() > 0) out.put(key.toString(), val.toString());
-                key.setLength(0); val.setLength(0); cur = key;
+                if (key.length() > 0) {
+                    out.put(key.toString(), val.toString());
+                }
+                key.setLength(0);
+                val.setLength(0);
+                cur = key;
             } else {
                 cur.append(c);
             }
@@ -171,39 +256,13 @@ public final class TraceConfig {
         return out;
     }
 
-    private static void addRules(List<FilterRule> out, String text) {
-        if (text == null || text.length() == 0) return;
-        String[] parts = text.split("[,\\n\\r]");
-        for (String p : parts) {
-            FilterRule r = FilterRule.parse(p);
-            if (r != null) out.add(r);
+    private static int clampSlotCount(long value) {
+        if (value < DEFAULT_SLOT_COUNT) {
+            return DEFAULT_SLOT_COUNT;
         }
-    }
-
-    private static String readIncludeFile(String path) {
-        if (path == null || path.length() == 0) return "";
-        StringBuilder sb = new StringBuilder();
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(path), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                sb.append(line).append('\n');
-            }
-        } catch (Exception e) {
-            System.err.println("[trace-java-agent] read include file failed: " + path + ", " + e);
+        if (value > MAX_SLOT_COUNT) {
+            return MAX_SLOT_COUNT;
         }
-        return sb.toString();
-    }
-
-    private static String get(Map<String, String> m, String k, String d) {
-        String v = m.get(k);
-        return v == null ? d : v;
-    }
-
-    private static int parseInt(String s, int d) {
-        try {
-            return Integer.parseInt(s);
-        } catch (Exception e) {
-            return d;
-        }
+        return (int) value;
     }
 }

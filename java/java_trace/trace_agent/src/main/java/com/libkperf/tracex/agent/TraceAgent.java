@@ -30,6 +30,8 @@ public final class TraceAgent {
     private static volatile TraceClassFileTransformer activeTransformer;
     private static volatile Instrumentation activeInstrumentation;
 
+    private static final int RETRANSFORM_BATCH_SIZE = 64;
+
     public static void premain(String agentArgs, Instrumentation inst) throws Exception {
         agentmain(agentArgs, inst);
     }
@@ -44,7 +46,11 @@ public final class TraceAgent {
         if (config.isRestoreAction()) {
             TraceRuntime.setEnabled(false);
             removeActiveTransformer();
-            TraceClassFileTransformer.restoreAll(inst);
+            try {
+                TraceClassFileTransformer.restoreAll(inst);
+            } catch (Throwable t) {
+                System.err.println("[trace_agent] restoreAll warning: " + t);
+            }
             return;
         }
         start(config, inst);
@@ -62,6 +68,35 @@ public final class TraceAgent {
         }
     }
 
+    private static void retransformSafely(Instrumentation inst, List<Class<?>> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return;
+        }
+        int ok = 0;
+        int failed = 0;
+        for (int from = 0; from < candidates.size(); from += RETRANSFORM_BATCH_SIZE) {
+            int to = Math.min(from + RETRANSFORM_BATCH_SIZE, candidates.size());
+            List<Class<?>> batch = candidates.subList(from, to);
+            try {
+                inst.retransformClasses(batch.toArray(new Class<?>[0]));
+                ok += batch.size();
+            } catch (Throwable batchError) {
+                System.err.println("[trace_agent] retransform batch failed, fallback to one-by-one"
+                        + ", from=" + from + ", to=" + to + ", error=" + batchError);
+                for (Class<?> c : batch) {
+                    try {
+                        inst.retransformClasses(c);
+                        ok++;
+                    } catch (Throwable oneError) {
+                        failed++;
+                        System.err.println("[trace_agent] skip bad class: " + Util.safeClassName(c) + ", error=" + oneError);
+                    }
+                }
+            }
+        }
+        System.err.println("[trace_agent] retransform done, ok=" + ok + ", failed=" + failed);
+    }
+
     private static synchronized void start(TraceConfig config, Instrumentation inst) throws Exception {
         if (!inst.isRetransformClassesSupported()) {
             throw new IllegalStateException("JVM does not support class retransformation");
@@ -75,6 +110,7 @@ public final class TraceAgent {
 
         TraceClassFileTransformer transformer = new TraceClassFileTransformer(config);
         if (config.contextDepth > 0) {
+            // Context expansion traces callers/callees around explicitly matched methods
             CallGraphIndex index = CallGraphIndex.build(inst, transformer, config);
             Set<MethodId> context = index.expandContext(config);
             config.addContextMethods(context);
@@ -88,13 +124,12 @@ public final class TraceAgent {
 
         List<Class<?>> candidates = collectCandidates(inst, transformer);
         System.err.println("[trace_agent] retransform candidates=" + candidates.size()
-            + ", includeRules=" + config.includeRules.size() + ", excludeRules=" + config.excludeRules.size());
+            + ", requiredIncludeRules=" + config.requiredIncludeRules.size()
+            + ", configIncludeRules=" + config.includeRules.size()
+            + ", excludeRules=" + config.excludeRules.size()
+            + ", includeAll=" + config.includeAll);
         if (!candidates.isEmpty()) {
-            try {
-                inst.retransformClasses(candidates.toArray(new Class<?>[0]));
-            } catch (Throwable t) {
-                System.err.println("[trace_agent] retransform failed: " + t);
-            }
+            retransformSafely(inst, candidates);
         }
     }
     
@@ -110,7 +145,7 @@ public final class TraceAgent {
                 if (Modifier.isInterface(m) || c.isAnnotation() || c.isArray() || c.isPrimitive()) {
                     continue;
                 }
-                String internal = c.getName().replace('.', '/');
+                String internal = Util.internalName(c);
                 if (transformer.shouldTransformInternalName(internal)) {
                     out.add(c);
                 }

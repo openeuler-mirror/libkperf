@@ -22,7 +22,7 @@
 struct JavaBackendImpl {
     int pid{};
     std::string include_rules;
-    unsigned slot_count{262144};
+    unsigned slot_count{1048576};
     std::string filter_config_path;
     std::string shm_name;
     std::string shm_path;
@@ -32,8 +32,6 @@ struct JavaBackendImpl {
     uint64_t read_seq{0};
     bool runtimeStopped = false;
     bool runtimeRestored = false;
-    int contextDepth{-1};
-    int contextMaxMethods{-1};
 };
 
 int JavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules);

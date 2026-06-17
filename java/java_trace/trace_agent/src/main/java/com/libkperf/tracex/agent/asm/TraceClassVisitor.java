@@ -20,6 +20,8 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
 public final class TraceClassVisitor extends ClassVisitor {
+    private static final int SKIP_ACCESS = Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE | Opcodes.ACC_SYNTHETIC;
+
     private final TraceConfig config;
     private final String owner;
     private int instrumented;
@@ -31,15 +33,25 @@ public final class TraceClassVisitor extends ClassVisitor {
     }
 
     @Override
-    public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
-        MethodVisitor mv = super.visitMethod(access, name, descriptor, signature, exceptions);
-        if (mv == null) return null;
-        if ((access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0) return mv;
-        if ((access & Opcodes.ACC_SYNTHETIC) != 0) return mv;
-        if ("<init>".equals(name) || "<clinit>".equals(name)) return mv;
-        if (!config.shouldTransformMethod(owner, name, descriptor)) return mv;
+    public MethodVisitor visitMethod(int access, String name, String desc,
+                                    String signature, String[] exceptions) {
+        MethodVisitor next = super.visitMethod(access, name, desc, signature, exceptions);
+        if (!needTrace(next, access, name, desc)) {
+            return next;
+        }
+
         instrumented++;
-        return new TraceMethodVisitor(api, mv, access, name, descriptor, owner);
+        return new TraceMethodVisitor(api, next, access, name, desc, owner);
+    }
+
+    private boolean needTrace(MethodVisitor mv, int access, String name, String desc) {
+        return mv != null && (access & SKIP_ACCESS) == 0
+                && !isSpecialMethod(name)
+                && config.shouldTransformMethod(owner, name, desc);
+    }
+
+    private static boolean isSpecialMethod(String name) {
+        return "<init>".equals(name) || "<clinit>".equals(name);
     }
 
     public int instrumentedMethodCount() {

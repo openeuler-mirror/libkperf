@@ -15,6 +15,7 @@
 package com.libkperf.tracex.agent.asm;
 
 import com.libkperf.tracex.agent.TraceConfig;
+import com.libkperf.tracex.agent.Util;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 
@@ -22,18 +23,22 @@ import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.IllegalClassFormatException;
 import java.lang.instrument.Instrumentation;
 import java.security.ProtectionDomain;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class TraceClassFileTransformer implements ClassFileTransformer {
     public static final String TRACE_RUNTIME_OWNER = "com/libkperf/tracex/runtime/TraceRuntime";
+
+    // prevent the same class from being instrumented repeatedly
     private static final Set<ClassKey> INSTRUMENTED = ConcurrentHashMap.newKeySet();
+
+    // save the original class bytecode for subsequent restoration
     private static final Map<ClassKey, byte[]> ORIGINAL = new ConcurrentHashMap<ClassKey, byte[]>();
+
+    // prevent transformer re-entry
     private static final ThreadLocal<Boolean> REENTRANT = new ThreadLocal<Boolean>();
 
     private final TraceConfig config;
@@ -43,8 +48,12 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
     }
 
     public boolean isStructuralExcluded(String className) {
-        if (className == null || className.length() == 0) return true;
-        if (className.endsWith("package-info") || className.indexOf("$$Lambda$") >= 0) return true;
+        if (className == null || className.length() == 0) {
+            return true;
+        }
+        if (className.endsWith("package-info") || className.indexOf("$$Lambda$") >= 0) {
+            return true;
+        }
         return false;
     }
 
@@ -55,7 +64,12 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
     @Override
     public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined,
                             ProtectionDomain protectionDomain, byte[] classfileBuffer) throws IllegalClassFormatException {
-        if (className == null || classfileBuffer == null) return null;
+        if (className == null || classfileBuffer == null) {
+            return null;
+        }
+        if (loader == null) {
+            return null;
+        }
         if (!shouldTransformInternalName(className)) {
             return null;
         }
@@ -68,18 +82,20 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
         }
         REENTRANT.set(Boolean.TRUE);
         try {
-            if (classBeingRedefined != null) {
-                ORIGINAL.putIfAbsent(key, Arrays.copyOf(classfileBuffer, classfileBuffer.length));
-            }
             ClassReader cr = new ClassReader(classfileBuffer);
-            ClassWriter cw = new ClassWriter(cr, ClassWriter.COMPUTE_MAXS);
+            ClassWriter cw = new SafeClassWriter(cr, ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS, loader);
             TraceClassVisitor cv = new TraceClassVisitor(cw, config, className);
             cr.accept(cv, ClassReader.EXPAND_FRAMES);
-            if (cv.instrumentedMethodCount() == 0) return null;
-            INSTRUMENTED.add(key);
-            return cw.toByteArray();
+            if (cv.instrumentedMethodCount() == 0) {
+                return null;
+            }
+            byte[] transformed = cw.toByteArray();
+            ORIGINAL.putIfAbsent(key, Arrays.copyOf(classfileBuffer, classfileBuffer.length));
+            if (!INSTRUMENTED.add(key)) {
+                return null;
+            }
+            return transformed;
         } catch (Throwable t) {
-            ORIGINAL.remove(key);
             System.err.println("[trace_agent] transform failed for " + className + ": " + t);
             return null;
         } finally {
@@ -87,10 +103,8 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
         }
     }
 
-    public static void restoreAll(Instrumentation inst) throws Exception {
+    public static void restoreAll(Instrumentation inst) {
         if (inst == null || !inst.isRetransformClassesSupported()) {
-            INSTRUMENTED.clear();
-            ORIGINAL.clear();
             return;
         }
 
@@ -99,72 +113,122 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
             return;
         }
 
-        final Map<ClassKey, byte[]> snapshot = new HashMap<ClassKey, byte[]>(ORIGINAL);
+        final Map<ClassKey, byte[]> restoreBytes = new HashMap<ClassKey, byte[]>(ORIGINAL);
         final Set<ClassKey> instrumentedSnapshot = ConcurrentHashMap.newKeySet();
         instrumentedSnapshot.addAll(INSTRUMENTED);
 
         ClassFileTransformer restoreTransformer = new ClassFileTransformer() {
             @Override
-            public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined,
-                                    ProtectionDomain protectionDomain, byte[] classfileBuffer) {
-                if (loader == null || className == null || classBeingRedefined == null) {
+            public byte[] transform(ClassLoader loader,
+                                    String className,
+                                    Class<?> classBeingRedefined,
+                                    ProtectionDomain protectionDomain,
+                                    byte[] classfileBuffer) {
+                if (className == null) {
                     return null;
                 }
+
                 ClassKey key = new ClassKey(loader, className);
-                byte[] original = snapshot.get(key);
+                byte[] original = restoreBytes.get(key);
                 if (original != null) {
                     return original;
                 }
-                if (instrumentedSnapshot.contains(key)) {
-                    byte[] fromClasspath = readFromClasspath(loader, className);
-                    if (fromClasspath != null) {
-                        return fromClasspath;
-                    }
-                }
+
                 return null;
             }
         };
 
         inst.addTransformer(restoreTransformer, true);
+
+        int ok = 0;
+        int failed = 0;
+
         try {
-            List<Class<?>> classes = new ArrayList<Class<?>>();
             for (Class<?> clazz : inst.getAllLoadedClasses()) {
-                ClassLoader loader = clazz.getClassLoader();
-                if (loader == null || !inst.isModifiableClass(clazz)) {
-                    continue;
-                }
-                String internalName = clazz.getName().replace('.', '/');
-                ClassKey key = new ClassKey(loader, internalName);
-                if (instrumentedSnapshot.contains(key)) {
-                    classes.add(clazz);
+                ClassKey key = null;
+                try {
+                    if (clazz == null) {
+                        continue;
+                    }
+                    if (!inst.isModifiableClass(clazz)) {
+                        continue;
+                    }
+                    String internalName = Util.internalName(clazz);
+                    key = new ClassKey(clazz.getClassLoader(), internalName);
+                    if (!instrumentedSnapshot.contains(key)) {
+                        continue;
+                    }
+                    if (!restoreBytes.containsKey(key)) {
+                        byte[] fromClasspath = Util.readClassBytes(clazz.getClassLoader(), internalName);
+                        if (fromClasspath != null) {
+                            restoreBytes.put(key, fromClasspath);
+                        }
+                    }
+                    if (!restoreBytes.containsKey(key)) {
+                        failed++;
+                        System.err.println("[trace_agent] restore skip no original bytes: " + Util.safeClassName(clazz));
+                        continue;
+                    }
+                    inst.retransformClasses(clazz);
+                    INSTRUMENTED.remove(key);
+                    ORIGINAL.remove(key);
+                    ok++;
+                } catch (Throwable t) {
+                    failed++;
+                    System.err.println("[trace_agent] restore skip bad class: " + Util.safeClassName(clazz) + ", error=" + t);
+                    if (key != null) {
+                        INSTRUMENTED.add(key);
+                    }
                 }
             }
-            if (!classes.isEmpty()) {
-                inst.retransformClasses(classes.toArray(new Class<?>[classes.size()]));
-            }
+        } catch (Throwable t) {
+            System.err.println("[trace_agent] restoreAll outer warning: " + t);
         } finally {
-            inst.removeTransformer(restoreTransformer);
-            INSTRUMENTED.clear();
-            ORIGINAL.clear();
+            try {
+                inst.removeTransformer(restoreTransformer);
+            } catch (Throwable ignored) {
+            }
+            if (failed == 0) {
+                INSTRUMENTED.clear();
+                ORIGINAL.clear();
+            }
+            System.err.println("[trace_agent] restore done, ok=" + ok + ", failed=" + failed);
         }
     }
 
-    private static byte[] readFromClasspath(ClassLoader loader, String className) {
-        if (loader == null || className == null) return null;
-        try {
-            java.io.InputStream in = loader.getResourceAsStream(className + ".class");
-            if (in == null) return null;
+    private static final class SafeClassWriter extends ClassWriter {
+        private final ClassLoader loader;
+
+        SafeClassWriter(ClassReader cr, int flags, ClassLoader loader) {
+            super(cr, flags);
+            this.loader = loader;
+        }
+
+        @Override
+        protected String getCommonSuperClass(String type1, String type2) {
             try {
-                java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
-                byte[] buf = new byte[8192];
-                int n;
-                while ((n = in.read(buf)) >= 0) bos.write(buf, 0, n);
-                return bos.toByteArray();
-            } finally {
-                try { in.close(); } catch (Exception ignored) {}
+                Class<?> class1 = loadClass(type1);
+                Class<?> class2 = loadClass(type2);
+                if (class1.isAssignableFrom(class2)) {
+                    return type1;
+                }
+                if (class2.isAssignableFrom(class1)) {
+                    return type2;
+                }
+                if (class1.isInterface() || class2.isInterface()) {
+                    return "java/lang/Object";
+                }
+                do {
+                    class1 = class1.getSuperclass();
+                } while (class1 != null && !class1.isAssignableFrom(class2));
+                return class1 == null ? "java/lang/Object" : class1.getName().replace('.', '/');
+            } catch (Throwable ignored) {
+                return "java/lang/Object";
             }
-        } catch (Throwable t) {
-            return null;
+        }
+
+        private Class<?> loadClass(String internalName) throws ClassNotFoundException {
+            return Class.forName(internalName.replace('/', '.'), false, loader);
         }
     }
 
@@ -172,12 +236,22 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
         private final ClassLoader loader;
         private final String name;
         ClassKey(ClassLoader loader, String name) { this.loader = loader; this.name = name; }
-        @Override public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof ClassKey)) return false;
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (!(o instanceof ClassKey)) {
+                return false;
+            }
             ClassKey k = (ClassKey) o;
             return loader == k.loader && name.equals(k.name);
         }
-        @Override public int hashCode() { return System.identityHashCode(loader) * 31 + name.hashCode(); }
+
+        @Override
+        public int hashCode() {
+            return System.identityHashCode(loader) * 31 + name.hashCode();
+        }
     }
 }
