@@ -19,5 +19,6 @@
  */
 
 FILE *perf_map_open(pid_t pid);
+FILE *perf_map_open_path(const char *filename);
 int perf_map_close(FILE *fp);
 void perf_map_write_entry(FILE *method_file, const void* code_addr, unsigned int code_size, const char* entry);

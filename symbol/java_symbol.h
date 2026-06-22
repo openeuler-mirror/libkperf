@@ -15,5 +15,12 @@
 #ifndef LIBKPERF_JAVA_SYMBOL_H
 #define LIBKPERF_JAVA_SYMBOL_H
 
-int attach_java_process(int pid);
+#include <string>
+
+struct JavaAttachInfo {
+    int nspid;
+    std::string perfMapPath;
+};
+
+int attach_java_process(int pid, JavaAttachInfo* info = nullptr);
 #endif // LIBKPERF_JAVA_SYMBOL_H
