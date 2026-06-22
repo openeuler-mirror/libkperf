@@ -25,15 +25,19 @@
 
 #include "perf-map-file.h"
 
-FILE *perf_map_open(pid_t pid) {
-    char filename[500];
-    snprintf(filename, sizeof(filename), "/tmp/perf-%d.map", pid);
-    FILE * res = fopen(filename, "w");
+FILE *perf_map_open_path(const char *filename) {
+    FILE *res = fopen(filename, "w");
     if (!res) {
         fprintf(stderr, "Couldn't open %s: errno(%d)", filename, errno);
         exit(0);
     }
     return res;
+}
+
+FILE *perf_map_open(pid_t pid) {
+    char filename[500];
+    snprintf(filename, sizeof(filename), "/tmp/perf-%d.map", pid);
+    return perf_map_open_path(filename);
 }
 
 int perf_map_close(FILE *fp) {

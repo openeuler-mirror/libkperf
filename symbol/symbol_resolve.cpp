@@ -450,9 +450,10 @@ int SymbolResolve::RecordModule(int pid, RecordModuleType recordModuleType)
         item->moduleType = recordModuleType;
     }
     if (hasJava) {
-        int ret = attach_java_process(pid);
+        JavaAttachInfo attachInfo;
+        int ret = attach_java_process(pid, &attachInfo);
         if (ret == 0) {
-            JavaElf javaElf(pid);
+            JavaElf javaElf(pid, attachInfo.perfMapPath);
             javaElfArr[pid] = javaElf;
         }
     }
@@ -662,13 +663,6 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
         return nullptr;
     }
 
-    std::shared_ptr<ModuleMap> module = this->AddrToModule(this->moduleMap.at(pid), addr);
-    if (!module) {
-        return nullptr;
-    }
-    /**
-     * Try to search elf data first
-     */
     symSafeHandler.tryLock(pid);
     if (this->symbolMap.find(pid) == this->symbolMap.end()) {
         this->symbolMap[pid] = {};
@@ -678,6 +672,33 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
     if (it != this->symbolMap.at(pid).end()) {
         return it->second;
     }
+
+    auto javaIt = javaElfArr.find(pid);
+    if (javaIt != javaElfArr.end()) {
+        JavaEntry entry;
+        int javaRet = javaIt->second.FindElf(addr, entry);
+        if (javaRet == 0) {
+            struct Symbol* symbol = InitializeSymbol(addr);
+            symbol->codeMapAddr = addr;
+            symbol->offset = addr - entry.start;
+            symbol->codeMapEndAddr = entry.end;
+            symbol->symbolName = GetCharFromStr(entry.symbolName);
+            symbol->mangleName = GetCharFromStr(entry.symbolName);
+            symbol->fileName = GetCharFromStr(entry.fileName);
+            symbol->lineNum = entry.line;
+            this->symbolMap.at(pid).insert({addr, symbol});
+            pcerr::New(0, "success");
+            return symbol;
+        }
+    }
+
+    std::shared_ptr<ModuleMap> module = this->AddrToModule(this->moduleMap.at(pid), addr);
+    if (!module) {
+        return nullptr;
+    }
+    /**
+     * Try to search elf data first
+     */
     struct Symbol* symbol = InitializeSymbol(addr);
     symbol->module = GetCharFromStr(module->moduleName);
     if (!module->isFile) {
@@ -738,22 +759,6 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
     }
 #endif
     symbol->codeMapAddr = addrToSearch;
-    if (symbol->symbolName == UNKNOWN) {
-        auto it = javaElfArr.find(pid);
-        if (it != javaElfArr.end()) {
-            JavaEntry entry;
-            int javaRet = javaElfArr[pid].FindElf(addr, entry);
-            if (javaRet == 0) {
-                symbol->codeMapAddr = addr;
-                symbol->offset = addr - entry.start;
-                symbol->codeMapEndAddr = entry.end;
-                symbol->symbolName = GetCharFromStr(entry.symbolName);
-                symbol->mangleName = GetCharFromStr(entry.symbolName);
-                symbol->fileName = GetCharFromStr(entry.fileName);
-                symbol->lineNum = entry.line;
-            }
-        }
-    }
     this->symbolMap.at(pid).insert({addr, symbol});
     pcerr::New(0, "success");
     return symbol;
@@ -761,7 +766,7 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
 
 int JavaElf::FindElf(unsigned long addr, struct JavaEntry& javaEntry) {
     if (!hasLoad) {
-        std::string path = "/tmp/perf-" + std::to_string(pid) + ".map";
+        std::string path = perfMapPath.empty() ? "/tmp/perf-" + std::to_string(pid) + ".map" : perfMapPath;
         
         std::ifstream fileTmp(path.c_str());
         if (!fileTmp.is_open()) {

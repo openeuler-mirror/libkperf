@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <limits.h>
 
 #include <jni.h>
 #include <jvmti.h>
@@ -31,6 +32,11 @@
 
 #define STRING_BUFFER_SIZE 2000
 #define BIG_STRING_BUFFER_SIZE 20000
+
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
+#define MAP_FILE_OPTION "file="
 
 bool unfold_inlined_methods = false;
 bool unfold_simple = false;
@@ -46,15 +52,39 @@ char *unfold_delimiter = "->";
 bool debug_dump_unfold_entries = false;
 
 FILE *method_file = NULL;
+static char map_file_path[PATH_MAX] = "";
 
 
 void open_map_file() {
-    if (!method_file)
-        method_file = perf_map_open(getpid());
+    if (method_file)
+        return;
+    if (map_file_path[0] != '\0') {
+        method_file = perf_map_open_path(map_file_path);
+        return;
+    }
+    method_file = perf_map_open(getpid());
 }
 void close_map_file() {
     perf_map_close(method_file);
     method_file = NULL;
+}
+
+static void parse_map_file_path(char *options) {
+    if (options == NULL)
+        return;
+
+    char *start = strstr(options, MAP_FILE_OPTION);
+    if (start == NULL)
+        return;
+
+    start += strlen(MAP_FILE_OPTION);
+    size_t len = strcspn(start, ",;");
+    if (len == 0)
+        return;
+    if (len >= sizeof(map_file_path))
+        len = sizeof(map_file_path) - 1;
+    memcpy(map_file_path, start, len);
+    map_file_path[len] = '\0';
 }
 
 void deallocate(jvmtiEnv *jvmti, void *string) {
@@ -339,6 +369,10 @@ jvmtiError set_callbacks(jvmtiEnv *jvmti) {
 
 JNIEXPORT jint JNICALL
 Agent_OnAttach(JavaVM *vm, char *options, void *reserved) {
+    if (options == NULL) {
+        options = "";
+    }
+    parse_map_file_path(options);
     open_map_file();
 
     unfold_simple = strstr(options, "unfoldsimple") != NULL;
