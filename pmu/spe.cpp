@@ -56,7 +56,8 @@ static int OpenSpeEvent(PmuEvt *pmuAttr, int cpu, int pid)
     attr.config = pmuAttr->config; /* pa_enable | load_filter | store_filter | ts_enable */
     attr.config1 = pmuAttr->config1;        /* event_filter */
     attr.config2 = pmuAttr->config2;       /* min_latency */
-    attr.exclude_guest = 1;
+    attr.exclude_guest = pmuAttr->excludeGuest;
+    attr.exclude_host = pmuAttr->excludeHost;
     attr.disabled = 1;
     attr.sample_period = pmuAttr->period;
     attr.sample_type = PERF_SAMPLE_TID;
@@ -97,7 +98,8 @@ static int OpenDummyEvent(PmuEvt *pmuAttr, int cpu, int pid)
     attr.mmap = 1;
     attr.task = 1;
     attr.inherit = 1;
-    attr.exclude_guest = 1;
+    attr.exclude_guest = pmuAttr->excludeGuest;
+    attr.exclude_host = pmuAttr->excludeHost;
 
     if (pmuAttr->enableOnExec) {
         attr.enable_on_exec = 1;

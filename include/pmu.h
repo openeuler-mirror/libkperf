@@ -150,6 +150,10 @@ struct PmuAttr {
     unsigned excludeUser : 1;
     // Don't count kernel.
     unsigned excludeKernel : 1;
+    // Don't count guest.
+    unsigned excludeGuest : 1;
+    // Don't count host.
+    unsigned excludeHost : 1;
     // This indicates how to analyze symbols of samples.
     // Refer to comments of SymbolMode.
     enum SymbolMode symbolMode;

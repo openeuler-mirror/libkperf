@@ -485,18 +485,24 @@ private:
                 PERF_SAMPLE_PERIOD |  PERF_SAMPLE_BRANCH_STACK;
     }
 
-    PerfFileAttr GetFileAttr(const char *evt, const map<string, long> &evt2offset)
+    PerfFileAttr GetFileAttr(const PmuAttr *pattr, const int index, const map<string, long> &evt2offset)
     {
         // Now we don't have real perf_event_attr of collection task,
         // then we synthesize a similar one, only for sampling.
+        auto evt = pattr->evtList[index];
         auto pfm = PfmGetPmuEvent(evt, SAMPLING);
         perf_event_attr attr = {0};
         attr.type = pfm->type;
         attr.config = pfm->config;
         attr.sample_period = pfm->period;
         attr.freq = pfm->useFreq;
-        attr.exclude_kernel = pfm->excludeKernel;
-        attr.exclude_user = pfm->excludeUser;
+        bool hasEvtAttr = pattr->evtAttr != nullptr && index < pattr->numEvtAttr;
+        bool excludeKernel = hasEvtAttr ? pattr->evtAttr[index].excludeKernel : false;
+        attr.exclude_kernel = pattr->excludeKernel ? true : excludeKernel;
+        bool excludeUser = hasEvtAttr ? pattr->evtAttr[index].excludeUser : false;
+        attr.exclude_user = pattr->excludeUser ? true : excludeUser;
+        attr.exclude_guest = pattr->excludeGuest;
+        attr.exclude_host = pattr->excludeHost;
         // Use a constant sample type, for now, we only support fixed field data, including brbe.
         attr.sample_type = GetSampleType();
         // use attr in 5.10
@@ -533,7 +539,7 @@ private:
     int WriteFileAttrs(const int fd, const PmuAttr *pattr, const map<string, long> &evt2offset)
     {
         for (int i = 0;i < pattr->numEvt; ++i) {
-            auto fattr = GetFileAttr(pattr->evtList[i], evt2offset);
+            auto fattr = GetFileAttr(pattr, i, evt2offset);
             if (write(fd, &fattr, sizeof(fattr)) < 0) {
                 return COMMON_ERR_WRITE;
             }

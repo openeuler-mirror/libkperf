@@ -1984,7 +1984,7 @@ time.sleep(1)
 kperf.disable(pd)
 
 pmu_data = kperf.read(pd)
-file = kperf.begin_write("/tmp/test.data", pmu_attr)
+file = kperf.begin_write("/tmp/test.data", pmu_attr, 0)
 kperf.write_data(file, pmu_data)
 kperf.end_write(file)
 kperf.close(pd)
@@ -2008,7 +2008,7 @@ func main() {
     time.Sleep(time.Second)
     kperf.PmuDisable(pd)
     dataVo, err := kperf.PmuRead(pd)
-    file, err := kperf.PmuBeginWrite("/tmp/test.data", attr)
+    file, err := kperf.PmuBeginWrite("/tmp/test.data", attr, 0)
     if file == nil {
         fmt.Printf("failed to write: %v\n", err)
         return

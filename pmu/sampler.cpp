@@ -61,6 +61,8 @@ int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupEnable, const int grou
      */
     attr.exclude_kernel = this->needTryExcludeKernel ? 1 : this->evt->excludeKernel;
     attr.exclude_user = this->evt->excludeUser;
+    attr.exclude_guest = this->evt->excludeGuest;
+    attr.exclude_host = this->evt->excludeHost;
 #ifdef IS_X86
     if (this->pid == -1) {
         attr.pinned = 0;
@@ -75,7 +77,6 @@ int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupEnable, const int grou
     attr.mmap2 = 1;
     attr.task = 1;
     attr.sample_id_all = 1;
-    attr.exclude_guest = 1;
 
     if (this->evt->enableOnExec) {
         attr.enable_on_exec = 1;

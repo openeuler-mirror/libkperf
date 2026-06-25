@@ -1293,7 +1293,9 @@ namespace KUNPENG_PMU {
         if (taskParam->pidList.empty()) {
             return;
         }
-        auto* dummyEvent = new DummyEvent(pd, ppidList.at(pd));
+        auto* dummyEvent = new DummyEvent(pd, ppidList.at(pd),
+                                         taskParam->pmuEvt->excludeGuest,
+                                         taskParam->pmuEvt->excludeHost);
         dummyEvent->ObserverForkThread();
         dummyList[pd] = dummyEvent;
     }

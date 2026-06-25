@@ -298,6 +298,8 @@ int KUNPENG_PMU::PerfCounterDefault::MapPerfAttr(const bool groupEnable, const i
 
     attr.exclude_kernel = this->evt->excludeKernel;
     attr.exclude_user = this->evt->excludeUser;
+    attr.exclude_guest = this->evt->excludeGuest;
+    attr.exclude_host = this->evt->excludeHost;
 
     if (this->evt->enableOnExec) {
         attr.enable_on_exec = 1;
@@ -358,6 +360,10 @@ int KUNPENG_PMU::PerfCounterDefault::MapPerfAttrUserAccess()
     attr.config = this->evt->config;
     attr.config1 = this->evt->config1;
     attr.disabled = 1;
+    attr.exclude_kernel = this->evt->excludeKernel;
+    attr.exclude_user = this->evt->excludeUser;
+    attr.exclude_guest = this->evt->excludeGuest;
+    attr.exclude_host = this->evt->excludeHost;
     this->fd = PerfEventOpen(&attr, this->pid, this->cpu, -1, 0);
     DBG_PRINT("type: %d cpu: %d config: %llx config1: %llx myfd: %d \n",
         attr.type,

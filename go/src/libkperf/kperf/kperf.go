@@ -65,6 +65,14 @@ void SetExcludeKernel(struct PmuAttr* attr, unsigned excludeKernel) {
 	attr->excludeKernel = excludeKernel;
 }
 
+void SetExcludeGuest(struct PmuAttr* attr, unsigned excludeGuest) {
+	attr->excludeGuest = excludeGuest;
+}
+
+void SetExcludeHost(struct PmuAttr* attr, unsigned excludeHost) {
+	attr->excludeHost = excludeHost;
+}
+
 void SetUseFreq(struct PmuAttr* attr, unsigned useFreq) {
 	attr->useFreq = useFreq;
 }
@@ -405,6 +413,8 @@ type PmuAttr struct {
 	UseFreq bool                       // Use sample frequency or not, if set to true, used frequency, otherwise, used period
 	ExcludeUser bool                   // Don't count user
 	ExcludeKernel bool                 // Don't count kernel
+	ExcludeGuest bool                  // Don't count guest
+	ExcludeHost bool                   // Don't count host
 	SymbolMode C.enum_SymbolMode       // This indicates how to analyze symbols of samples.Refer to comments of SymbolMode
 	CallStack bool                     // This indicates whether to collect whole callchains or only top frame
 	DataFilter C.enum_SpeFilter        // Spe Data Filter.Refer to comments of SpeFilter 
@@ -680,6 +690,14 @@ func ToCPmuAttr(attr PmuAttr) (*C.struct_PmuAttr, int) {
 
 	if attr.ExcludeUser {
 		C.SetExcludeUser(cAttr, C.uint(1))
+	}
+
+	if attr.ExcludeGuest {
+		C.SetExcludeGuest(cAttr, C.uint(1))
+	}
+
+	if attr.ExcludeHost {
+		C.SetExcludeHost(cAttr, C.uint(1))
 	}
 
 	if attr.BlockedSample {
