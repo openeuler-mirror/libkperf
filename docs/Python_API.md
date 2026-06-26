@@ -30,6 +30,10 @@ kperf.open(collector_type: kperf.PmuTaskType, pmu_attr: kperf.PmuAttr)
     排除对用户态数据的采集
   * excludeKernel
     排除对内核态数据的采集
+  * excludeGuest
+    排除对虚拟机guest数据的采集
+  * excludeHost
+    排除对宿主机host数据的采集
   * symbolMode
     符号采集模式
     NO_SYMBOL_RESOLVE = 0 不支持符号采集
@@ -532,6 +536,7 @@ kperf.close(fd)
 目前该文件只支持SAMPLING模式，只支持基本信息的输出，比如id, tid, pid, addr，也包含brbe的数据。
 * path: 文件路径
 * pattr: 采集任务的PmuAttr
+* addIdHdr: 为属于非PERF_RECORD_SAMPLE采样的ID
 * 返回值: 文件句柄，用于下面两个API的调用
 
 ### kperf.write_data

@@ -1201,6 +1201,8 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
     taskParam->pmuEvt->period = evtAttrDto.period;
     taskParam->pmuEvt->excludeKernel = evtAttrDto.excludeKernel;
     taskParam->pmuEvt->excludeUser = evtAttrDto.excludeUser;
+    taskParam->pmuEvt->excludeGuest = attr->excludeGuest;
+    taskParam->pmuEvt->excludeHost = attr->excludeHost;
     taskParam->pmuEvt->callStack = attr->callStack;
     taskParam->pmuEvt->blockedSample = attr->blockedSample;
     taskParam->pmuEvt->includeNewFork = attr->includeNewFork;

@@ -30,6 +30,10 @@ func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error)
     排除对用户态数据的采集
   * ExcludeKernel bool
     排除对内核态数据的采集
+  * ExcludeGuest bool
+    排除对虚拟机guest数据的采集
+  * ExcludeHost bool
+    排除对宿主机host数据的采集
   * SymbolMode C.enum_SymbolMode
     符号采集模式
     ELF 仅支持ELF数据采集，解析function，不解析行号

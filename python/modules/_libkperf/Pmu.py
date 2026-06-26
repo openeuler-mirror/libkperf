@@ -112,7 +112,9 @@ class CtypesPmuAttr(ctypes.Structure):
         };
         unsigned useFreq : 1;
         unsigned excludeUser : 1;       // don't count user
-        unsigned excludeKernel : 1;     //  don't count kernel
+        unsigned excludeKernel : 1;     // don't count kernel
+        unsigned excludeGuest : 1;      // don't count guest
+        unsigned excludeHost : 1;       // don't count host
         enum SymbolMode symbolMode;     // refer to comments of SymbolMode
         unsigned callStack : 1;         //  collect complete call stack
         unsigned blockedSample : 1;     //  enable blocked sample
@@ -145,6 +147,8 @@ class CtypesPmuAttr(ctypes.Structure):
         ('useFreq',       ctypes.c_uint, 1),
         ('excludeUser',   ctypes.c_uint, 1),
         ('excludeKernel', ctypes.c_uint, 1),
+        ('excludeGuest',  ctypes.c_uint, 1),
+        ('excludeHost',   ctypes.c_uint, 1),
         ('symbolMode',    ctypes.c_uint),
         ('callStack',     ctypes.c_uint, 1),
         ('blockedSample',     ctypes.c_uint, 1),
@@ -171,6 +175,8 @@ class CtypesPmuAttr(ctypes.Structure):
                  useFreq=False,
                  excludeUser=False,
                  excludeKernel=False,
+                 excludeGuest=False,
+                 excludeHost=False,
                  symbolMode=0,
                  callStack=False,
                  blockedSample=False,
@@ -244,6 +250,8 @@ class CtypesPmuAttr(ctypes.Structure):
         self.useFreq = useFreq
         self.excludeUser = excludeUser
         self.excludeKernel = excludeKernel
+        self.excludeGuest = excludeGuest
+        self.excludeHost = excludeHost
         self.callStack = callStack
         self.blockedSample = blockedSample
         self.includeNewFork = includeNewFork
@@ -265,6 +273,8 @@ class PmuAttr(object):
                  useFreq=False,
                  excludeUser=False,
                  excludeKernel=False,
+                 excludeGuest=False,
+                 excludeHost=False,
                  symbolMode=0,
                  callStack=False,
                  blockedSample=False,
@@ -289,6 +299,8 @@ class PmuAttr(object):
             useFreq=useFreq,
             excludeUser=excludeUser,
             excludeKernel=excludeKernel,
+            excludeGuest=excludeGuest,
+            excludeHost=excludeHost,
             symbolMode=symbolMode,
             callStack=callStack,
             blockedSample=blockedSample,
@@ -468,6 +480,22 @@ class PmuAttr(object):
     @excludeKernel.setter
     def excludeKernel(self, excludeKernel):
         self.c_pmu_attr.excludeKernel = int(excludeKernel)
+
+    @property
+    def excludeGuest(self):
+        return bool(self.c_pmu_attr.excludeGuest)
+
+    @excludeGuest.setter
+    def excludeGuest(self, excludeGuest):
+        self.c_pmu_attr.excludeGuest = int(excludeGuest)
+
+    @property
+    def excludeHost(self):
+        return bool(self.c_pmu_attr.excludeHost)
+
+    @excludeHost.setter
+    def excludeHost(self, excludeHost):
+        self.c_pmu_attr.excludeHost = int(excludeHost)
 
     @property
     def symbolMode(self):
@@ -2300,10 +2328,10 @@ def PmuCloseCpuFreqSampling():
 
 def PmuBeginWrite(path, pattr, addIdHdr):
     """
-    PmuFile PmuBeginWrite(const char *path, const PmuAttr *pattr)
+    PmuFile PmuBeginWrite(const char *path, const PmuAttr *pattr, const int addIdHdr)
     """
     c_func = kperf_so.PmuBeginWrite
-    c_func.argtypes = [ctypes.c_char_p, ctypes.POINTER(CtypesPmuAttr)]
+    c_func.argtypes = [ctypes.c_char_p, ctypes.POINTER(CtypesPmuAttr), ctypes.c_int]
     c_func.restype = ctypes.c_void_p
 
     c_filepath = ctypes.c_char_p(path.encode(UTF_8))

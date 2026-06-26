@@ -312,6 +312,8 @@ class PmuAttr(_libkperf.PmuAttr):
             otherwise, it will be used as sample period.
         excludeUser: Don't count user.
         excludeKernel: Don't count kernel.
+        excludeGuest: Don't count guest.
+        excludeHost: Don't count host.
         symbolMode: This indicates how to analyze symbols of samples.
             Refer to  comments of SymbolMode.
         callStack: This indicates whether to collect whole callchains or only top frame.
@@ -337,6 +339,8 @@ class PmuAttr(_libkperf.PmuAttr):
                  useFreq = False,
                  excludeUser = False,
                  excludeKernel = False,
+                 excludeGuest = False,
+                 excludeHost = False,
                  symbolMode = 0,
                  callStack = False,
                  blockedSample = False,
@@ -359,6 +363,8 @@ class PmuAttr(_libkperf.PmuAttr):
             useFreq=useFreq,
             excludeUser=excludeUser,
             excludeKernel=excludeKernel,
+            excludeGuest=excludeGuest,
+            excludeHost=excludeHost,
             symbolMode=symbolMode,
             callStack=callStack,
             blockedSample=blockedSample,

@@ -16,12 +16,11 @@ from setuptools import setup, find_packages
 
 libkperf_path = '@LIBKPERF_PATH@'
 libsym_path = '@LIBSYM_PATH@'
-_libkperf_path = '@SETUP_LIBKPERF_PATH@'
-
 setup(
     name='libkperf',
     version='1.0',
     packages=find_packages(),
-    data_files=[(_libkperf_path, [libkperf_path, libsym_path])]
+    package_data={'_libkperf': ['libkperf.so', 'libsym.so']},
+    include_package_data=True,
 )
 

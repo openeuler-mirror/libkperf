@@ -36,6 +36,10 @@
     排除对用户态数据的采集
   * unsigned excludeKernel
     排除对内核态数据的采集
+  * unsigned excludeGuest
+    排除对虚拟机guest数据的采集
+  * unsigned excludeHost
+    排除对宿主机host数据的采集
   * enum SymbolMode symbolMode
     符号采集模式
     * NO_SYMBOL_RESOLVE = 0 不支持符号采集

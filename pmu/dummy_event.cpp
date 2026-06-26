@@ -74,7 +74,8 @@ namespace KUNPENG_PMU {
         attr.sample_id_all = 1;
         attr.read_format = PERF_FORMAT_ID;
         attr.task = 1;
-        attr.exclude_guest = 1;
+        attr.exclude_guest = excludeGuest;
+        attr.exclude_host = excludeHost;
         auto fd = PerfEventOpen(&attr, pid, -1, -1, 0);
         if (fd == -1) {
             ERR_PRINT("Failed open dummy event fd because of %s\n", strerror(errno));

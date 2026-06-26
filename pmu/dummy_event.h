@@ -27,10 +27,12 @@ namespace KUNPENG_PMU {
 
     class DummyEvent {
     public:
-        DummyEvent(const unsigned &pd, std::vector<pid_t>& ppids) :
-                pd(pd),
+        DummyEvent(const unsigned &pd, std::vector<pid_t>& ppids, bool excludeGuest, bool excludeHost) :
+                dummyFlag(true),
                 ppids(ppids),
-                dummyFlag(true) {};
+                pd(pd),
+                excludeGuest(excludeGuest),
+                excludeHost(excludeHost) {};
 
         ~DummyEvent();
         /**
@@ -44,6 +46,8 @@ namespace KUNPENG_PMU {
         volatile std::atomic<bool> dummyFlag;
         std::vector<pid_t> ppids;
         unsigned pd;
+        bool excludeGuest;
+        bool excludeHost;
         std::vector<pid_t> exitPids;
         std::unordered_map<pid_t, std::pair<int, void*>> dummyMap;
         std::condition_variable hasDataCond;

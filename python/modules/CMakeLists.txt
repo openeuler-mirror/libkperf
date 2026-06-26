@@ -18,10 +18,8 @@ set(LIBSYM_PATH ${CMAKE_BINARY_DIR}/symbol/libsym.so)
 
 if(DEFINED PYTHON_WHL AND PYTHON_WHL)
     set(BIN_TYPE "bdist_wheel")
-    set(SETUP_LIBKPERF_PATH "/_libkperf")
 else()
     set(BIN_TYPE "install")
-    set(SETUP_LIBKPERF_PATH "_libkperf")
 endif()
 
 configure_file(
@@ -30,6 +28,8 @@ configure_file(
 )
 
 add_custom_target(${PROJECT_NAME} ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${LIBKPERF_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/_libkperf/libkperf.so
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${LIBSYM_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/_libkperf/libsym.so
     COMMAND ${PYTHON_EXECUTABLE} setup.py ${BIN_TYPE}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
