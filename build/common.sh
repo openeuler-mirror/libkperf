@@ -185,14 +185,15 @@ function build_java_trace() {
   local install_path=$1
   local root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
   local java_trace_dir="${root_dir}/java/java_trace"
+  local trace_filter_config="${root_dir}/pmu/trace/trace_filter.conf"
   local trace_java_lib_dir="${install_path}/lib/java"
-  local trace_java_conf_dir="${install_path}/conf"
+  local trace_conf_dir="${install_path}/conf"
   if [ ! -d "${java_trace_dir}" ]; then
     echo "ERROR: java trace directory not found: ${java_trace_dir}" >&2
     return 1
   fi
   mkdir -p "${trace_java_lib_dir}"
-  mkdir -p "${trace_java_conf_dir}"
+  mkdir -p "${trace_conf_dir}"
   pushd "${java_trace_dir}" >/dev/null || return 1
   local build_ok=1
 
@@ -245,11 +246,12 @@ function build_java_trace() {
     return 1
   fi
 
-  if [ -f "${java_trace_dir}/trace_filter.conf" ]; then
-    cp -f "${java_trace_dir}/trace_filter.conf" "${trace_java_conf_dir}/trace_filter.conf"
-    echo "trace_filter.conf copied to ${trace_java_conf_dir}/"
+  # Install the shared trace filter configuration used by the Java backend.
+  if [ -f "${trace_filter_config}" ]; then
+    cp -f "${trace_filter_config}" "${trace_conf_dir}/trace_filter.conf"
+    echo "trace_filter.conf copied to ${trace_conf_dir}/"
   else
-    echo "WARNING: trace_filter.conf not found in ${java_trace_dir}" >&2
+    echo "WARNING: trace filter config not found: ${trace_filter_config}" >&2
   fi
 
   echo "java trace jars generated:"
