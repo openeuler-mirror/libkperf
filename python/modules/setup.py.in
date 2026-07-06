@@ -21,6 +21,6 @@ setup(
     version='1.0',
     packages=find_packages(),
     package_data={'_libkperf': ['libkperf.so', 'libsym.so']},
-    include_package_data=True,
+    include_package_data=False,
 )
 
