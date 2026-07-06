@@ -28,6 +28,8 @@ configure_file(
 )
 
 add_custom_target(${PROJECT_NAME} ALL
+    COMMAND ${CMAKE_COMMAND} -D PY_MODULE_DIR=${CMAKE_CURRENT_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/clean_build.cmake
+
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${LIBKPERF_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/_libkperf/libkperf.so
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${LIBSYM_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/_libkperf/libsym.so
     COMMAND ${PYTHON_EXECUTABLE} setup.py ${BIN_TYPE}
