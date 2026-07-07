@@ -414,16 +414,24 @@ class PmuTraceAttr(_libkperf.PmuTraceAttr):
         unsigned numPid;
         int* cpuList;
         unsigned numCpu;
+        // This indicates whether to collect whole callchains or only top frame.
+        unsigned callStack : 1;
+        // This indicates how to analyze symbols of samples.
+        enum SymbolMode symbolMode;
     };
     """
     def __init__(self,
                  funcs = None,
                  pidList = None,
-                 cpuList = None):
+                 cpuList = None,
+                 callStack=False,
+                 symbolMode=0):
         super(PmuTraceAttr, self).__init__(
             funcs=funcs,
             pidList=pidList,
-            cpuList=cpuList
+            cpuList=cpuList,
+            callStack=callStack,
+            symbolMode=symbolMode
         )
 
 class ImplPmuTraceData(_libkperf.ImplPmuTraceData):

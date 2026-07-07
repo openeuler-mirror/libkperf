@@ -16,6 +16,7 @@
 #include <iostream>
 #include <fstream>
 #include <unistd.h>
+#include <signal.h>
 #include <linux/perf_event.h>
 #include <linux/version.h>
 #include <cstring>
@@ -102,7 +103,7 @@ static int CheckPidList(unsigned numPid, int* pidList)
         return LIBPERF_ERR_INVALID_PIDLIST;
     }
     for (int i = 0; i < numPid; i++) {
-        if (pidList[i] < 0) {
+        if (pidList[i] < 0 || kill(pidList[i], 0) == -1) {
             string errMsg = "Invalid pid: " + to_string(pidList[i]) + ", Please check pid config parameter.";
             New(LIBPERF_ERR_INVALID_PIDLIST, errMsg);
             return LIBPERF_ERR_INVALID_PIDLIST;

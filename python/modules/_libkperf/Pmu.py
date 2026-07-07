@@ -882,6 +882,10 @@ class CtypesPmuTraceAttr(ctypes.Structure):
         unsigned numPid;
         int* cpuList;
         unsigned numCpu;
+        // This indicates whether to collect whole callchains or only top frame.
+        unsigned callStack : 1;
+        // This indicates how to analyze symbols of samples.
+        enum SymbolMode symbolMode;
     };
     """
     _fields_ = [
@@ -891,12 +895,16 @@ class CtypesPmuTraceAttr(ctypes.Structure):
         ('numPid',      ctypes.c_uint),
         ('cpuList',     ctypes.POINTER(ctypes.c_int)),
         ('numCpu',      ctypes.c_uint),
+        ('callStack',   ctypes.c_uint, 1),
+        ('symbolMode',  ctypes.c_uint),
     ]
 
     def __init__(self,
                  funcs=None,
                  pidList=None,
                  cpuList=None,
+                 callStack=False,
+                 symbolMode=0,
                 *args, **kw):
         super(CtypesPmuTraceAttr, self).__init__(*args, **kw)
 
@@ -924,6 +932,9 @@ class CtypesPmuTraceAttr(ctypes.Structure):
             self.cpuList = None
             self.numCpu = ctypes.c_uint(0)
 
+        self.callStack = callStack
+        self.symbolMode = ctypes.c_uint(symbolMode)
+
 
 class PmuTraceAttr(object):
     __slots__ = ['__c_pmu_trace_attr']
@@ -931,11 +942,15 @@ class PmuTraceAttr(object):
     def __init__(self,
                  funcs=None,
                  pidList=None,
-                 cpuList=None):
+                 cpuList=None,
+                 callStack=False,
+                 symbolMode=0):
         self.__c_pmu_trace_attr = CtypesPmuTraceAttr(
             funcs=funcs,
             pidList=pidList,
-            cpuList=cpuList
+            cpuList=cpuList,
+            callStack=callStack,
+            symbolMode=symbolMode
         )
     
     @property
@@ -995,6 +1010,22 @@ class PmuTraceAttr(object):
         else:
             self.c_pmu_trace_attr.cpuList = None
             self.c_pmu_trace_attr.numCpu = ctypes.c_uint(0)
+
+    @property
+    def callStack(self):
+        return bool(self.c_pmu_trace_attr.callStack)
+
+    @callStack.setter
+    def callStack(self, callStack):
+        self.c_pmu_trace_attr.callStack = int(callStack)
+
+    @property
+    def symbolMode(self):
+        return self.c_pmu_trace_attr.symbolMode
+
+    @symbolMode.setter
+    def symbolMode(self, symbolMode):
+        self.c_pmu_trace_attr.symbolMode = ctypes.c_uint(symbolMode)
 
 class CtypesCpuTopology(ctypes.Structure):
     """
@@ -1630,6 +1661,7 @@ class CtypesPmuTraceData(ctypes.Structure):
         int tid;                        // thread id
         int cpu;                   // cpu id
         const char *comm;               // process command
+        struct Stack* stack;            // call stack (only available when callStack is 1)
     };
     """
     _fields_ = [
@@ -1639,7 +1671,8 @@ class CtypesPmuTraceData(ctypes.Structure):
         ('pid', ctypes.c_int),
         ('tid', ctypes.c_int),
         ('cpu', ctypes.c_int),
-        ('comm', ctypes.c_char_p)
+        ('comm', ctypes.c_char_p),
+        ('stack', ctypes.POINTER(CtypesStack)),
     ]
 
     def __init__(self,
@@ -1650,6 +1683,7 @@ class CtypesPmuTraceData(ctypes.Structure):
                  tid=0,
                  cpu=0,
                  comm= '',
+                 stack=None,
                  *args, **kw):
         super(CtypesPmuTraceData, self).__init__(*args, **kw)
 
@@ -1660,6 +1694,7 @@ class CtypesPmuTraceData(ctypes.Structure):
         self.tid = ctypes.c_int(tid)
         self.cpu = ctypes.c_int(cpu)
         self.comm = ctypes.c_char_p(comm.encode(UTF_8))
+        self.stack = stack
 
 class ImplPmuTraceData:
     __slots__ = ['__c_pmu_trace_data']
@@ -1671,6 +1706,7 @@ class ImplPmuTraceData:
                  tid=0,
                  cpu=0,
                  comm= '',
+                 stack=None,
                  *args, **kw):
         self.__c_pmu_trace_data = CtypesPmuTraceData(
             funcs=funcs,
@@ -1679,7 +1715,8 @@ class ImplPmuTraceData:
             pid=pid,
             tid=tid,
             cpu=cpu,
-            comm=comm
+            comm=comm,
+            stack=stack
         )
     
     @property
@@ -1741,6 +1778,14 @@ class ImplPmuTraceData:
     @comm.setter
     def comm(self, comm):
         self.__c_pmu_trace_data.comm = ctypes.c_char_p(comm.encode(UTF_8))
+    
+    @property
+    def stack(self):
+        return self.__c_pmu_trace_data.stack
+    
+    @stack.setter
+    def stack(self, stack):
+        self.__c_pmu_trace_data.stack = stack
     
     @classmethod
     def from_c_pmu_trace_data(cls, c_pmu_trace_data):
