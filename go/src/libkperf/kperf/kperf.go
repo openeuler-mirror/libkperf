@@ -45,6 +45,14 @@ struct MetricDataExt {
     unsigned socketId;
 };
 
+void SetTraceCallStack(struct PmuTraceAttr* attr, unsigned callStack) {
+	attr->callStack = callStack;
+}
+
+void SetTraceSymbolMode(struct PmuTraceAttr* attr, unsigned symbolMode) {
+	attr->symbolMode = symbolMode;
+}
+
 void SetPeriod(struct PmuAttr* attr, unsigned period) {
 	attr->period = period;
 }
@@ -491,6 +499,8 @@ type PmuTraceAttr struct {
 	Funcs []string 	// system call function list, if funcs is empty, it will collect all the system call function elapsed time
 	PidList []int   // pid list 
 	CpuList []int   // cpu id list
+	CallStack bool  // This indicates whether to collect whole callchains or only top frame
+	SymbolMode C.enum_SymbolMode // This indicates how to analyze symbols of samples.Refer to comments of SymbolMode
 }
 
 // PmuTraceData info
@@ -502,6 +512,7 @@ type PmuTraceData struct {
 	Tid int                // thread id
 	Cpu int			   	   // cpu id
 	Comm string			   // process command
+	Symbols []sym.Symbol   // call stack symbols (only available when callStack is 1)
 }
 
 // PmuTraceDataVo read from PmuTraceRead
@@ -1021,6 +1032,14 @@ func PmuTraceOpen(traceType C.enum_PmuTraceType, traceAttr PmuTraceAttr) (int, e
 		cAttr.funcs   = &funcs[0]
 	}
 
+	if traceAttr.CallStack {
+		C.SetTraceCallStack(cAttr, C.uint(1))
+	}
+
+	if traceAttr.SymbolMode > 0 {
+		C.SetTraceSymbolMode(cAttr, C.uint(traceAttr.SymbolMode))
+	}
+
 	taskId := C.PmuTraceOpen(traceType, cAttr)
 	if int(taskId) == -1 {
 		return -1, errors.New(C.GoString(C.Perror()))
@@ -1081,11 +1100,49 @@ func PmuTraceRead(taskId int) (PmuTraceDataVo, error) {
 	cDataList := *(*[]C.struct_PmuTraceData)(unsafe.Pointer(&slice))
 	goTraceData := make([]PmuTraceData, int(traceLen))
 	for i, v := range cDataList {
-		goTraceData[i] = PmuTraceData{FuncName:C.GoString(v.funcs), StartTs: int64(v.startTs), ElapsedTime:float64(v.elapsedTime), Pid:int(v.pid), Tid: int(v.tid), Cpu: int(v.cpu), Comm: C.GoString(v.comm)}
+		traceData := PmuTraceData{
+			FuncName:    C.GoString(v.funcs),
+			StartTs:     int64(v.startTs),
+			ElapsedTime: float64(v.elapsedTime),
+			Pid:         int(v.pid),
+			Tid:         int(v.tid),
+			Cpu:         int(v.cpu),
+			Comm:        C.GoString(v.comm),
+		}
+		if v.stack != nil {
+			traceData.Symbols = transferTraceStack(v.stack)
+		}
+		goTraceData[i] = traceData
 	}
 	res.GoTraceData = goTraceData
 	res.cTraceData  = cTraceData
 	return res, nil
+}
+
+func transferTraceStack(cStack *C.struct_Stack) []sym.Symbol {
+	symbols := make([]sym.Symbol, 0, 10)
+	curStack := cStack
+	for curStack != nil {
+		cSymbol := curStack.symbol
+		if cSymbol != nil {
+			oneSymbol := sym.Symbol{
+				Addr:          uint64(cSymbol.addr),
+				Module:        C.GoString(cSymbol.module),
+				SymbolName:    C.GoString(cSymbol.symbolName),
+				MangleName:    C.GoString(cSymbol.mangleName),
+				FileName:      C.GoString(cSymbol.fileName),
+				LineNum:       uint32(cSymbol.lineNum),
+				Offset:        uint64(cSymbol.offset),
+				CodeMapEndAddr: uint64(cSymbol.codeMapEndAddr),
+				CodeMapAddr:   uint64(cSymbol.codeMapAddr),
+				FirstLine:     uint32(cSymbol.firstLine),
+				MntPoint:      C.GoString(cSymbol.mntPoint),
+			}
+			symbols = append(symbols, oneSymbol)
+		}
+		curStack = curStack.next
+	}
+	return symbols
 }
 
 // Close task with id <pd>.

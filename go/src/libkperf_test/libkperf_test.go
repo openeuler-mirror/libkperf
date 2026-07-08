@@ -196,6 +196,104 @@ func TestSysCallTrace(t *testing.T) {
 	kperf.PmuTraceClose(taskId)
 }
 
+func TestSysCallTraceWithCallStack(t *testing.T) {
+	traceAttr := kperf.PmuTraceAttr{Funcs:[]string{"clock_gettime"}, CallStack:true, SymbolMode: kperf.ELF}
+
+	taskId, err := kperf.PmuTraceOpen(kperf.TRACE_SYS_CALL, traceAttr)
+	if err != nil {
+		t.Fatalf("pmu trace open with call stack failed, expect err is nil, but is %v", err)
+	}
+
+	kperf.PmuTraceEnable(taskId)
+	time.Sleep(time.Second)
+	kperf.PmuTraceDisable(taskId)
+
+	traceList, err := kperf.PmuTraceRead(taskId)
+
+	if err != nil {
+		t.Fatalf("pmu trace read failed, expect err is nil, but is %v", err)
+	}
+
+	t.Logf("==========================pmu get trace data with call stack success==========================")
+
+	hasValidStack := false
+	for _, v := range traceList.GoTraceData {
+		t.Logf("comm=%v, func=%v, elapsedTime=%v, startTs=%v, pid=%v, tid=%v, cpu=%v", v.Comm, v.FuncName, v.ElapsedTime, v.StartTs, v.Pid, v.Tid, v.Cpu)
+		
+		if len(v.Symbols) > 0 {
+			hasValidStack = true
+			t.Logf("Call stack depth: %d", len(v.Symbols))
+			
+			for _, s := range v.Symbols {
+				t.Logf("symbol info module=%v, symbolName=%v, addr=%#x", s.Module, s.SymbolName, s.Addr)
+				
+				if s.Addr == 0 {
+					t.Errorf("symbol address should not be 0")
+				}
+				if s.Module == "" {
+					t.Errorf("symbol module should not be empty")
+				}
+			}
+		}
+	}
+
+	if !hasValidStack {
+		t.Fatalf("no trace data has valid call stack")
+	}
+
+	kperf.PmuTraceFree(traceList)
+	kperf.PmuTraceClose(taskId)
+}
+
+func TestSysCallTraceWithDwarfSymbol(t *testing.T) {
+	traceAttr := kperf.PmuTraceAttr{Funcs:[]string{"clock_gettime"}, CallStack:true, SymbolMode: kperf.ELF_DWARF}
+
+	taskId, err := kperf.PmuTraceOpen(kperf.TRACE_SYS_CALL, traceAttr)
+	if err != nil {
+		t.Fatalf("pmu trace open with dwarf symbol failed, expect err is nil, but is %v", err)
+	}
+
+	kperf.PmuTraceEnable(taskId)
+	time.Sleep(time.Second)
+	kperf.PmuTraceDisable(taskId)
+
+	traceList, err := kperf.PmuTraceRead(taskId)
+
+	if err != nil {
+		t.Fatalf("pmu trace read failed, expect err is nil, but is %v", err)
+	}
+
+	t.Logf("==========================pmu get trace data with dwarf symbol success==========================")
+
+	hasValidStack := false
+	for _, v := range traceList.GoTraceData {
+		t.Logf("comm=%v, func=%v, elapsedTime=%v, startTs=%v, pid=%v, tid=%v, cpu=%v", v.Comm, v.FuncName, v.ElapsedTime, v.StartTs, v.Pid, v.Tid, v.Cpu)
+		
+		if len(v.Symbols) > 0 {
+			hasValidStack = true
+			t.Logf("Call stack depth: %d", len(v.Symbols))
+			
+			for _, s := range v.Symbols {
+				t.Logf("symbol info module=%v, symbolName=%v, addr=%#x, lineNum=%v, fileName=%v", s.Module, s.SymbolName, s.Addr, s.LineNum, s.FileName)
+				
+				if s.Addr == 0 {
+					t.Errorf("symbol address should not be 0")
+				}
+				if s.Module == "" {
+					t.Errorf("symbol module should not be empty")
+				}
+			}
+		}
+	}
+
+	if !hasValidStack {
+		t.Fatalf("no trace data has valid call stack")
+	}
+
+	kperf.PmuTraceFree(traceList)
+	kperf.PmuTraceClose(taskId)
+}
+
 func TestBrbe(t *testing.T) {
 	attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, SymbolMode:kperf.ELF_DWARF, CallStack:true, SampleRate: 1000, UseFreq:true, BranchSampleFilter: kperf.KPERF_SAMPLE_BRANCH_ANY}
 	fd, err := kperf.PmuOpen(kperf.SAMPLE, attr)

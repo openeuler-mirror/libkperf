@@ -160,3 +160,81 @@ TEST_F(TestAnaylzeData, collect_all_trace_data_success) {
     EXPECT_TRUE(data != nullptr);
     EXPECT_TRUE(data[len - 1].funcs != nullptr);
 }
+
+/**
+ * @brief test for collecting trace data with call stack enabled
+ */
+TEST_F(TestAnaylzeData, collect_trace_data_with_call_stack) {
+    appPid = RunApp("test_syscall_sleep");
+    int pidList[1] = {appPid};
+    const char *func1 = "clock_nanosleep";
+    const char *funcs[1] = {func1};
+    PmuTraceAttr traceAttr = {0};
+    traceAttr.funcs = funcs;
+    traceAttr.numFuncs = 1;
+    traceAttr.pidList = pidList;
+    traceAttr.numPid = 1;
+    traceAttr.callStack = 1;
+    traceAttr.symbolMode = RESOLVE_ELF;
+
+    pd = PmuTraceOpen(TRACE_SYS_CALL, &traceAttr);
+    ASSERT_NE(pd, -1);
+    EnableTracePointer(pd, 1);
+    int len = PmuTraceRead(pd, &data);
+    ASSERT_TRUE(data != nullptr);
+
+    ASSERT_TRUE(data[0].stack != nullptr);
+    struct Stack *curStack = data[0].stack;
+    int stackDepth = 0;
+    while (curStack != nullptr) {
+        if (curStack->symbol != nullptr) {
+            EXPECT_TRUE(curStack->symbol->addr != 0);
+            EXPECT_TRUE(curStack->symbol->module != nullptr);
+            EXPECT_TRUE(strlen(curStack->symbol->module) > 0);
+            stackDepth++;
+        }
+        curStack = curStack->next;
+    }
+    EXPECT_GT(stackDepth, 0);
+}
+
+/**
+ * @brief test for collecting trace data with dwarf symbol mode
+ */
+TEST_F(TestAnaylzeData, collect_trace_data_with_dwarf_symbol) {
+    appPid = RunApp("test_syscall_sleep");
+    int pidList[1] = {appPid};
+    const char *func1 = "clock_nanosleep";
+    const char *funcs[1] = {func1};
+    PmuTraceAttr traceAttr = {0};
+    traceAttr.funcs = funcs;
+    traceAttr.numFuncs = 1;
+    traceAttr.pidList = pidList;
+    traceAttr.numPid = 1;
+    traceAttr.callStack = 1;
+    traceAttr.symbolMode = RESOLVE_ELF_DWARF;
+
+    pd = PmuTraceOpen(TRACE_SYS_CALL, &traceAttr);
+    ASSERT_NE(pd, -1);
+    EnableTracePointer(pd, 1);
+    int len = PmuTraceRead(pd, &data);
+    ASSERT_TRUE(data != nullptr);
+
+    ASSERT_TRUE(data[0].stack != nullptr);
+    struct Stack *curStack = data[0].stack;
+    int stackDepth = 0;
+    bool hasFileName = false;
+    while (curStack != nullptr) {
+        if (curStack->symbol != nullptr) {
+            EXPECT_TRUE(curStack->symbol->addr != 0);
+            EXPECT_TRUE(curStack->symbol->module != nullptr);
+            EXPECT_TRUE(strlen(curStack->symbol->module) > 0);
+            if (curStack->symbol->fileName != nullptr && strlen(curStack->symbol->fileName) > 0) {
+                hasFileName = true;
+            }
+            stackDepth++;
+        }
+        curStack = curStack->next;
+    }
+    EXPECT_GT(stackDepth, 0);
+}

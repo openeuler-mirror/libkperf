@@ -209,7 +209,8 @@
   * unsigned numPid 采集进程id的个数
   * int* cpuList 指定的使用cpu核采集列表，默认采集所有逻辑核
   * unsigned numCpu 采集cpu核的个数
-  * CpuList []int采集的cpu列表，默认为空，表示采集所有cpu
+  * unsigned callStack 布尔值，是否采集调用栈（0表示不采集，1表示采集）
+  * enum SymbolMode symbolMode 符号解析模式，参考SymbolMode枚举定义
 * 返回值 > 0   采集初始化成功
   返回值 = -1 采集初始化失败
 
@@ -239,6 +240,7 @@
   * Tid int 线程id
   * Cpu int cpu号
   * Comm string 执行指令名称
+  * struct Stack* stack 调用栈信息（仅当callStack为1时可用）
 
 ### void PmuTraceClose(int pd);
 该接口用于清理该pd所有对应的数据，并移除该taskId

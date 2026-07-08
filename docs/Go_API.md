@@ -243,6 +243,8 @@ func PmuTraceOpen(traceType C.enum_PmuTraceType, traceAttr PmuTraceAttr) (int, e
   * Funcs []string 采集的系统调用函数列表，可以查看/usr/include/asm-generic/unistd.h文件，默认为空，表示采集所有系统调用函数
   * PidList []int采集的进程列表，默认为空，表示采集所有进程
   * CpuList []int采集的cpu列表，默认为空，表示采集所有cpu
+  * CallStack bool 是否采集调用栈（true表示采集，false表示不采集）
+  * SymbolMode C.enum_SymbolMode 符号解析模式
 * 返回值是int和error，如果error！=nil则采集初始化失败，error==nil则采集初始化成功
 
 以下是kperf.PmuTraceOpen用法:
@@ -252,7 +254,7 @@ import "libkperf/kperf"
 import "fmt"
 
 func main() {
-    traceAttr := kperf.PmuTraceAttr{Funcs:[]string{"read", "write"}}
+    traceAttr := kperf.PmuTraceAttr{Funcs:[]string{"read", "write"}, CallStack: true, SymbolMode: kperf.ELF_DWARF}
 	taskId, err := kperf.PmuTraceOpen(kperf.TRACE_SYS_CALL, traceAttr)
 	if err != nil {
 		fmt.Printf("pmu trace open failed, expect err is nil, but is %v\n", err)
@@ -302,6 +304,7 @@ func PmuTraceRead(taskId int) (PmuTraceDataVo, error)
   * Tid int 线程id
   * Cpu int cpu号
   * Comm string 执行指令名称
+  * Symbols []sym.Symbol 调用栈符号列表（仅当CallStack为true时可用）
 
 ```go
 traceList, err := kperf.PmuTraceRead(taskId)

@@ -209,6 +209,11 @@ struct PmuTraceAttr {
     unsigned numPid;
     int* cpuList;
     unsigned numCpu;
+    // This indicates whether to collect whole callchains or only top frame.
+    unsigned callStack : 1;
+    // This indicates how to analyze symbols of samples.
+    // Refer to comments of SymbolMode.
+    enum SymbolMode symbolMode;
 };
 
 struct CpuTopology {
@@ -320,11 +325,12 @@ struct PmuData {
 struct PmuTraceData {
     const char *funcs;              // system call function
     int64_t startTs;                // start time stamp. unit: ns
-    double elapsedTime;             // elapsed time
+    double elapsedTime;             // elapsed time. unit: ms
     pid_t pid;                      // process id
     int tid;                        // thread id
-    int cpu;                   // cpu id
+    int cpu;                        // cpu id
     const char *comm;               // process command
+    struct Stack* stack;            // call stack. (only available when callStack is 1)
 };
 
 struct PmuCpuFreqDetail {

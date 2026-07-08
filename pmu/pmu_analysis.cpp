@@ -148,6 +148,12 @@ namespace KUNPENG_PMU {
         traceDataItem.tid = enterPmuData.tid;
         traceDataItem.cpu = enterPmuData.cpu;
         traceDataItem.comm = enterPmuData.comm;
+        // Copy call stack if available. (determined by whether stack is nullptr in enterPmuData)
+        if (enterPmuData.stack != nullptr) {
+            traceDataItem.stack = enterPmuData.stack;
+        } else {
+            traceDataItem.stack = nullptr;
+        }
 
         traceData.emplace_back(traceDataItem);
     }
@@ -219,7 +225,7 @@ namespace KUNPENG_PMU {
         TraceEventData newTraceData = {
             .pd = pd,
             .traceType = TRACE_SYS_CALL,
-            .data = move(traceData),
+            .data = move(traceData)
         };
         oriPmuData[newTraceData.data.data()] = pmuData;
         auto inserted = traceDataList.emplace(newTraceData.data.data(), move(newTraceData));
@@ -279,7 +285,7 @@ namespace KUNPENG_PMU {
         TraceEventData newTraceData = {
             .pd = pd,
             .traceType = TRACE_SYS_CALL,
-            .data = move(traceData),
+            .data = move(traceData)
         };
         oriPmuData[newTraceData.data.data()] = pmuData;
         auto inserted = traceDataList.emplace(newTraceData.data.data(), move(newTraceData));
