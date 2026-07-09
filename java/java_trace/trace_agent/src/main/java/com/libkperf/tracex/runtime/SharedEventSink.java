@@ -59,9 +59,9 @@ final class SharedEventSink implements AutoCloseable {
     static final int SLOT_FUNC = 240;
     static final int SLOT_FUNC_LEN = 256;
 
-    private static final int DEFAULT_SLOT_COUNT = 1048576;
+    private static final int DEFAULT_SLOT_COUNT = 262144;
     private static final int MAX_SLOT_COUNT = 67108864;
-    private static final int SLOTS_PER_SEGMENT = 1048576;
+    private static final int SLOTS_PER_SEGMENT = 262144;
 
     private final MappedByteBuffer headerBuffer;
     private final MappedByteBuffer[] slotBuffers;

@@ -19,17 +19,27 @@
 #include <cstdint>
 #include <string>
 
+struct JavaBackendTarget {
+    std::string filterConfigPath;
+    std::string agentJarPath;
+    std::string nativeLibPath;
+    std::string assetDirHost;
+    std::string shmPath;
+    std::string logPath;
+};
+
 struct JavaBackendImpl {
     int pid{};
-    std::string include_rules;
-    unsigned slot_count{1048576};
-    std::string filter_config_path;
-    std::string shm_name;
-    std::string shm_path;
-    int shm_fd{-1};
-    size_t shm_size{0};
+    std::string includeRules;
+    unsigned slotCount{262144};
+    std::string filterConfigPath;
+    std::string shmName;
+    std::string shmPath;
+    JavaBackendTarget target;
+    int shmFd{-1};
+    size_t shmSize{0};
     void *mapped{nullptr};
-    uint64_t read_seq{0};
+    uint64_t readSeq{0};
     bool runtimeStopped = false;
     bool runtimeRestored = false;
 };

@@ -4,6 +4,7 @@ project (java_agent)
 set(OUTDIR ${PROJECT_BINARY_DIR}/out)
 set(LIBRARY_OUTPUT_PATH ${OUTDIR})
 
+find_package(Threads REQUIRED)
 find_package(JNI)
 if (JNI_FOUND)
     message (STATUS "JNI_INCLUDE_DIRS=${JNI_INCLUDE_DIRS}")
@@ -15,4 +16,5 @@ INCLUDE_DIRECTORIES(${JAVA_INCLUDE_PATH})
 INCLUDE_DIRECTORIES(${JAVA_INCLUDE_PATH2})
 
 add_library(kperfmap SHARED map/perf-map-agent.c map/perf-map-file.c)
+target_link_libraries(kperfmap ${CMAKE_THREAD_LIBS_INIT})
 install(TARGETS kperfmap DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)

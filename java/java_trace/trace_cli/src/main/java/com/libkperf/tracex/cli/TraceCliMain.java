@@ -15,6 +15,8 @@
 package com.libkperf.tracex.cli;
 
 import java.io.File;
+import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -30,6 +32,15 @@ public final class TraceCliMain {
             throw new IllegalArgumentException("missing required option " + key);
         }
         return v;
+    }
+
+    private static void validatePid(String pid) {
+        for (int i = 0; i < pid.length(); i++) {
+            char c = pid.charAt(i);
+            if (c < '0' || c > '9') {
+                throw new IllegalArgumentException("pid must be numeric: " + pid);
+            }
+        }
     }
 
     // agent args format: key=value;key=value
@@ -61,28 +72,51 @@ public final class TraceCliMain {
     public static void main(String[] args) throws Exception {
         Map<String, String> opts = parseArgs(args);
         String pid = required(opts, "-p");
+        validatePid(pid);
         String agentJar = required(opts, "--agent-jar");
         String action = opts.containsKey("--action") ? opts.get("--action") : "start";
         StringBuilder agentArgs = new StringBuilder();
         appendArg(agentArgs, "action", action);
+        appendArg(agentArgs, "logFile", opts.get("--log-file"));
         if ("start".equals(action)) {
             appendArg(agentArgs, "shmPath", opts.get("--shm-path"));
             appendArg(agentArgs, "nativeLibPath", opts.get("--native-lib"));
             appendArg(agentArgs, "includeFile", opts.get("--include-file"));
             appendArg(agentArgs, "configFile", opts.get("--config-file"));
         }
-        System.out.println("Agent arguments: " + agentArgs.toString());
 
         VirtualMachineAccess vmAccess = VirtualMachineAccess.load();
+        attachAndLoad(vmAccess, pid, agentJar, agentArgs.toString());
+    }
+
+    private static void attachAndLoad(VirtualMachineAccess vmAccess, String pid, String agentJar, String agentArgs) throws Exception {
         Object vm = null;
         try {
             vm = vmAccess.attach(pid);
-            vmAccess.loadAgent(vm, agentJar, agentArgs.toString());
+            vmAccess.loadAgent(vm, agentJar, agentArgs);
         } finally {
             if (vm != null) {
-                vmAccess.detach(vm);
+                try {
+                    vmAccess.detach(vm);
+                } catch (Throwable ignored) {
+                }
             }
         }
+    }
+
+    private static Throwable rootCause(Throwable t) {
+        Throwable cur = t;
+        while (cur instanceof InvocationTargetException && ((InvocationTargetException) cur).getTargetException() != null) {
+            cur = ((InvocationTargetException) cur).getTargetException();
+        }
+        while (cur.getCause() != null && cur.getCause() != cur) {
+            cur = cur.getCause();
+        }
+        return cur;
+    }
+
+    private static boolean isNonNumericAttachReply(Throwable t) {
+        return t instanceof IOException && t.getMessage() != null && t.getMessage().contains("Non-numeric value found");
     }
 
     // load through reflection, which ensures compatibility of JDK 8 and JDK 9+
@@ -120,7 +154,14 @@ public final class TraceCliMain {
         }
 
         private void loadAgent(Object vm, String agentJar, String args) throws Exception {
-            loadAgent.invoke(vm, agentJar, args == null ? "" : args);
+            try {
+                loadAgent.invoke(vm, agentJar, args == null ? "" : args);
+            } catch (InvocationTargetException e) {
+                if (isNonNumericAttachReply(rootCause(e))) {
+                    return;
+                }
+                throw e;
+            }
         }
 
         private void detach(Object vm) throws Exception {

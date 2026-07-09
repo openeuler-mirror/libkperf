@@ -20,16 +20,12 @@
 
 #include <sys/types.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <errno.h>
-
 #include "perf-map-file.h"
 
 FILE *perf_map_open_path(const char *filename) {
     FILE *res = fopen(filename, "w");
     if (!res) {
-        fprintf(stderr, "Couldn't open %s: errno(%d)", filename, errno);
-        exit(0);
+        return NULL;
     }
     return res;
 }

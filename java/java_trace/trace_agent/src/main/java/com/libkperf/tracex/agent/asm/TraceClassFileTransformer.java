@@ -15,6 +15,7 @@
 package com.libkperf.tracex.agent.asm;
 
 import com.libkperf.tracex.agent.TraceConfig;
+import com.libkperf.tracex.agent.TraceLog;
 import com.libkperf.tracex.agent.Util;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -96,7 +97,7 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
             }
             return transformed;
         } catch (Throwable t) {
-            System.err.println("[trace_agent] transform failed for " + className + ": " + t);
+            TraceLog.warn("[trace_agent] transform failed for " + className + ": " + t, t);
             return null;
         } finally {
             REENTRANT.remove();
@@ -166,7 +167,7 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
                     }
                     if (!restoreBytes.containsKey(key)) {
                         failed++;
-                        System.err.println("[trace_agent] restore skip no original bytes: " + Util.safeClassName(clazz));
+                        TraceLog.info("[trace_agent] restore skip no original bytes: " + Util.safeClassName(clazz));
                         continue;
                     }
                     inst.retransformClasses(clazz);
@@ -175,14 +176,14 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
                     ok++;
                 } catch (Throwable t) {
                     failed++;
-                    System.err.println("[trace_agent] restore skip bad class: " + Util.safeClassName(clazz) + ", error=" + t);
+                    TraceLog.warn("[trace_agent] restore skip bad class: " + Util.safeClassName(clazz) + ", error=" + t, t);
                     if (key != null) {
                         INSTRUMENTED.add(key);
                     }
                 }
             }
         } catch (Throwable t) {
-            System.err.println("[trace_agent] restoreAll outer warning: " + t);
+            TraceLog.warn("[trace_agent] restoreAll outer warning: " + t, t);
         } finally {
             try {
                 inst.removeTransformer(restoreTransformer);
@@ -192,7 +193,7 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
                 INSTRUMENTED.clear();
                 ORIGINAL.clear();
             }
-            System.err.println("[trace_agent] restore done, ok=" + ok + ", failed=" + failed);
+            TraceLog.info("[trace_agent] restore done, ok=" + ok + ", failed=" + failed);
         }
     }
 

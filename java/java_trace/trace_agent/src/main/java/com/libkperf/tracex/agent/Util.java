@@ -82,7 +82,7 @@ public final class Util {
             String line;
             while ((line = br.readLine()) != null) sb.append(line).append('\n');
         } catch (Exception e) {
-            System.err.println(errorPrefix + path + ", " + e);
+            TraceLog.warn(errorPrefix + path + ", " + e, e);
         }
         return sb.toString();
     }
