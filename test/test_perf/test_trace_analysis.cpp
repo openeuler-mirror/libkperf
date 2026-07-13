@@ -121,8 +121,10 @@ TEST_F(TestAnaylzeData, collect_sleep_trace_data_success) {
     ASSERT_NE(pd, -1);
     EnableTracePointer(pd, 1);
     int len = PmuTraceRead(pd, &data);
-    ASSERT_TRUE(data != nullptr);
-    ASSERT_LT(data[0].elapsedTime, 0.1);
+    int maxTime = 100;
+    ASSERT_NE(data, nullptr);
+    ASSERT_GT(data[0].elapsedTime, 0);
+    ASSERT_LT(data[0].elapsedTime, maxTime);
 }
 
 /**

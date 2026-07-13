@@ -16,7 +16,9 @@
 #include "test_common.h"
 #include "common.h"
 #include <cerrno>
+#include <cstring>
 #include <unistd.h>
+#include <sys/wait.h>
 
 using namespace std;
 
@@ -35,24 +37,53 @@ public:
             FAIL() << "Cgroup Path does not exist: " << testCgroupPath;
         }
     }
-
+    int tryTimes = 10;
+    int tryUsleep = 5000;
     void TearDown()
     {
-        KillApp(demoPid);
         if (data != nullptr) {
             PmuDataFree(data);
             data = nullptr;
         }
-        PmuClose(pd);
+        if (pd > 0) {
+            PmuClose(pd);
+            pd = 0;
+        }
         for (int i = 0; i< pdNums; ++i) {
-            PmuClose(pds[i]);
+            if (pds[i] > 0) {
+                PmuClose(pds[i]);
+                pds[i] = 0;
+            }
         }
-        std::ofstream ofs(testCgroupPath + "/cgroup.procs");
-        if (ofs.is_open()) {
-            ofs << "";
-            ofs.close();
+
+        if (demoPid > 0) {
+            KillApp(demoPid);
+            int status = 0;
+            for (int retry = 0; retry < tryTimes; ++retry) {
+                pid_t ret = waitpid(demoPid, &status, WNOHANG);
+                if (ret == demoPid || (ret == -1 && errno == ECHILD)) {
+                    break;
+                }
+                usleep(tryUsleep);
+            }
+            demoPid = 0;
         }
-        rmdir(testCgroupPath.c_str());
+
+        int removeErrno = 0;
+        for (int retry = 0; retry < tryTimes; ++retry) {
+            if (rmdir(testCgroupPath.c_str()) == 0 || errno == ENOENT) {
+                removeErrno = 0;
+                break;
+            }
+            removeErrno = errno;
+            if (removeErrno != EBUSY && removeErrno != ENOTEMPTY) {
+                break;
+            }
+            usleep(tryUsleep);
+        }
+        if (removeErrno != 0) {
+            ADD_FAILURE() << "Failed to remove cgroup " << testCgroupPath << ": " << strerror(removeErrno);
+        }
     }
 
 protected:
