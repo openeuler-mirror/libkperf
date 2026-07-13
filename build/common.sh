@@ -56,11 +56,10 @@ test_case_exclude=(
 )
 
 function set_hipa_exclude() {
-	test_case_exclude=(
-		"TestAPI.TestForkNewThread TestAPI.TestCpuFreqSampling TestCgroup.TestCgroupSampling \
-		 TestCount.PwritevFile TestGroup.TestEvtGroupForkNewThread TestMetric.GetCpuFreq"
-		""
-	)
+    test_case_exclude=(
+        ""
+        ""
+    )
 }
 
 function get_cpu_exclude() {
