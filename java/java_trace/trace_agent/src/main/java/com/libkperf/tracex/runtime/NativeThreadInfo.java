@@ -14,6 +14,8 @@
  ******************************************************************************/
 package com.libkperf.tracex.runtime;
 
+import com.libkperf.tracex.agent.TraceLog;
+
 public final class NativeThreadInfo {
 
     private static volatile boolean loaded = false;
@@ -30,17 +32,17 @@ public final class NativeThreadInfo {
         loadTried = true;
 
         if (absolutePath == null || absolutePath.isEmpty()) {
-            System.err.println("[java-trace-agent] native lib path is empty, fallback to Java thread id/time");
+            TraceLog.info("[java-trace-agent] native lib path is empty, fallback to Java thread id/time");
             return;
         }
 
         try {
             System.load(absolutePath);
             loaded = true;
-            System.err.println("[java-trace-agent] native thread info loaded: " + absolutePath);
+            TraceLog.info("[java-trace-agent] native thread info loaded: " + absolutePath);
         } catch (Throwable t) {
             loaded = false;
-            System.err.println("[java-trace-agent] native thread info load failed: " + absolutePath + ", ex=" + t);
+            TraceLog.warn("[java-trace-agent] native thread info load failed: " + absolutePath + ", ex=" + t, t);
         }
     }
 

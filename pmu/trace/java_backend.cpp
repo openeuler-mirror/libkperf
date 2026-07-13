@@ -10,13 +10,15 @@
  * See the Mulan PSL v2 for more details.
  * Author: Wu
  * Create: 2026-04-27
- * Description: Java trace backend implementation: shared memory layout, agent injection command building, and ring-buffer slot reading for Java trace events.
+ * Description: Java trace backend implementation: shared memory layout, agent injection command building,
+ * and ring-buffer slot reading for Java trace events.
  ******************************************************************************/
 #include "java_backend.h"
 #include "java_trace_util.h"
 #include "pmu.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -27,35 +29,38 @@
 #include <type_traits>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <unistd.h>
 
 namespace {
-static constexpr uint64_t kMagic = 0x5554524356415731ULL; // UTRCVAW1
-static constexpr uint32_t kVersion = 1;
-static constexpr size_t kHeaderSize = 64;
-static constexpr size_t kHeaderMagic = 0;
-static constexpr size_t kHeaderVersion = 8;
-static constexpr size_t kHeaderActive = 12;
-static constexpr size_t kHeaderSlotCount = 16;
-static constexpr size_t kHeaderSlotSize = 20;
-static constexpr size_t kHeaderWriteSeq = 24;
-static constexpr size_t kHeaderDropped = 32;
-static constexpr size_t kHeaderDeadlineNs = 40;
+static constexpr uint64_t K_MAGIC = 0x5554524356415731ULL; // UTRCVAW1
+static constexpr uint32_t K_VERSION = 1;
+static constexpr size_t K_HEADER_SIZE = 64;
+static constexpr size_t K_HEADER_MAGIC = 0;
+static constexpr size_t K_HEADER_VERSION = 8;
+static constexpr size_t K_HEADER_ACTIVE = 12;
+static constexpr size_t K_HEADER_SLOT_COUNT = 16;
+static constexpr size_t K_HEADER_SLOT_SIZE = 20;
+static constexpr size_t K_HEADER_WRITE_SEQ = 24;
+static constexpr size_t K_HEADER_DROPPED = 32;
+static constexpr size_t K_HEADER_DEADLINE_NS = 40;
 
-static constexpr size_t kSlotSize = 512;
-static constexpr size_t kSlotSeq = 0;
-static constexpr size_t kSlotAddr = 8;
-static constexpr size_t kSlotTid = 16;
-static constexpr size_t kSlotCpu = 20;
-static constexpr size_t kSlotTimestamp = 24;
-static constexpr size_t kSlotGPtr = 32;
-static constexpr size_t kSlotIsRet = 40;
-static constexpr size_t kSlotComm = 48;
-static constexpr size_t kSlotCommLen = 32;
-static constexpr size_t kSlotModule = 80;
-static constexpr size_t kSlotModuleLen = 160;
-static constexpr size_t kSlotFunc = 240;
-static constexpr size_t kSlotFuncLen = 256;
+static constexpr size_t K_SLOT_SIZE = 512;
+static constexpr size_t K_SLOT_SEQ = 0;
+static constexpr size_t K_SLOT_ADDR = 8;
+static constexpr size_t K_SLOT_TID = 16;
+static constexpr size_t K_SLOT_CPU = 20;
+static constexpr size_t K_SLOT_TIMESTAMP = 24;
+static constexpr size_t K_SLOT_GPTR = 32;
+static constexpr size_t K_SLOT_IS_RET = 40;
+static constexpr size_t K_SLOT_COMM = 48;
+static constexpr size_t K_SLOT_COMM_LEN = 32;
+static constexpr size_t K_SLOT_MODULE = 80;
+static constexpr size_t K_SLOT_MODULE_LEN = 160;
+static constexpr size_t K_SLOT_FUNC = 240;
+static constexpr size_t K_SLOT_FUNC_LEN = 256;
+
+static constexpr mode_t K_TRACE_FILE_MODE = 0600;
 
 template <typename T> static T LoadAt(const uint8_t *p, size_t offset)
 {
@@ -102,16 +107,16 @@ static void FreeJavaTraceBlockRaw(uint8_t *raw, UTraceData *block, size_t count)
 
 static bool FillTraceDataStrings(UTraceData &data, const uint8_t *slot)
 {
-    data.comm = TraceDupString(ReadFixedString(slot, kSlotComm, kSlotCommLen));
+    data.comm = TraceDupString(ReadFixedString(slot, K_SLOT_COMM, K_SLOT_COMM_LEN));
     if (data.comm == nullptr) {
         return false;
     }
-    data.module = TraceDupString(ReadFixedString(slot, kSlotModule, kSlotModuleLen));
+    data.module = TraceDupString(ReadFixedString(slot, K_SLOT_MODULE, K_SLOT_MODULE_LEN));
     if (data.module == nullptr) {
         FreeTraceDataFields(data);
         return false;
     }
-    data.func = TraceDupString(ReadFixedString(slot, kSlotFunc, kSlotFuncLen));
+    data.func = TraceDupString(ReadFixedString(slot, K_SLOT_FUNC, K_SLOT_FUNC_LEN));
     if (data.func == nullptr) {
         FreeTraceDataFields(data);
         return false;
@@ -119,6 +124,30 @@ static bool FillTraceDataStrings(UTraceData &data, const uint8_t *slot)
     return true;
 }
 
+static bool HasAvailableSpace(const std::string &path, size_t bytes)
+{
+    std::string dir = path;
+    size_t pos = dir.rfind('/');
+    if (pos != std::string::npos) {
+        dir = pos == 0 ? "/" : dir.substr(0, pos);
+    }
+    struct statvfs st {};
+    if (statvfs(dir.c_str(), &st) != 0) {
+        int error = errno;
+        JavaTraceLog(MakeLogMessage("[trace-java] statvfs failed for ", dir,
+                                    ", errno=", error, "(", std::strerror(error), ")\n"));
+        return false;
+    }
+    unsigned long long available =
+        static_cast<unsigned long long>(st.f_bavail) * static_cast<unsigned long long>(st.f_frsize);
+    unsigned long long required = static_cast<unsigned long long>(bytes);
+    if (available < required) {
+        JavaTraceLog(MakeLogMessage("[trace-java] insufficient tmp space: dir=", dir,
+                                    ", available=", available, ", required=", required, "\n"));
+        return false;
+    }
+    return true;
+}
 static int JavaBackendRunAction(JavaBackendImpl *impl, const char *action)
 {
     if (!impl || !action) {
@@ -131,9 +160,10 @@ static int JavaBackendRunAction(JavaBackendImpl *impl, const char *action)
     }
 
     int ret = RunCommand(cmd);
+    JavaTraceFlushTargetLog(*impl);
     if (ret != 0) {
-        std::fprintf(stderr, "[trace-java] action=%s failed, ret=%d, cmd=%s\n",
-                     action, ret, cmd.c_str());
+        JavaTraceLog(MakeLogMessage("[trace-java] action=", action, " failed, ret=", ret,
+                                    ", cmd=", cmd, "\n"));
         return ret;
     }
 
@@ -172,50 +202,98 @@ static int JavaBackendRestoreRuntime(JavaBackendImpl *impl)
     }
     return ret;
 }
-} // namespace
-
-int JavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules)
+static void CleanupFailedStorage(JavaBackendImpl *impl, bool removeShmFile)
 {
-    if (!impl) {
-        return -1;
+    if (impl == nullptr) {
+        return;
     }
+    if (impl->shmFd >= 0) {
+        close(impl->shmFd);
+        impl->shmFd = -1;
+    }
+    if (removeShmFile && !impl->shmPath.empty()) {
+        std::remove(impl->shmPath.c_str());
+    }
+    JavaTraceCleanupTargetAssets(impl);
+}
 
+static int PrepareJavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules)
+{
     impl->pid = pid;
     impl->runtimeStopped = true;
     impl->runtimeRestored = true;
 
-    if (includeRules) {
-        impl->include_rules = includeRules;
+    if (includeRules != nullptr) {
+        impl->includeRules = includeRules;
     }
-    impl->filter_config_path = FilterConfigPath();
-    JavaTraceLocalConfig localConfig = LoadLocalConfig(impl->filter_config_path);
-    impl->slot_count = localConfig.slotCount;
-    impl->shm_name = "/utrace_java_" + std::to_string(pid) + "_" + TimestampSuffix();
-    impl->shm_path = "/dev/shm" + impl->shm_name;
-    impl->shm_fd = shm_open(impl->shm_name.c_str(), O_CREAT | O_RDWR, 0600);
-    if (impl->shm_fd < 0) {
-        return -2;
+    impl->filterConfigPath = FilterConfigPath();
+    JavaTraceLocalConfig localConfig = LoadLocalConfig(impl->filterConfigPath);
+    if (!localConfig.valid) {
+        return -1;
+    }
+    impl->slotCount = localConfig.slotCount;
+    impl->shmName = "utrace_java_" + std::to_string(pid) + "_" + TimestampSuffix();
+    impl->shmSize = K_HEADER_SIZE + static_cast<size_t>(impl->slotCount) * K_SLOT_SIZE;
+
+    if (!JavaTracePrepareTargetFiles(*impl)) {
+        JavaTraceCleanupTargetAssets(impl);
+        return -1;
+    }
+    if (!HasAvailableSpace(impl->shmPath, impl->shmSize)) {
+        JavaTraceCleanupTargetAssets(impl);
+        return -1;
+    }
+    return 0;
+}
+
+static int OpenJavaTraceStorage(JavaBackendImpl *impl)
+{
+    JavaTraceLog(MakeLogMessage("[trace-java] slotCount=", impl->slotCount,
+                                ", shmSize=", impl->shmSize,
+                                ", shmPath=", impl->shmPath,
+                                ", targetShmPath=", impl->target.shmPath, "\n"));
+    impl->shmFd = open(impl->shmPath.c_str(), O_CREAT | O_RDWR | O_TRUNC, K_TRACE_FILE_MODE);
+    if (impl->shmFd < 0) {
+        int error = errno;
+        JavaTraceLog(MakeLogMessage("[trace-java] open tmp trace file failed: ", impl->shmPath,
+                                    ", errno=", error, "(", std::strerror(error), ")\n"));
+        CleanupFailedStorage(impl, false);
+        return -1;
     }
 
-    impl->shm_size = kHeaderSize + static_cast<size_t>(impl->slot_count) * kSlotSize;
-    std::fprintf(stderr, "[trace-java] slotCount=%u, shmSize=%zu\n", impl->slot_count, impl->shm_size);
-    if (ftruncate(impl->shm_fd, static_cast<off_t>(impl->shm_size)) != 0) {
-        close(impl->shm_fd);
-        shm_unlink(impl->shm_name.c_str());
-        return -3;
+    if (ftruncate(impl->shmFd, static_cast<off_t>(impl->shmSize)) != 0) {
+        int error = errno;
+        JavaTraceLog(MakeLogMessage("[trace-java] ftruncate trace file failed: ", impl->shmPath,
+                                    ", errno=", error, "(", std::strerror(error), ")\n"));
+        CleanupFailedStorage(impl, true);
+        return -1;
     }
 
-    impl->mapped = mmap(nullptr, impl->shm_size, PROT_READ | PROT_WRITE, MAP_SHARED, impl->shm_fd, 0);
+    impl->mapped = mmap(nullptr, impl->shmSize, PROT_READ | PROT_WRITE, MAP_SHARED, impl->shmFd, 0);
     if (impl->mapped == MAP_FAILED) {
         impl->mapped = nullptr;
-        close(impl->shm_fd);
-        shm_unlink(impl->shm_name.c_str());
-        return -4;
+        int error = errno;
+        JavaTraceLog(MakeLogMessage("[trace-java] mmap trace file failed: ", impl->shmPath,
+                                    ", errno=", error, "(", std::strerror(error), ")\n"));
+        CleanupFailedStorage(impl, true);
+        return -1;
     }
 
-    std::memset(impl->mapped, 0, kHeaderSize);
-    impl->read_seq = 0;
+    std::memset(impl->mapped, 0, K_HEADER_SIZE);
+    impl->readSeq = 0;
     return 0;
+}
+} // namespace
+
+int JavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules)
+{
+    if (impl == nullptr) {
+        return -1;
+    }
+    if (PrepareJavaBackendOpen(impl, pid, includeRules) != 0) {
+        return -1;
+    }
+    return OpenJavaTraceStorage(impl);
 }
 
 int JavaBackendEnable(JavaBackendImpl *impl)
@@ -224,17 +302,18 @@ int JavaBackendEnable(JavaBackendImpl *impl)
         return -1;
     }
     auto *mem = static_cast<uint8_t *>(impl->mapped);
-    // mark the segment active before attach so TraceRuntime can start writing immediately after it is configured by TraceAgent
-    StoreAtRelease<uint32_t>(mem, kHeaderActive, 1);
+    // mark active before attach so TraceRuntime can write after TraceAgent configures the sink
+    StoreAtRelease<uint32_t>(mem, K_HEADER_ACTIVE, 1);
 
     std::string cmd = BuildEnableCommand(*impl);
     if (cmd.empty()) {
-        StoreAtRelease<uint32_t>(mem, kHeaderActive, 0);
+        StoreAtRelease<uint32_t>(mem, K_HEADER_ACTIVE, 0);
         return -1;
     }
     int ret = RunCommand(cmd);
+    JavaTraceFlushTargetLog(*impl);
     if (ret != 0) {
-        StoreAtRelease<uint32_t>(mem, kHeaderActive, 0);
+        StoreAtRelease<uint32_t>(mem, K_HEADER_ACTIVE, 0);
         (void)JavaBackendRestoreRuntime(impl);
         return ret;
     }
@@ -249,16 +328,16 @@ int JavaBackendDisable(JavaBackendImpl *impl)
         return -1;
     }
     auto *mem = static_cast<uint8_t *>(impl->mapped);
-    StoreAtRelease<uint32_t>(mem, kHeaderActive, 0);
+    StoreAtRelease<uint32_t>(mem, K_HEADER_ACTIVE, 0);
 
-    uint64_t writeSeq = LoadAtAcquire<uint64_t>(mem, kHeaderWriteSeq);
-    uint64_t dropped = LoadAtAcquire<uint64_t>(mem, kHeaderDropped);
-    uint32_t slotCount = LoadAtAcquire<uint32_t>(mem, kHeaderSlotCount);
+    uint64_t writeSeq = LoadAtAcquire<uint64_t>(mem, K_HEADER_WRITE_SEQ);
+    uint64_t dropped = LoadAtAcquire<uint64_t>(mem, K_HEADER_DROPPED);
+    uint32_t slotCount = LoadAtAcquire<uint32_t>(mem, K_HEADER_SLOT_COUNT);
     uint64_t overwrittenByRing = (slotCount > 0 && writeSeq > slotCount) ? (writeSeq - slotCount) : 0;
-    std::fprintf(stderr, "[trace-java] disabled shm writing, active=0, writeSeq=%llu, slotCount=%u, overwrittenByRing=%llu, dropped=%llu\n",
-        static_cast<unsigned long long>(writeSeq), slotCount,
-        static_cast<unsigned long long>(overwrittenByRing),
-        static_cast<unsigned long long>(dropped));
+    JavaTraceLog(MakeLogMessage("[trace-java] disabled shm writing, active=0, writeSeq=", writeSeq,
+                                ", slotCount=", slotCount,
+                                ", overwrittenByRing=", overwrittenByRing,
+                                ", dropped=", dropped, "\n"));
     return 0;
 }
 
@@ -275,35 +354,32 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
     }
 
     const uint8_t *mem = static_cast<const uint8_t *>(impl->mapped);
-    if (LoadAtAcquire<uint64_t>(mem, kHeaderMagic) != kMagic) {
+    if (LoadAtAcquire<uint64_t>(mem, K_HEADER_MAGIC) != K_MAGIC) {
         return -3;
     }
-    if (LoadAtAcquire<uint32_t>(mem, kHeaderVersion) != kVersion) {
+    if (LoadAtAcquire<uint32_t>(mem, K_HEADER_VERSION) != K_VERSION) {
         return -4;
     }
 
-    const uint32_t slotCount = LoadAtAcquire<uint32_t>(mem, kHeaderSlotCount);
-    const uint32_t slotSize = LoadAtAcquire<uint32_t>(mem, kHeaderSlotSize);
+    const uint32_t slotCount = LoadAtAcquire<uint32_t>(mem, K_HEADER_SLOT_COUNT);
+    const uint32_t slotSize = LoadAtAcquire<uint32_t>(mem, K_HEADER_SLOT_SIZE);
     // shared memory layout is abnormal
-    if (slotCount == 0 || slotSize != kSlotSize) {
+    if (slotCount == 0 || slotSize != K_SLOT_SIZE) {
         return -5;
     }
 
-    const uint64_t writeSeq = LoadAtAcquire<uint64_t>(mem, kHeaderWriteSeq);
-    const uint64_t prevReadSeq = impl->read_seq;
+    const uint64_t writeSeq = LoadAtAcquire<uint64_t>(mem, K_HEADER_WRITE_SEQ);
+    const uint64_t prevReadSeq = impl->readSeq;
     const uint64_t overwrittenByRing = (slotCount > 0 && writeSeq > slotCount) ? (writeSeq - slotCount) : 0;
-    // no new read_seq index to read
-    if (writeSeq <= impl->read_seq) {
+    // no new readSeq index to read
+    if (writeSeq <= impl->readSeq) {
         return 0;
     }
 
-    // ring buffer 只能保存最近 slotCount 条记录。若生产端已经绕环覆盖，
-    // oldest 表示当前仍可能读到的最老序号，startSeq 取“未读序号”和“仍可访问序号”两者中的较大值。
-    // 后面仍会逐 slot 校验 slotSeq，避免读到被并发写覆盖或尚未完全发布的槽位。
     const uint64_t oldest = writeSeq > slotCount ? (writeSeq - slotCount + 1) : 1;
-    const uint64_t startSeq = std::max<uint64_t>(impl->read_seq + 1, oldest);
+    const uint64_t startSeq = std::max<uint64_t>(impl->readSeq + 1, oldest);
     if (startSeq > writeSeq) {
-        impl->read_seq = writeSeq;
+        impl->readSeq = writeSeq;
         return 0;
     }
 
@@ -323,35 +399,36 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
     size_t seqMismatch = 0;
     for (uint64_t seq = startSeq; seq <= writeSeq; ++seq) {
         size_t slotIndex = static_cast<size_t>((seq - 1) % slotCount);
-        const uint8_t *slot = mem + kHeaderSize + slotIndex * kSlotSize;
-        uint64_t slotSeq = LoadAtAcquire<uint64_t>(slot, kSlotSeq);
+        const uint8_t *slot = mem + K_HEADER_SIZE + slotIndex * K_SLOT_SIZE;
+        uint64_t slotSeq = LoadAtAcquire<uint64_t>(slot, K_SLOT_SEQ);
         if (slotSeq != seq) {
             ++seqMismatch;
             continue;
         }
-        block[outIdx].addr = static_cast<unsigned long>(LoadAt<uint64_t>(slot, kSlotAddr));
-        block[outIdx].tid = LoadAt<int32_t>(slot, kSlotTid);
-        block[outIdx].cpu = LoadAt<int32_t>(slot, kSlotCpu);
-        block[outIdx].timestamp = LoadAt<int64_t>(slot, kSlotTimestamp);
-        block[outIdx].gPtr = LoadAt<uint64_t>(slot, kSlotGPtr);
-        block[outIdx].isRet = LoadAt<uint32_t>(slot, kSlotIsRet);
+        block[outIdx].addr = static_cast<unsigned long>(LoadAt<uint64_t>(slot, K_SLOT_ADDR));
+        block[outIdx].tid = LoadAt<int32_t>(slot, K_SLOT_TID);
+        block[outIdx].cpu = LoadAt<int32_t>(slot, K_SLOT_CPU);
+        block[outIdx].timestamp = LoadAt<int64_t>(slot, K_SLOT_TIMESTAMP);
+        block[outIdx].gPtr = LoadAt<uint64_t>(slot, K_SLOT_GPTR);
+        block[outIdx].isRet = LoadAt<uint32_t>(slot, K_SLOT_IS_RET);
         if (!FillTraceDataStrings(block[outIdx], slot)) {
-            std::fprintf(stderr, "[trace-java] JavaBackendRead failed: duplicate string failed, outIdx=%zu\n", outIdx);
+            JavaTraceLog(MakeLogMessage(
+                "[trace-java] JavaBackendRead failed: duplicate string failed, outIdx=", outIdx, "\n"));
             FreeJavaTraceBlockRaw(raw, block, outIdx + 1);
             return -7;
         }
         ++outIdx;
     }
 
-    // advance read_seq to the current writeSeq. Missed or overwritten records will not be attempted.
-    impl->read_seq = writeSeq;
-    std::fprintf(stderr, "[trace-java] JavaBackendRead summary: prevReadSeq=%llu, writeSeq=%llu, startSeq=%llu, slotCount=%u, overwrittenByRing=%llu, seqMismatch=%zu, out=%zu\n",
-        static_cast<unsigned long long>(prevReadSeq),
-        static_cast<unsigned long long>(writeSeq),
-        static_cast<unsigned long long>(startSeq),
-        slotCount,
-        static_cast<unsigned long long>(overwrittenByRing),
-        seqMismatch, outIdx);
+    // advance readSeq to the current writeSeq. Missed or overwritten records will not be attempted.
+    impl->readSeq = writeSeq;
+    JavaTraceLog(MakeLogMessage("[trace-java] JavaBackendRead summary: prevReadSeq=", prevReadSeq,
+                                ", writeSeq=", writeSeq,
+                                ", startSeq=", startSeq,
+                                ", slotCount=", slotCount,
+                                ", overwrittenByRing=", overwrittenByRing,
+                                ", seqMismatch=", seqMismatch,
+                                ", out=", outIdx, "\n"));
     if (outIdx == 0) {
         std::free(raw);
         return 0;
@@ -382,28 +459,28 @@ void JavaBackendClose(JavaBackendImpl *impl)
     // Close is the final cleanup point: restore bytecode if possible.
     int ret = JavaBackendRestoreRuntime(impl);
     if (ret != 0) {
-        std::fprintf(stderr, "[trace-java] warning: action=restore failed, ret=%d\n", ret);
+        JavaTraceLog(MakeLogMessage("[trace-java] warning: action=restore failed, ret=", ret, "\n"));
     }
-    if (impl->mapped && impl->shm_size) {
+    if (impl->mapped && impl->shmSize) {
         auto *mem = static_cast<uint8_t *>(impl->mapped);
-        StoreAtRelease<uint32_t>(mem, kHeaderActive, 0);
-        munmap(impl->mapped, impl->shm_size);
+        StoreAtRelease<uint32_t>(mem, K_HEADER_ACTIVE, 0);
+        munmap(impl->mapped, impl->shmSize);
         impl->mapped = nullptr;
     }
-    if (impl->shm_fd >= 0) {
-        close(impl->shm_fd);
-        impl->shm_fd = -1;
+    if (impl->shmFd >= 0) {
+        close(impl->shmFd);
+        impl->shmFd = -1;
     }
-    if (!impl->shm_path.empty()) {
-        std::string includeFile = impl->shm_path + ".includes";
+    JavaTraceFlushTargetLog(*impl);
+    if (!impl->shmPath.empty()) {
+        std::string includeFile = impl->shmPath + ".includes";
         std::remove(includeFile.c_str());
     }
-    if (!impl->shm_name.empty()) {
-        shm_unlink(impl->shm_name.c_str());
-        impl->shm_name.clear();
+    if (!impl->shmPath.empty()) {
+        std::remove(impl->shmPath.c_str());
+        impl->shmPath.clear();
     }
-    if (!impl->shm_path.empty()) {
-        std::remove(impl->shm_path.c_str());
-        impl->shm_path.clear();
-    }
+    JavaTraceCleanupTargetAssets(impl);
+    impl->shmName.clear();
+    impl->target.shmPath.clear();
 }

@@ -14,6 +14,8 @@
  ******************************************************************************/
 package com.libkperf.tracex.runtime;
 
+import com.libkperf.tracex.agent.TraceLog;
+
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class TraceRuntime {
@@ -51,14 +53,14 @@ public final class TraceRuntime {
             try {
                 old.close();
             } catch (Throwable t) {
-                System.err.println("[trace-runtime] close old sink failed: " + t);
+                TraceLog.warn("[trace-runtime] close old sink failed: " + t, t);
             }
         }
 
         SharedEventSink next = new SharedEventSink(shmPath, slotCount);
         sink = next;
 
-        System.err.println("[trace-runtime] reconfigured" + ", shmPath=" + shmPath + 
+        TraceLog.info("[trace-runtime] reconfigured" + ", shmPath=" + shmPath +
                             ", slotCount=" + slotCount + ", active=" + next.isActive());
 
         ENABLED.set(true);
@@ -74,11 +76,11 @@ public final class TraceRuntime {
             try {
                 old.close();
             } catch (Throwable t) {
-                System.err.println("[trace-runtime] stop close sink failed: " + t);
+                TraceLog.warn("[trace-runtime] stop close sink failed: " + t, t);
             }
         }
 
-        System.err.println("[trace-runtime] disabled");
+        TraceLog.info("[trace-runtime] disabled");
     }
 
     public static void setEnabled(boolean enabled) {

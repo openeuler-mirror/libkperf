@@ -49,11 +49,17 @@ public final class TraceAgent {
             try {
                 TraceClassFileTransformer.restoreAll(inst);
             } catch (Throwable t) {
-                System.err.println("[trace_agent] restoreAll warning: " + t);
+                TraceLog.warn("[trace_agent] restoreAll warning: " + t, t);
             }
             return;
         }
-        start(config, inst);
+        try {
+            start(config, inst);
+        } catch (Throwable t) {
+            TraceRuntime.setEnabled(false);
+            removeActiveTransformer();
+            TraceLog.warn("[trace_agent] start failed, skip instrumentation: " + t, t);
+        }
     }
 
     private static synchronized void removeActiveTransformer() {
@@ -81,23 +87,28 @@ public final class TraceAgent {
                 inst.retransformClasses(batch.toArray(new Class<?>[0]));
                 ok += batch.size();
             } catch (Throwable batchError) {
-                System.err.println("[trace_agent] retransform batch failed, fallback to one-by-one"
-                        + ", from=" + from + ", to=" + to + ", error=" + batchError);
+                TraceLog.warn("[trace_agent] retransform batch failed, fallback to one-by-one"
+                        + ", from=" + from + ", to=" + to + ", error=" + batchError, batchError);
                 for (Class<?> c : batch) {
                     try {
                         inst.retransformClasses(c);
                         ok++;
                     } catch (Throwable oneError) {
                         failed++;
-                        System.err.println("[trace_agent] skip bad class: " + Util.safeClassName(c) + ", error=" + oneError);
+                        TraceLog.warn("[trace_agent] skip bad class: " + Util.safeClassName(c)
+                                + ", error=" + oneError, oneError);
                     }
                 }
             }
         }
-        System.err.println("[trace_agent] retransform done, ok=" + ok + ", failed=" + failed);
+        TraceLog.info("[trace_agent] retransform done, ok=" + ok + ", failed=" + failed);
     }
 
     private static synchronized void start(TraceConfig config, Instrumentation inst) throws Exception {
+        if (!config.valid) {
+            TraceLog.info("[trace_agent] invalid trace filter config, skip instrumentation");
+            return;
+        }
         if (!inst.isRetransformClassesSupported()) {
             throw new IllegalStateException("JVM does not support class retransformation");
         }
@@ -114,7 +125,7 @@ public final class TraceAgent {
             CallGraphIndex index = CallGraphIndex.build(inst, transformer, config);
             Set<MethodId> context = index.expandContext(config);
             config.addContextMethods(context);
-            System.err.println("[trace_agent] context methods=" + context.size()
+            TraceLog.info("[trace_agent] context methods=" + context.size()
                 + ", depth=" + config.contextDepth + ", max=" + config.contextMaxMethods);
         }
 
@@ -123,7 +134,7 @@ public final class TraceAgent {
         activeInstrumentation = inst;
 
         List<Class<?>> candidates = collectCandidates(inst, transformer);
-        System.err.println("[trace_agent] retransform candidates=" + candidates.size()
+        TraceLog.info("[trace_agent] retransform candidates=" + candidates.size()
             + ", requiredIncludeRules=" + config.requiredIncludeRules.size()
             + ", configIncludeRules=" + config.includeRules.size()
             + ", excludeRules=" + config.excludeRules.size()
@@ -150,7 +161,7 @@ public final class TraceAgent {
                     out.add(c);
                 }
             } catch (Throwable t) {
-                System.err.println("[trace_agent] skip candidate " + c + ": " + t);
+                TraceLog.warn("[trace_agent] skip candidate " + c + ": " + t, t);
             }
         }
         return out;

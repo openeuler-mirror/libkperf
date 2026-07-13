@@ -23,7 +23,7 @@ import java.util.Map;
 import java.util.Set;
 
 public final class TraceConfig {
-    private static final int DEFAULT_SLOT_COUNT = 1048576;
+    private static final int DEFAULT_SLOT_COUNT = 262144;
     private static final int MAX_SLOT_COUNT = 67108864;
     private static final String AGENT_PACKAGE_PREFIX = "com/libkperf/tracex/";
 
@@ -33,6 +33,8 @@ public final class TraceConfig {
     public final String action;
     public final String includeFile;
     public final String configFile;
+    public final String logFile;
+    public final boolean valid;
     public final int contextDepth;
     public final int contextMaxMethods;
     public final boolean includeAll;
@@ -49,8 +51,11 @@ public final class TraceConfig {
         this.action = Util.get(args, "action", "start");
         this.includeFile = Util.get(args, "includeFile", "");
         this.configFile = Util.get(args, "configFile", "");
+        this.logFile = Util.get(args, "logFile", "");
+        TraceLog.init(this.logFile);
 
-        TraceFilterFile filterFile = TraceFilterFile.load(configFile);
+        TraceFilterFile filterFile = isControlAction() ? new TraceFilterFile() : TraceFilterFile.load(configFile);
+        this.valid = isControlAction() || filterFile.valid;
         this.slotCount = clampSlotCount(filterFile.slotCount > 0 ? filterFile.slotCount : DEFAULT_SLOT_COUNT);
         this.contextMaxMethods = filterFile.contextMaxMethods >= 0 ? filterFile.contextMaxMethods : 128;
 
@@ -81,6 +86,10 @@ public final class TraceConfig {
 
     public boolean isStopAction() {
         return "stop".equalsIgnoreCase(action);
+    }
+
+    private boolean isControlAction() {
+        return isStopAction() || isRestoreAction();
     }
 
     public boolean isRestoreAction() {
@@ -257,7 +266,7 @@ public final class TraceConfig {
     }
 
     private static int clampSlotCount(long value) {
-        if (value < DEFAULT_SLOT_COUNT) {
+        if (value <= 0) {
             return DEFAULT_SLOT_COUNT;
         }
         if (value > MAX_SLOT_COUNT) {

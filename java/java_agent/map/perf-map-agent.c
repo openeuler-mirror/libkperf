@@ -23,6 +23,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <limits.h>
+#include <pthread.h>
 
 #include <jni.h>
 #include <jvmti.h>
@@ -53,6 +54,29 @@ bool debug_dump_unfold_entries = false;
 
 FILE *method_file = NULL;
 static char map_file_path[PATH_MAX] = "";
+static pthread_mutex_t attach_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static void lock_attach() {
+    pthread_mutex_lock(&attach_mutex);
+}
+
+static void unlock_attach() {
+    pthread_mutex_unlock(&attach_mutex);
+}
+
+static void reset_options() {
+    unfold_inlined_methods = false;
+    unfold_simple = false;
+    unfold_all = false;
+    print_method_signatures = false;
+    print_source_loc = false;
+    clean_class_names = false;
+    dotted_class_names = false;
+    annotate_java_frames = false;
+    unfold_delimiter = "->";
+    debug_dump_unfold_entries = false;
+    map_file_path[0] = '\0';
+}
 
 
 void open_map_file() {
@@ -234,27 +258,11 @@ void dump_entries(
         jint code_size,
         const void *code_addr,
         const void *compile_info) {
-    const jvmtiCompiledMethodLoadRecordHeader *header = compile_info;
-    char root_name[STRING_BUFFER_SIZE];
-    sig_string(jvmti, root_method, root_name, sizeof(root_name), "");
-    printf("At %s size %x from %p to %p", root_name, code_size, code_addr, code_addr + code_size);
-    if (header->kind == JVMTI_CMLR_INLINE_INFO) {
-        const jvmtiCompiledMethodLoadInlineRecord *record = (jvmtiCompiledMethodLoadInlineRecord *) header;
-        printf(" with %d entries\n", record->numpcs);
-
-        int i;
-        for (i = 0; i < record->numpcs; i++) {
-            PCStackInfo *info = &record->pcinfo[i];
-            printf("  %p has %d stack entries\n", info->pc, info->numstackframes);
-
-            int j;
-            for (j = 0; j < info->numstackframes; j++) {
-                char buf[2000];
-                sig_string(jvmti, info->methods[j], buf, sizeof(buf), "");
-                printf("    %s\n", buf);
-            }
-        }
-    } else printf(" with no inline info\n");
+    (void)jvmti;
+    (void)root_method;
+    (void)code_size;
+    (void)code_addr;
+    (void)compile_info;
 }
 
 void generate_unfolded_entries(
@@ -369,36 +377,56 @@ jvmtiError set_callbacks(jvmtiEnv *jvmti) {
 
 JNIEXPORT jint JNICALL
 Agent_OnAttach(JavaVM *vm, char *options, void *reserved) {
+    (void)reserved;
+    jint result = JNI_ERR;
+    jvmtiEnv *jvmti = NULL;
+
+    lock_attach();
+    reset_options();
     if (options == NULL) {
         options = "";
     }
-    parse_map_file_path(options);
-    open_map_file();
 
-    unfold_simple = strstr(options, "unfoldsimple") != NULL;
-    unfold_all = strstr(options, "unfoldall") != NULL;
-    unfold_inlined_methods = strstr(options, "unfold") != NULL || unfold_simple || unfold_all;
-    print_method_signatures = strstr(options, "msig") != NULL;
-    print_source_loc = strstr(options, "sourcepos") != NULL;
-    print_source_loc = true;
-    dotted_class_names = strstr(options, "dottedclass") != NULL;
-    clean_class_names = strstr(options, "cleanclass") != NULL;
-    annotate_java_frames = strstr(options, "annotate_java_frames") != NULL;
+    do {
+        parse_map_file_path(options);
+        open_map_file();
+        if (method_file == NULL) {
+            break;
+        }
 
-    bool use_semicolon_unfold_delimiter = strstr(options, "use_semicolon_unfold_delimiter") != NULL;
-    unfold_delimiter = use_semicolon_unfold_delimiter ? ";" : "->";
+        unfold_simple = strstr(options, "unfoldsimple") != NULL;
+        unfold_all = strstr(options, "unfoldall") != NULL;
+        unfold_inlined_methods = strstr(options, "unfold") != NULL || unfold_simple || unfold_all;
+        print_method_signatures = strstr(options, "msig") != NULL;
+        print_source_loc = true;
+        dotted_class_names = strstr(options, "dottedclass") != NULL;
+        clean_class_names = strstr(options, "cleanclass") != NULL;
+        annotate_java_frames = strstr(options, "annotate_java_frames") != NULL;
 
-    debug_dump_unfold_entries = strstr(options, "debug_dump_unfold_entries") != NULL;
+        bool use_semicolon_unfold_delimiter = strstr(options, "use_semicolon_unfold_delimiter") != NULL;
+        unfold_delimiter = use_semicolon_unfold_delimiter ? ";" : "->";
+        debug_dump_unfold_entries = strstr(options, "debug_dump_unfold_entries") != NULL;
 
-    jvmtiEnv *jvmti;
-    (*vm)->GetEnv(vm, (void **)&jvmti, JVMTI_VERSION_1);
-    enable_capabilities(jvmti);
-    set_callbacks(jvmti);
-    set_notification_mode(jvmti, JVMTI_ENABLE);
-    (*jvmti)->GenerateEvents(jvmti, JVMTI_EVENT_DYNAMIC_CODE_GENERATED);
-    (*jvmti)->GenerateEvents(jvmti, JVMTI_EVENT_COMPILED_METHOD_LOAD);
-    set_notification_mode(jvmti, JVMTI_DISABLE);
+        if ((*vm)->GetEnv(vm, (void **)&jvmti, JVMTI_VERSION_1) != JNI_OK || jvmti == NULL) {
+            break;
+        }
+        if (enable_capabilities(jvmti) != JVMTI_ERROR_NONE) {
+            break;
+        }
+        if (set_callbacks(jvmti) != JVMTI_ERROR_NONE) {
+            break;
+        }
+        set_notification_mode(jvmti, JVMTI_ENABLE);
+        (*jvmti)->GenerateEvents(jvmti, JVMTI_EVENT_DYNAMIC_CODE_GENERATED);
+        (*jvmti)->GenerateEvents(jvmti, JVMTI_EVENT_COMPILED_METHOD_LOAD);
+        set_notification_mode(jvmti, JVMTI_DISABLE);
+        result = JNI_OK;
+    } while (0);
+
+    if (jvmti != NULL) {
+        set_notification_mode(jvmti, JVMTI_DISABLE);
+    }
     close_map_file();
-
-    return 0;
+    unlock_attach();
+    return result;
 }

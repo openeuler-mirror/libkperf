@@ -10,7 +10,8 @@
  * See the Mulan PSL v2 for more details.
  * Author: Wu
  * Create: 2026-06-12
- * Description: Java trace utility functions for symbol parsing, config loading, command building and UTraceData process
+ * Description: Java trace utility functions for symbol parsing, config loading, command building and UTraceData
+ * process
  ******************************************************************************/
 
 #include "java_trace_util.h"
@@ -28,48 +29,32 @@
 #include <ctime>
 #include <cctype>
 #include <dlfcn.h>
+#include <exception>
+#include <fstream>
 #include <limits.h>
 #include <regex>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <unordered_set>
 
-#ifndef LIBKPERF_JAVA_REL_DIR
-#define LIBKPERF_JAVA_REL_DIR "lib/java"
-#endif
-
-#ifndef LIBKPERF_JAVA_CONF_REL_DIR
-#define LIBKPERF_JAVA_CONF_REL_DIR "conf"
-#endif
-
-#ifndef LIBKPERF_JAVA_CLI_JAR_NAME
-#define LIBKPERF_JAVA_CLI_JAR_NAME "trace_cli.jar"
-#endif
-
-#ifndef LIBKPERF_JAVA_AGENT_JAR_NAME
-#define LIBKPERF_JAVA_AGENT_JAR_NAME "trace_agent.jar"
-#endif
-
-#ifndef LIBKPERF_JAVA_NATIVE_LIB_NAME
-#define LIBKPERF_JAVA_NATIVE_LIB_NAME "libtracex_threadinfo.so"
-#endif
-
-#ifndef LIBKPERF_JAVA_FILTER_CONFIG_NAME
-#define LIBKPERF_JAVA_FILTER_CONFIG_NAME "trace_filter.conf"
-#endif
-
-#ifndef LIBKPERF_JAVA_DEFAULT_SLOT_COUNT
-#define LIBKPERF_JAVA_DEFAULT_SLOT_COUNT 1048576U
-#endif
-
-#ifndef LIBKPERF_JAVA_MAX_SLOT_COUNT
-#define LIBKPERF_JAVA_MAX_SLOT_COUNT 67108864U
-#endif
-
 namespace {
-static constexpr const char *kDefaultJavaBin = "java";
-static constexpr uint32_t kDefaultSlotCount = LIBKPERF_JAVA_DEFAULT_SLOT_COUNT;
-static constexpr uint32_t kMaxSlotCount = LIBKPERF_JAVA_MAX_SLOT_COUNT;
+static constexpr const char *K_JAVA_REL_DIR = "lib/java";
+static constexpr const char *K_JAVA_CONF_REL_DIR = "conf";
+static constexpr const char *K_JAVA_CLI_JAR_NAME = "trace_cli.jar";
+static constexpr const char *K_JAVA_AGENT_JAR_NAME = "trace_agent.jar";
+static constexpr const char *K_JAVA_NATIVE_LIB_NAME = "libtracex_threadinfo.so";
+static constexpr const char *K_JAVA_FILTER_CONFIG_NAME = "trace_filter.conf";
+static constexpr const char *K_LOG_REL_DIR = "logs";
+static constexpr const char *K_TRACE_LOG_NAME = "trace.log";
+static constexpr uint32_t K_DEFAULT_SLOT_COUNT = 262144U;
+static constexpr uint32_t K_MAX_SLOT_COUNT = 67108864U;
+static constexpr const char *K_DEFAULT_JAVA_BIN = "java";
+static constexpr mode_t K_PRIVATE_DIR_MODE = 0700;
+static constexpr size_t K_EXTRA_CHARS = 2;
+static constexpr size_t K_JAVA_FUNCTION_MATCH_SIZE = 3;
+static constexpr size_t K_ENABLE_COMMAND_RESERVE = 2048;
+static constexpr size_t K_ACTION_COMMAND_RESERVE = 1024;
 
 struct JavaFunc {
     bool valid = false;
@@ -128,7 +113,54 @@ static std::string DirName(const std::string &path)
     }
     return path.substr(0, pos);
 }
+static std::string BaseName(const std::string &path)
+{
+    size_t pos = path.rfind('/');
+    return pos == std::string::npos ? path : path.substr(pos + 1);
+}
 
+static bool EnsureDir(const std::string &path)
+{
+    if (path.empty()) {
+        return false;
+    }
+    struct stat st {};
+    if (stat(path.c_str(), &st) == 0) {
+        return S_ISDIR(st.st_mode);
+    }
+    if (mkdir(path.c_str(), K_PRIVATE_DIR_MODE) == 0) {
+        return true;
+    }
+    return errno == EEXIST && stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+static bool CopyFile(const std::string &src, const std::string &dst)
+{
+    std::ifstream input(src, std::ios::binary);
+    if (!input.is_open()) {
+        return false;
+    }
+    std::ofstream output(dst, std::ios::binary | std::ios::trunc);
+    if (!output.is_open()) {
+        return false;
+    }
+    output << input.rdbuf();
+    return input.good() && output.good();
+}
+
+static bool AppendFile(const std::string &src, const std::string &dst)
+{
+    std::ifstream input(src, std::ios::binary);
+    if (!input.is_open()) {
+        return false;
+    }
+    std::ofstream output(dst, std::ios::binary | std::ios::app);
+    if (!output.is_open()) {
+        return false;
+    }
+    output << input.rdbuf();
+    return input.good() && output.good();
+}
 static std::string SelfExeDir()
 {
     char buf[PATH_MAX];
@@ -154,7 +186,7 @@ static std::string FindJavaAsset(const char *fileName)
     std::string exeDir = SelfExeDir();
     if (!exeDir.empty()) {
         std::string toolRoot = DirName(exeDir);
-        std::string p = JoinPath(JoinPath(toolRoot, LIBKPERF_JAVA_REL_DIR), fileName);
+        std::string p = JoinPath(JoinPath(toolRoot, K_JAVA_REL_DIR), fileName);
         if (FileExists(p)) {
             return p;
         }
@@ -163,7 +195,7 @@ static std::string FindJavaAsset(const char *fileName)
     std::string libDir = CurrentLibDir();
     if (!libDir.empty()) {
         std::string libRoot = DirName(libDir);
-        std::string p = JoinPath(JoinPath(libRoot, LIBKPERF_JAVA_REL_DIR), fileName);
+        std::string p = JoinPath(JoinPath(libRoot, K_JAVA_REL_DIR), fileName);
         if (FileExists(p)) {
             return p;
         }
@@ -171,46 +203,35 @@ static std::string FindJavaAsset(const char *fileName)
     return "";
 }
 
+static std::string BuildLogPathFromInstallRoot(const std::string &installRoot)
+{
+    if (installRoot.empty()) {
+        return "";
+    }
+    std::string logDir = JoinPath(installRoot, K_LOG_REL_DIR);
+    (void)EnsureDir(logDir);
+    return JoinPath(logDir, K_TRACE_LOG_NAME);
+}
+
 static std::string CliJarPath()
 {
-    return FindJavaAsset(LIBKPERF_JAVA_CLI_JAR_NAME);
+    return FindJavaAsset(K_JAVA_CLI_JAR_NAME);
 }
 
 static std::string AgentJarPath()
 {
-    return FindJavaAsset(LIBKPERF_JAVA_AGENT_JAR_NAME);
+    return FindJavaAsset(K_JAVA_AGENT_JAR_NAME);
 }
 
 static std::string NativeLibPath()
 {
-    return FindJavaAsset(LIBKPERF_JAVA_NATIVE_LIB_NAME);
-}
-
-static uint32_t ClampSlotCount(uint64_t value)
-{
-    if (value < kDefaultSlotCount) {
-        return kDefaultSlotCount;
-    }
-    if (value > kMaxSlotCount) {
-        return kMaxSlotCount;
-    }
-    return static_cast<uint32_t>(value);
-}
-
-static uint32_t ParseSlotCountConfig(const std::string &value, uint32_t fallback)
-{
-    char *end = nullptr;
-    unsigned long long parsed = std::strtoull(value.c_str(), &end, 10);
-    if (end != value.c_str() && *end == '\0' && parsed > 0) {
-        return ClampSlotCount(parsed);
-    }
-    return fallback;
+    return FindJavaAsset(K_JAVA_NATIVE_LIB_NAME);
 }
 
 static std::string EscapeShell(const std::string &s)
 {
     std::string out;
-    out.reserve(s.size() + 2);
+    out.reserve(s.size() + K_EXTRA_CHARS);
     out.push_back('\'');
     for (char c : s) {
         if (c == '\'') {
@@ -228,11 +249,11 @@ static JavaFunc ParseJavaFunction(const SymbolSource &src)
     JavaFunc out;
     const char *moduleName = src.moduleName;
     const char *symbolName = src.symbolName;
+    const std::regex javaFuncRe(R"(L([^;]+);::([^()\s]+))");
 
     if (symbolName != nullptr && symbolName[0] != '\0') {
-        static const std::regex javaFuncRe(R"(L([^;]+);::([^()\s]+))");
         std::cmatch match;
-        if (std::regex_search(symbolName, match, javaFuncRe) && match.size() >= 3) {
+        if (std::regex_search(symbolName, match, javaFuncRe) && match.size() >= K_JAVA_FUNCTION_MATCH_SIZE) {
             out.valid = true;
             out.className = match[1].str();
             out.methodName = match[2].str();
@@ -266,43 +287,40 @@ static void AddSplitSymbol(std::vector<std::string> &modules, std::vector<std::s
 
 static std::string WriteIncludeFile(const JavaBackendImpl &impl)
 {
-    if (impl.include_rules.empty()) {
-        return "";
-    }
-    std::string path = impl.shm_path + ".includes";
-    FILE *fp = std::fopen(path.c_str(), "wb");
-    if (fp == nullptr) {
-        std::fprintf(stderr, "[trace-java] open include file failed: %s, errno=%d(%s)\n", path.c_str(), errno, std::strerror(errno));
+    if (impl.includeRules.empty()) {
         return "";
     }
 
-    size_t expected = impl.include_rules.size();
-    size_t written = std::fwrite(impl.include_rules.data(), 1, expected, fp);
-    if (written != expected) {
-        int err = errno;
-        std::fprintf(stderr, "[trace-java] write include file incomplete: %s, written=%zu, expected=%zu, errno=%d(%s)\n",
-                     path.c_str(), written, expected, err, std::strerror(err));
-        if (std::fclose(fp) != 0) {
-            std::fprintf(stderr, "[trace-java] close include file after write failure failed: %s, errno=%d(%s)\n",
-                         path.c_str(), errno, std::strerror(errno));
-        }
+    std::string path = impl.shmPath + ".includes";
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output.is_open()) {
+        JavaTraceLog(MakeLogMessage("[trace-java] open include file failed: ", path,
+                                    ", errno=", errno, "(", std::strerror(errno), ")\n"));
+        return "";
+    }
+
+    output.write(impl.includeRules.data(), static_cast<std::streamsize>(impl.includeRules.size()));
+    if (!output.good()) {
+        JavaTraceLog(MakeLogMessage("[trace-java] write include file failed: ", path, "\n"));
+        output.close();
         std::remove(path.c_str());
         return "";
     }
-    if (std::fclose(fp) != 0) {
-        int err = errno;
-        std::fprintf(stderr, "[trace-java] close include file failed: %s, errno=%d(%s)\n", path.c_str(), err, std::strerror(err));
+    output.close();
+    if (!output.good()) {
+        JavaTraceLog(MakeLogMessage("[trace-java] close include file failed: ", path, "\n"));
         std::remove(path.c_str());
         return "";
     }
     return path;
 }
+
 } // namespace
 
 std::string StripJavaClassName(const std::string &s)
 {
-    if (s.size() >= 2 && s.front() == 'L' && s.back() == ';') {
-        return s.substr(1, s.size() - 2);
+    if (s.size() >= K_EXTRA_CHARS && s.front() == 'L' && s.back() == ';') {
+        return s.substr(1, s.size() - K_EXTRA_CHARS);
     }
     return s;
 }
@@ -385,7 +403,8 @@ std::string FilterConfigPath()
     std::string exeDir = SelfExeDir();
     if (!exeDir.empty()) {
         std::string toolRoot = DirName(exeDir);
-        std::string confPath = JoinPath(JoinPath(toolRoot, LIBKPERF_JAVA_CONF_REL_DIR), LIBKPERF_JAVA_FILTER_CONFIG_NAME);
+        std::string confPath = JoinPath(JoinPath(toolRoot, K_JAVA_CONF_REL_DIR),
+                                        K_JAVA_FILTER_CONFIG_NAME);
         if (FileExists(confPath)) {
             return confPath;
         }
@@ -394,47 +413,410 @@ std::string FilterConfigPath()
     std::string libDir = CurrentLibDir();
     if (!libDir.empty()) {
         std::string libRoot = DirName(libDir);
-        std::string confPath = JoinPath(JoinPath(libRoot, LIBKPERF_JAVA_CONF_REL_DIR), LIBKPERF_JAVA_FILTER_CONFIG_NAME);
+        std::string confPath = JoinPath(JoinPath(libRoot, K_JAVA_CONF_REL_DIR),
+                                        K_JAVA_FILTER_CONFIG_NAME);
         if (FileExists(confPath)) {
             return confPath;
         }
     }
 
-    return FindJavaAsset(LIBKPERF_JAVA_FILTER_CONFIG_NAME);
+    return FindJavaAsset(K_JAVA_FILTER_CONFIG_NAME);
+}
+
+std::string JavaTraceLogPath()
+{
+    static std::string path;
+    if (!path.empty()) {
+        return path;
+    }
+
+    std::string libDir = CurrentLibDir();
+    if (!libDir.empty()) {
+        path = BuildLogPathFromInstallRoot(DirName(libDir));
+        if (!path.empty()) {
+            return path;
+        }
+    }
+
+    std::string exeDir = SelfExeDir();
+    if (!exeDir.empty()) {
+        path = BuildLogPathFromInstallRoot(DirName(exeDir));
+        if (!path.empty()) {
+            return path;
+        }
+    }
+
+    path = K_TRACE_LOG_NAME;
+    return path;
+}
+
+void JavaTraceLog(const std::string &message)
+{
+    if (message.empty()) {
+        return;
+    }
+
+    std::ofstream output(JavaTraceLogPath(), std::ios::binary | std::ios::app);
+    if (!output.is_open()) {
+        return;
+    }
+    output << message;
+}
+
+static bool IsDifferentRoot(int pid)
+{
+    struct stat selfRoot {};
+    struct stat targetRoot {};
+    std::string target = "/proc/" + std::to_string(pid) + "/root";
+    if (stat("/", &selfRoot) != 0 || stat(target.c_str(), &targetRoot) != 0) {
+        return false;
+    }
+    return selfRoot.st_dev != targetRoot.st_dev || selfRoot.st_ino != targetRoot.st_ino;
+}
+
+static bool CopyToTargetDir(const std::string &src, const std::string &targetDirHost, std::string *targetHostPath,
+                            std::string *targetPath)
+{
+    if (src.empty()) {
+        if (targetHostPath != nullptr) {
+            targetHostPath->clear();
+        }
+        if (targetPath != nullptr) {
+            targetPath->clear();
+        }
+        return true;
+    }
+    std::string base = BaseName(src);
+    std::string dstHost = JoinPath(targetDirHost, base);
+    if (!CopyFile(src, dstHost)) {
+        JavaTraceLog(MakeLogMessage("[trace-java] copy target file failed: ", src, " -> ", dstHost,
+                                    ", errno=", errno, "(", std::strerror(errno), ")\n"));
+        return false;
+    }
+    if (targetHostPath != nullptr) {
+        *targetHostPath = dstHost;
+    }
+    if (targetPath != nullptr) {
+        *targetPath = JoinPath("/tmp/" + BaseName(targetDirHost), base);
+    }
+    return true;
+}
+
+
+static void RemoveTargetAsset(const std::string &dir, const std::string &targetPath)
+{
+    if (dir.empty() || targetPath.empty()) {
+        return;
+    }
+    const std::string base = BaseName(targetPath);
+    if (!base.empty()) {
+        std::remove(JoinPath(dir, base).c_str());
+    }
+}
+
+void JavaTraceCleanupTargetAssets(JavaBackendImpl *impl)
+{
+    if (impl == nullptr) {
+        return;
+    }
+    if (!impl->target.assetDirHost.empty()) {
+        RemoveTargetAsset(impl->target.assetDirHost, impl->target.agentJarPath);
+        RemoveTargetAsset(impl->target.assetDirHost, impl->target.nativeLibPath);
+        RemoveTargetAsset(impl->target.assetDirHost, impl->target.filterConfigPath);
+        std::remove(JoinPath(impl->target.assetDirHost, "trace.log").c_str());
+        rmdir(impl->target.assetDirHost.c_str());
+    }
+    impl->target.assetDirHost.clear();
+    impl->target.agentJarPath.clear();
+    impl->target.nativeLibPath.clear();
+    impl->target.filterConfigPath.clear();
+}
+
+static void InitTargetPaths(JavaBackendImpl &impl, const std::string &agentJar, const std::string &nativeLib)
+{
+    impl.target.logPath = JavaTraceLogPath();
+    impl.target.filterConfigPath = impl.filterConfigPath;
+    impl.target.agentJarPath = agentJar;
+    impl.target.nativeLibPath = nativeLib;
+}
+
+static bool CopyTargetAssets(JavaBackendImpl &impl, const std::string &targetDirHost,
+                             const std::string &agentJar, const std::string &nativeLib)
+{
+    std::string ignored;
+    if (!CopyToTargetDir(agentJar, targetDirHost, &ignored,
+                         &impl.target.agentJarPath)) {
+        return false;
+    }
+    if (!nativeLib.empty() &&
+        !CopyToTargetDir(nativeLib, targetDirHost, &ignored, &impl.target.nativeLibPath)) {
+        return false;
+    }
+    if (!impl.filterConfigPath.empty() &&
+        !CopyToTargetDir(impl.filterConfigPath, targetDirHost, &ignored, &impl.target.filterConfigPath)) {
+        return false;
+    }
+    return true;
+}
+
+static bool PrepareCrossRootTargetFiles(JavaBackendImpl &impl, const std::string &agentJar,
+                                        const std::string &nativeLib, const std::string &fileName)
+{
+    std::string dirName = "libkperf_java_trace_" + std::to_string(impl.pid) + "_" + TimestampSuffix();
+    std::string hostRoot = "/proc/" + std::to_string(impl.pid) + "/root/tmp";
+    std::string targetDirHost = JoinPath(hostRoot, dirName);
+    std::string targetDir = JoinPath("/tmp", dirName);
+    if (!EnsureDir(targetDirHost)) {
+        JavaTraceLog(MakeLogMessage("[trace-java] create target tmp dir failed: ", targetDirHost,
+                                    ", errno=", errno, "(", std::strerror(errno), ")\n"));
+        return false;
+    }
+
+    impl.target.assetDirHost = targetDirHost;
+    if (!CopyTargetAssets(impl, targetDirHost, agentJar, nativeLib)) {
+        JavaTraceCleanupTargetAssets(&impl);
+        return false;
+    }
+
+    impl.shmPath = JoinPath(targetDirHost, fileName);
+    impl.target.shmPath = JoinPath(targetDir, fileName);
+    impl.target.logPath = JoinPath(targetDir, "trace.log");
+
+    JavaTraceLog(MakeLogMessage("[trace-java] target process uses different root, assets copied to ",
+                                targetDirHost, "\n"));
+    return true;
+}
+
+bool JavaTracePrepareTargetFiles(JavaBackendImpl &impl)
+{
+    std::string cliJar = CliJarPath();
+    std::string agentJar = AgentJarPath();
+    std::string nativeLib = NativeLibPath();
+
+    if (cliJar.empty() || agentJar.empty()) {
+        JavaTraceLog(MakeLogMessage("[trace-java] trace cli or agent jar not found, cli=", cliJar,
+                                    ", agent=", agentJar, "\n"));
+        return false;
+    }
+    InitTargetPaths(impl, agentJar, nativeLib);
+    std::string fileName = impl.shmName + ".shm";
+    if (!IsDifferentRoot(impl.pid)) {
+        impl.shmPath = JoinPath("/tmp", fileName);
+        impl.target.shmPath = impl.shmPath;
+        return true;
+    }
+    return PrepareCrossRootTargetFiles(impl, agentJar, nativeLib, fileName);
+}
+
+void JavaTraceFlushTargetLog(const JavaBackendImpl &impl)
+{
+    std::string logPath = JavaTraceLogPath();
+    if (impl.target.assetDirHost.empty() || impl.target.logPath == logPath || logPath.empty()) {
+        return;
+    }
+    std::string hostLog = JoinPath(impl.target.assetDirHost, "trace.log");
+    if (FileExists(hostLog)) {
+        (void)AppendFile(hostLog, logPath);
+    }
+}
+struct LocalConfigParseContext {
+    LocalConfigParseContext(const std::string &configPath, JavaTraceLocalConfig *localConfig)
+        : path(configPath), config(localConfig), lineNo(0)
+    {
+    }
+
+    const std::string &path;
+    JavaTraceLocalConfig *config;
+    std::string section;
+    int lineNo;
+};
+
+static constexpr size_t K_MIN_SECTION_LINE_LEN = 3;
+static constexpr int K_NUMBER_BASE_DECIMAL = 10;
+static constexpr const char *K_JAVA_INCLUDE_SECTION = "java_include";
+static constexpr const char *K_JAVA_EXCLUDE_SECTION = "java_exclude";
+static constexpr const char *K_DIGITS = "0123456789";
+static constexpr const char *K_SLOT_COUNT_KEY = "slot_count";
+static constexpr const char *K_CONTEXT_DEPTH_KEY = "context_depth";
+static constexpr const char *K_CONTEXT_MAX_METHODS_KEY = "context_max_methods";
+static constexpr const char *K_INCLUDE_ALL_KEY = "include_all";
+static constexpr const char *K_BOOL_TRUE = "true";
+static constexpr const char *K_BOOL_FALSE = "false";
+
+static bool IsUnsignedInteger(const std::string &value)
+{
+    return !value.empty() && value.find_first_not_of(K_DIGITS) == std::string::npos;
+}
+
+static void LogInvalidConfigValue(const LocalConfigParseContext &context, const char *name,
+                                  const std::string &value)
+{
+    JavaTraceLog(MakeLogMessage("[trace-java] invalid ", name, " at ", context.path, ":",
+                                context.lineNo, ": ", value, "\n"));
+}
+
+static bool ParseSlotCountValue(const LocalConfigParseContext &context, const std::string &value,
+                                uint32_t *slotCount)
+{
+    if (!IsUnsignedInteger(value)) {
+        LogInvalidConfigValue(context, K_SLOT_COUNT_KEY, value);
+        return false;
+    }
+
+    unsigned long long parsed = 0;
+    try {
+        parsed = std::stoull(value, nullptr, K_NUMBER_BASE_DECIMAL);
+    } catch (const std::exception &) {
+        LogInvalidConfigValue(context, K_SLOT_COUNT_KEY, value);
+        return false;
+    }
+
+    if (parsed == 0 || parsed > K_MAX_SLOT_COUNT) {
+        LogInvalidConfigValue(context, K_SLOT_COUNT_KEY, value);
+        return false;
+    }
+    *slotCount = static_cast<uint32_t>(parsed);
+    return true;
+}
+
+static bool ParseLocalConfigKeyValue(LocalConfigParseContext *context, const std::string &key,
+                                     const std::string &value)
+{
+    if (key == K_SLOT_COUNT_KEY) {
+        if (!ParseSlotCountValue(*context, value, &context->config->slotCount)) {
+            return false;
+        }
+        return true;
+    }
+    if (key == K_CONTEXT_DEPTH_KEY) {
+        if (!IsUnsignedInteger(value)) {
+            return false;
+        }
+        return true;
+    }
+    if (key == K_CONTEXT_MAX_METHODS_KEY) {
+        if (!IsUnsignedInteger(value)) {
+            return false;
+        }
+        return true;
+    }
+    if (key == K_INCLUDE_ALL_KEY) {
+        bool valid = value == K_BOOL_TRUE || value == K_BOOL_FALSE;
+        if (!valid) {
+            return false;
+        }
+        return true;
+    }
+
+    JavaTraceLog(MakeLogMessage("[trace-java] unknown trace filter key at ", context->path, ":",
+                                context->lineNo, ": ", key, "\n"));
+    return false;
+}
+
+static bool ParseLocalConfigSection(LocalConfigParseContext *context, const std::string &line)
+{
+    if (line.size() < K_MIN_SECTION_LINE_LEN || line.front() != '[' || line.back() != ']') {
+        JavaTraceLog(MakeLogMessage("[trace-java] invalid trace filter section at ", context->path,
+                                    ":", context->lineNo, ": ", line, "\n"));
+        return false;
+    }
+
+    context->section = line.substr(1, line.size() - K_EXTRA_CHARS);
+    if (context->section == K_JAVA_INCLUDE_SECTION) {
+        return true;
+    }
+    if (context->section == K_JAVA_EXCLUDE_SECTION) {
+        return true;
+    }
+
+    JavaTraceLog(MakeLogMessage("[trace-java] unknown trace filter section at ", context->path,
+                                ":", context->lineNo, ": ", line, "\n"));
+    return false;
+}
+
+static bool IsValidTraceRule(const std::string &rule)
+{
+    if (rule.empty() || rule.front() == '+' || rule.front() == '-') {
+        return false;
+    }
+    return rule.find(',') == std::string::npos &&
+           rule.find('=') == std::string::npos &&
+           rule.find(' ') == std::string::npos &&
+           rule.find('\t') == std::string::npos;
+}
+
+static bool ParseLocalConfigRule(const LocalConfigParseContext &context, const std::string &line)
+{
+    if (context.section != K_JAVA_INCLUDE_SECTION && context.section != K_JAVA_EXCLUDE_SECTION) {
+        JavaTraceLog(MakeLogMessage("[trace-java] rule must be in [java_include] or [java_exclude] at ",
+                                    context.path, ":", context.lineNo, ": ", line, "\n"));
+        return false;
+    }
+    if (!IsValidTraceRule(line)) {
+        JavaTraceLog(MakeLogMessage("[trace-java] invalid trace filter rule at ", context.path, ":",
+                                    context.lineNo, ": ", line, "\n"));
+        return false;
+    }
+    return true;
+}
+
+static bool ParseLocalConfigKeyValueItem(LocalConfigParseContext *context, const std::string &item,
+                                         size_t equalPos)
+{
+    if (!context->section.empty()) {
+        JavaTraceLog(MakeLogMessage("[trace-java] key/value is not allowed inside section at ",
+                                    context->path, ":", context->lineNo, ": ", item, "\n"));
+        return false;
+    }
+
+    std::string key = Trim(item.substr(0, equalPos));
+    std::string value = Trim(item.substr(equalPos + 1));
+    return ParseLocalConfigKeyValue(context, key, value);
+}
+
+static bool ParseLocalConfigItem(LocalConfigParseContext *context, const std::string &item)
+{
+    if (item.front() == '[' || item.back() == ']') {
+        return ParseLocalConfigSection(context, item);
+    }
+
+    size_t equalPos = item.find('=');
+    if (equalPos != std::string::npos) {
+        return ParseLocalConfigKeyValueItem(context, item, equalPos);
+    }
+    return ParseLocalConfigRule(*context, item);
+}
+
+static bool ParseLocalConfigStream(std::ifstream &input, LocalConfigParseContext *context)
+{
+    std::string line;
+    while (std::getline(input, line)) {
+        ++context->lineNo;
+        std::string item = Trim(StripComment(line));
+        if (!item.empty() && !ParseLocalConfigItem(context, item)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 JavaTraceLocalConfig LoadLocalConfig(const std::string &path)
 {
-    JavaTraceLocalConfig out{LIBKPERF_JAVA_DEFAULT_SLOT_COUNT};
+    JavaTraceLocalConfig out{K_DEFAULT_SLOT_COUNT, false};
     if (path.empty()) {
-        out.slotCount = ClampSlotCount(out.slotCount);
+        JavaTraceLog("[trace-java] filter config path is empty, skip java trace\n");
         return out;
     }
 
-    FILE *fp = std::fopen(path.c_str(), "rb");
-    if (fp == nullptr) {
-        out.slotCount = ClampSlotCount(out.slotCount);
+    std::ifstream input(path);
+    if (!input.is_open()) {
+        JavaTraceLog(MakeLogMessage("[trace-java] filter config not found: ", path, ", errno=",
+                                    errno, "(", std::strerror(errno), ")\n"));
         return out;
     }
 
-    char buf[1024];
-    while (std::fgets(buf, sizeof(buf), fp) != nullptr) {
-        std::string s = Trim(StripComment(buf));
-        if (s.empty() || (s.front() == '[' && s.back() == ']')) {
-            continue;
-        }
-        size_t eq = s.find('=');
-        if (eq == std::string::npos || eq == 0) {
-            continue;
-        }
-        std::string key = Trim(s.substr(0, eq));
-        std::string value = Trim(s.substr(eq + 1));
-        if (key == "slot_count") {
-            out.slotCount = ParseSlotCountConfig(value, out.slotCount);
-        }
-    }
-    std::fclose(fp);
-    out.slotCount = ClampSlotCount(out.slotCount);
+    LocalConfigParseContext context(path, &out);
+    out.valid = ParseLocalConfigStream(input, &context);
     return out;
 }
 
@@ -454,21 +836,21 @@ std::string TimestampSuffix()
 std::string BuildEnableCommand(const JavaBackendImpl &impl)
 {
     std::string cliJar = CliJarPath();
-    std::string agentJar = AgentJarPath();
-    std::string nativeLib = NativeLibPath();
+    std::string agentJar = impl.target.agentJarPath.empty() ? AgentJarPath() : impl.target.agentJarPath;
+    std::string nativeLib = impl.target.nativeLibPath.empty() ? NativeLibPath() : impl.target.nativeLibPath;
 
     if (cliJar.empty()) {
-        std::fprintf(stderr, "[trace-java] error: trace java cli jar not found\n");
+        JavaTraceLog("[trace-java] error: trace java cli jar not found\n");
         return "";
     }
     if (agentJar.empty()) {
-        std::fprintf(stderr, "[trace-java] error: trace java agent jar not found\n");
+        JavaTraceLog("[trace-java] error: trace java agent jar not found\n");
         return "";
     }
 
     std::string cmd;
-    cmd.reserve(2048);
-    cmd += EscapeShell(kDefaultJavaBin);
+    cmd.reserve(K_ENABLE_COMMAND_RESERVE);
+    cmd += EscapeShell(K_DEFAULT_JAVA_BIN);
     cmd += " -jar ";
     cmd += EscapeShell(cliJar);
     cmd += " -p ";
@@ -477,22 +859,30 @@ std::string BuildEnableCommand(const JavaBackendImpl &impl)
     cmd += EscapeShell(agentJar);
     cmd += " --action start";
     cmd += " --shm-path ";
-    cmd += EscapeShell(impl.shm_path);
+    cmd += EscapeShell(impl.target.shmPath.empty() ? impl.shmPath : impl.target.shmPath);
     cmd += " --native-lib ";
     cmd += EscapeShell(nativeLib);
-
-    if (!impl.filter_config_path.empty()) {
-        cmd += " --config-file ";
-        cmd += EscapeShell(impl.filter_config_path);
+    if (!impl.target.logPath.empty()) {
+        cmd += " --log-file ";
+        cmd += EscapeShell(impl.target.logPath);
     }
-    if (!impl.include_rules.empty()) {
+
+    if (!impl.target.filterConfigPath.empty()) {
+        cmd += " --config-file ";
+        cmd += EscapeShell(impl.target.filterConfigPath);
+    }
+    if (!impl.includeRules.empty()) {
         std::string includeFile = WriteIncludeFile(impl);
         if (includeFile.empty()) {
-            std::fprintf(stderr, "[trace-java] error: include file create failed\n");
+            JavaTraceLog("[trace-java] error: include file create failed\n");
             return "";
         }
+        std::string targetIncludeFile = includeFile;
+        if (!impl.target.assetDirHost.empty()) {
+            targetIncludeFile = JoinPath("/tmp/" + BaseName(impl.target.assetDirHost), BaseName(includeFile));
+        }
         cmd += " --include-file ";
-        cmd += EscapeShell(includeFile);
+        cmd += EscapeShell(targetIncludeFile);
     }
     return cmd;
 }
@@ -500,14 +890,14 @@ std::string BuildEnableCommand(const JavaBackendImpl &impl)
 std::string BuildActionCommand(const JavaBackendImpl &impl, const char *action)
 {
     std::string cliJar = CliJarPath();
-    std::string agentJar = AgentJarPath();
+    std::string agentJar = impl.target.agentJarPath.empty() ? AgentJarPath() : impl.target.agentJarPath;
     if (cliJar.empty() || agentJar.empty() || impl.pid <= 0 || action == nullptr) {
         return "";
     }
 
     std::string cmd;
-    cmd.reserve(1024);
-    cmd += EscapeShell(kDefaultJavaBin);
+    cmd.reserve(K_ACTION_COMMAND_RESERVE);
+    cmd += EscapeShell(K_DEFAULT_JAVA_BIN);
     cmd += " -jar ";
     cmd += EscapeShell(cliJar);
     cmd += " -p ";
@@ -516,12 +906,17 @@ std::string BuildActionCommand(const JavaBackendImpl &impl, const char *action)
     cmd += EscapeShell(agentJar);
     cmd += " --action ";
     cmd += EscapeShell(action);
+    if (!impl.target.logPath.empty()) {
+        cmd += " --log-file ";
+        cmd += EscapeShell(impl.target.logPath);
+    }
     return cmd;
 }
 
 int RunCommand(const std::string &cmd)
 {
-    int status = std::system(cmd.c_str());
+    std::string loggedCmd = cmd + " >> " + EscapeShell(JavaTraceLogPath()) + " 2>&1";
+    int status = std::system(loggedCmd.c_str());
     if (status == -1) {
         return -2;
     }
