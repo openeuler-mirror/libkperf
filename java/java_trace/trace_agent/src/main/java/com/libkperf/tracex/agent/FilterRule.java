@@ -112,6 +112,14 @@ public final class FilterRule {
                 && descPattern.length() == 0;
     }
 
+    @Override
+    public String toString() {
+        if (isClassOnly()) {
+            return classPattern;
+        }
+        return classPattern + "::" + methodPattern + descPattern;
+    }
+
     private static Split splitExplicit(String s) {
         int sep = s.indexOf("::");
         if (sep >= 0) {

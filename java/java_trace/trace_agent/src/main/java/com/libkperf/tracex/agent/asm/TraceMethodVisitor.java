@@ -33,7 +33,7 @@ import java.util.List;
  * After transformation:
  * public int add(int a, int b)
  * {
- *     TraceRuntime.Context context = TraceRuntime.enter("com/example/Foo", "add", "(II)I");
+ *     TraceRuntime.Context context = TraceRuntime.enter("com/example/Foo", "add");
  *     try {
  *         int result = a + b;
  *         TraceRuntime.exit(context);
@@ -47,8 +47,8 @@ import java.util.List;
 public final class TraceMethodVisitor extends AdviceAdapter {
     private static final Type CONTEXT_TYPE = Type.getObjectType("com/libkperf/tracex/runtime/TraceRuntime$Context");
     private static final Type THROWABLE_TYPE = Type.getType(Throwable.class);
+    private static final Type ERROR_TYPE = Type.getType(Error.class);
     private final String methodName;
-    private final String methodDesc;
     private final String owner;
     private final List<TryRange> tryRanges = new ArrayList<TryRange>();
     private int contextLocal = -1;
@@ -59,19 +59,17 @@ public final class TraceMethodVisitor extends AdviceAdapter {
     public TraceMethodVisitor(int api, MethodVisitor mv, int access, String name, String descriptor, String owner) {
         super(api, mv, access, name, descriptor);
         this.methodName = name;
-        this.methodDesc = descriptor;
         this.owner = owner;
     }
 
     @Override
     protected void onMethodEnter() {
-        // TraceRuntime.Context context = TraceRuntime.enter(owner, methodName, methodDesc)
+        // TraceRuntime.Context context = TraceRuntime.enter(owner, methodName)
         injectingProbe = true;
         visitLdcInsn(owner);
         visitLdcInsn(methodName);
-        visitLdcInsn(methodDesc);
         visitMethodInsn(INVOKESTATIC, TraceClassFileTransformer.TRACE_RUNTIME_OWNER, "enter",
-            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/libkperf/tracex/runtime/TraceRuntime$Context;", false);
+            "(Ljava/lang/String;Ljava/lang/String;)Lcom/libkperf/tracex/runtime/TraceRuntime$Context;", false);
         contextLocal = newLocal(CONTEXT_TYPE);
         storeLocal(contextLocal);
         injectingProbe = false;
@@ -180,7 +178,12 @@ public final class TraceMethodVisitor extends AdviceAdapter {
             visitLabel(handler);
             int throwableLocal = newLocal(THROWABLE_TYPE);
             storeLocal(throwableLocal);
+            Label skipExit = new Label();
+            loadLocal(throwableLocal);
+            instanceOf(ERROR_TYPE);
+            ifZCmp(NE, skipExit);
             emitExit();
+            visitLabel(skipExit);
             loadLocal(throwableLocal);
             // Preserve exception semantics, including JVM monitor release for ACC_SYNCHRONIZED methods.
             injectingProbe = true;

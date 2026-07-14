@@ -42,7 +42,7 @@ public final class CallGraphIndex {
         CallGraphIndex idx = new CallGraphIndex();
         for (Class<?> c : inst.getAllLoadedClasses()) {
             try {
-                if (c == null || c.getClassLoader() == null || !inst.isModifiableClass(c)) {
+                if (c == null || !inst.isModifiableClass(c)) {
                     continue;
                 }
                 int m = c.getModifiers();

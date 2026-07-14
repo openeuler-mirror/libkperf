@@ -59,7 +59,7 @@ final class SharedEventSink implements AutoCloseable {
     static final int SLOT_FUNC = 240;
     static final int SLOT_FUNC_LEN = 256;
 
-    private static final int DEFAULT_SLOT_COUNT = 262144;
+    private static final int DEFAULT_SLOT_COUNT = 524288;
     private static final int MAX_SLOT_COUNT = 67108864;
     private static final int SLOTS_PER_SEGMENT = 262144;
 
@@ -262,7 +262,7 @@ final class SharedEventSink implements AutoCloseable {
 
         try {
             putIntRelease(HEADER_ACTIVE, 0);
-        } catch (Throwable ignored) {
+        } catch (RuntimeException | LinkageError ignored) {
         }
 
         try {
@@ -270,7 +270,7 @@ final class SharedEventSink implements AutoCloseable {
             for (MappedByteBuffer slotBuffer : slotBuffers) {
                 slotBuffer.force();
             }
-        } catch (Throwable ignored) {
+        } catch (RuntimeException | LinkageError ignored) {
         }
     }
 
@@ -288,6 +288,9 @@ final class SharedEventSink implements AutoCloseable {
             }
             try {
                 fence.invoke();
+            } catch (RuntimeException | LinkageError ignored) {
+            } catch (Error e) {
+                throw e;
             } catch (Throwable ignored) {
             }
         }
@@ -300,6 +303,9 @@ final class SharedEventSink implements AutoCloseable {
 
             try {
                 fence.invoke();
+            } catch (RuntimeException | LinkageError ignored) {
+            } catch (Error e) {
+                throw e;
             } catch (Throwable ignored) {
             }
         }
@@ -328,7 +334,7 @@ final class SharedEventSink implements AutoCloseable {
                     name,
                     MethodType.methodType(void.class)
                 );
-            } catch (Throwable ignored) {
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
                 return null;
             }
         }
@@ -342,7 +348,7 @@ final class SharedEventSink implements AutoCloseable {
                 return MethodHandles.lookup()
                     .findVirtual(unsafeClass, name, MethodType.methodType(void.class))
                     .bindTo(unsafe);
-            } catch (Throwable ignored) {
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
                 return null;
             }
         }
