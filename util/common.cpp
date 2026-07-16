@@ -90,6 +90,19 @@ std::string ReadFileContent(const std::string& filePath)
     return content;
 }
 
+std::string ReadFileAllContent(const std::string& filePath)
+{
+    std::ifstream file(filePath);
+    if (!file.is_open()) {
+        pcerr::New(LIBPERF_ERR_OPEN_INVALID_FILE, "Failed to open File: " + filePath);
+        return "";
+    }
+    std::ostringstream oss;
+    oss << file.rdbuf();
+    file.close();
+    return oss.str();
+}
+
 bool ExistPath(const std::string &filePath) {
     struct stat statbuf{};
     return stat(filePath.c_str(), &statbuf) == 0;
