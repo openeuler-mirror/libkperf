@@ -42,7 +42,6 @@
 bool unfold_inlined_methods = false;
 bool unfold_simple = false;
 bool unfold_all = false;
-bool print_method_signatures = false;
 bool print_source_loc = false;
 
 bool clean_class_names = false;
@@ -68,7 +67,6 @@ static void reset_options() {
     unfold_inlined_methods = false;
     unfold_simple = false;
     unfold_all = false;
-    print_method_signatures = false;
     print_source_loc = false;
     clean_class_names = false;
     dotted_class_names = false;
@@ -145,7 +143,6 @@ void class_name_from_sig(char *dest, size_t dest_size, const char *sig) {
 static void sig_string(jvmtiEnv *jvmti, jmethodID method, char *output, size_t noutput, char *annotation) {
     char *sourcefile = NULL;
     char *method_name = NULL;
-    char *msig = NULL;
     char *csig = NULL;
     jvmtiLineNumberEntry *lines = NULL;
 
@@ -154,12 +151,11 @@ static void sig_string(jvmtiEnv *jvmti, jmethodID method, char *output, size_t n
 
     strncpy(output, "<error writing signature>", noutput);
 
-    if (!(*jvmti)->GetMethodName(jvmti, method, &method_name, &msig, NULL)) {
+    if (!(*jvmti)->GetMethodName(jvmti, method, &method_name, NULL, NULL)) {
         if (!(*jvmti)->GetMethodDeclaringClass(jvmti, method, &class) &&
             !(*jvmti)->GetClassSignature(jvmti, class, &csig, NULL)) {
 
             char source_info[1000] = "";
-            char *method_signature = "";
 
             if (print_source_loc) {
                 if (!(*jvmti)->GetSourceFileName(jvmti, class, &sourcefile)) {
@@ -174,18 +170,14 @@ static void sig_string(jvmtiEnv *jvmti, jmethodID method, char *output, size_t n
                 }
             }
 
-            if (print_method_signatures && msig)
-                method_signature = msig;
-
             char class_name[STRING_BUFFER_SIZE];
             class_name_from_sig(class_name, sizeof(class_name), csig);
-            snprintf(output, noutput, "%s::%s%s%s%s",
-                     class_name, method_name, method_signature, source_info, annotation);
+            snprintf(output, noutput, "%s::%s%s%s",
+                     class_name, method_name, source_info, annotation);
 
             deallocate(jvmti, (unsigned char *) csig);
         }
         deallocate(jvmti, (unsigned char *) method_name);
-        deallocate(jvmti, (unsigned char *) msig);
     }
 }
 
@@ -397,7 +389,6 @@ Agent_OnAttach(JavaVM *vm, char *options, void *reserved) {
         unfold_simple = strstr(options, "unfoldsimple") != NULL;
         unfold_all = strstr(options, "unfoldall") != NULL;
         unfold_inlined_methods = strstr(options, "unfold") != NULL || unfold_simple || unfold_all;
-        print_method_signatures = strstr(options, "msig") != NULL;
         print_source_loc = true;
         dotted_class_names = strstr(options, "dottedclass") != NULL;
         clean_class_names = strstr(options, "cleanclass") != NULL;

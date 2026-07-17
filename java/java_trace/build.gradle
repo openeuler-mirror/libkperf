@@ -2,7 +2,10 @@ allprojects {
     group = 'com.libkperf.tracex'
     version = '1.0.0'
     repositories {
-        mavenCentral()
+        //mavenCentral()
+        maven {
+            url "https://cmc.centralrepo.rnd.huawei.com/artifactory/maven-central-repo/"
+        }
     }
 }
 

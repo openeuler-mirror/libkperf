@@ -47,7 +47,7 @@ static constexpr const char *K_JAVA_NATIVE_LIB_NAME = "libtracex_threadinfo.so";
 static constexpr const char *K_JAVA_FILTER_CONFIG_NAME = "trace_filter.conf";
 static constexpr const char *K_LOG_REL_DIR = "logs";
 static constexpr const char *K_TRACE_LOG_NAME = "trace.log";
-static constexpr uint32_t K_DEFAULT_SLOT_COUNT = 262144U;
+static constexpr uint32_t K_DEFAULT_SLOT_COUNT = 524288U;
 static constexpr uint32_t K_MAX_SLOT_COUNT = 67108864U;
 static constexpr const char *K_DEFAULT_JAVA_BIN = "java";
 static constexpr mode_t K_PRIVATE_DIR_MODE = 0700;
@@ -639,9 +639,6 @@ static constexpr const char *K_DIGITS = "0123456789";
 static constexpr const char *K_SLOT_COUNT_KEY = "slot_count";
 static constexpr const char *K_CONTEXT_DEPTH_KEY = "context_depth";
 static constexpr const char *K_CONTEXT_MAX_METHODS_KEY = "context_max_methods";
-static constexpr const char *K_INCLUDE_ALL_KEY = "include_all";
-static constexpr const char *K_BOOL_TRUE = "true";
-static constexpr const char *K_BOOL_FALSE = "false";
 
 static bool IsUnsignedInteger(const std::string &value)
 {
@@ -700,14 +697,6 @@ static bool ParseLocalConfigKeyValue(LocalConfigParseContext *context, const std
         }
         return true;
     }
-    if (key == K_INCLUDE_ALL_KEY) {
-        bool valid = value == K_BOOL_TRUE || value == K_BOOL_FALSE;
-        if (!valid) {
-            return false;
-        }
-        return true;
-    }
-
     JavaTraceLog(MakeLogMessage("[trace-java] unknown trace filter key at ", context->path, ":",
                                 context->lineNo, ": ", key, "\n"));
     return false;

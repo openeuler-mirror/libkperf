@@ -31,7 +31,7 @@ struct JavaBackendTarget {
 struct JavaBackendImpl {
     int pid{};
     std::string includeRules;
-    unsigned slotCount{262144};
+    unsigned slotCount{524288};
     std::string filterConfigPath;
     std::string shmName;
     std::string shmPath;

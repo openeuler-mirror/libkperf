@@ -14,6 +14,7 @@
  ******************************************************************************/
 package com.libkperf.tracex.agent.asm;
 
+import com.libkperf.tracex.agent.MethodId;
 import com.libkperf.tracex.agent.TraceConfig;
 import com.libkperf.tracex.agent.TraceLog;
 import com.libkperf.tracex.agent.Util;
@@ -24,8 +25,11 @@ import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.IllegalClassFormatException;
 import java.lang.instrument.Instrumentation;
 import java.security.ProtectionDomain;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -38,6 +42,13 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
 
     // save the original class bytecode for subsequent restoration
     private static final Map<ClassKey, byte[]> ORIGINAL = new ConcurrentHashMap<ClassKey, byte[]>();
+
+    // methods prepared by the transformer and committed by a successful retransformation
+    private static final Map<ClassKey, List<MethodId>> INSTRUMENTED_METHODS =
+            new ConcurrentHashMap<ClassKey, List<MethodId>>();
+
+    // retransforms awaiting confirmation from Instrumentation.retransformClasses
+    private static final Set<ClassKey> PENDING = ConcurrentHashMap.newKeySet();
 
     // prevent transformer re-entry
     private static final ThreadLocal<Boolean> REENTRANT = new ThreadLocal<Boolean>();
@@ -65,24 +76,25 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
     @Override
     public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined,
                             ProtectionDomain protectionDomain, byte[] classfileBuffer) throws IllegalClassFormatException {
-        if (className == null || classfileBuffer == null) {
-            return null;
-        }
-        if (loader == null) {
-            return null;
-        }
-        if (!shouldTransformInternalName(className)) {
-            return null;
-        }
-        if (Boolean.TRUE.equals(REENTRANT.get())) {
-            return null;
-        }
-        ClassKey key = new ClassKey(loader, className);
-        if (INSTRUMENTED.contains(key)) {
-            return null;
-        }
-        REENTRANT.set(Boolean.TRUE);
+        boolean reentrantSet = false;
         try {
+            if (className == null || classfileBuffer == null) {
+                return null;
+            }
+            if (Boolean.TRUE.equals(REENTRANT.get())) {
+                return null;
+            }
+            REENTRANT.set(Boolean.TRUE);
+            reentrantSet = true;
+
+            if (!shouldTransformInternalName(className)) {
+                return null;
+            }
+            ClassKey key = new ClassKey(loader, className);
+            if (INSTRUMENTED.contains(key)) {
+                return null;
+            }
+
             ClassReader cr = new ClassReader(classfileBuffer);
             ClassWriter cw = new SafeClassWriter(cr, ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS, loader);
             TraceClassVisitor cv = new TraceClassVisitor(cw, config, className);
@@ -95,12 +107,79 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
             if (!INSTRUMENTED.add(key)) {
                 return null;
             }
+            INSTRUMENTED_METHODS.put(key,
+                    new ArrayList<MethodId>(cv.instrumentedMethods()));
+            if (classBeingRedefined == null) {
+                logInstrumented(key);
+            } else {
+                PENDING.add(key);
+            }
             return transformed;
         } catch (Throwable t) {
-            TraceLog.warn("[trace_agent] transform failed for " + className + ": " + t, t);
+            try {
+                TraceLog.warn("[trace_agent] transform failed for " + className + ": " + t, t);
+            } catch (Throwable ignored) {
+            }
             return null;
         } finally {
-            REENTRANT.remove();
+            if (reentrantSet) {
+                try {
+                    REENTRANT.remove();
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+    }
+
+    public static void confirmInstrumentation(Iterable<Class<?>> classes) {
+        if (classes == null) {
+            return;
+        }
+        for (Class<?> clazz : classes) {
+            if (clazz == null) {
+                continue;
+            }
+            ClassKey key = new ClassKey(clazz.getClassLoader(), Util.internalName(clazz));
+            if (PENDING.remove(key)) {
+                logInstrumented(key);
+            }
+        }
+    }
+
+    public static void rollbackInstrumentation(Iterable<Class<?>> classes) {
+        if (classes == null) {
+            return;
+        }
+        for (Class<?> clazz : classes) {
+            if (clazz == null) {
+                continue;
+            }
+            ClassKey key = new ClassKey(clazz.getClassLoader(), Util.internalName(clazz));
+            if (!PENDING.remove(key)) {
+                continue;
+            }
+            INSTRUMENTED.remove(key);
+            INSTRUMENTED_METHODS.remove(key);
+            ORIGINAL.remove(key);
+        }
+    }
+
+    public static boolean hasInstrumentedClasses() {
+        return !INSTRUMENTED.isEmpty();
+    }
+
+    private static void logInstrumented(ClassKey key) {
+        List<MethodId> methods = INSTRUMENTED_METHODS.get(key);
+        if (methods == null) {
+            return;
+        }
+        Set<String> loggedMethods = new HashSet<String>();
+        for (MethodId method : methods) {
+            if (!loggedMethods.add(method.name)) {
+                continue;
+            }
+            TraceLog.info("[trace_agent] instrumented, module="
+                    + method.owner.replace('/', '.') + ", func=" + method.name);
         }
     }
 
@@ -111,6 +190,8 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
 
         if (INSTRUMENTED.isEmpty()) {
             ORIGINAL.clear();
+            INSTRUMENTED_METHODS.clear();
+            PENDING.clear();
             return;
         }
 
@@ -125,17 +206,25 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
                                     Class<?> classBeingRedefined,
                                     ProtectionDomain protectionDomain,
                                     byte[] classfileBuffer) {
-                if (className == null) {
+                try {
+                    if (className == null) {
+                        return null;
+                    }
+
+                    ClassKey key = new ClassKey(loader, className);
+                    byte[] original = restoreBytes.get(key);
+                    if (original != null) {
+                        return original;
+                    }
+
+                    return null;
+                } catch (Throwable t) {
+                    try {
+                        TraceLog.warn("[trace_agent] restore transform failed for " + className + ": " + t, t);
+                    } catch (Throwable ignored) {
+                    }
                     return null;
                 }
-
-                ClassKey key = new ClassKey(loader, className);
-                byte[] original = restoreBytes.get(key);
-                if (original != null) {
-                    return original;
-                }
-
-                return null;
             }
         };
 
@@ -172,6 +261,8 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
                     }
                     inst.retransformClasses(clazz);
                     INSTRUMENTED.remove(key);
+                    INSTRUMENTED_METHODS.remove(key);
+                    PENDING.remove(key);
                     ORIGINAL.remove(key);
                     ok++;
                 } catch (Throwable t) {
@@ -191,6 +282,8 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
             }
             if (failed == 0) {
                 INSTRUMENTED.clear();
+                INSTRUMENTED_METHODS.clear();
+                PENDING.clear();
                 ORIGINAL.clear();
             }
             TraceLog.info("[trace_agent] restore done, ok=" + ok + ", failed=" + failed);

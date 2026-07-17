@@ -23,9 +23,8 @@ import java.util.Map;
 import java.util.Set;
 
 public final class TraceConfig {
-    private static final int DEFAULT_SLOT_COUNT = 262144;
+    private static final int DEFAULT_SLOT_COUNT = 524288;
     private static final int MAX_SLOT_COUNT = 67108864;
-    private static final String AGENT_PACKAGE_PREFIX = "com/libkperf/tracex/";
 
     public final String shmPath;
     public final int slotCount;
@@ -37,7 +36,6 @@ public final class TraceConfig {
     public final boolean valid;
     public final int contextDepth;
     public final int contextMaxMethods;
-    public final boolean includeAll;
 
     public final List<FilterRule> requiredIncludeRules;
     public final List<FilterRule> includeRules;
@@ -59,9 +57,8 @@ public final class TraceConfig {
         this.slotCount = clampSlotCount(filterFile.slotCount > 0 ? filterFile.slotCount : DEFAULT_SLOT_COUNT);
         this.contextMaxMethods = filterFile.contextMaxMethods >= 0 ? filterFile.contextMaxMethods : 128;
 
-        this.includeAll = filterFile.includeAll;
         int configuredContextDepth = filterFile.contextDepth >= 0 ? filterFile.contextDepth : 1;
-        this.contextDepth = this.includeAll ? 0 : configuredContextDepth;
+        this.contextDepth = configuredContextDepth;
 
         List<FilterRule> required = new ArrayList<FilterRule>();
         Util.addRules(required, Util.readTextFile(includeFile, "[trace-java-agent] read include file failed: "));
@@ -100,9 +97,6 @@ public final class TraceConfig {
         if (isExcludedClass(classNameInternal)) {
             return false;
         }
-        if (includeAll) {
-            return true;
-        }
         if (matchesRequiredIncludeClass(classNameInternal)) {
             return true;
         }
@@ -118,9 +112,6 @@ public final class TraceConfig {
     public boolean shouldTransformMethod(String owner, String name, String desc) {
         if (isExcludedMethod(owner, name, desc)) {
             return false;
-        }
-        if (includeAll) {
-            return true;
         }
         if (matchesRequiredIncludeMethod(owner, name, desc)) {
             return true;
@@ -203,9 +194,6 @@ public final class TraceConfig {
     }
 
     boolean isExcludedClass(String owner) {
-        if (isHardExcludedOwner(owner)) {
-            return true;
-        }
         for (FilterRule r : excludeRules) {
             if (r.matchesClass(owner)) {
                 return true;
@@ -215,22 +203,12 @@ public final class TraceConfig {
     }
 
     boolean isExcludedMethod(String owner, String name, String desc) {
-        if (isHardExcludedOwner(owner)) {
-            return true;
-        }
         for (FilterRule r : excludeRules) {
             if (r.matchesMethod(owner, name, desc)) {
                 return true;
             }
         }
         return false;
-    }
-
-    private static boolean isHardExcludedOwner(String owner) {
-        if (owner == null || owner.length() == 0) {
-            return true;
-        }
-        return owner.replace('.', '/').startsWith(AGENT_PACKAGE_PREFIX);
     }
 
     private static Map<String, String> parseKv(String agentArgs) {

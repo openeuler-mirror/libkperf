@@ -23,13 +23,17 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <cstdlib>
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <dlfcn.h>
 #include <sstream>
 #include <vector>
+#include <mutex>
+#include <dirent.h>
 
 #include "common.h"
+#include "log.h"
 #include "java_symbol.h"
 
 const static char* TMP_SOCKET_PREFIX = "/tmp/.java_pid";
@@ -47,6 +51,13 @@ const static int K_PROC_STAT_STATE_FIELD = 3;
 const static int K_PROC_STAT_STARTTIME_FIELD = 22;
 const static int K_PROC_STAT_STARTTIME_TOKEN_COUNT = K_PROC_STAT_STARTTIME_FIELD - K_PROC_STAT_STATE_FIELD + 1;
 static std::string KPERF_MAP_LIB_PATH;
+static std::mutex g_javaAttachMutex;
+
+enum class AttachListenerState {
+    NOT_RUNNING,
+    RUNNING,
+    UNKNOWN
+};
 
 struct ProcessCredentials {
     uid_t euid;
@@ -93,6 +104,25 @@ static int GetNamespacePid(int pid)
             nsPid = tmpPid;
         }
         return nsPid;
+    }
+    return pid;
+}
+
+static int GetThreadGroupId(int pid)
+{
+    std::ifstream status("/proc/" + std::to_string(pid) + "/status");
+    std::string line;
+    while (std::getline(status, line)) {
+        int length = 5;
+        if (line.compare(0, length, "Tgid:") != 0) {
+            continue;
+        }
+        std::istringstream value(line.substr(length));
+        int tgid = 0;
+        if ((value >> tgid) && (tgid > 0)) {
+            return tgid;
+        }
+        break;
     }
     return pid;
 }
@@ -339,7 +369,70 @@ static bool CreateAttachFile(const std::string& attachPath, const ProcessCredent
     return true;
 }
 
+static AttachListenerState GetAttachListenerState(int pid)
+{
+    std::string taskPath = "/proc/" + std::to_string(pid) + "/task";
+    DIR* taskDir = opendir(taskPath.c_str());
+    if (taskDir == nullptr) {
+        ERR_PRINT("Failed to inspect JVM attach listener for pid %d: opendir %s failed: %s\n",
+            pid, taskPath.c_str(), strerror(errno));
+        return AttachListenerState::UNKNOWN;
+    }
+
+    bool found = false;
+    bool inspectedThread = false;
+    struct dirent* entry = nullptr;
+    errno = 0;
+    while ((entry = readdir(taskDir)) != nullptr) {
+        if (entry->d_name[0] < '0' || entry->d_name[0] > '9') {
+            continue;
+        }
+        std::ifstream comm(taskPath + "/" + entry->d_name + "/comm");
+        std::string threadName;
+        if (!std::getline(comm, threadName)) {
+            continue;
+        }
+        inspectedThread = true;
+        if (threadName == "Attach Listener") {
+            found = true;
+            break;
+        }
+    }
+    int readError = errno;
+    closedir(taskDir);
+    if (found) {
+        return AttachListenerState::RUNNING;
+    }
+    if (readError != 0 || !inspectedThread) {
+        ERR_PRINT("Failed to inspect JVM attach listener threads for pid %d: %s\n",
+            pid, readError == 0 ? "no readable thread entries" : strerror(readError));
+        return AttachListenerState::UNKNOWN;
+    }
+    return AttachListenerState::NOT_RUNNING;
+}
+
+static bool WaitForPath(const std::string& path)
+{
+    constexpr int maxWaitCount = 100;
+    constexpr useconds_t waitIntervalUs = 200 * 1000;
+    for (int i = 0; i < maxWaitCount; ++i) {
+        if (FindPath(path)) {
+            return true;
+        }
+        usleep(waitIntervalUs);
+    }
+    if (FindPath(path)) {
+        return true;
+    }
+    int timeTransUint = 1000;
+    ERR_PRINT("Timed out after %u ms waiting for JVM attach path: %s\n",
+        static_cast<unsigned>(maxWaitCount * waitIntervalUs / timeTransUint), path.c_str());
+    return false;
+}
+
 int attach_java_process(int pid, JavaAttachInfo* info) {
+    std::lock_guard<std::mutex> attachGuard(g_javaAttachMutex);
+    int targetPid = GetThreadGroupId(pid);
     if (KPERF_MAP_LIB_PATH.empty() && !FindKperfMap()) {
         return -1;
     }
@@ -348,29 +441,46 @@ int attach_java_process(int pid, JavaAttachInfo* info) {
         return -1;
     }
 
-    int nsPid = GetNamespacePid(pid);
-    ProcessCredentials credentials = GetProcessCredentials(pid);
-    std::string socketPath = BuildTargetTmpPath(pid, TMP_SOCKET_PREFIX, nsPid, true);
-    std::string attachPath = ProcCwdPrefix(pid) + ATTACH_FILE_PREFIX + std::to_string(nsPid);
-    std::string tmpAttachPath = BuildTargetTmpPath(pid, TMP_ATTACH_PREFIX, nsPid, true);
+    int nsPid = GetNamespacePid(targetPid);
+    ProcessCredentials credentials = GetProcessCredentials(targetPid);
+    std::string socketPath = BuildTargetTmpPath(targetPid, TMP_SOCKET_PREFIX, nsPid, true);
+    std::string attachPath = ProcCwdPrefix(targetPid) + ATTACH_FILE_PREFIX + std::to_string(nsPid);
+    std::string tmpAttachPath = BuildTargetTmpPath(targetPid, TMP_ATTACH_PREFIX, nsPid, true);
     std::string targetPerfMapPath = "/tmp/perf-" + std::to_string(nsPid) + ".map";
-    std::string perfMapPath = ProcRootPrefix(pid) + "/tmp/perf-" + std::to_string(nsPid) + ".map";
+    std::string perfMapPath = ProcRootPrefix(targetPid) + "/tmp/perf-" + std::to_string(nsPid) + ".map";
     TargetAgentPath agentPath;
-    if (!PrepareTargetAgentPath(pid, nsPid, credentials, &agentPath)) {
+    if (!PrepareTargetAgentPath(targetPid, nsPid, credentials, &agentPath)) {
         return -1;
     }
 
     if (!FindPath(socketPath)) {
-        if (!CreateAttachFile(attachPath, credentials) && !CreateAttachFile(tmpAttachPath, credentials)) {
+        AttachListenerState listenerState = GetAttachListenerState(targetPid);
+        if (listenerState != AttachListenerState::NOT_RUNNING) {
+            if (!WaitForPath(socketPath)) {
+                CleanupAgentPathOnFailure(agentPath);
+                return -1;
+            }
+        } else if (!CreateAttachFile(attachPath, credentials) &&
+                   !CreateAttachFile(tmpAttachPath, credentials)) {
             CleanupAgentPathOnFailure(agentPath);
             return -1;
+        } else {
+            // Another attach may have initialized the listener after the first socket check.
+            if (GetAttachListenerState(targetPid) == AttachListenerState::NOT_RUNNING &&
+                kill(static_cast<pid_t>(targetPid), SIGQUIT) != 0) {
+                unlink(attachPath.c_str());
+                unlink(tmpAttachPath.c_str());
+                CleanupAgentPathOnFailure(agentPath);
+                return -1;
+            }
+            bool socketReady = WaitForPath(socketPath);
+            unlink(attachPath.c_str());
+            unlink(tmpAttachPath.c_str());
+            if (!socketReady) {
+                CleanupAgentPathOnFailure(agentPath);
+                return -1;
+            }
         }
-        kill((pid_t)pid, SIGQUIT);
-        int i = 0;
-        long sleepTime = 200 * 1000;
-        do {usleep(sleepTime);
-            i++;
-        } while(!FindPath(socketPath) && i < 100);
     }
 
     int fd = socket(PF_UNIX, SOCK_STREAM, 0);

@@ -87,7 +87,7 @@ public final class TraceRuntime {
         ENABLED.set(enabled);
     }
 
-    public static Context enter(String classNameInternal, String methodName, String descriptor) {
+    public static Context enter(String classNameInternal, String methodName) {
         try {
             if (!ENABLED.get()) {
                 return Context.SKIPPED;
@@ -105,7 +105,7 @@ public final class TraceRuntime {
             try {
                 int depth = CALL_DEPTH.get();
                 String module = classNameInternal.replace('/', '.');
-                String func = methodName + descriptor;
+                String func = methodName;
                 long addr = fnv1a64(module + "!" + func) & 0x0000FFFFFFFFFFFFL;
                 long ts = NativeThreadInfo.currentTimeNanosSafe();
                 String comm = currentThreadName();
@@ -120,6 +120,10 @@ public final class TraceRuntime {
             } finally {
                 RUNTIME_DEPTH.set(runtimeDepth);
             }
+        } catch (ThreadDeath t) {
+            throw t;
+        } catch (VirtualMachineError e) {
+            throw e;
         } catch (Throwable ignored) {
             return Context.SKIPPED;
         }
@@ -151,6 +155,10 @@ public final class TraceRuntime {
             } finally {
                 RUNTIME_DEPTH.set(runtimeDepth);
             }
+        } catch (ThreadDeath t) {
+            throw t;
+        } catch (VirtualMachineError e) {
+            throw e;
         } catch (Throwable ignored) {
         }
     }

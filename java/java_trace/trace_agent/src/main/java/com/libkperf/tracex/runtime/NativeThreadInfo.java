@@ -40,7 +40,7 @@ public final class NativeThreadInfo {
             System.load(absolutePath);
             loaded = true;
             TraceLog.info("[java-trace-agent] native thread info loaded: " + absolutePath);
-        } catch (Throwable t) {
+        } catch (RuntimeException | LinkageError t) {
             loaded = false;
             TraceLog.warn("[java-trace-agent] native thread info load failed: " + absolutePath + ", ex=" + t, t);
         }
@@ -53,7 +53,7 @@ public final class NativeThreadInfo {
 
         try {
             return currentTid0();
-        } catch (Throwable t) {
+        } catch (RuntimeException | LinkageError t) {
             return (int) Thread.currentThread().getId();
         }
     }
@@ -65,7 +65,7 @@ public final class NativeThreadInfo {
 
         try {
             return currentCpu0();
-        } catch (Throwable t) {
+        } catch (RuntimeException | LinkageError t) {
             return -1;
         }
     }
@@ -77,7 +77,7 @@ public final class NativeThreadInfo {
 
         try {
             return currentTimeNanos0();
-        } catch (Throwable t) {
+        } catch (RuntimeException | LinkageError t) {
             return System.nanoTime();
         }
     }
