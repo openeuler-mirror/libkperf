@@ -68,9 +68,9 @@ int ProcDataManager::ParseStat(const string &content, int pid, ProcDataInternal 
     return SUCCESS;
 }
 
-const unordered_map<string, ProcDataManager::StatHandler> &ProcDataManager::GetStatHandlers()
+const map<string, ProcDataManager::StatHandler> &ProcDataManager::GetStatHandlers()
 {
-    static const unordered_map<string, StatHandler> handlers = {
+    static const map<string, StatHandler> handlers = {
         {"intr", [](StatEntryInternal& e, const vector<string>& v) {
             e.lineType = PROC_STAT_LINE_INTR;
             e.intr_total = SafeGetUll(v, 0);
@@ -688,7 +688,10 @@ bool ProcDataManager::HandleZoneinfoStateSwitch(ZoneinfoEntryInternal &entry, in
     }
     if (line.find("pages free") == 0) {
         state = 2; // ZONE_STATS
-        entry.pages_free = SafeStoull(Trim(line.substr(10)));
+        vector<string> parts = SplitLine(line, ' ');
+        if (!parts.empty()) {
+            entry.pages_free = SafeStoull(parts.back());
+        }
         return true;
     }
     return false;
@@ -849,7 +852,7 @@ int ProcDataManager::ParseBuddyinfo(const string &content, int pid, ProcDataInte
             continue;
         }
         BuddyinfoEntryInternal entry{};
-        entry.node = SafeStoi(parts[0]);
+        entry.node = SafeGetInt(parts, 0);
         entry.zone = parts[1];
         entry.zone_name = parts[3];
         for (size_t k = 4; k < parts.size(); k++) entry.orders.push_back(SafeStoull(parts[k]));

@@ -186,15 +186,6 @@ struct ProcIrqAffinityEntry {
     char *affinity;
 };
 
-struct ProcLockStatEntry {
-    char *class_name;
-    unsigned long long con, bwt, adt, adt_max, adt_min;
-    unsigned long long wct, wwt, wwt_max, wwt_min;
-    unsigned long long wst, wst_max, wst_min;
-    unsigned long long rwt, rwt_max, rwt_min;
-    unsigned long long rpt, rpt_max, rpt_min;
-};
-
 struct ProcLocksEntry {
     unsigned numFields;
     struct ProcField *fields;
@@ -416,7 +407,6 @@ struct ProcData {
         struct ProcSchedstatEntry *schedstat;
         struct ProcInterruptsEntry *interrupts;
         struct ProcIrqAffinityEntry *irq_affinity;
-        struct ProcLockStatEntry *lock_stat;
         struct ProcLocksEntry *locks;
         struct ProcZoneinfoEntry *zoneinfo;
         struct ProcBuddyinfoEntry *buddyinfo;

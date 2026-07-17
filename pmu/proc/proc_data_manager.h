@@ -17,9 +17,9 @@
 
 #include <string>
 #include <vector>
-#include <unordered_map>
 #include <mutex>
 #include <functional>
+#include <map>
 #include "proc_data_types.h"
 
 namespace KUNPENG_PMU {
@@ -114,15 +114,6 @@ struct InterruptsEntryInternal {
 
 struct IrqAffinityEntryInternal {
     std::string affinity;
-};
-
-struct LockStatEntryInternal {
-    std::string class_name;
-    unsigned long long con, bwt, adt, adt_max, adt_min;
-    unsigned long long wct, wwt, wwt_max, wwt_min;
-    unsigned long long wst, wst_max, wst_min;
-    unsigned long long rwt, rwt_max, rwt_min;
-    unsigned long long rpt, rpt_max, rpt_min;
 };
 
 struct LocksEntryInternal {
@@ -504,7 +495,6 @@ private:
     int ParseSlabinfo(const std::string &content, int pid, ProcDataInternal &result);
     int ParseSchedstat(const std::string &content, int pid, ProcDataInternal &result);
     int ParseInterrupts(const std::string &content, int pid, ProcDataInternal &result);
-    int ParseLockStat(const std::string &content, int pid, ProcDataInternal &result);
     int ParseLocks(const std::string &content, int pid, ProcDataInternal &result);
     int ParseZoneinfo(const std::string &content, int pid, ProcDataInternal &result);
     int ParseBuddyinfo(const std::string &content, int pid, ProcDataInternal &result);
@@ -533,7 +523,7 @@ private:
 
     // ---- 辅助函数：降低函数行数/复杂度，按数据源分组 ----
     using StatHandler = std::function<void(StatEntryInternal&, const std::vector<std::string>&)>;
-    const std::unordered_map<std::string, StatHandler> &GetStatHandlers();
+    const std::map<std::string, StatHandler> &GetStatHandlers();
     void FillStatCpuEntry(StatEntryInternal &entry, const std::vector<std::string> &values);
     void FillSchedstatCpuEntry(SchedstatEntryInternal &entry, const std::vector<std::string> &parts);
     void FillSchedstatDomain(SchedstatEntryInternal *currentCpu, const std::vector<std::string> &parts);
@@ -557,19 +547,19 @@ private:
     void FillPidLimitsEntry(PidLimitsEntryInternal &entry, const std::vector<std::string> &parts, bool hasUnits);
     void FillPidMapsEntry(PidMapsEntryInternal &entry, const std::vector<std::string> &parts);
     // ParseProcFile 辅助：返回 source->parser 映射
-    const std::unordered_map<ProcSource, ParserFunc> &GetProcFileParsers();
-    void FillSysProcFileParsers(std::unordered_map<ProcSource, ParserFunc> &m);
-    void FillPidProcFileParsers(std::unordered_map<ProcSource, ParserFunc> &m);
+    const std::map<ProcSource, ParserFunc> &GetProcFileParsers();
+    void FillSysProcFileParsers(std::map<ProcSource, ParserFunc> &m);
+    void FillPidProcFileParsers(std::map<ProcSource, ParserFunc> &m);
     // ConvertToCStruct 辅助：返回 source->converter 映射
     using ConvFn = void(ProcDataManager::*)(const ProcDataInternal&, struct ProcData&);
-    const std::unordered_map<ProcSource, ConvFn> &GetConvertFns();
-    void FillSysConvertFns(std::unordered_map<ProcSource, ConvFn> &m);
-    void FillPidConvertFns(std::unordered_map<ProcSource, ConvFn> &m);
+    const std::map<ProcSource, ConvFn> &GetConvertFns();
+    void FillSysConvertFns(std::map<ProcSource, ConvFn> &m);
+    void FillPidConvertFns(std::map<ProcSource, ConvFn> &m);
     // FreeProcData 辅助：返回 source->freer 映射
     using FreeFn = void(ProcDataManager::*)(struct ProcData&);
-    const std::unordered_map<ProcSource, FreeFn> &GetFreeFns();
-    void FillSysFreeFns(std::unordered_map<ProcSource, FreeFn> &m);
-    void FillPidFreeFns(std::unordered_map<ProcSource, FreeFn> &m);
+    const std::map<ProcSource, FreeFn> &GetFreeFns();
+    void FillSysFreeFns(std::map<ProcSource, FreeFn> &m);
+    void FillPidFreeFns(std::map<ProcSource, FreeFn> &m);
     // ConvertPidStat / ConvertPidTaskStat 共用字段拷贝（结构字段一致，用模板）
     template <typename SrcEntry, typename DstEntry>
     void CopyPidStatEntry(const SrcEntry &src, DstEntry &dst);

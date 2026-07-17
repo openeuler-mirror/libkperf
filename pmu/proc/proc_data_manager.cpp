@@ -47,9 +47,12 @@ string ProcDataManager::GetFilePath(ProcSource source, int pid)
         if (pid <= 0) {
             return "";
         }
-        char buf[256];
-        snprintf(buf, sizeof(buf), it->second.c_str(), pid);
-        return string(buf);
+        string path = it->second;
+        size_t pos = path.find("%d");
+        if (pos != string::npos) {
+            path.replace(pos, 2, to_string(pid));
+        }
+        return path;
     }
     return it->second;
 }
@@ -163,10 +166,10 @@ int ProcDataManager::ParseProcFile(ProcSource source, int pid, const string &fil
     return it->second(content, pid, result);
 }
 
-const unordered_map<ProcSource, ProcDataManager::ParserFunc> &ProcDataManager::GetProcFileParsers()
+const map<ProcSource, ProcDataManager::ParserFunc> &ProcDataManager::GetProcFileParsers()
 {
-    static const unordered_map<ProcSource, ParserFunc> parsers = [this]() {
-        unordered_map<ProcSource, ParserFunc> m;
+    static const map<ProcSource, ParserFunc> parsers = [this]() {
+        map<ProcSource, ParserFunc> m;
         FillSysProcFileParsers(m);
         FillPidProcFileParsers(m);
         m[PROC_IRQ_AFFINITY] = [](const string &c, int p, ProcDataInternal &r) {
@@ -182,7 +185,7 @@ const unordered_map<ProcSource, ProcDataManager::ParserFunc> &ProcDataManager::G
     return parsers;
 }
 
-void ProcDataManager::FillSysProcFileParsers(unordered_map<ProcSource, ParserFunc> &m)
+void ProcDataManager::FillSysProcFileParsers(map<ProcSource, ParserFunc> &m)
 {
     m[PROC_STAT] = [this](const string &c, int p, ProcDataInternal &r) { return ParseStat(c, p, r); };
     m[PROC_CPUINFO] = [this](const string &c, int p, ProcDataInternal &r) { return ParseCpuinfo(c, p, r); };
@@ -211,7 +214,7 @@ void ProcDataManager::FillSysProcFileParsers(unordered_map<ProcSource, ParserFun
     m[PROC_PRESSURE_IO] = [this](const string &c, int p, ProcDataInternal &r) { return ParsePressure(c, p, r); };
 }
 
-void ProcDataManager::FillPidProcFileParsers(unordered_map<ProcSource, ParserFunc> &m)
+void ProcDataManager::FillPidProcFileParsers(map<ProcSource, ParserFunc> &m)
 {
     m[PROC_PID_STAT] = [this](const string &c, int p, ProcDataInternal &r) { return ParsePidStat(c, p, r); };
     m[PROC_PID_STATM] = [this](const string &c, int p, ProcDataInternal &r) { return ParsePidStatm(c, p, r); };
@@ -241,7 +244,12 @@ int ProcDataManager::ConvertToCStruct(const vector<ProcDataInternal> &internalDa
         return SUCCESS;
     }
     *numData = internalData.size();
-    *data = new ProcData[internalData.size()];
+    *data = new(std::nothrow) ProcData[internalData.size()]();
+    if (*data == nullptr) {
+        *numData = 0;
+        pcerr::New(LIBPERF_ERR_PROC_DATA_NULL);
+        return LIBPERF_ERR_PROC_DATA_NULL;
+    }
     const auto &convFns = GetConvertFns();
     for (size_t i = 0; i < internalData.size(); i++) {
         (*data)[i].source = internalData[i].source;
@@ -255,10 +263,10 @@ int ProcDataManager::ConvertToCStruct(const vector<ProcDataInternal> &internalDa
     return SUCCESS;
 }
 
-const unordered_map<ProcSource, ProcDataManager::ConvFn> &ProcDataManager::GetConvertFns()
+const map<ProcSource, ProcDataManager::ConvFn> &ProcDataManager::GetConvertFns()
 {
-    static const unordered_map<ProcSource, ConvFn> convFns = [this]() {
-        unordered_map<ProcSource, ConvFn> m;
+    static const map<ProcSource, ConvFn> convFns = [this]() {
+        map<ProcSource, ConvFn> m;
         FillSysConvertFns(m);
         FillPidConvertFns(m);
         return m;
@@ -266,7 +274,7 @@ const unordered_map<ProcSource, ProcDataManager::ConvFn> &ProcDataManager::GetCo
     return convFns;
 }
 
-void ProcDataManager::FillSysConvertFns(unordered_map<ProcSource, ConvFn> &m)
+void ProcDataManager::FillSysConvertFns(map<ProcSource, ConvFn> &m)
 {
     m[PROC_STAT] = &ProcDataManager::ConvertStat;
     m[PROC_CPUINFO] = &ProcDataManager::ConvertCpuinfo;
@@ -301,7 +309,7 @@ void ProcDataManager::FillSysConvertFns(unordered_map<ProcSource, ConvFn> &m)
     m[PROC_SYS_NET_CORE] = &ProcDataManager::ConvertSysDir;
 }
 
-void ProcDataManager::FillPidConvertFns(unordered_map<ProcSource, ConvFn> &m)
+void ProcDataManager::FillPidConvertFns(map<ProcSource, ConvFn> &m)
 {
     m[PROC_PID_STAT] = &ProcDataManager::ConvertPidStat;
     m[PROC_PID_STATM] = &ProcDataManager::ConvertPidStatm;
@@ -386,10 +394,10 @@ void ProcDataManager::FreeProcData(struct ProcData *data, unsigned numData)
     delete[] data;
 }
 
-const unordered_map<ProcSource, ProcDataManager::FreeFn> &ProcDataManager::GetFreeFns()
+const map<ProcSource, ProcDataManager::FreeFn> &ProcDataManager::GetFreeFns()
 {
-    static const unordered_map<ProcSource, FreeFn> freeFns = [this]() {
-        unordered_map<ProcSource, FreeFn> m;
+    static const map<ProcSource, FreeFn> freeFns = [this]() {
+        map<ProcSource, FreeFn> m;
         FillSysFreeFns(m);
         FillPidFreeFns(m);
         return m;
@@ -397,7 +405,7 @@ const unordered_map<ProcSource, ProcDataManager::FreeFn> &ProcDataManager::GetFr
     return freeFns;
 }
 
-void ProcDataManager::FillSysFreeFns(unordered_map<ProcSource, FreeFn> &m)
+void ProcDataManager::FillSysFreeFns(map<ProcSource, FreeFn> &m)
 {
     m[PROC_STAT] = &ProcDataManager::FreeStat;
     m[PROC_CPUINFO] = &ProcDataManager::FreeCpuinfo;
@@ -432,7 +440,7 @@ void ProcDataManager::FillSysFreeFns(unordered_map<ProcSource, FreeFn> &m)
     m[PROC_SYS_NET_CORE] = &ProcDataManager::FreeSysDir;
 }
 
-void ProcDataManager::FillPidFreeFns(unordered_map<ProcSource, FreeFn> &m)
+void ProcDataManager::FillPidFreeFns(map<ProcSource, FreeFn> &m)
 {
     m[PROC_PID_STAT] = &ProcDataManager::FreePidStat;
     m[PROC_PID_STATM] = &ProcDataManager::FreePidStatm;
