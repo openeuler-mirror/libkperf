@@ -19,6 +19,7 @@
 #include "java_backend.h"
 #include "pmu.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <sstream>
 #include <string>
@@ -69,3 +70,4 @@ char *TraceDupCString(const char *s);
 char *TraceDupString(const std::string &s);
 UTraceData DeepCopyTraceData(const UTraceData &src);
 void FreeTraceDataFields(UTraceData &data);
+void SortTraceDataByTimestamp(UTraceData *data, size_t count);

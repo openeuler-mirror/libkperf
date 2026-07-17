@@ -87,7 +87,7 @@ public final class TraceRuntime {
         ENABLED.set(enabled);
     }
 
-    public static Context enter(String classNameInternal, String methodName) {
+    public static Context enter(String classNameInternal, String methodName, String descriptor) {
         try {
             if (!ENABLED.get()) {
                 return Context.SKIPPED;
@@ -105,7 +105,7 @@ public final class TraceRuntime {
             try {
                 int depth = CALL_DEPTH.get();
                 String module = classNameInternal.replace('/', '.');
-                String func = methodName;
+                String func = methodName + descriptor;
                 long addr = fnv1a64(module + "!" + func) & 0x0000FFFFFFFFFFFFL;
                 long ts = NativeThreadInfo.currentTimeNanosSafe();
                 String comm = currentThreadName();

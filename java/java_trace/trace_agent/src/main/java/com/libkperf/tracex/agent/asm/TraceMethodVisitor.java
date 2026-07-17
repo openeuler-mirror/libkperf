@@ -33,7 +33,7 @@ import java.util.List;
  * After transformation:
  * public int add(int a, int b)
  * {
- *     TraceRuntime.Context context = TraceRuntime.enter("com/example/Foo", "add");
+ *     TraceRuntime.Context context = TraceRuntime.enter("com/example/Foo", "add", "(II)I");
  *     try {
  *         int result = a + b;
  *         TraceRuntime.exit(context);
@@ -49,6 +49,7 @@ public final class TraceMethodVisitor extends AdviceAdapter {
     private static final Type THROWABLE_TYPE = Type.getType(Throwable.class);
     private static final Type ERROR_TYPE = Type.getType(Error.class);
     private final String methodName;
+    private final String methodDesc;
     private final String owner;
     private final List<TryRange> tryRanges = new ArrayList<TryRange>();
     private int contextLocal = -1;
@@ -60,16 +61,18 @@ public final class TraceMethodVisitor extends AdviceAdapter {
         super(api, mv, access, name, descriptor);
         this.methodName = name;
         this.owner = owner;
+        this.methodDesc = descriptor;
     }
 
     @Override
     protected void onMethodEnter() {
-        // TraceRuntime.Context context = TraceRuntime.enter(owner, methodName)
+        // TraceRuntime.Context context = TraceRuntime.enter(owner, methodName, methodDesc)
         injectingProbe = true;
         visitLdcInsn(owner);
         visitLdcInsn(methodName);
+        visitLdcInsn(methodDesc);
         visitMethodInsn(INVOKESTATIC, TraceClassFileTransformer.TRACE_RUNTIME_OWNER, "enter",
-            "(Ljava/lang/String;Ljava/lang/String;)Lcom/libkperf/tracex/runtime/TraceRuntime$Context;", false);
+            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/libkperf/tracex/runtime/TraceRuntime$Context;", false);
         contextLocal = newLocal(CONTEXT_TYPE);
         storeLocal(contextLocal);
         injectingProbe = false;
