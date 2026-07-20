@@ -28,9 +28,10 @@ tasks.named('jar') {
 }
 
 // build thread info native lib
-def defaultNativeOutDir = file("${rootProject.projectDir}/../../output/lib/java")
+def defaultNativeOutDir = file("${rootProject.projectDir}/../../build/lib/java")
 def nativeOutDir = providers
     .gradleProperty("libkperfNativeOutDir")
+    .orElse(providers.gradleProperty("libkperfJavaOutDir"))
     .map { file(it) }
     .orElse(defaultNativeOutDir)
 
