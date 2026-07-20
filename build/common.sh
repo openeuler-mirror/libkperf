@@ -244,6 +244,10 @@ function build_java_trace() {
     echo "ERROR: missing ${trace_java_lib_dir}/trace_cli.jar" >&2
     return 1
   fi
+  if [ ! -f "${trace_java_lib_dir}/libtracex_threadinfo.so" ]; then
+    echo "ERROR: missing ${trace_java_lib_dir}/libtracex_threadinfo.so" >&2
+    return 1
+  fi
 
   # Install the shared trace filter configuration used by the Java backend.
   if [ -f "${trace_filter_config}" ]; then
@@ -253,7 +257,8 @@ function build_java_trace() {
     echo "WARNING: trace filter config not found: ${trace_filter_config}" >&2
   fi
 
-  echo "java trace jars generated:"
+  echo "java trace artifacts generated:"
   echo "  ${trace_java_lib_dir}/trace_agent.jar"
   echo "  ${trace_java_lib_dir}/trace_cli.jar"
+  echo "  ${trace_java_lib_dir}/libtracex_threadinfo.so"
 }
