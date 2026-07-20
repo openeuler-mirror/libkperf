@@ -69,7 +69,12 @@ namespace pcerr {
             {LIBPERF_ERR_INVALID_BPF_PARAM, "check bpf mode failed"},
             {LIBPERF_ERR_BPF_ACT_FAILED, "failed to execute bpf obj action"},
             {LIBPERF_ERR_NULL_POINTER, "the input pointer cannot be null"},
-            {LIBPERF_ERR_INVALID_MIN_LATENCY, "invalid min latency"}
+            {LIBPERF_ERR_INVALID_MIN_LATENCY, "invalid min latency"},
+            {LIBPERF_ERR_PROC_SOURCE_INVALID, "invalid proc source type"},
+            {LIBPERF_ERR_PROC_FILE_NOT_FOUND, "proc file not found"},
+            {LIBPERF_ERR_PROC_READ_FAILED, "failed to read proc file"},
+            {LIBPERF_ERR_PROC_PARSE_FAILED, "failed to parse proc file"},
+            {LIBPERF_ERR_PROC_DATA_NULL, "output data pointer is null"}
     };
     static std::unordered_map<int, std::string> warnMsgs = {
             {LIBPERF_WARN_CTXID_LOST, "Some SPE context packets are not found in the traces."},

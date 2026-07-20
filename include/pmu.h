@@ -16,6 +16,7 @@
 #define PMU_DATA_STRUCT_H
 #include <unistd.h>
 #include <stdint.h>
+#include "proc_data_types.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -890,6 +891,9 @@ void UTraceDataFree(struct UTraceData *traceData);
  * @param pd Trace session descriptor
  */
 void UTraceClose(int pd);
+
+int ProcDataRead(int pid, struct ProcData **data, unsigned *numData);
+void ProcDataFree(struct ProcData *data, unsigned numData);
 
 #pragma GCC visibility pop
 #ifdef __cplusplus

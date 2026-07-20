@@ -50,6 +50,7 @@ bool IsDirectory(const std::string& path);
 bool FileExists(const std::string& path);
 std::vector<std::string> ListDirectoryEntries(const std::string& dirPath);
 std::string ReadFileContent(const std::string& filePath);
+std::string ReadFileAllContent(const std::string& filePath);
 std::vector<std::string> SplitStringByDelimiter(const std::string& str, char delimiter);
 bool ExistPath(const std::string& filePath);
 std::string GetTraceEventDir();

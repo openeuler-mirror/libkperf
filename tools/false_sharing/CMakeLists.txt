@@ -10,6 +10,7 @@ target_include_directories(pmu_datasrc_core PUBLIC
 
 target_include_directories(pmu_datasrc_core PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}/../../include"
+    "${CMAKE_CURRENT_LIST_DIR}/../../pmu/proc"
     "${CMAKE_CURRENT_LIST_DIR}/../../symbol"
 )
 
