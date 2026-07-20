@@ -80,7 +80,8 @@ public final class CallGraphIndex {
         if (roots.isEmpty()) {
             return Collections.emptySet();
         }
-        Set<MethodId> out = new HashSet<MethodId>(roots);
+        Set<MethodId> visited = new HashSet<MethodId>(roots);
+        Set<MethodId> expanded = new HashSet<MethodId>();
         ArrayDeque<MethodId> q = new ArrayDeque<MethodId>(roots);
         Map<MethodId, Integer> depth = new HashMap<MethodId, Integer>();
         for (MethodId r : roots) {
@@ -101,16 +102,17 @@ public final class CallGraphIndex {
                 if (!methods.contains(n)) {
                     continue;
                 }
-                if (out.add(n)) {
-                    if (config.contextMaxMethods > 0 && out.size() >= config.contextMaxMethods) {
-                        return out;
+                if (visited.add(n)) {
+                    expanded.add(n);
+                    if (expanded.size() >= config.contextMaxMethods) {
+                        return expanded;
                     }
                     depth.put(n, d + 1);
                     q.addLast(n);
                 }
             }
         }
-        return out;
+        return expanded;
     }
 
     private void accept(byte[] bytes, final TraceConfig config) {

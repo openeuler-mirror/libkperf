@@ -24,7 +24,6 @@
 #include "java_trace_util.h"
 #include "common.h"
 
-#include <algorithm>
 #include <cstdlib>
 #include <memory>
 #include <string>
@@ -87,15 +86,7 @@ static UTraceData *MergeTraceData(UTraceData *nativeData, int nativeLen, UTraceD
         merged[idx++] = DeepCopyTraceData(javaData[i]);
     }
 
-    std::stable_sort(merged, merged + total, [](const UTraceData &a, const UTraceData &b) {
-            if (a.timestamp != b.timestamp) {
-                return a.timestamp < b.timestamp;
-            }
-            if (a.tid != b.tid) {
-                return a.tid < b.tid;
-            }
-            return a.isRet < b.isRet;
-        });
+    SortTraceDataByTimestamp(merged, static_cast<size_t>(total));
     g_mergedTraceLens[merged] = total;
     return merged;
 }

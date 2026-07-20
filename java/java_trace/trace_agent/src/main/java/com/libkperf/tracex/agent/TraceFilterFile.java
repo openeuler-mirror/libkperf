@@ -23,6 +23,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class TraceFilterFile {
+    private static final int MAX_CONTEXT_DEPTH = 5;
+    private static final int MAX_CONTEXT_METHODS = 4096;
+
     public final List<FilterRule> includes = new ArrayList<FilterRule>();
     public final List<FilterRule> excludes = new ArrayList<FilterRule>();
     public long slotCount = -1;
@@ -83,13 +86,13 @@ public final class TraceFilterFile {
                         out.slotCount = parsed.longValue();
                     } else if ("context_depth".equals(k)) {
                         Integer parsed = parseNonNegativeInt(v);
-                        if (parsed == null) {
+                        if (parsed == null || parsed.intValue() > MAX_CONTEXT_DEPTH) {
                             return invalid(out, path, lineNo, "invalid context_depth", v);
                         }
                         out.contextDepth = parsed.intValue();
                     } else if ("context_max_methods".equals(k)) {
                         Integer parsed = parseNonNegativeInt(v);
-                        if (parsed == null) {
+                        if (parsed == null || parsed.intValue() > MAX_CONTEXT_METHODS) {
                             return invalid(out, path, lineNo, "invalid context_max_methods", v);
                         }
                         out.contextMaxMethods = parsed.intValue();

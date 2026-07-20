@@ -36,6 +36,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class TraceClassFileTransformer implements ClassFileTransformer {
     public static final String TRACE_RUNTIME_OWNER = "com/libkperf/tracex/runtime/TraceRuntime";
+    private static final int RESTORE_BATCH_SIZE = 64;
 
     // prevent the same class from being instrumented repeatedly
     private static final Set<ClassKey> INSTRUMENTED = ConcurrentHashMap.newKeySet();
@@ -135,14 +136,18 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
         if (classes == null) {
             return;
         }
+        List<String> messages = new ArrayList<String>();
         for (Class<?> clazz : classes) {
             if (clazz == null) {
                 continue;
             }
             ClassKey key = new ClassKey(clazz.getClassLoader(), Util.internalName(clazz));
             if (PENDING.remove(key)) {
-                logInstrumented(key);
+                appendInstrumentedMessages(key, messages);
             }
+        }
+        if (!messages.isEmpty()) {
+            TraceLog.infoBatch(messages);
         }
     }
 
@@ -169,17 +174,25 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
     }
 
     private static void logInstrumented(ClassKey key) {
+        List<String> messages = new ArrayList<String>();
+        appendInstrumentedMessages(key, messages);
+        if (!messages.isEmpty()) {
+            TraceLog.infoBatch(messages);
+        }
+    }
+
+    private static void appendInstrumentedMessages(ClassKey key, List<String> messages) {
         List<MethodId> methods = INSTRUMENTED_METHODS.get(key);
         if (methods == null) {
             return;
         }
         Set<String> loggedMethods = new HashSet<String>();
         for (MethodId method : methods) {
-            if (!loggedMethods.add(method.name)) {
+            if (!loggedMethods.add(method.func())) {
                 continue;
             }
-            TraceLog.info("[trace_agent] instrumented, module="
-                    + method.owner.replace('/', '.') + ", func=" + method.name);
+            messages.add("[trace_agent] instrumented, module=" + 
+                method.owner.replace('/', '.') + ", func=" + method.func());
         }
     }
 
@@ -230,10 +243,9 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
 
         inst.addTransformer(restoreTransformer, true);
 
-        int ok = 0;
-        int failed = 0;
-
+        RestoreResult result = new RestoreResult();
         try {
+            List<Class<?>> restoreCandidates = new ArrayList<Class<?>>();
             for (Class<?> clazz : inst.getAllLoadedClasses()) {
                 ClassKey key = null;
                 try {
@@ -255,39 +267,76 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
                         }
                     }
                     if (!restoreBytes.containsKey(key)) {
-                        failed++;
+                        result.failed++;
                         TraceLog.info("[trace_agent] restore skip no original bytes: " + Util.safeClassName(clazz));
                         continue;
                     }
-                    inst.retransformClasses(clazz);
-                    INSTRUMENTED.remove(key);
-                    INSTRUMENTED_METHODS.remove(key);
-                    PENDING.remove(key);
-                    ORIGINAL.remove(key);
-                    ok++;
+                    restoreCandidates.add(clazz);
                 } catch (Throwable t) {
-                    failed++;
+                    result.failed++;
                     TraceLog.warn("[trace_agent] restore skip bad class: " + Util.safeClassName(clazz) + ", error=" + t, t);
                     if (key != null) {
                         INSTRUMENTED.add(key);
                     }
                 }
             }
+            restoreInBatches(inst, restoreCandidates, result);
         } catch (Throwable t) {
+            result.failed++;
             TraceLog.warn("[trace_agent] restoreAll outer warning: " + t, t);
         } finally {
             try {
                 inst.removeTransformer(restoreTransformer);
             } catch (Throwable ignored) {
             }
-            if (failed == 0) {
+            if (result.failed == 0) {
                 INSTRUMENTED.clear();
                 INSTRUMENTED_METHODS.clear();
                 PENDING.clear();
                 ORIGINAL.clear();
             }
-            TraceLog.info("[trace_agent] restore done, ok=" + ok + ", failed=" + failed);
+            TraceLog.info("[trace_agent] restore done, ok=" + result.ok + ", failed=" + result.failed);
         }
+    }
+
+    private static void restoreInBatches(Instrumentation inst, List<Class<?>> classes, RestoreResult result) {
+        for (int from = 0; from < classes.size(); from += RESTORE_BATCH_SIZE) {
+            int to = Math.min(from + RESTORE_BATCH_SIZE, classes.size());
+            restoreBatch(inst, classes.subList(from, to), result);
+        }
+    }
+
+    private static void restoreBatch(Instrumentation inst, List<Class<?>> classes, RestoreResult result) {
+        if (classes.isEmpty()) {
+            return;
+        }
+        try {
+            inst.retransformClasses(classes.toArray(new Class<?>[0]));
+        } catch (Throwable t) {
+            if (classes.size() == 1) {
+                Class<?> clazz = classes.get(0);
+                result.failed++;
+                TraceLog.warn("[trace_agent] restore skip bad class: " + Util.safeClassName(clazz) + ", error=" + t, t);
+                return;
+            }
+            int middle = classes.size() / 2;
+            restoreBatch(inst, classes.subList(0, middle), result);
+            restoreBatch(inst, classes.subList(middle, classes.size()), result);
+            return;
+        }
+        for (Class<?> clazz : classes) {
+            ClassKey key = new ClassKey(clazz.getClassLoader(), Util.internalName(clazz));
+            INSTRUMENTED.remove(key);
+            INSTRUMENTED_METHODS.remove(key);
+            PENDING.remove(key);
+            ORIGINAL.remove(key);
+        }
+        result.ok += classes.size();
+    }
+
+    private static final class RestoreResult {
+        private int ok;
+        private int failed;
     }
 
     private static final class SafeClassWriter extends ClassWriter {

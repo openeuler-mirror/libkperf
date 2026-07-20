@@ -633,6 +633,8 @@ struct LocalConfigParseContext {
 
 static constexpr size_t K_MIN_SECTION_LINE_LEN = 3;
 static constexpr int K_NUMBER_BASE_DECIMAL = 10;
+static constexpr unsigned long long K_MAX_CONTEXT_DEPTH = 5;
+static constexpr unsigned long long K_MAX_CONTEXT_METHODS = 4096;
 static constexpr const char *K_JAVA_INCLUDE_SECTION = "java_include";
 static constexpr const char *K_JAVA_EXCLUDE_SECTION = "java_exclude";
 static constexpr const char *K_DIGITS = "0123456789";
@@ -676,6 +678,29 @@ static bool ParseSlotCountValue(const LocalConfigParseContext &context, const st
     return true;
 }
 
+static bool ParseBoundedUnsignedValue(const LocalConfigParseContext &context, const char *key,
+                                      const std::string &value, unsigned long long maxValue)
+{
+    if (!IsUnsignedInteger(value)) {
+        LogInvalidConfigValue(context, key, value);
+        return false;
+    }
+
+    unsigned long long parsed = 0;
+    try {
+        parsed = std::stoull(value, nullptr, K_NUMBER_BASE_DECIMAL);
+    } catch (const std::exception &) {
+        LogInvalidConfigValue(context, key, value);
+        return false;
+    }
+
+    if (parsed > maxValue) {
+        LogInvalidConfigValue(context, key, value);
+        return false;
+    }
+    return true;
+}
+
 static bool ParseLocalConfigKeyValue(LocalConfigParseContext *context, const std::string &key,
                                      const std::string &value)
 {
@@ -686,16 +711,10 @@ static bool ParseLocalConfigKeyValue(LocalConfigParseContext *context, const std
         return true;
     }
     if (key == K_CONTEXT_DEPTH_KEY) {
-        if (!IsUnsignedInteger(value)) {
-            return false;
-        }
-        return true;
+        return ParseBoundedUnsignedValue(*context, K_CONTEXT_DEPTH_KEY, value, K_MAX_CONTEXT_DEPTH);
     }
     if (key == K_CONTEXT_MAX_METHODS_KEY) {
-        if (!IsUnsignedInteger(value)) {
-            return false;
-        }
-        return true;
+        return ParseBoundedUnsignedValue(*context, K_CONTEXT_MAX_METHODS_KEY, value, K_MAX_CONTEXT_METHODS);
     }
     JavaTraceLog(MakeLogMessage("[trace-java] unknown trace filter key at ", context->path, ":",
                                 context->lineNo, ": ", key, "\n"));
@@ -956,4 +975,14 @@ void FreeTraceDataFields(UTraceData &data)
     data.comm = nullptr;
     data.module = nullptr;
     data.func = nullptr;
+}
+
+void SortTraceDataByTimestamp(UTraceData *data, size_t count)
+{
+    if (data == nullptr || count < K_EXTRA_CHARS) {
+        return;
+    }
+    std::stable_sort(data, data + count, [](const UTraceData &left, const UTraceData &right) {
+        return left.timestamp < right.timestamp;
+    });
 }
