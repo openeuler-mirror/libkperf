@@ -14,6 +14,7 @@
  ******************************************************************************/
 #include "test_common.h"
 #include "common.h"
+#include <sched.h>
 
 using namespace std;
 
@@ -33,7 +34,10 @@ public:
             PmuTraceDataFree(data);
             data = nullptr;
         }
-        PmuTraceClose(pd);
+        if (pd >= 0) {
+            PmuTraceClose(pd);
+            pd = -1;
+        }
     }
 
 protected:
@@ -60,7 +64,7 @@ protected:
         PmuTraceDisable(pd);
     }
 
-    int pd;
+    int pd = -1;
     pid_t appPid = 0;
     PmuTraceData *data = nullptr;
 };
@@ -83,9 +87,28 @@ TEST_F(TestAnaylzeData, config_param_error) {
  * @brief test for collecting single syscall trace data and single cpu
  */
 TEST_F(TestAnaylzeData, collect_single_trace_data_success) {
-    appPid = RunTestApp("test_12threads");
+    appPid = RunTestApp("test_syscall_futex");
+    ASSERT_GT(appPid, 0);
     int pidList[1] = {appPid};
-    int cpuList[1] = {1};
+
+    cpu_set_t availableCpus;
+    CPU_ZERO(&availableCpus);
+    ASSERT_EQ(sched_getaffinity(appPid, sizeof(availableCpus), &availableCpus), 0);
+    int targetCpu = -1;
+    for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu) {
+        if (CPU_ISSET(cpu, &availableCpus)) {
+            targetCpu = cpu;
+            break;
+        }
+    }
+    ASSERT_GE(targetCpu, 0);
+
+    cpu_set_t targetCpuSet;
+    CPU_ZERO(&targetCpuSet);
+    CPU_SET(targetCpu, &targetCpuSet);
+    ASSERT_EQ(sched_setaffinity(appPid, sizeof(targetCpuSet), &targetCpuSet), 0);
+
+    int cpuList[1] = {targetCpu};
     const char *func1 = "futex";
     const char *funcs[1] = {func1};
     PmuTraceAttr traceAttr = {0};
@@ -100,7 +123,13 @@ TEST_F(TestAnaylzeData, collect_single_trace_data_success) {
     ASSERT_NE(pd, -1);
     EnableTracePointer(pd, 1);
     int len = PmuTraceRead(pd, &data);
-    EXPECT_TRUE(data != nullptr);
+    ASSERT_GT(len, 0) << Perror();
+    ASSERT_NE(data, nullptr);
+    for (int i = 0; i < len; ++i) {
+        EXPECT_STREQ(data[i].funcs, func1);
+        EXPECT_EQ(data[i].pid, appPid);
+        EXPECT_EQ(data[i].cpu, targetCpu);
+    }
 }
 
 /**

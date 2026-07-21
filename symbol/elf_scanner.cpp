@@ -17,7 +17,9 @@
 
 #ifdef UTRACE
 
+#include "name_resolve.h"
 #include "pcerr.h"
+#include <cstdlib>
 #include <cstring>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -137,8 +139,22 @@ std::unordered_map<std::string, ElfScanner::ElfSymEntry> ElfScanner::ExtractSymE
             for (size_t j = 0; j < symCount; ++j) {
                 const Elf64_Sym &s = symTable[j];
                 const char *symName = strTable + s.st_name;
-                if (targetSet.count(symName) && ELF64_ST_TYPE(s.st_info) == STT_FUNC) {
+                if (ELF64_ST_TYPE(s.st_info) != STT_FUNC) {
+                    continue;
+                }
+
+                // ELF stores C++ symbols as mangled names, while symbol resolving reports demangled names.
+                // Match both forms so symSrc accepts either representation.
+                if (targetSet.count(symName)) {
                     foundSymbols[symName] = {s.st_value, s.st_size, s.st_shndx};
+                } else {
+                    char *demangledName = CppNamedDemangle(symName);
+                    if (demangledName != nullptr) {
+                        if (targetSet.count(demangledName)) {
+                            foundSymbols[demangledName] = {s.st_value, s.st_size, s.st_shndx};
+                        }
+                        std::free(demangledName);
+                    }
                 }
             }
         }

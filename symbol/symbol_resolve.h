@@ -43,6 +43,7 @@ namespace KUNPENG_SYM {
     struct ModuleMap {
         unsigned long start;
         unsigned long end;
+        unsigned long fileOffset;
         std::string moduleName;
         std::string mntPoint;
         bool isExecFile = false;

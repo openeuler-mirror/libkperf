@@ -120,9 +120,10 @@ namespace {
             char modNameChar[MAX_LINUX_MODULE_LEN];
             if (sscanf(line, "%lx-%lx %s %s %s %s %s",
                           &data->start, &data->end, mode, offset,dev,
-                          inode, modNameChar) == EOF) {
+                          inode, modNameChar) != 7) {
                 continue;
             }
+            data->fileOffset = strtoul(offset, nullptr, HEX_LEN);
             data->moduleName = modNameChar;
             modVec.emplace_back(data);
         }
@@ -489,11 +490,6 @@ int SymbolResolve::UpdateModule(int pid, RecordModuleType recordModuleType)
     std::string mntPoint = GetMntPoint(pid);
     // Find new dynamic modules.
     auto &oldModVec = moduleMap[pid];
-    if (newModVec.size() <= oldModVec.size()) {
-        pcerr::New(SUCCESS);
-        moduleSafeHandler.releaseLock(pid);
-        return SUCCESS;
-    }
     auto diffModVec = FindDiffMaps(oldModVec, newModVec);
     // Load modules.
     for (auto& item : diffModVec) {
@@ -509,6 +505,7 @@ int SymbolResolve::UpdateModule(int pid, RecordModuleType recordModuleType)
             continue;
         }
         item->isExecFile = myElf.IsExecFile();
+        item->moduleType = recordModuleType;
 #ifndef ELF_LLVM
         this->RecordElf(moduleName.c_str());
 #endif
@@ -516,6 +513,10 @@ int SymbolResolve::UpdateModule(int pid, RecordModuleType recordModuleType)
     for (auto& mod : diffModVec) {
         oldModVec.emplace_back(mod);
     }
+    std::sort(oldModVec.begin(), oldModVec.end(),
+              [](const std::shared_ptr<ModuleMap> &left, const std::shared_ptr<ModuleMap> &right) {
+                  return left->start < right->start;
+              });
     pcerr::New(SUCCESS);
     moduleSafeHandler.releaseLock(pid);
     return SUCCESS;
@@ -707,7 +708,9 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
     }
     unsigned long addrToSearch = addr;
     if (!module->isExecFile) {
-        addrToSearch = addrToSearch - module->start;
+        // /proc/<pid>/maps provides mapping address and file offset. ELF symbols are
+        // relative to the image base, not the individual mapping (notably on x86_64).
+        addrToSearch = addrToSearch - module->start + module->fileOffset;
     }
 
     std::string moduleName = module->moduleName;
@@ -881,6 +884,12 @@ int SymbolResolve::UpdateModule(int pid, const char* moduleName, unsigned long s
         pcerr::New(LIBSYM_ERR_PARAM_PID_INVALID, "libsym param process ID must be greater than 0");
         return LIBSYM_ERR_PARAM_PID_INVALID;
     }
+    if (this->moduleMap.find(pid) != this->moduleMap.end()) {
+        int ret = UpdateModule(pid, recordModuleType);
+        if (ret != SUCCESS) {
+            return ret;
+        }
+    }
     std::shared_ptr<ModuleMap> data = std::make_shared<ModuleMap>();
     std::string mntPoint = GetMntPoint(pid);
     data->moduleName = moduleName;
@@ -902,22 +911,30 @@ int SymbolResolve::UpdateModule(int pid, const char* moduleName, unsigned long s
         return ret;
     }
     data->isExecFile = myElf.IsExecFile();
+    data->moduleType = recordModuleType;
+#ifndef ELF_LLVM
+    this->RecordElf(recordModule.c_str());
+#endif
     if (this->moduleMap.find(pid) == this->moduleMap.end()) {
         int ret = RecordModule(pid, recordModuleType);
         if (ret != 0) {
             return ret;
         }
     }
-    auto modV = moduleMap[pid];
+    auto &modV = moduleMap[pid];
     bool findModule = false;
-    for (auto item : modV) {
+    for (const auto &item : modV) {
         if (item->moduleName.compare(moduleName) == 0) {
             findModule = true;
             break;
         }
     }
     if (!findModule) {
-        this->moduleMap[pid].emplace_back(data);
+        auto insertPos = std::lower_bound(modV.begin(), modV.end(), data->start,
+            [](const std::shared_ptr<ModuleMap> &item, unsigned long start) {
+                return item->start < start;
+            });
+        modV.insert(insertPos, data);
     }
     pcerr::New(0, "success");
     return 0;
