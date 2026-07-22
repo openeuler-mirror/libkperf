@@ -1,6 +1,7 @@
 #include "common.h"
 #include "test_common.h"
 #include "elf_scanner.h"
+#include "probe_alias_manager.h"
 #include "probe_registrar.h"
 #include "trace_data_manager.h"
 
@@ -16,6 +17,18 @@ protected:
     {
         ElfScanner::FormatFailures();
     }
+};
+
+class ProbeRegistrarTest : public ::testing::Test
+{
+protected:
+    void TearDown() override
+    {
+        ProbeRegistrar::GetInstance().EraseProbeEvents(pd);
+        ProbeAliasManager::GetInstance().Erase(pd);
+    }
+
+    const int pd = 987654;
 };
 
 TEST_F(ElfScannerTest, ResolveElf_SuccessAndExactRetCount)
@@ -49,6 +62,62 @@ TEST_F(ElfScannerTest, ResolveElf_SuccessAndExactRetCount)
 #endif
 
     EXPECT_TRUE(ElfScanner::FormatFailures().empty());
+}
+
+TEST_F(ElfScannerTest, ResolveElf_DemangledCppSymbol)
+{
+    auto testElfPath = GetTestBinaryPath("libtest_utrace_elf.so");
+    std::unordered_map<std::string, std::vector<std::string>> module2Symbols = {
+        {testElfPath, {"cpp_trace_func(int)"}}};
+
+    auto resultsMap = ElfScanner::ResolveElfs(module2Symbols);
+
+    ASSERT_EQ(resultsMap.count(testElfPath), 1);
+    ASSERT_EQ(resultsMap.at(testElfPath).size(), 1);
+    EXPECT_EQ(resultsMap.at(testElfPath)[0].symbolName, "cpp_trace_func(int)");
+}
+
+TEST_F(ElfScannerTest, ResolveElf_DemangledCppSymbolWithoutParameters)
+{
+    auto testElfPath = GetTestBinaryPath("libtest_utrace_elf.so");
+    std::unordered_map<std::string, std::vector<std::string>> module2Symbols = {
+        {testElfPath, {"cpp_static_trace_func"}}};
+
+    auto resultsMap = ElfScanner::ResolveElfs(module2Symbols);
+
+    ASSERT_EQ(resultsMap.count(testElfPath), 1);
+    ASSERT_EQ(resultsMap.at(testElfPath).size(), 1);
+    EXPECT_EQ(resultsMap.at(testElfPath)[0].symbolName, "cpp_static_trace_func");
+}
+
+#if defined(__GNUC__)
+TEST_F(ElfScannerTest, ResolveElf_CompilerCloneSuffix)
+{
+    auto testElfPath = GetTestBinaryPath("libtest_utrace_elf.so");
+    std::unordered_map<std::string, std::vector<std::string>> module2Symbols = {
+        {testElfPath, {"cpp_compiler_clone"}}};
+
+    auto resultsMap = ElfScanner::ResolveElfs(module2Symbols);
+
+    ASSERT_EQ(resultsMap.count(testElfPath), 1);
+    ASSERT_EQ(resultsMap.at(testElfPath).size(), 1);
+    EXPECT_EQ(resultsMap.at(testElfPath)[0].symbolName, "cpp_compiler_clone");
+}
+#endif
+
+TEST_F(ProbeRegistrarTest, RegisterEntryProbeWithoutReturnOffsets)
+{
+    ProbePoints entryOnly = {"tail_call_func", 0x1234, {}};
+    std::unordered_map<std::string, std::vector<ProbePoints>> module2ProbePoints = {
+        {"/tmp/libtail_call.so", {entryOnly}}};
+
+    auto &registrar = ProbeRegistrar::GetInstance();
+    registrar.ConvertToProbeEvents(pd, module2ProbePoints);
+    const auto &events = registrar.GetProbeEvents(pd);
+
+    ASSERT_EQ(events.size(), 1);
+    EXPECT_EQ(events[0].binaryPath, "/tmp/libtail_call.so");
+    EXPECT_EQ(events[0].offset, entryOnly.entryOffset);
 }
 
 TEST_F(ElfScannerTest, ResolveElf_FileDoesNotExist)
