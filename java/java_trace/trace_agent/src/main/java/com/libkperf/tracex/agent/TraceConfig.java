@@ -195,7 +195,7 @@ public final class TraceConfig {
 
     boolean isExcludedClass(String owner) {
         for (FilterRule r : excludeRules) {
-            if (r.matchesClass(owner)) {
+            if (r.isClassOnly() && r.matchesClass(owner)) {
                 return true;
             }
         }
