@@ -20,7 +20,7 @@
       <jdk.version>1.8</jdk.version>
       <maven.compiler.source>1.8</maven.compiler.source>
       <maven.compiler.target>1.8</maven.compiler.target>
-      <asm.version>9.7.1</asm.version>
+      <asm.version>9.9.1</asm.version>
       <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
       <maven.jar.plugin.version>3.4.2</maven.jar.plugin.version>
       <maven.shade.plugin.version>3.5.2</maven.shade.plugin.version>
