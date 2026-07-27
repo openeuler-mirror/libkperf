@@ -25,14 +25,14 @@
 namespace KUNPENG_PMU {
 
 struct StatEntryInternal {
-    std::string cpu_name;
-    unsigned long long user, nice, system, idle, iowait, irq, softirq, steal, guest, guest_nice;
+    std::string cpuName;
+    unsigned long long user, nice, system, idle, ioWait, irq, softirq, steal, guest, guestNice;
     ProcStatLineType lineType = PROC_STAT_LINE_CPU;
-    unsigned long long ctxt = 0, btime = 0, processes = 0, procs_running = 0, procs_blocked = 0;
-    unsigned long long intr_total = 0;
-    std::vector<unsigned long long> intr_per_irq;
-    unsigned long long softirq_total = 0;
-    std::vector<unsigned long long> softirq_per_type;
+    unsigned long long ctxt = 0, btime = 0, processes = 0, procsRunning = 0, procsBlocked = 0;
+    unsigned long long intrTotal = 0;
+    std::vector<unsigned long long> intrPerIrq;
+    unsigned long long softirqTotal = 0;
+    std::vector<unsigned long long> softirqPerType;
 };
 
 struct CpuinfoEntryInternal {
@@ -47,8 +47,8 @@ struct MeminfoEntryInternal {
 
 struct LoadavgEntryInternal {
     double load1, load5, load15;
-    unsigned running_procs, total_procs;
-    int last_pid;
+    unsigned runningProcs, totalProcs;
+    int lastPid;
 };
 
 struct VmstatEntryInternal {
@@ -58,18 +58,18 @@ struct VmstatEntryInternal {
 
 struct NetDevEntryInternal {
     std::string iface;
-    unsigned long long rx_bytes, rx_packets, rx_errs, rx_drop, rx_fifo, rx_frame, rx_compressed, rx_multicast;
-    unsigned long long tx_bytes, tx_packets, tx_errs, tx_drop, tx_fifo, tx_colls, tx_carrier, tx_compressed;
+    unsigned long long rxBytes, rxPackets, rxErrs, rxDrop, rxFifo, rxFrame, rxCompressed, rxMulticast;
+    unsigned long long txBytes, txPackets, txErrs, txDrop, txFifo, txColls, txCarrier, txCompressed;
 };
 
 struct DiskstatsEntryInternal {
     int major, minor;
     std::string device;
-    unsigned long long reads_completed, reads_merged, sectors_read, ms_reading;
-    unsigned long long writes_completed, writes_merged, sectors_written, ms_writing;
-    unsigned long long ios_in_progress, ms_ios, weighted_ms_ios;
-    unsigned long long discards_completed, discards_merged, sectors_discarded, ms_discarding;
-    unsigned long long flush_completed, ms_flushing;
+    unsigned long long readsCompleted, readsMerged, sectorsRead, msReading;
+    unsigned long long writesCompleted, writesMerged, sectorsWritten, msWriting;
+    unsigned long long iosInProgress, msIos, weightedMsIos;
+    unsigned long long discardsCompleted, discardsMerged, sectorsDiscarded, msDiscarding;
+    unsigned long long flushCompleted, msFlushing;
 };
 
 struct UptimeEntryInternal {
@@ -77,38 +77,38 @@ struct UptimeEntryInternal {
 };
 
 struct MountsEntryInternal {
-    std::string device, mount_point, fs_type, options;
-    int dump, pass_val;
+    std::string device, mountPoint, fsType, options;
+    int dump, passVal;
 };
 
 struct SoftirqsEntryInternal {
     std::string type;
-    std::vector<unsigned long long> per_cpu;
+    std::vector<unsigned long long> perCpu;
 };
 
 struct SlabinfoEntryInternal {
     std::string name;
-    unsigned long long active_objs, num_objs, objsize, objperslab, pagesperslab;
+    unsigned long long activeObjs, numObjs, objsize, objperslab, pagesperslab;
     unsigned long long limit, batchcount, sharedfactor;
-    unsigned long long active_slabs, num_slabs, sharedavail;
+    unsigned long long activeSlabs, numSlabs, sharedavail;
 };
 
 struct SchedstatDomainInternal {
-    int domain_id;
+    int domainId;
     std::string mask;
     std::vector<unsigned long long> values;
 };
 
 struct SchedstatEntryInternal {
-    int cpu_id;
-    unsigned long long yld_count, sched_count, sched_goidle;
-    unsigned long long ttwu_count, ttwu_local, rq_cpu_time, run_delay, pcount;
+    int cpuId;
+    unsigned long long yldCount, schedCount, schedGoidle;
+    unsigned long long ttwuCount, ttwuLocal, rqCpuTime, runDelay, pcount;
     std::vector<SchedstatDomainInternal> domains;
 };
 
 struct InterruptsEntryInternal {
     std::string irq;
-    std::vector<unsigned long long> per_cpu;
+    std::vector<unsigned long long> perCpu;
     std::string description;
 };
 
@@ -121,20 +121,20 @@ struct LocksEntryInternal {
 };
 
 struct ZoneinfoPagesetInternal {
-    int cpu_id;
-    unsigned long long count, high, batch, vm_stats_threshold;
+    int cpuId;
+    unsigned long long count, high, batch, vmStatsThreshold;
 };
 
 struct ZoneinfoEntryInternal {
     int node;
     std::string zone;
     // Zone 级别 pages 统计
-    unsigned long long pages_free = 0;
-    unsigned long long pages_min = 0, pages_low = 0, pages_high = 0;
-    unsigned long long pages_spanned = 0, pages_present = 0, pages_managed = 0, pages_cma = 0;
+    unsigned long long pagesFree = 0;
+    unsigned long long pagesMin = 0, pagesLow = 0, pagesHigh = 0;
+    unsigned long long pagesSpanned = 0, pagesPresent = 0, pagesManaged = 0, pagesCma = 0;
     std::string protection;
-    std::string node_unreclaimable;
-    std::string start_pfn;
+    std::string nodeUnreclaimable;
+    std::string startPfn;
     // Node 级别统计 (per-node stats)
     std::vector<std::pair<std::string, std::string>> nodeStats;
     // Zone 级别统计 (nr_zone_* 等)
@@ -145,7 +145,7 @@ struct ZoneinfoEntryInternal {
 
 struct BuddyinfoEntryInternal {
     int node;
-    std::string zone, zone_name;
+    std::string zone, zoneName;
     std::vector<unsigned long long> orders;
 };
 
@@ -160,10 +160,10 @@ struct NetNetstatEntryInternal {
 };
 
 struct NetArpEntryInternal {
-    std::string ip_address;
-    std::string hw_type;
+    std::string ipAddress;
+    std::string hwType;
     std::string flags;
-    std::string hw_address;
+    std::string hwAddress;
     std::string mask;
     std::string device;
 };
@@ -175,13 +175,13 @@ struct VersionEntryInternal {
 struct ModulesEntryInternal {
     std::string name;
     unsigned long long size;
-    int used_count;
-    std::string used_by, state, address, taint;
+    int usedCount;
+    std::string usedBy, state, address, taint;
 };
 
 struct FilesystemsEntryInternal {
     int nodev;
-    std::string fs_type;
+    std::string fsType;
 };
 
 struct ScsiEntryInternal {
@@ -193,7 +193,7 @@ struct ScsiEntryInternal {
     std::string model;
     std::string rev;
     std::string type;
-    std::string ansi_scsi_revision;
+    std::string ansiScsiRevision;
 };
 
 struct PressureEntryInternal {
@@ -210,21 +210,21 @@ struct PidStatEntryInternal {
     int pid;
     std::string comm;
     char state;
-    int ppid, pgrp, session, tty_nr, tpgid;
+    int ppid, pgrp, session, ttyNr, tpgid;
     unsigned long long flags, minflt, cminflt, majflt, cmajflt, utime, stime;
     long long cutime, cstime;
-    int priority, nice_val, num_threads;
+    int priority, niceVal, numThreads;
     long long itrealvalue;
     unsigned long long starttime, vsize, rsslim;
     long long rss;
     unsigned long long startcode, endcode, startstack, kstkesp, kstkeip;
     unsigned long long signal, blocked, sigignore, sigcatch, wchan, nswap, cnswap;
-    int exit_signal, processor;
-    unsigned rt_priority, policy;
-    unsigned long long delayacct_blkio_ticks, guest_time;
-    long long cguest_time;
-    unsigned long long start_data, end_data, start_brk, arg_start, arg_end, env_start, env_end;
-    int exit_code;
+    int exitSignal, processor;
+    unsigned rtPriority, policy;
+    unsigned long long delayacctBlkioTicks, guestTime;
+    long long cguestTime;
+    unsigned long long startData, endData, startBrk, argStart, argEnd, envStart, envEnd;
+    int exitCode;
 };
 
 struct PidStatmEntryInternal {
@@ -236,7 +236,7 @@ struct PidStatusEntryInternal {
 };
 
 struct PidIoEntryInternal {
-    unsigned long long rchar, wchar, syscr, syscw, read_bytes, write_bytes, cancelled_write_bytes;
+    unsigned long long rchar, wchar, syscr, syscw, readBytes, writeBytes, cancelledWriteBytes;
 };
 
 struct PidSmapsRollupEntryInternal {
@@ -244,7 +244,7 @@ struct PidSmapsRollupEntryInternal {
 };
 
 struct PidFdEntryInternal {
-    unsigned fd_count;
+    unsigned fdCount;
 };
 
 struct PidNumaMapsEntryInternal {
@@ -289,21 +289,21 @@ struct PidTaskStatEntryInternal {
     int pid;
     std::string comm;
     char state;
-    int ppid, pgrp, session, tty_nr, tpgid;
+    int ppid, pgrp, session, ttyNr, tpgid;
     unsigned long long flags, minflt, cminflt, majflt, cmajflt, utime, stime;
     long long cutime, cstime;
-    int priority, nice_val, num_threads;
+    int priority, niceVal, numThreads;
     long long itrealvalue;
     unsigned long long starttime, vsize, rsslim;
     long long rss;
     unsigned long long startcode, endcode, startstack, kstkesp, kstkeip;
     unsigned long long signal, blocked, sigignore, sigcatch, wchan, nswap, cnswap;
-    int exit_signal, processor;
-    unsigned rt_priority, policy;
-    unsigned long long delayacct_blkio_ticks, guest_time;
-    long long cguest_time;
-    unsigned long long start_data, end_data, start_brk, arg_start, arg_end, env_start, env_end;
-    int exit_code;
+    int exitSignal, processor;
+    unsigned rtPriority, policy;
+    unsigned long long delayacctBlkioTicks, guestTime;
+    long long cguestTime;
+    unsigned long long startData, endData, startBrk, argStart, argEnd, envStart, envEnd;
+    int exitCode;
 };
 
 struct ProcDataInternal {

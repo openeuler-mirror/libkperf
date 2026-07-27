@@ -48,7 +48,7 @@ int ProcDataManager::ParseStat(const string &content, int pid, ProcDataInternal 
         string rest = Trim(line.substr(spacePos + 1));
         vector<string> values = SplitLine(rest, ' ');
         StatEntryInternal entry{};
-        entry.cpu_name = name;
+        entry.cpuName = name;
         if (name.rfind("cpu", 0) == 0) {
             FillStatCpuEntry(entry, values);
         } else {
@@ -73,8 +73,8 @@ const map<string, ProcDataManager::StatHandler> &ProcDataManager::GetStatHandler
     static const map<string, StatHandler> handlers = {
         {"intr", [](StatEntryInternal& e, const vector<string>& v) {
             e.lineType = PROC_STAT_LINE_INTR;
-            e.intr_total = SafeGetUll(v, 0);
-            for (size_t k = 1; k < v.size(); k++) e.intr_per_irq.push_back(SafeStoull(v[k]));
+            e.intrTotal = SafeGetUll(v, 0);
+            for (size_t k = 1; k < v.size(); k++) e.intrPerIrq.push_back(SafeStoull(v[k]));
         }},
         {"ctxt", [](StatEntryInternal& e, const vector<string>& v) {
             e.lineType = PROC_STAT_LINE_CTXT;
@@ -90,16 +90,16 @@ const map<string, ProcDataManager::StatHandler> &ProcDataManager::GetStatHandler
         }},
         {"procs_running", [](StatEntryInternal& e, const vector<string>& v) {
             e.lineType = PROC_STAT_LINE_PROCS_RUNNING;
-            e.procs_running = SafeGetUll(v, 0);
+            e.procsRunning = SafeGetUll(v, 0);
         }},
         {"procs_blocked", [](StatEntryInternal& e, const vector<string>& v) {
             e.lineType = PROC_STAT_LINE_PROCS_BLOCKED;
-            e.procs_blocked = SafeGetUll(v, 0);
+            e.procsBlocked = SafeGetUll(v, 0);
         }},
         {"softirq", [](StatEntryInternal& e, const vector<string>& v) {
             e.lineType = PROC_STAT_LINE_SOFTIRQ;
-            e.softirq_total = SafeGetUll(v, 0);
-            for (size_t k = 1; k < v.size(); k++) e.softirq_per_type.push_back(SafeStoull(v[k]));
+            e.softirqTotal = SafeGetUll(v, 0);
+            for (size_t k = 1; k < v.size(); k++) e.softirqPerType.push_back(SafeStoull(v[k]));
         }},
     };
     return handlers;
@@ -112,12 +112,12 @@ void ProcDataManager::FillStatCpuEntry(StatEntryInternal &entry, const vector<st
     entry.nice = SafeGetUll(values, StatField::NICE);
     entry.system = SafeGetUll(values, StatField::SYSTEM);
     entry.idle = SafeGetUll(values, StatField::STAT_IDLE);
-    entry.iowait = SafeGetUll(values, StatField::IOWAIT);
+    entry.ioWait = SafeGetUll(values, StatField::IOWAIT);
     entry.irq = SafeGetUll(values, StatField::IRQ);
     entry.softirq = SafeGetUll(values, StatField::SOFTIRQ);
     entry.steal = SafeGetUll(values, StatField::STEAL);
     entry.guest = SafeGetUll(values, StatField::GUEST);
-    entry.guest_nice = SafeGetUll(values, StatField::GUEST_NICE);
+    entry.guestNice = SafeGetUll(values, StatField::GUEST_NICE);
 }
 
 int ProcDataManager::ParseCpuinfo(const string &content, int pid, ProcDataInternal &result)
@@ -195,12 +195,12 @@ int ProcDataManager::ParseLoadavg(const string &content, int pid, ProcDataIntern
     if (parts.size() > 3) {
         size_t slashPos = parts[LoadavgField::RUNNING_TOTAL_PROCS].find('/');
         if (slashPos != string::npos) {
-            entry.running_procs = SafeStoi(parts[LoadavgField::RUNNING_TOTAL_PROCS].substr(0, slashPos));
-            entry.total_procs = SafeStoi(parts[LoadavgField::RUNNING_TOTAL_PROCS].substr(slashPos + 1));
+            entry.runningProcs = SafeStoi(parts[LoadavgField::RUNNING_TOTAL_PROCS].substr(0, slashPos));
+            entry.totalProcs = SafeStoi(parts[LoadavgField::RUNNING_TOTAL_PROCS].substr(slashPos + 1));
         }
     }
     if (parts.size() > 4) {
-        entry.last_pid = SafeStoi(parts[LoadavgField::LAST_PID]);
+        entry.lastPid = SafeStoi(parts[LoadavgField::LAST_PID]);
     }
     entries.push_back(move(entry));
     result.entries = new vector<LoadavgEntryInternal>(move(entries));
@@ -245,22 +245,22 @@ int ProcDataManager::ParseNetDev(const string &content, int pid, ProcDataInterna
         // parts field indices (/proc file format)
         NetDevEntryInternal entry{};
         entry.iface = iface;
-        entry.rx_bytes = SafeGetUll(parts, NetDevField::RX_BYTES);
-        entry.rx_packets = SafeGetUll(parts, NetDevField::RX_PACKETS);
-        entry.rx_errs = SafeGetUll(parts, NetDevField::RX_ERRS);
-        entry.rx_drop = SafeGetUll(parts, NetDevField::RX_DROP);
-        entry.rx_fifo = SafeGetUll(parts, NetDevField::RX_FIFO);
-        entry.rx_frame = SafeGetUll(parts, NetDevField::RX_FRAME);
-        entry.rx_compressed = SafeGetUll(parts, NetDevField::RX_COMPRESSED);
-        entry.rx_multicast = SafeGetUll(parts, NetDevField::RX_MULTICAST);
-        entry.tx_bytes = SafeGetUll(parts, NetDevField::TX_BYTES);
-        entry.tx_packets = SafeGetUll(parts, NetDevField::TX_PACKETS);
-        entry.tx_errs = SafeGetUll(parts, NetDevField::TX_ERRS);
-        entry.tx_drop = SafeGetUll(parts, NetDevField::TX_DROP);
-        entry.tx_fifo = SafeGetUll(parts, NetDevField::TX_FIFO);
-        entry.tx_colls = SafeGetUll(parts, NetDevField::TX_COLLS);
-        entry.tx_carrier = SafeGetUll(parts, NetDevField::TX_CARRIER);
-        entry.tx_compressed = SafeGetUll(parts, NetDevField::TX_COMPRESSED);
+        entry.rxBytes = SafeGetUll(parts, NetDevField::RX_BYTES);
+        entry.rxPackets = SafeGetUll(parts, NetDevField::RX_PACKETS);
+        entry.rxErrs = SafeGetUll(parts, NetDevField::RX_ERRS);
+        entry.rxDrop = SafeGetUll(parts, NetDevField::RX_DROP);
+        entry.rxFifo = SafeGetUll(parts, NetDevField::RX_FIFO);
+        entry.rxFrame = SafeGetUll(parts, NetDevField::RX_FRAME);
+        entry.rxCompressed = SafeGetUll(parts, NetDevField::RX_COMPRESSED);
+        entry.rxMulticast = SafeGetUll(parts, NetDevField::RX_MULTICAST);
+        entry.txBytes = SafeGetUll(parts, NetDevField::TX_BYTES);
+        entry.txPackets = SafeGetUll(parts, NetDevField::TX_PACKETS);
+        entry.txErrs = SafeGetUll(parts, NetDevField::TX_ERRS);
+        entry.txDrop = SafeGetUll(parts, NetDevField::TX_DROP);
+        entry.txFifo = SafeGetUll(parts, NetDevField::TX_FIFO);
+        entry.txColls = SafeGetUll(parts, NetDevField::TX_COLLS);
+        entry.txCarrier = SafeGetUll(parts, NetDevField::TX_CARRIER);
+        entry.txCompressed = SafeGetUll(parts, NetDevField::TX_COMPRESSED);
         entries.push_back(move(entry));
     }
     if (entries.empty()) {
@@ -286,23 +286,23 @@ int ProcDataManager::ParseDiskstats(const string &content, int pid, ProcDataInte
         entry.major = SafeStoi(parts[DiskstatsField::MAJOR]);
         entry.minor = SafeStoi(parts[DiskstatsField::MINOR]);
         entry.device = parts[DiskstatsField::DISK_DEVICE];
-        entry.reads_completed = SafeGetUll(parts, DiskstatsField::READS_COMPLETED);
-        entry.reads_merged = SafeGetUll(parts, DiskstatsField::READS_MERGED);
-        entry.sectors_read = SafeGetUll(parts, DiskstatsField::SECTORS_READ);
-        entry.ms_reading = SafeGetUll(parts, DiskstatsField::MS_READING);
-        entry.writes_completed = SafeGetUll(parts, DiskstatsField::WRITES_COMPLETED);
-        entry.writes_merged = SafeGetUll(parts, DiskstatsField::WRITES_MERGED);
-        entry.sectors_written = SafeGetUll(parts, DiskstatsField::SECTORS_WRITTEN);
-        entry.ms_writing = SafeGetUll(parts, DiskstatsField::MS_WRITING);
-        entry.ios_in_progress = SafeGetUll(parts, DiskstatsField::IOS_IN_PROGRESS);
-        entry.ms_ios = SafeGetUll(parts, DiskstatsField::MS_IOS);
-        entry.weighted_ms_ios = SafeGetUll(parts, DiskstatsField::WEIGHTED_MS_IOS);
-        entry.discards_completed = SafeGetUll(parts, DiskstatsField::DISCARDS_COMPLETED);
-        entry.discards_merged = SafeGetUll(parts, DiskstatsField::DISCARDS_MERGED);
-        entry.sectors_discarded = SafeGetUll(parts, DiskstatsField::SECTORS_DISCARDED);
-        entry.ms_discarding = SafeGetUll(parts, DiskstatsField::MS_DISCARDING);
-        entry.flush_completed = SafeGetUll(parts, DiskstatsField::FLUSH_COMPLETED);
-        entry.ms_flushing = SafeGetUll(parts, DiskstatsField::MS_FLUSHING);
+        entry.readsCompleted = SafeGetUll(parts, DiskstatsField::READS_COMPLETED);
+        entry.readsMerged = SafeGetUll(parts, DiskstatsField::READS_MERGED);
+        entry.sectorsRead = SafeGetUll(parts, DiskstatsField::SECTORS_READ);
+        entry.msReading = SafeGetUll(parts, DiskstatsField::MS_READING);
+        entry.writesCompleted = SafeGetUll(parts, DiskstatsField::WRITES_COMPLETED);
+        entry.writesMerged = SafeGetUll(parts, DiskstatsField::WRITES_MERGED);
+        entry.sectorsWritten = SafeGetUll(parts, DiskstatsField::SECTORS_WRITTEN);
+        entry.msWriting = SafeGetUll(parts, DiskstatsField::MS_WRITING);
+        entry.iosInProgress = SafeGetUll(parts, DiskstatsField::IOS_IN_PROGRESS);
+        entry.msIos = SafeGetUll(parts, DiskstatsField::MS_IOS);
+        entry.weightedMsIos = SafeGetUll(parts, DiskstatsField::WEIGHTED_MS_IOS);
+        entry.discardsCompleted = SafeGetUll(parts, DiskstatsField::DISCARDS_COMPLETED);
+        entry.discardsMerged = SafeGetUll(parts, DiskstatsField::DISCARDS_MERGED);
+        entry.sectorsDiscarded = SafeGetUll(parts, DiskstatsField::SECTORS_DISCARDED);
+        entry.msDiscarding = SafeGetUll(parts, DiskstatsField::MS_DISCARDING);
+        entry.flushCompleted = SafeGetUll(parts, DiskstatsField::FLUSH_COMPLETED);
+        entry.msFlushing = SafeGetUll(parts, DiskstatsField::MS_FLUSHING);
         entries.push_back(move(entry));
     }
     if (entries.empty()) {
@@ -348,11 +348,11 @@ int ProcDataManager::ParseMounts(const string &content, int pid, ProcDataInterna
         }
         MountsEntryInternal entry{};
         entry.device = parts[MountsField::MOUNT_DEVICE];
-        entry.mount_point = parts[MountsField::MOUNT_POINT];
-        entry.fs_type = parts[MountsField::FS_TYPE];
+        entry.mountPoint = parts[MountsField::MOUNT_POINT];
+        entry.fsType = parts[MountsField::FS_TYPE];
         entry.options = parts[MountsField::OPTIONS];
         entry.dump = SafeStoi(parts[MountsField::DUMP]);
-        entry.pass_val = SafeStoi(parts[MountsField::PASS]);
+        entry.passVal = SafeStoi(parts[MountsField::PASS]);
         entries.push_back(move(entry));
     }
     if (entries.empty()) {
@@ -381,7 +381,7 @@ int ProcDataManager::ParseSoftirqs(const string &content, int pid, ProcDataInter
         entry.type = Trim(trimmed.substr(0, colonPos));
         string values = Trim(trimmed.substr(colonPos + 1));
         vector<string> parts = SplitLine(values, ' ');
-        for (const auto &p : parts) entry.per_cpu.push_back(SafeStoull(p));
+        for (const auto &p : parts) entry.perCpu.push_back(SafeStoull(p));
         entries.push_back(move(entry));
     }
     if (entries.empty()) {
@@ -422,16 +422,16 @@ int ProcDataManager::ParseSlabinfo(const string &content, int pid, ProcDataInter
         }
         SlabinfoEntryInternal entry{};
         entry.name = values[SlabinfoField::NAME];
-        entry.active_objs = SafeGetUll(values, SlabinfoField::ACTIVE_OBJS);
-        entry.num_objs = SafeGetUll(values, SlabinfoField::NUM_OBJS);
+        entry.activeObjs = SafeGetUll(values, SlabinfoField::ACTIVE_OBJS);
+        entry.numObjs = SafeGetUll(values, SlabinfoField::NUM_OBJS);
         entry.objsize = SafeGetUll(values, SlabinfoField::OBJSIZE);
         entry.objperslab = SafeGetUll(values, SlabinfoField::OBJPERSLAB);
         entry.pagesperslab = SafeGetUll(values, SlabinfoField::PAGESPERSLAB);
         entry.limit = SafeGetUll(values, SlabinfoField::LIMIT);
         entry.batchcount = SafeGetUll(values, SlabinfoField::BATCHCOUNT);
         entry.sharedfactor = SafeGetUll(values, SlabinfoField::SHAREDFACTOR);
-        entry.active_slabs = SafeGetUll(values, SlabinfoField::ACTIVE_SLABS);
-        entry.num_slabs = SafeGetUll(values, SlabinfoField::NUM_SLABS);
+        entry.activeSlabs = SafeGetUll(values, SlabinfoField::ACTIVE_SLABS);
+        entry.numSlabs = SafeGetUll(values, SlabinfoField::NUM_SLABS);
         entry.sharedavail = SafeGetUll(values, SlabinfoField::SHAREDAVAIL);
         entries.push_back(move(entry));
     }
@@ -472,7 +472,7 @@ int ProcDataManager::ParseSchedstat(const string &content, int pid, ProcDataInte
             SchedstatEntryInternal entry{};
             string cpuStr = parts[0];
             size_t cpuNumPos = cpuStr.find_first_of("0123456789");
-            entry.cpu_id = cpuNumPos != string::npos ? SafeStoi(cpuStr.substr(cpuNumPos)) : 0;
+            entry.cpuId = cpuNumPos != string::npos ? SafeStoi(cpuStr.substr(cpuNumPos)) : 0;
             FillSchedstatCpuEntry(entry, parts);
             entries.push_back(move(entry));
             currentCpu = &entries.back();
@@ -488,13 +488,13 @@ int ProcDataManager::ParseSchedstat(const string &content, int pid, ProcDataInte
 
 void ProcDataManager::FillSchedstatCpuEntry(SchedstatEntryInternal &entry, const vector<string> &parts)
 {
-    entry.yld_count = SafeGetUll(parts, SchedstatField::YLD_COUNT);
-    entry.sched_count = SafeGetUll(parts, SchedstatField::SCHED_COUNT);
-    entry.sched_goidle = SafeGetUll(parts, SchedstatField::SCHED_GOIDLE);
-    entry.ttwu_count = SafeGetUll(parts, SchedstatField::TTWU_COUNT);
-    entry.ttwu_local = SafeGetUll(parts, SchedstatField::TTWU_LOCAL);
-    entry.rq_cpu_time = SafeGetUll(parts, SchedstatField::RQ_CPU_TIME);
-    entry.run_delay = SafeGetUll(parts, SchedstatField::RUN_DELAY);
+    entry.yldCount = SafeGetUll(parts, SchedstatField::YLD_COUNT);
+    entry.schedCount = SafeGetUll(parts, SchedstatField::SCHED_COUNT);
+    entry.schedGoidle = SafeGetUll(parts, SchedstatField::SCHED_GOIDLE);
+    entry.ttwuCount = SafeGetUll(parts, SchedstatField::TTWU_COUNT);
+    entry.ttwuLocal = SafeGetUll(parts, SchedstatField::TTWU_LOCAL);
+    entry.rqCpuTime = SafeGetUll(parts, SchedstatField::RQ_CPU_TIME);
+    entry.runDelay = SafeGetUll(parts, SchedstatField::RUN_DELAY);
     entry.pcount = SafeGetUll(parts, SchedstatField::PCOUNT);
 }
 
@@ -506,7 +506,7 @@ void ProcDataManager::FillSchedstatDomain(SchedstatEntryInternal *currentCpu, co
     SchedstatDomainInternal domain{};
     string domStr = parts[0];
     size_t numPos = domStr.find_first_of("0123456789");
-    domain.domain_id = numPos != string::npos ? SafeStoi(domStr.substr(numPos)) : 0;
+    domain.domainId = numPos != string::npos ? SafeStoi(domStr.substr(numPos)) : 0;
     if (parts.size() > 1) {
         domain.mask = parts[SchedstatField::YLD_COUNT];
     }
@@ -547,7 +547,7 @@ int ProcDataManager::ParseInterrupts(const string &content, int pid, ProcDataInt
         }
         size_t valueStart = 1;
         for (size_t k = 0; k < cpuNames.size() && (k + valueStart) < parts.size(); k++) {
-            entry.per_cpu.push_back(SafeStoull(parts[k + valueStart]));
+            entry.perCpu.push_back(SafeStoull(parts[k + valueStart]));
         }
         string desc;
         for (size_t k = valueStart + cpuNames.size(); k < parts.size(); k++) {
@@ -690,7 +690,7 @@ bool ProcDataManager::HandleZoneinfoStateSwitch(ZoneinfoEntryInternal &entry, in
         state = 2; // ZONE_STATS
         vector<string> parts = SplitLine(line, ' ');
         if (!parts.empty()) {
-            entry.pages_free = SafeStoull(parts.back());
+            entry.pagesFree = SafeStoull(parts.back());
         }
         return true;
     }
@@ -760,7 +760,7 @@ void ProcDataManager::HandleZoneinfoPagesets(ZoneinfoEntryInternal &entry, Zonei
             entry.pagesets.push_back(move(currentPageset));
         }
         currentPageset = ZoneinfoPagesetInternal();
-        currentPageset.cpu_id = SafeStoi(value);
+        currentPageset.cpuId = SafeStoi(value);
         hasPageset = true;
         return;
     }
@@ -773,31 +773,31 @@ void ProcDataManager::HandleZoneField(ZoneinfoEntryInternal &entry, const string
 {
     // 数值字段
     if (key == "min") {
-        entry.pages_min = SafeStoull(value);
+        entry.pagesMin = SafeStoull(value);
         return;
     }
     if (key == "low") {
-        entry.pages_low = SafeStoull(value);
+        entry.pagesLow = SafeStoull(value);
         return;
     }
     if (key == "high") {
-        entry.pages_high = SafeStoull(value);
+        entry.pagesHigh = SafeStoull(value);
         return;
     }
     if (key == "spanned") {
-        entry.pages_spanned = SafeStoull(value);
+        entry.pagesSpanned = SafeStoull(value);
         return;
     }
     if (key == "present") {
-        entry.pages_present = SafeStoull(value);
+        entry.pagesPresent = SafeStoull(value);
         return;
     }
     if (key == "managed") {
-        entry.pages_managed = SafeStoull(value);
+        entry.pagesManaged = SafeStoull(value);
         return;
     }
     if (key == "cma") {
-        entry.pages_cma = SafeStoull(value);
+        entry.pagesCma = SafeStoull(value);
         return;
     }
     // 字符串字段
@@ -806,11 +806,11 @@ void ProcDataManager::HandleZoneField(ZoneinfoEntryInternal &entry, const string
         return;
     }
     if (key == "node_unreclaimable") {
-        entry.node_unreclaimable = value;
+        entry.nodeUnreclaimable = value;
         return;
     }
     if (key == "start_pfn") {
-        entry.start_pfn = value;
+        entry.startPfn = value;
         return;
     }
     // 其他字段存入 stats
@@ -832,7 +832,7 @@ void ProcDataManager::HandlePagesetField(ZoneinfoPagesetInternal &pageset, const
         return;
     }
     if (key == "vm stats threshold") {
-        pageset.vm_stats_threshold = SafeStoull(value);
+        pageset.vmStatsThreshold = SafeStoull(value);
         return;
     }
 }
@@ -851,10 +851,13 @@ int ProcDataManager::ParseBuddyinfo(const string &content, int pid, ProcDataInte
         if (parts.size() < 4) {
             continue;
         }
+        int nodeIdx = 0;
+        int zoneIdx = 1;
+        int zoneName = 3;
         BuddyinfoEntryInternal entry{};
-        entry.node = SafeGetInt(parts, 0);
-        entry.zone = parts[1];
-        entry.zone_name = parts[3];
+        entry.node = SafeGetInt(parts, nodeIdx);
+        entry.zone = parts[zoneIdx];
+        entry.zoneName = parts[zoneName];
         for (size_t k = 4; k < parts.size(); k++) entry.orders.push_back(SafeStoull(parts[k]));
         entries.push_back(move(entry));
     }
@@ -967,10 +970,10 @@ int ProcDataManager::ParseNetArp(const string &content, int pid, ProcDataInterna
             continue;
         }
         NetArpEntryInternal entry{};
-        entry.ip_address = parts[NetArpField::IP_ADDRESS];
-        entry.hw_type = parts[NetArpField::HW_TYPE];
+        entry.ipAddress = parts[NetArpField::IP_ADDRESS];
+        entry.hwType = parts[NetArpField::HW_TYPE];
         entry.flags = parts[NetArpField::ARP_FLAGS];
-        entry.hw_address = parts[NetArpField::HW_ADDRESS];
+        entry.hwAddress = parts[NetArpField::HW_ADDRESS];
         entry.mask = parts[NetArpField::MASK];
         entry.device = parts[NetArpField::ARP_DEVICE];
         entries.push_back(move(entry));
@@ -1012,11 +1015,12 @@ int ProcDataManager::ParseModules(const string &content, int pid, ProcDataIntern
         if (parts.empty()) {
             continue;
         }
+        int usedByIdx = 3;
         ModulesEntryInternal entry{};
         entry.name = parts[0];
         entry.size = SafeGetUll(parts, 1);
-        entry.used_count = SafeGetInt(parts, 2);
-        entry.used_by = parts.size() > 3 ? parts[3] : "";
+        entry.usedCount = SafeGetInt(parts, 2);
+        entry.usedBy = parts.size() > usedByIdx ? parts[usedByIdx] : "";
         entry.state = parts.size() > 4 ? parts[4] : "";
         entry.address = parts.size() > 5 ? parts[5] : "";
         entry.taint = parts.size() > 6 ? parts[6] : "";
@@ -1042,11 +1046,12 @@ int ProcDataManager::ParseFilesystems(const string &content, int pid, ProcDataIn
         }
         FilesystemsEntryInternal entry{};
         if (trimmed.find("nodev") == 0 && trimmed.size() > 5 && (trimmed[5] == '\t' || trimmed[5] == ' ')) {
+            int fsTypeIdx = 5;
             entry.nodev = 1;
-            entry.fs_type = Trim(trimmed.substr(5));
+            entry.fsType = Trim(trimmed.substr(fsTypeIdx));
         } else {
             entry.nodev = 0;
-            entry.fs_type = trimmed;
+            entry.fsType = trimmed;
         }
         entries.push_back(move(entry));
     }
@@ -1140,10 +1145,10 @@ void ProcDataManager::FillScsiTypeInfo(ScsiEntryInternal &entry, const string &l
     }
     pos = entry.type.find("ANSI");
     if (pos != string::npos) {
-        entry.ansi_scsi_revision = Trim(entry.type.substr(pos));
-        size_t revPos = entry.ansi_scsi_revision.find(':');
+        entry.ansiScsiRevision = Trim(entry.type.substr(pos));
+        size_t revPos = entry.ansiScsiRevision.find(':');
         if (revPos != string::npos) {
-            entry.ansi_scsi_revision = Trim(entry.ansi_scsi_revision.substr(revPos + 1));
+            entry.ansiScsiRevision = Trim(entry.ansiScsiRevision.substr(revPos + 1));
             entry.type = Trim(entry.type.substr(0, pos));
         }
     }

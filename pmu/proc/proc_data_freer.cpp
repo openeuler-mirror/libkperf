@@ -34,9 +34,9 @@ void ProcDataManager::FreeStat(struct ProcData &d)
 {
     if (d.stat) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            delete[] d.stat[j].cpu_name;
-            delete[] d.stat[j].intr_per_irq;
-            delete[] d.stat[j].softirq_per_type;
+            delete[] d.stat[j].cpuName;
+            delete[] d.stat[j].intrPerIrq;
+            delete[] d.stat[j].softirqPerType;
         }
         delete[] d.stat;
     }
@@ -82,11 +82,11 @@ void ProcDataManager::FreeVmstat(struct ProcData &d)
 
 void ProcDataManager::FreeNetDev(struct ProcData &d)
 {
-    if (d.net_dev) {
+    if (d.netDev) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            delete[] d.net_dev[j].iface;
+            delete[] d.netDev[j].iface;
         }
-        delete[] d.net_dev;
+        delete[] d.netDev;
     }
 }
 
@@ -112,8 +112,8 @@ void ProcDataManager::FreeMounts(struct ProcData &d)
     if (d.mounts) {
         for (unsigned j = 0; j < d.numEntries; j++) {
             delete[] d.mounts[j].device;
-            delete[] d.mounts[j].mount_point;
-            delete[] d.mounts[j].fs_type;
+            delete[] d.mounts[j].mountPoint;
+            delete[] d.mounts[j].fsType;
             delete[] d.mounts[j].options;
         }
         delete[] d.mounts;
@@ -125,7 +125,7 @@ void ProcDataManager::FreeSoftirqs(struct ProcData &d)
     if (d.softirqs) {
         for (unsigned j = 0; j < d.numEntries; j++) {
             delete[] d.softirqs[j].type;
-            delete[] d.softirqs[j].per_cpu;
+            delete[] d.softirqs[j].perCpu;
         }
         delete[] d.softirqs;
     }
@@ -160,7 +160,7 @@ void ProcDataManager::FreeInterrupts(struct ProcData &d)
     if (d.interrupts) {
         for (unsigned j = 0; j < d.numEntries; j++) {
             delete[] d.interrupts[j].irq;
-            delete[] d.interrupts[j].per_cpu;
+            delete[] d.interrupts[j].perCpu;
             delete[] d.interrupts[j].description;
         }
         delete[] d.interrupts;
@@ -169,11 +169,11 @@ void ProcDataManager::FreeInterrupts(struct ProcData &d)
 
 void ProcDataManager::FreeIrqAffinity(struct ProcData &d)
 {
-    if (d.irq_affinity) {
+    if (d.irqAffinity) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            delete[] d.irq_affinity[j].affinity;
+            delete[] d.irqAffinity[j].affinity;
         }
-        delete[] d.irq_affinity;
+        delete[] d.irqAffinity;
     }
 }
 
@@ -193,8 +193,8 @@ void ProcDataManager::FreeZoneinfo(struct ProcData &d)
         for (unsigned j = 0; j < d.numEntries; j++) {
             delete[] d.zoneinfo[j].zone;
             delete[] d.zoneinfo[j].protection;
-            delete[] d.zoneinfo[j].node_unreclaimable;
-            delete[] d.zoneinfo[j].start_pfn;
+            delete[] d.zoneinfo[j].nodeUnreclaimable;
+            delete[] d.zoneinfo[j].startPfn;
             FreeFields(d.zoneinfo[j].nodeStats, d.zoneinfo[j].numNodeStats);
             FreeFields(d.zoneinfo[j].stats, d.zoneinfo[j].numStats);
             delete[] d.zoneinfo[j].pagesets;
@@ -208,7 +208,7 @@ void ProcDataManager::FreeBuddyinfo(struct ProcData &d)
     if (d.buddyinfo) {
         for (unsigned j = 0; j < d.numEntries; j++) {
             delete[] d.buddyinfo[j].zone;
-            delete[] d.buddyinfo[j].zone_name;
+            delete[] d.buddyinfo[j].zoneName;
             delete[] d.buddyinfo[j].orders;
         }
         delete[] d.buddyinfo;
@@ -217,38 +217,38 @@ void ProcDataManager::FreeBuddyinfo(struct ProcData &d)
 
 void ProcDataManager::FreeNetSockstat(struct ProcData &d)
 {
-    if (d.net_sockstat) {
+    if (d.netSockstat) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            delete[] d.net_sockstat[j].protocol;
-            FreeFields(d.net_sockstat[j].fields, d.net_sockstat[j].numFields);
+            delete[] d.netSockstat[j].protocol;
+            FreeFields(d.netSockstat[j].fields, d.netSockstat[j].numFields);
         }
-        delete[] d.net_sockstat;
+        delete[] d.netSockstat;
     }
 }
 
 void ProcDataManager::FreeNetNetstat(struct ProcData &d)
 {
-    if (d.net_netstat) {
+    if (d.netNetstat) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            delete[] d.net_netstat[j].category;
-            FreeFields(d.net_netstat[j].fields, d.net_netstat[j].numFields);
+            delete[] d.netNetstat[j].category;
+            FreeFields(d.netNetstat[j].fields, d.netNetstat[j].numFields);
         }
-        delete[] d.net_netstat;
+        delete[] d.netNetstat;
     }
 }
 
 void ProcDataManager::FreeNetArp(struct ProcData &d)
 {
-    if (d.net_arp) {
+    if (d.netArp) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            delete[] d.net_arp[j].ip_address;
-            delete[] d.net_arp[j].hw_type;
-            delete[] d.net_arp[j].flags;
-            delete[] d.net_arp[j].hw_address;
-            delete[] d.net_arp[j].mask;
-            delete[] d.net_arp[j].device;
+            delete[] d.netArp[j].ipAddress;
+            delete[] d.netArp[j].hwType;
+            delete[] d.netArp[j].flags;
+            delete[] d.netArp[j].hwAddress;
+            delete[] d.netArp[j].mask;
+            delete[] d.netArp[j].device;
         }
-        delete[] d.net_arp;
+        delete[] d.netArp;
     }
 }
 
@@ -267,7 +267,7 @@ void ProcDataManager::FreeModules(struct ProcData &d)
     if (d.modules) {
         for (unsigned j = 0; j < d.numEntries; j++) {
             delete[] d.modules[j].name;
-            delete[] d.modules[j].used_by;
+            delete[] d.modules[j].usedBy;
             delete[] d.modules[j].state;
             delete[] d.modules[j].address;
             delete[] d.modules[j].taint;
@@ -280,7 +280,7 @@ void ProcDataManager::FreeFilesystems(struct ProcData &d)
 {
     if (d.filesystems) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            delete[] d.filesystems[j].fs_type;
+            delete[] d.filesystems[j].fsType;
         }
         delete[] d.filesystems;
     }
@@ -298,7 +298,7 @@ void ProcDataManager::FreeScsi(struct ProcData &d)
             delete[] d.scsi[j].model;
             delete[] d.scsi[j].rev;
             delete[] d.scsi[j].type;
-            delete[] d.scsi[j].ansi_scsi_revision;
+            delete[] d.scsi[j].ansiScsiRevision;
         }
         delete[] d.scsi;
     }
@@ -316,176 +316,176 @@ void ProcDataManager::FreePressure(struct ProcData &d)
 
 void ProcDataManager::FreeSysDir(struct ProcData &d)
 {
-    if (d.sys_dir) {
+    if (d.sysDir) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            delete[] d.sys_dir[j].name;
-            delete[] d.sys_dir[j].path;
-            delete[] d.sys_dir[j].value;
+            delete[] d.sysDir[j].name;
+            delete[] d.sysDir[j].path;
+            delete[] d.sysDir[j].value;
         }
-        delete[] d.sys_dir;
+        delete[] d.sysDir;
     }
 }
 
 void ProcDataManager::FreePidStat(struct ProcData &d)
 {
-    if (d.pid_stat) {
+    if (d.pidStat) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            delete[] d.pid_stat[j].comm;
+            delete[] d.pidStat[j].comm;
         }
-        delete[] d.pid_stat;
+        delete[] d.pidStat;
     }
 }
 
 void ProcDataManager::FreePidStatm(struct ProcData &d)
 {
-    if (d.pid_statm) {
-        delete[] d.pid_statm;
+    if (d.pidStatm) {
+        delete[] d.pidStatm;
     }
 }
 
 void ProcDataManager::FreePidStatus(struct ProcData &d)
 {
-    if (d.pid_status) {
+    if (d.pidStatus) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            FreeFields(d.pid_status[j].fields, d.pid_status[j].numFields);
+            FreeFields(d.pidStatus[j].fields, d.pidStatus[j].numFields);
         }
-        delete[] d.pid_status;
+        delete[] d.pidStatus;
     }
 }
 
 void ProcDataManager::FreePidIo(struct ProcData &d)
 {
-    if (d.pid_io) {
-        delete[] d.pid_io;
+    if (d.pidIo) {
+        delete[] d.pidIo;
     }
 }
 
 void ProcDataManager::FreePidSmapsRollup(struct ProcData &d)
 {
-    if (d.pid_smaps_rollup) {
+    if (d.pidSmapsRollup) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            FreeFields(d.pid_smaps_rollup[j].fields, d.pid_smaps_rollup[j].numFields);
+            FreeFields(d.pidSmapsRollup[j].fields, d.pidSmapsRollup[j].numFields);
         }
-        delete[] d.pid_smaps_rollup;
+        delete[] d.pidSmapsRollup;
     }
 }
 
 void ProcDataManager::FreePidFd(struct ProcData &d)
 {
-    if (d.pid_fd) {
-        delete[] d.pid_fd;
+    if (d.pidFd) {
+        delete[] d.pidFd;
     }
 }
 
 void ProcDataManager::FreePidNumaMaps(struct ProcData &d)
 {
-    if (d.pid_numa_maps) {
+    if (d.pidNumaMaps) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            delete[] d.pid_numa_maps[j].address;
-            FreeFields(d.pid_numa_maps[j].fields, d.pid_numa_maps[j].numFields);
+            delete[] d.pidNumaMaps[j].address;
+            FreeFields(d.pidNumaMaps[j].fields, d.pidNumaMaps[j].numFields);
         }
-        delete[] d.pid_numa_maps;
+        delete[] d.pidNumaMaps;
     }
 }
 
 void ProcDataManager::FreePidSmaps(struct ProcData &d)
 {
-    if (d.pid_smaps) {
+    if (d.pidSmaps) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            delete[] d.pid_smaps[j].mapping;
-            FreeFields(d.pid_smaps[j].fields, d.pid_smaps[j].numFields);
+            delete[] d.pidSmaps[j].mapping;
+            FreeFields(d.pidSmaps[j].fields, d.pidSmaps[j].numFields);
         }
-        delete[] d.pid_smaps;
+        delete[] d.pidSmaps;
     }
 }
 
 void ProcDataManager::FreePidEnviron(struct ProcData &d)
 {
-    if (d.pid_environ) {
+    if (d.pidEnviron) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            delete[] d.pid_environ[j].name;
-            delete[] d.pid_environ[j].value;
+            delete[] d.pidEnviron[j].name;
+            delete[] d.pidEnviron[j].value;
         }
-        delete[] d.pid_environ;
+        delete[] d.pidEnviron;
     }
 }
 
 void ProcDataManager::FreePidCmdline(struct ProcData &d)
 {
-    if (d.pid_cmdline) {
+    if (d.pidCmdline) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            delete[] d.pid_cmdline[j].cmdline;
+            delete[] d.pidCmdline[j].cmdline;
         }
-        delete[] d.pid_cmdline;
+        delete[] d.pidCmdline;
     }
 }
 
 void ProcDataManager::FreePidLimits(struct ProcData &d)
 {
-    if (d.pid_limits) {
+    if (d.pidLimits) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            delete[] d.pid_limits[j].limit;
-            delete[] d.pid_limits[j].soft;
-            delete[] d.pid_limits[j].hard;
-            delete[] d.pid_limits[j].units;
+            delete[] d.pidLimits[j].limit;
+            delete[] d.pidLimits[j].soft;
+            delete[] d.pidLimits[j].hard;
+            delete[] d.pidLimits[j].units;
         }
-        delete[] d.pid_limits;
+        delete[] d.pidLimits;
     }
 }
 
 void ProcDataManager::FreePidStack(struct ProcData &d)
 {
-    if (d.pid_stack) {
+    if (d.pidStack) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            delete[] d.pid_stack[j].address;
-            delete[] d.pid_stack[j].symbol;
+            delete[] d.pidStack[j].address;
+            delete[] d.pidStack[j].symbol;
         }
-        delete[] d.pid_stack;
+        delete[] d.pidStack;
     }
 }
 
 void ProcDataManager::FreePidWchan(struct ProcData &d)
 {
-    if (d.pid_wchan) {
+    if (d.pidWchan) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            delete[] d.pid_wchan[j].wchan;
+            delete[] d.pidWchan[j].wchan;
         }
-        delete[] d.pid_wchan;
+        delete[] d.pidWchan;
     }
 }
 
 void ProcDataManager::FreePidMaps(struct ProcData &d)
 {
-    if (d.pid_maps) {
+    if (d.pidMaps) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            delete[] d.pid_maps[j].start;
-            delete[] d.pid_maps[j].end;
-            delete[] d.pid_maps[j].perms;
-            delete[] d.pid_maps[j].offset;
-            delete[] d.pid_maps[j].dev;
-            delete[] d.pid_maps[j].inode;
-            delete[] d.pid_maps[j].pathname;
+            delete[] d.pidMaps[j].start;
+            delete[] d.pidMaps[j].end;
+            delete[] d.pidMaps[j].perms;
+            delete[] d.pidMaps[j].offset;
+            delete[] d.pidMaps[j].dev;
+            delete[] d.pidMaps[j].inode;
+            delete[] d.pidMaps[j].pathname;
         }
-        delete[] d.pid_maps;
+        delete[] d.pidMaps;
     }
 }
 
 void ProcDataManager::FreePidComm(struct ProcData &d)
 {
-    if (d.pid_comm) {
+    if (d.pidComm) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            delete[] d.pid_comm[j].comm;
+            delete[] d.pidComm[j].comm;
         }
-        delete[] d.pid_comm;
+        delete[] d.pidComm;
     }
 }
 
 void ProcDataManager::FreePidTaskStat(struct ProcData &d)
 {
-    if (d.pid_task_stat) {
+    if (d.pidTaskStat) {
         for (unsigned j = 0; j < d.numEntries; j++) {
-            delete[] d.pid_task_stat[j].comm;
+            delete[] d.pidTaskStat[j].comm;
         }
-        delete[] d.pid_task_stat;
+        delete[] d.pidTaskStat;
     }
 }

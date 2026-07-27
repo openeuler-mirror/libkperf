@@ -90,14 +90,14 @@ enum ProcStatLineType {
 };
 
 struct ProcStatEntry {
-    char *cpu_name;
-    unsigned long long user, nice, system, idle, iowait, irq, softirq, steal, guest, guest_nice;
+    char *cpuName;
+    unsigned long long user, nice, system, idle, ioWait, irq, softirq, steal, guest, guestNice;
     enum ProcStatLineType lineType;
-    unsigned long long ctxt, btime, processes, procs_running, procs_blocked;
-    unsigned long long intr_total, numIntrPerIrq;
-    unsigned long long *intr_per_irq;
-    unsigned long long softirq_total, numSoftirqPerType;
-    unsigned long long *softirq_per_type;
+    unsigned long long ctxt, btime, processes, procsRunning, procsBlocked;
+    unsigned long long intrTotal, numIntrPerIrq;
+    unsigned long long *intrPerIrq;
+    unsigned long long softirqTotal, numSoftirqPerType;
+    unsigned long long *softirqPerType;
 };
 
 struct ProcCpuinfoEntry {
@@ -113,8 +113,8 @@ struct ProcMeminfoEntry {
 
 struct ProcLoadavgEntry {
     double load1, load5, load15;
-    unsigned running_procs, total_procs;
-    int last_pid;
+    unsigned runningProcs, totalProcs;
+    int lastPid;
 };
 
 struct ProcVmstatEntry {
@@ -124,18 +124,18 @@ struct ProcVmstatEntry {
 
 struct ProcNetDevEntry {
     char *iface;
-    unsigned long long rx_bytes, rx_packets, rx_errs, rx_drop, rx_fifo, rx_frame, rx_compressed, rx_multicast;
-    unsigned long long tx_bytes, tx_packets, tx_errs, tx_drop, tx_fifo, tx_colls, tx_carrier, tx_compressed;
+    unsigned long long rxBytes, rxPackets, rxErrs, rxDrop, rxFifo, rxFrame, rxCompressed, rxMulticast;
+    unsigned long long txBytes, txPackets, txErrs, txDrop, txFifo, txColls, txCarrier, txCompressed;
 };
 
 struct ProcDiskstatsEntry {
     int major, minor;
     char *device;
-    unsigned long long reads_completed, reads_merged, sectors_read, ms_reading;
-    unsigned long long writes_completed, writes_merged, sectors_written, ms_writing;
-    unsigned long long ios_in_progress, ms_ios, weighted_ms_ios;
-    unsigned long long discards_completed, discards_merged, sectors_discarded, ms_discarding;
-    unsigned long long flush_completed, ms_flushing;
+    unsigned long long readsCompleted, readsMerged, sectorsRead, msReading;
+    unsigned long long writesCompleted, writesMerged, sectorsWritten, msWriting;
+    unsigned long long iosInProgress, msIos, weightedMsIos;
+    unsigned long long discardsCompleted, discardsMerged, sectorsDiscarded, msDiscarding;
+    unsigned long long flushCompleted, msFlushing;
 };
 
 struct ProcUptimeEntry {
@@ -143,34 +143,34 @@ struct ProcUptimeEntry {
 };
 
 struct ProcMountsEntry {
-    char *device, *mount_point, *fs_type, *options;
-    int dump, pass_val;
+    char *device, *mountPoint, *fsType, *options;
+    int dump, passVal;
 };
 
 struct ProcSoftirqsEntry {
     char *type;
     unsigned numCpus;
-    unsigned long long *per_cpu;
+    unsigned long long *perCpu;
 };
 
 struct ProcSlabinfoEntry {
     char *name;
-    unsigned long long active_objs, num_objs, objsize, objperslab, pagesperslab;
+    unsigned long long activeObjs, numObjs, objsize, objperslab, pagesperslab;
     unsigned long long limit, batchcount, sharedfactor;
-    unsigned long long active_slabs, num_slabs, sharedavail;
+    unsigned long long activeSlabs, numSlabs, sharedavail;
 };
 
 struct ProcSchedstatDomainEntry {
-    int domain_id;
+    int domainId;
     char *mask;
     unsigned numValues;
     unsigned long long *values;
 };
 
 struct ProcSchedstatEntry {
-    int cpu_id;
-    unsigned long long yld_count, sched_count, sched_goidle;
-    unsigned long long ttwu_count, ttwu_local, rq_cpu_time, run_delay, pcount;
+    int cpuId;
+    unsigned long long yldCount, schedCount, schedGoidle;
+    unsigned long long ttwuCount, ttwuLocal, rqCpuTime, runDelay, pcount;
     unsigned numDomains;
     struct ProcSchedstatDomainEntry *domains;
 };
@@ -178,7 +178,7 @@ struct ProcSchedstatEntry {
 struct ProcInterruptsEntry {
     char *irq;
     unsigned numCpus;
-    unsigned long long *per_cpu;
+    unsigned long long *perCpu;
     char *description;
 };
 
@@ -192,20 +192,20 @@ struct ProcLocksEntry {
 };
 
 struct ProcZoneinfoPageset {
-    int cpu_id;
-    unsigned long long count, high, batch, vm_stats_threshold;
+    int cpuId;
+    unsigned long long count, high, batch, vmStatsThreshold;
 };
 
 struct ProcZoneinfoEntry {
     int node;
     char *zone;
     // Zone 级别 pages 统计
-    unsigned long long pages_free;
-    unsigned long long pages_min, pages_low, pages_high;
-    unsigned long long pages_spanned, pages_present, pages_managed, pages_cma;
+    unsigned long long pagesFree;
+    unsigned long long pagesMin, pagesLow, pagesHigh;
+    unsigned long long pagesSpanned, pagesPresent, pagesManaged, pagesCma;
     char *protection;
-    char *node_unreclaimable;
-    char *start_pfn;
+    char *nodeUnreclaimable;
+    char *startPfn;
     // Node 级别统计 (per-node stats)
     unsigned numNodeStats;
     struct ProcField *nodeStats;
@@ -219,7 +219,7 @@ struct ProcZoneinfoEntry {
 
 struct ProcBuddyinfoEntry {
     int node;
-    char *zone, *zone_name;
+    char *zone, *zoneName;
     unsigned numOrders;
     unsigned long long *orders;
 };
@@ -237,10 +237,10 @@ struct ProcNetNetstatEntry {
 };
 
 struct ProcNetArpEntry {
-    char *ip_address;
-    char *hw_type;
+    char *ipAddress;
+    char *hwType;
     char *flags;
-    char *hw_address;
+    char *hwAddress;
     char *mask;
     char *device;
 };
@@ -252,13 +252,13 @@ struct ProcVersionEntry {
 struct ProcModulesEntry {
     char *name;
     unsigned long long size;
-    int used_count;
-    char *used_by, *state, *address, *taint;
+    int usedCount;
+    char *usedBy, *state, *address, *taint;
 };
 
 struct ProcFilesystemsEntry {
     int nodev;
-    char *fs_type;
+    char *fsType;
 };
 
 struct ProcScsiEntry {
@@ -270,7 +270,7 @@ struct ProcScsiEntry {
     char *model;
     char *rev;
     char *type;
-    char *ansi_scsi_revision;
+    char *ansiScsiRevision;
 };
 
 struct ProcPressureEntry {
@@ -287,21 +287,21 @@ struct ProcPidStatEntry {
     int pid;
     char *comm;
     char state;
-    int ppid, pgrp, session, tty_nr, tpgid;
+    int ppid, pgrp, session, ttyNr, tpgid;
     unsigned long long flags, minflt, cminflt, majflt, cmajflt, utime, stime;
     long long cutime, cstime;
-    int priority, nice_val, num_threads;
+    int priority, niceVal, numThreads;
     long long itrealvalue;
     unsigned long long starttime, vsize, rsslim;
     long long rss;
     unsigned long long startcode, endcode, startstack, kstkesp, kstkeip;
     unsigned long long signal, blocked, sigignore, sigcatch, wchan, nswap, cnswap;
-    int exit_signal, processor;
-    unsigned rt_priority, policy;
-    unsigned long long delayacct_blkio_ticks, guest_time;
-    long long cguest_time;
-    unsigned long long start_data, end_data, start_brk, arg_start, arg_end, env_start, env_end;
-    int exit_code;
+    int exitSignal, processor;
+    unsigned rtPriority, policy;
+    unsigned long long delayacctBlkioTicks, guestTime;
+    long long cguestTime;
+    unsigned long long startData, endData, startBrk, argStart, argEnd, envStart, envEnd;
+    int exitCode;
 };
 
 struct ProcPidStatmEntry {
@@ -314,7 +314,7 @@ struct ProcPidStatusEntry {
 };
 
 struct ProcPidIoEntry {
-    unsigned long long rchar, wchar, syscr, syscw, read_bytes, write_bytes, cancelled_write_bytes;
+    unsigned long long rchar, wchar, syscr, syscw, readBytes, writeBytes, cancelledWriteBytes;
 };
 
 struct ProcPidSmapsRollupEntry {
@@ -323,7 +323,7 @@ struct ProcPidSmapsRollupEntry {
 };
 
 struct ProcPidFdEntry {
-    unsigned fd_count;
+    unsigned fdCount;
 };
 
 struct ProcPidNumaMapsEntry {
@@ -370,21 +370,21 @@ struct ProcPidTaskStatEntry {
     int pid;
     char *comm;
     char state;
-    int ppid, pgrp, session, tty_nr, tpgid;
+    int ppid, pgrp, session, ttyNr, tpgid;
     unsigned long long flags, minflt, cminflt, majflt, cmajflt, utime, stime;
     long long cutime, cstime;
-    int priority, nice_val, num_threads;
+    int priority, niceVal, numThreads;
     long long itrealvalue;
     unsigned long long starttime, vsize, rsslim;
     long long rss;
     unsigned long long startcode, endcode, startstack, kstkesp, kstkeip;
     unsigned long long signal, blocked, sigignore, sigcatch, wchan, nswap, cnswap;
-    int exit_signal, processor;
-    unsigned rt_priority, policy;
-    unsigned long long delayacct_blkio_ticks, guest_time;
-    long long cguest_time;
-    unsigned long long start_data, end_data, start_brk, arg_start, arg_end, env_start, env_end;
-    int exit_code;
+    int exitSignal, processor;
+    unsigned rtPriority, policy;
+    unsigned long long delayacctBlkioTicks, guestTime;
+    long long cguestTime;
+    unsigned long long startData, endData, startBrk, argStart, argEnd, envStart, envEnd;
+    int exitCode;
 };
 
 struct ProcData {
@@ -398,7 +398,7 @@ struct ProcData {
         struct ProcMeminfoEntry *meminfo;
         struct ProcLoadavgEntry *loadavg;
         struct ProcVmstatEntry *vmstat;
-        struct ProcNetDevEntry *net_dev;
+        struct ProcNetDevEntry *netDev;
         struct ProcDiskstatsEntry *diskstats;
         struct ProcUptimeEntry *uptime;
         struct ProcMountsEntry *mounts;
@@ -406,35 +406,35 @@ struct ProcData {
         struct ProcSlabinfoEntry *slabinfo;
         struct ProcSchedstatEntry *schedstat;
         struct ProcInterruptsEntry *interrupts;
-        struct ProcIrqAffinityEntry *irq_affinity;
+        struct ProcIrqAffinityEntry *irqAffinity;
         struct ProcLocksEntry *locks;
         struct ProcZoneinfoEntry *zoneinfo;
         struct ProcBuddyinfoEntry *buddyinfo;
-        struct ProcNetSockstatEntry *net_sockstat;
-        struct ProcNetNetstatEntry *net_netstat;
-        struct ProcNetArpEntry *net_arp;
+        struct ProcNetSockstatEntry *netSockstat;
+        struct ProcNetNetstatEntry *netNetstat;
+        struct ProcNetArpEntry *netArp;
         struct ProcVersionEntry *version;
         struct ProcModulesEntry *modules;
         struct ProcFilesystemsEntry *filesystems;
         struct ProcScsiEntry *scsi;
         struct ProcPressureEntry *pressure;
-        struct ProcSysDirEntry *sys_dir;
-        struct ProcPidStatEntry *pid_stat;
-        struct ProcPidStatmEntry *pid_statm;
-        struct ProcPidStatusEntry *pid_status;
-        struct ProcPidIoEntry *pid_io;
-        struct ProcPidSmapsRollupEntry *pid_smaps_rollup;
-        struct ProcPidFdEntry *pid_fd;
-        struct ProcPidNumaMapsEntry *pid_numa_maps;
-        struct ProcPidSmapsEntry *pid_smaps;
-        struct ProcPidEnvironEntry *pid_environ;
-        struct ProcPidCmdlineEntry *pid_cmdline;
-        struct ProcPidLimitsEntry *pid_limits;
-        struct ProcPidStackEntry *pid_stack;
-        struct ProcPidWchanEntry *pid_wchan;
-        struct ProcPidMapsEntry *pid_maps;
-        struct ProcPidCommEntry *pid_comm;
-        struct ProcPidTaskStatEntry *pid_task_stat;
+        struct ProcSysDirEntry *sysDir;
+        struct ProcPidStatEntry *pidStat;
+        struct ProcPidStatmEntry *pidStatm;
+        struct ProcPidStatusEntry *pidStatus;
+        struct ProcPidIoEntry *pidIo;
+        struct ProcPidSmapsRollupEntry *pidSmapsRollup;
+        struct ProcPidFdEntry *pidFd;
+        struct ProcPidNumaMapsEntry *pidNumaMaps;
+        struct ProcPidSmapsEntry *pidSmaps;
+        struct ProcPidEnvironEntry *pidEnviron;
+        struct ProcPidCmdlineEntry *pidCmdline;
+        struct ProcPidLimitsEntry *pidLimits;
+        struct ProcPidStackEntry *pidStack;
+        struct ProcPidWchanEntry *pidWchan;
+        struct ProcPidMapsEntry *pidMaps;
+        struct ProcPidCommEntry *pidComm;
+        struct ProcPidTaskStatEntry *pidTaskStat;
     };
 };
 
