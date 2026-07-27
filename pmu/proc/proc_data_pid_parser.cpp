@@ -70,7 +70,7 @@ void ProcDataManager::FillPidStatProcFields(Entry &entry, const vector<string> &
     entry.ppid = SafeGetInt(parts, PidStatField::PPID);
     entry.pgrp = SafeGetInt(parts, PidStatField::PGRP);
     entry.session = SafeGetInt(parts, PidStatField::SESSION);
-    entry.tty_nr = SafeGetInt(parts, PidStatField::TTY_NR);
+    entry.ttyNr = SafeGetInt(parts, PidStatField::TTY_NR);
     entry.tpgid = SafeGetInt(parts, PidStatField::TPGID);
     entry.flags = SafeGetUll(parts, PidStatField::PIDSTAT_FLAGS);
     entry.minflt = SafeGetUll(parts, PidStatField::MINFLT);
@@ -82,13 +82,13 @@ void ProcDataManager::FillPidStatProcFields(Entry &entry, const vector<string> &
     entry.cutime = SafeGetLL(parts, PidStatField::CUTIME);
     entry.cstime = SafeGetLL(parts, PidStatField::CSTIME);
     entry.priority = SafeGetInt(parts, PidStatField::PRIORITY);
-    entry.nice_val = SafeGetInt(parts, PidStatField::NICE_VAL);
+    entry.niceVal = SafeGetInt(parts, PidStatField::NICE_VAL);
 }
 
 template <typename Entry>
 void ProcDataManager::FillPidStatMemFields(Entry &entry, const vector<string> &parts)
 {
-    entry.num_threads = SafeGetInt(parts, PidStatField::NUM_THREADS);
+    entry.numThreads = SafeGetInt(parts, PidStatField::NUM_THREADS);
     entry.itrealvalue = SafeGetLL(parts, PidStatField::ITREALVALUE);
     entry.starttime = SafeGetUll(parts, PidStatField::STARTTIME);
     entry.vsize = SafeGetUll(parts, PidStatField::VSIZE);
@@ -111,21 +111,21 @@ void ProcDataManager::FillPidStatSigFields(Entry &entry, const vector<string> &p
 {
     entry.nswap = SafeGetUll(parts, PidStatField::NSWAP);
     entry.cnswap = SafeGetUll(parts, PidStatField::CNSWAP);
-    entry.exit_signal = SafeGetInt(parts, PidStatField::EXIT_SIGNAL);
+    entry.exitSignal = SafeGetInt(parts, PidStatField::EXIT_SIGNAL);
     entry.processor = SafeGetInt(parts, PidStatField::PROCESSOR);
-    entry.rt_priority = SafeGetUll(parts, PidStatField::RT_PRIORITY);
+    entry.rtPriority = SafeGetUll(parts, PidStatField::RT_PRIORITY);
     entry.policy = SafeGetUll(parts, PidStatField::POLICY);
-    entry.delayacct_blkio_ticks = SafeGetUll(parts, PidStatField::DELAYACCT_BLKIO_TICKS);
-    entry.guest_time = SafeGetUll(parts, PidStatField::GUEST_TIME);
-    entry.cguest_time = SafeGetLL(parts, PidStatField::CGUEST_TIME);
-    entry.start_data = SafeGetUll(parts, PidStatField::START_DATA);
-    entry.end_data = SafeGetUll(parts, PidStatField::END_DATA);
-    entry.start_brk = SafeGetUll(parts, PidStatField::START_BRK);
-    entry.arg_start = SafeGetUll(parts, PidStatField::ARG_START);
-    entry.arg_end = SafeGetUll(parts, PidStatField::ARG_END);
-    entry.env_start = SafeGetUll(parts, PidStatField::ENV_START);
-    entry.env_end = SafeGetUll(parts, PidStatField::ENV_END);
-    entry.exit_code = SafeGetInt(parts, PidStatField::EXIT_CODE);
+    entry.delayacctBlkioTicks = SafeGetUll(parts, PidStatField::DELAYACCT_BLKIO_TICKS);
+    entry.guestTime = SafeGetUll(parts, PidStatField::GUEST_TIME);
+    entry.cguestTime = SafeGetLL(parts, PidStatField::CGUEST_TIME);
+    entry.startData = SafeGetUll(parts, PidStatField::START_DATA);
+    entry.endData = SafeGetUll(parts, PidStatField::END_DATA);
+    entry.startBrk = SafeGetUll(parts, PidStatField::START_BRK);
+    entry.argStart = SafeGetUll(parts, PidStatField::ARG_START);
+    entry.argEnd = SafeGetUll(parts, PidStatField::ARG_END);
+    entry.envStart = SafeGetUll(parts, PidStatField::ENV_START);
+    entry.envEnd = SafeGetUll(parts, PidStatField::ENV_END);
+    entry.exitCode = SafeGetInt(parts, PidStatField::EXIT_CODE);
 }
 
 int ProcDataManager::ParsePidStatm(const string &content, int pid, ProcDataInternal &result)
@@ -198,11 +198,11 @@ int ProcDataManager::ParsePidIo(const string &content, int pid, ProcDataInternal
         } else if (key == "syscw") {
             entry.syscw = SafeStoull(value);
         } else if (key == "read_bytes") {
-            entry.read_bytes = SafeStoull(value);
+            entry.readBytes = SafeStoull(value);
         } else if (key == "write_bytes") {
-            entry.write_bytes = SafeStoull(value);
+            entry.writeBytes = SafeStoull(value);
         } else if (key == "cancelled_write_bytes") {
-            entry.cancelled_write_bytes = SafeStoull(value);
+            entry.cancelledWriteBytes = SafeStoull(value);
         }
     }
     entries.push_back(move(entry));
@@ -253,7 +253,7 @@ int ProcDataManager::ParsePidFd(const string &content, int pid, ProcDataInternal
     }
     vector<PidFdEntryInternal> entries;
     PidFdEntryInternal entry{};
-    entry.fd_count = count;
+    entry.fdCount = count;
     entries.push_back(move(entry));
     result.entries = new vector<PidFdEntryInternal>(move(entries));
     result.destroy = [](void *p) { delete static_cast<vector<PidFdEntryInternal>*>(p); };
