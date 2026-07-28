@@ -123,17 +123,31 @@ function execute_binary() {
 
 function build_libbpf() {
   local open_source_dir=$1
-  local cmake_target_dir=$1/bpf
-  if [ -d "${cmake_target_dir}" ];then
-    echo ${cmake_target_dir} "is exist"
-    return
-  else
-    echo ${cmake_target_dir} "is not exist"
+  local cmake_target_dir="${open_source_dir}/bpf"
+  local src_dir="${open_source_dir}/libbpf/src"
+  local file="${src_dir}/netlink.c"
+
+  if [ -d "${cmake_target_dir}" ]; then
+    echo "${cmake_target_dir} is exist"
+    return 0
   fi
-  pushd "$open_source_dir/libbpf/src"
-  make -j ${cpu_core_num}
-  make install DESTDIR=$open_source_dir/local/bpf
-  echo "install log path: $cmake_target_dir"
+
+  echo "${cmake_target_dir} is not exist"
+
+  if ! grep -q 'OPTS_SET(opts, feature_flags' "${file}"; then
+    echo "apply libbpf patch a20b60f"
+    sed -i \
+      -e 's/opts->feature_flags = md\.flags;/OPTS_SET(opts, feature_flags, md.flags);/' \
+      -e 's/opts->xdp_zc_max_segs = md\.xdp_zc_max_segs;/OPTS_SET(opts, xdp_zc_max_segs, md.xdp_zc_max_segs);/' \
+      "${file}"
+  fi
+
+  pushd "${src_dir}" >/dev/null || return 1
+  make -j "${cpu_core_num}" || return 1
+  make install DESTDIR="${open_source_dir}/local/bpf" || return 1
+  popd >/dev/null || return 1
+
+  echo "install log path: ${cmake_target_dir}"
 }
 
 function build_skel_files() {
