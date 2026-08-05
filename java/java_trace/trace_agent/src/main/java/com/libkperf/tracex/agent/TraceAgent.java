@@ -67,7 +67,7 @@ public final class TraceAgent {
             try {
                 TraceClassFileTransformer.restoreAll(inst);
             } catch (Throwable t) {
-                TraceLog.warn("[trace_agent] restoreAll warning: " + t, t);
+                TraceLog.warn("[trace-java-agent] restoreAll warning: " + t, t);
             }
             return;
         }
@@ -76,7 +76,7 @@ public final class TraceAgent {
         } catch (Throwable t) {
             TraceRuntime.setEnabled(false);
             removeActiveTransformer();
-            TraceLog.warn("[trace_agent] start failed, skip instrumentation: " + t, t);
+            TraceLog.warn("[trace-java-agent] start failed, skip instrumentation: " + t, t);
         }
     }
 
@@ -245,7 +245,7 @@ public final class TraceAgent {
                 ok += batch.size();
             } catch (Throwable batchError) {
                 TraceClassFileTransformer.rollbackInstrumentation(batch);
-                TraceLog.warn("[trace_agent] retransform batch failed, fallback to one-by-one"
+                TraceLog.warn("[trace-java-agent] retransform batch failed, fallback to one-by-one"
                         + ", from=" + from + ", to=" + to + ", error=" + batchError, batchError);
                 for (Class<?> c : batch) {
                     try {
@@ -257,18 +257,17 @@ public final class TraceAgent {
                         TraceClassFileTransformer.rollbackInstrumentation(
                                 Collections.singletonList(c));
                         failed++;
-                        TraceLog.warn("[trace_agent] skip bad class: " + Util.safeClassName(c)
+                        TraceLog.warn("[trace-java-agent] skip bad class: " + Util.safeClassName(c)
                                 + ", error=" + oneError, oneError);
                     }
                 }
             }
         }
-        TraceLog.info("[trace_agent] retransform done, ok=" + ok + ", failed=" + failed);
     }
 
     private static synchronized void start(TraceConfig config, Instrumentation inst) throws Exception {
         if (!config.valid) {
-            TraceLog.info("[trace_agent] invalid trace filter config, skip instrumentation");
+            TraceLog.info("[trace-java-agent] invalid trace filter config, skip instrumentation");
             return;
         }
         if (!inst.isRetransformClassesSupported()) {
@@ -292,7 +291,7 @@ public final class TraceAgent {
             CallGraphIndex index = CallGraphIndex.build(inst, transformer, config);
             Set<MethodId> context = index.expandContext(config);
             config.addContextMethods(context);
-            TraceLog.info("[trace_agent] context methods=" + context.size()
+            TraceLog.info("[trace-java-agent] context methods=" + context.size()
                 + ", depth=" + config.contextDepth + ", max=" + config.contextMaxMethods);
         }
 
@@ -301,11 +300,7 @@ public final class TraceAgent {
         activeInstrumentation = inst;
 
         List<Class<?>> candidates = collectCandidates(inst, transformer);
-        TraceLog.info("[trace_agent] filter config=" + config.configFile
-            + ", excludes=" + config.excludeRules);
-        TraceLog.info("[trace_agent] required includes=" + config.requiredIncludeRules);
-        TraceLog.info("[trace_agent] bootstrap module read edges=" + bootstrapModuleReadEdges);
-        TraceLog.info("[trace_agent] retransform candidates=" + candidates.size()
+        TraceLog.info("[trace-java-agent] retransform candidates=" + candidates.size()
             + ", requiredIncludeRules=" + config.requiredIncludeRules.size()
             + ", configIncludeRules=" + config.includeRules.size()
             + ", excludeRules=" + config.excludeRules.size());
@@ -313,7 +308,7 @@ public final class TraceAgent {
             retransformSafely(inst, candidates);
         }
     }
-    
+
     // Collects all classes that are candidates for retransformation.
     private static List<Class<?>> collectCandidates(Instrumentation inst, TraceClassFileTransformer transformer) {
         List<Class<?>> out = new ArrayList<Class<?>>();
@@ -331,7 +326,7 @@ public final class TraceAgent {
                     out.add(c);
                 }
             } catch (Throwable t) {
-                TraceLog.warn("[trace_agent] skip candidate " + c + ": " + t, t);
+                TraceLog.warn("[trace-java-agent] skip candidate " + c + ": " + t, t);
             }
         }
         return out;

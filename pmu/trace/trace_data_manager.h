@@ -30,7 +30,7 @@ public:
     TraceDataManager(const TraceDataManager &) = delete;
     TraceDataManager &operator=(const TraceDataManager &) = delete;
 
-    UTraceData *ConvertToTraceData(int pd, PmuData *data, int len);
+    UTraceData *ConvertToTraceData(int pd, PmuData *data, int len, int *convertedLen);
 
     void FreeTraceData(UTraceData *traceData);
 

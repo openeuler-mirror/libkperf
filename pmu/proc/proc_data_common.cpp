@@ -36,15 +36,6 @@ vector<string> SplitLine(const string &line, char delimiter)
     return tokens;
 }
 
-string Trim(const string &s)
-{
-    size_t start = s.find_first_not_of(" \t\r\n");
-    if (start == string::npos) {
-        return "";
-    }
-    size_t end = s.find_last_not_of(" \t\r\n");
-    return s.substr(start, end - start + 1);
-}
 
 char* AllocStr(const string &s)
 {

@@ -25,6 +25,12 @@ import java.util.List;
 public final class TraceFilterFile {
     private static final int MAX_CONTEXT_DEPTH = 5;
     private static final int MAX_CONTEXT_METHODS = 4096;
+    private static final String JAVA_INCLUDE = "java_include";
+    private static final String JAVA_EXCLUDE = "java_exclude";
+    private static final String KERNEL_INCLUDE = "kernel_include";
+    private static final String KERNEL_EXCLUDE = "kernel_exclude";
+    private static final String NATIVE_INCLUDE = "native_include";
+    private static final String NATIVE_EXCLUDE = "native_exclude";
 
     public final List<FilterRule> includes = new ArrayList<FilterRule>();
     public final List<FilterRule> excludes = new ArrayList<FilterRule>();
@@ -36,12 +42,12 @@ public final class TraceFilterFile {
     public static TraceFilterFile load(String path) {
         TraceFilterFile out = new TraceFilterFile();
         if (path == null || path.length() == 0) {
-            TraceLog.info("[trace_agent] filter config path is empty");
+            TraceLog.info("[trace-java-agent] filter config path is empty");
             return out;
         }
         File f = new File(path);
         if (!f.isFile()) {
-            TraceLog.info("[trace_agent] filter config not found: " + path);
+            TraceLog.info("[trace-java-agent] filter config not found: " + path);
             return out;
         }
 
@@ -63,9 +69,7 @@ public final class TraceFilterFile {
                         return invalid(out, path, lineNo, "invalid section", s);
                     }
                     section = s.substring(1, s.length() - 1).trim();
-                    if ("java_include".equals(section)) {
-                        continue;
-                    } else if ("java_exclude".equals(section)) {
+                    if (isKnownSection(section)) {
                         continue;
                     }
                     return invalid(out, path, lineNo, "unknown section", s);
@@ -73,10 +77,10 @@ public final class TraceFilterFile {
 
                 int eq = s.indexOf('=');
                 if (eq >= 0) {
-                    if (section.length() != 0) {
-                        return invalid(out, path, lineNo, "key/value is not allowed inside section", s);
-                    }
                     String k = s.substring(0, eq).trim();
+                    if (isNonJavaKey(k)) {
+                        continue;
+                    }
                     String v = s.substring(eq + 1).trim();
                     if ("slot_count".equals(k)) {
                         Long parsed = parsePositiveLong(v);
@@ -102,13 +106,17 @@ public final class TraceFilterFile {
                     continue;
                 }
 
-                if (!("java_include".equals(section) || "java_exclude".equals(section))) {
+                if (isNonJavaSection(section)) {
+                    continue;
+                }
+
+                if (!isJavaSection(section)) {
                     return invalid(out, path, lineNo, "rule must be inside java section", s);
                 }
                 if (!isStrictRule(s)) {
                     return invalid(out, path, lineNo, "invalid rule", s);
                 }
-                if ("java_exclude".equals(section)) {
+                if (JAVA_EXCLUDE.equals(section)) {
                     Util.addRules(out.excludes, s);
                 } else {
                     Util.addRules(out.includes, s);
@@ -116,16 +124,33 @@ public final class TraceFilterFile {
             }
         } catch (Exception e) {
             out.valid = false;
-            TraceLog.warn("[trace_agent] read filter config failed: " + path + ", " + e, e);
+            TraceLog.warn("[trace-java-agent] read filter config failed: " + path + ", " + e, e);
             return out;
         }
 
         return out;
     }
 
+    private static boolean isJavaSection(String section) {
+        return JAVA_INCLUDE.equals(section) || JAVA_EXCLUDE.equals(section);
+    }
+
+    private static boolean isNonJavaKey(String key) {
+        return key.startsWith("kernel_") || key.startsWith("native_");
+    }
+
+    private static boolean isNonJavaSection(String section) {
+        return KERNEL_INCLUDE.equals(section) || KERNEL_EXCLUDE.equals(section)
+                || NATIVE_INCLUDE.equals(section) || NATIVE_EXCLUDE.equals(section);
+    }
+
+    private static boolean isKnownSection(String section) {
+        return isJavaSection(section) || isNonJavaSection(section);
+    }
+
     private static TraceFilterFile invalid(TraceFilterFile out, String path, int lineNo, String reason, String value) {
         out.valid = false;
-        TraceLog.info("[trace_agent] invalid trace filter config: " + path + ":" + lineNo
+        TraceLog.info("[trace-java-agent] invalid trace filter config: " + path + ":" + lineNo
                 + ", " + reason + ": " + value);
         return out;
     }

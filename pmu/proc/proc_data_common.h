@@ -18,10 +18,10 @@
 #include <string>
 #include <vector>
 #include <utility>
+#include "common.h"
 #include "proc_data_types.h"
 
 std::vector<std::string> SplitLine(const std::string &line, char delimiter);
-std::string Trim(const std::string &s);
 char* AllocStr(const std::string &s);
 unsigned long long SafeStoull(const std::string &s, unsigned long long def = 0);
 int SafeStoi(const std::string &s, int def = 0);

@@ -62,7 +62,7 @@ public final class CallGraphIndex {
                 }
                 idx.accept(bytes, config);
             } catch (Throwable t) {
-                TraceLog.warn("[trace_agent] skip call graph class " + c + ": " + t, t);
+                TraceLog.warn("[trace-java-agent] skip call graph class " + c + ": " + t, t);
             }
         }
         return idx;

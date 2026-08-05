@@ -53,14 +53,14 @@ public final class TraceRuntime {
             try {
                 old.close();
             } catch (Throwable t) {
-                TraceLog.warn("[trace-runtime] close old sink failed: " + t, t);
+                TraceLog.warn("[trace-java-runtime] close old sink failed: " + t, t);
             }
         }
 
         SharedEventSink next = new SharedEventSink(shmPath, slotCount);
         sink = next;
 
-        TraceLog.info("[trace-runtime] reconfigured" + ", shmPath=" + shmPath +
+        TraceLog.info("[trace-java-runtime] reconfigured" + ", shmPath=" + shmPath +
                             ", slotCount=" + slotCount + ", active=" + next.isActive());
 
         ENABLED.set(true);
@@ -76,11 +76,11 @@ public final class TraceRuntime {
             try {
                 old.close();
             } catch (Throwable t) {
-                TraceLog.warn("[trace-runtime] stop close sink failed: " + t, t);
+                TraceLog.warn("[trace-java-runtime] stop close sink failed: " + t, t);
             }
         }
 
-        TraceLog.info("[trace-runtime] disabled");
+        TraceLog.info("[trace-java-runtime] disabled");
     }
 
     public static void setEnabled(boolean enabled) {

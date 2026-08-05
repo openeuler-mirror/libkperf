@@ -32,17 +32,17 @@ public final class NativeThreadInfo {
         loadTried = true;
 
         if (absolutePath == null || absolutePath.isEmpty()) {
-            TraceLog.info("[java-trace-agent] native lib path is empty, fallback to Java thread id/time");
+            TraceLog.info("[trace-java-runtime] native lib path is empty, fallback to Java thread id/time");
             return;
         }
 
         try {
             System.load(absolutePath);
             loaded = true;
-            TraceLog.info("[java-trace-agent] native thread info loaded: " + absolutePath);
+            TraceLog.info("[trace-java-runtime] native thread info loaded: " + absolutePath);
         } catch (RuntimeException | LinkageError t) {
             loaded = false;
-            TraceLog.warn("[java-trace-agent] native thread info load failed: " + absolutePath + ", ex=" + t, t);
+            TraceLog.warn("[trace-java-runtime] native thread info load failed: " + absolutePath + ", ex=" + t, t);
         }
     }
 

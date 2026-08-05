@@ -15,6 +15,9 @@
  ******************************************************************************/
 
 #include "java_trace_util.h"
+#include "common.h"
+#include "trace_log.h"
+#include "trace_filter_config.h"
 
 #ifdef JAVA_TRACE
 #include "java_trace_config.h"
@@ -62,34 +65,8 @@ struct JavaFunc {
     std::string methodName;
 };
 
-static std::string Trim(const std::string &s)
-{
-    size_t first = 0;
-    while (first < s.size() && std::isspace(static_cast<unsigned char>(s[first]))) {
-        ++first;
-    }
-    size_t last = s.size();
-    while (last > first && std::isspace(static_cast<unsigned char>(s[last - 1]))) {
-        --last;
-    }
-    return s.substr(first, last - first);
-}
 
-static std::string StripComment(const std::string &line)
-{
-    size_t end = line.size();
-    size_t hash = line.find('#');
-    if (hash != std::string::npos) {
-        end = std::min(end, hash);
-    }
-    size_t slashes = line.find("//");
-    if (slashes != std::string::npos) {
-        end = std::min(end, slashes);
-    }
-    return line.substr(0, end);
-}
-
-static bool FileExists(const std::string &path)
+static bool IsReadableFile(const std::string &path)
 {
     return !path.empty() && access(path.c_str(), R_OK) == 0;
 }
@@ -187,7 +164,7 @@ static std::string FindJavaAsset(const char *fileName)
     if (!exeDir.empty()) {
         std::string toolRoot = DirName(exeDir);
         std::string p = JoinPath(JoinPath(toolRoot, K_JAVA_REL_DIR), fileName);
-        if (FileExists(p)) {
+        if (IsReadableFile(p)) {
             return p;
         }
     }
@@ -196,7 +173,7 @@ static std::string FindJavaAsset(const char *fileName)
     if (!libDir.empty()) {
         std::string libRoot = DirName(libDir);
         std::string p = JoinPath(JoinPath(libRoot, K_JAVA_REL_DIR), fileName);
-        if (FileExists(p)) {
+        if (IsReadableFile(p)) {
             return p;
         }
     }
@@ -405,7 +382,7 @@ std::string FilterConfigPath()
         std::string toolRoot = DirName(exeDir);
         std::string confPath = JoinPath(JoinPath(toolRoot, K_JAVA_CONF_REL_DIR),
                                         K_JAVA_FILTER_CONFIG_NAME);
-        if (FileExists(confPath)) {
+        if (IsReadableFile(confPath)) {
             return confPath;
         }
     }
@@ -415,7 +392,7 @@ std::string FilterConfigPath()
         std::string libRoot = DirName(libDir);
         std::string confPath = JoinPath(JoinPath(libRoot, K_JAVA_CONF_REL_DIR),
                                         K_JAVA_FILTER_CONFIG_NAME);
-        if (FileExists(confPath)) {
+        if (IsReadableFile(confPath)) {
             return confPath;
         }
     }
@@ -450,7 +427,7 @@ std::string JavaTraceLogPath()
     return path;
 }
 
-void JavaTraceLog(const std::string &message)
+void TraceLog(const std::string &message)
 {
     if (message.empty()) {
         return;
@@ -461,6 +438,11 @@ void JavaTraceLog(const std::string &message)
         return;
     }
     output << message;
+}
+
+void JavaTraceLog(const std::string &message)
+{
+    TraceLog(message);
 }
 
 static bool IsDifferentRoot(int pid)
@@ -615,7 +597,7 @@ void JavaTraceFlushTargetLog(const JavaBackendImpl &impl)
         return;
     }
     std::string hostLog = JoinPath(impl.target.assetDirHost, "trace.log");
-    if (FileExists(hostLog)) {
+    if (IsReadableFile(hostLog)) {
         (void)AppendFile(hostLog, logPath);
     }
 }
@@ -637,10 +619,25 @@ static constexpr unsigned long long K_MAX_CONTEXT_DEPTH = 5;
 static constexpr unsigned long long K_MAX_CONTEXT_METHODS = 4096;
 static constexpr const char *K_JAVA_INCLUDE_SECTION = "java_include";
 static constexpr const char *K_JAVA_EXCLUDE_SECTION = "java_exclude";
+static constexpr const char *K_KERNEL_INCLUDE_SECTION = "kernel_include";
+static constexpr const char *K_KERNEL_EXCLUDE_SECTION = "kernel_exclude";
+static constexpr const char *K_NATIVE_INCLUDE_SECTION = "native_include";
+static constexpr const char *K_NATIVE_EXCLUDE_SECTION = "native_exclude";
 static constexpr const char *K_DIGITS = "0123456789";
 static constexpr const char *K_SLOT_COUNT_KEY = "slot_count";
 static constexpr const char *K_CONTEXT_DEPTH_KEY = "context_depth";
 static constexpr const char *K_CONTEXT_MAX_METHODS_KEY = "context_max_methods";
+
+static bool IsJavaTraceSection(const std::string &section)
+{
+    return section == K_JAVA_INCLUDE_SECTION || section == K_JAVA_EXCLUDE_SECTION;
+}
+
+static bool IsNonJavaTraceSection(const std::string &section)
+{
+    return section == K_KERNEL_INCLUDE_SECTION || section == K_KERNEL_EXCLUDE_SECTION ||
+           section == K_NATIVE_INCLUDE_SECTION || section == K_NATIVE_EXCLUDE_SECTION;
+}
 
 static bool IsUnsignedInteger(const std::string &value)
 {
@@ -701,9 +698,18 @@ static bool ParseBoundedUnsignedValue(const LocalConfigParseContext &context, co
     return true;
 }
 
+static bool IsNonJavaTraceKey(const std::string &key)
+{
+    return key.compare(0, sizeof("kernel_") - 1, "kernel_") == 0 ||
+           key.compare(0, sizeof("native_") - 1, "native_") == 0;
+}
+
 static bool ParseLocalConfigKeyValue(LocalConfigParseContext *context, const std::string &key,
                                      const std::string &value)
 {
+    if (IsNonJavaTraceKey(key)) {
+        return true;
+    }
     if (key == K_SLOT_COUNT_KEY) {
         if (!ParseSlotCountValue(*context, value, &context->config->slotCount)) {
             return false;
@@ -730,10 +736,7 @@ static bool ParseLocalConfigSection(LocalConfigParseContext *context, const std:
     }
 
     context->section = line.substr(1, line.size() - K_EXTRA_CHARS);
-    if (context->section == K_JAVA_INCLUDE_SECTION) {
-        return true;
-    }
-    if (context->section == K_JAVA_EXCLUDE_SECTION) {
+    if (IsJavaTraceSection(context->section) || IsNonJavaTraceSection(context->section)) {
         return true;
     }
 
@@ -755,7 +758,10 @@ static bool IsValidTraceRule(const std::string &rule)
 
 static bool ParseLocalConfigRule(const LocalConfigParseContext &context, const std::string &line)
 {
-    if (context.section != K_JAVA_INCLUDE_SECTION && context.section != K_JAVA_EXCLUDE_SECTION) {
+    if (IsNonJavaTraceSection(context.section)) {
+        return true;
+    }
+    if (!IsJavaTraceSection(context.section)) {
         JavaTraceLog(MakeLogMessage("[trace-java] rule must be in [java_include] or [java_exclude] at ",
                                     context.path, ":", context.lineNo, ": ", line, "\n"));
         return false;
@@ -771,12 +777,6 @@ static bool ParseLocalConfigRule(const LocalConfigParseContext &context, const s
 static bool ParseLocalConfigKeyValueItem(LocalConfigParseContext *context, const std::string &item,
                                          size_t equalPos)
 {
-    if (!context->section.empty()) {
-        JavaTraceLog(MakeLogMessage("[trace-java] key/value is not allowed inside section at ",
-                                    context->path, ":", context->lineNo, ": ", item, "\n"));
-        return false;
-    }
-
     std::string key = Trim(item.substr(0, equalPos));
     std::string value = Trim(item.substr(equalPos + 1));
     return ParseLocalConfigKeyValue(context, key, value);
@@ -787,10 +787,12 @@ static bool ParseLocalConfigItem(LocalConfigParseContext *context, const std::st
     if (item.front() == '[' || item.back() == ']') {
         return ParseLocalConfigSection(context, item);
     }
-
     size_t equalPos = item.find('=');
     if (equalPos != std::string::npos) {
         return ParseLocalConfigKeyValueItem(context, item, equalPos);
+    }
+    if (IsNonJavaTraceSection(context->section)) {
+        return true;
     }
     return ParseLocalConfigRule(*context, item);
 }
@@ -800,7 +802,7 @@ static bool ParseLocalConfigStream(std::ifstream &input, LocalConfigParseContext
     std::string line;
     while (std::getline(input, line)) {
         ++context->lineNo;
-        std::string item = Trim(StripComment(line));
+        std::string item = Trim(StripTraceConfigComment(line));
         if (!item.empty() && !ParseLocalConfigItem(context, item)) {
             return false;
         }
