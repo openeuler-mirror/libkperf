@@ -42,9 +42,11 @@ struct JavaBackendImpl {
     uint64_t readSeq{0};
     bool runtimeStopped = false;
     bool runtimeRestored = false;
+    bool runtimePrepared = false;
 };
 
 int JavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules);
+int JavaBackendPrepare(JavaBackendImpl *impl);
 int JavaBackendEnable(JavaBackendImpl *impl);
 int JavaBackendDisable(JavaBackendImpl *impl);
 int JavaBackendRead(JavaBackendImpl *impl, struct UTraceData **out_data, size_t *out_count);

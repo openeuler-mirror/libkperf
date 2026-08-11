@@ -33,6 +33,8 @@ public:
 
     int Open(int pd, int pid, const char *includeRules);
 
+    int Prepare(int pd);
+
     int Enable(int pd);
 
     int Disable(int pd);

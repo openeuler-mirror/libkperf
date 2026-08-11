@@ -46,6 +46,7 @@ inline bool IsValidIp(unsigned long ip)
 }
 std::string GetRealPath(const std::string filePath);
 bool IsValidPath(const std::string& filePath);
+std::string Trim(const std::string& value);
 bool IsDirectory(const std::string& path);
 bool FileExists(const std::string& path);
 std::vector<std::string> ListDirectoryEntries(const std::string& dirPath);

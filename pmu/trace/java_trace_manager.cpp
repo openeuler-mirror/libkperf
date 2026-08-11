@@ -34,6 +34,22 @@ int JavaTraceManager::Open(int pd, int pid, const char *includeRules)
     return 0;
 }
 
+int JavaTraceManager::Prepare(int pd)
+{
+    auto it = sessions_.find(pd);
+    if (it == sessions_.end()) {
+        pcerr::New(LIBPERF_ERR_UTRACE_JAVA_PROCESS_FAILED, "Java trace session not found for pd=" + std::to_string(pd));
+        return -1;
+    }
+
+    int ret = JavaBackendPrepare(it->second.backend);
+    if (ret != 0) {
+        pcerr::New(LIBPERF_ERR_UTRACE_JAVA_PROCESS_FAILED, "Java backend prepare failed, ret=" + std::to_string(ret));
+        return -1;
+    }
+    return 0;
+}
+
 int JavaTraceManager::Enable(int pd)
 {
     auto it = sessions_.find(pd);

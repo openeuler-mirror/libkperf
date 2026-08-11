@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <atomic>
 #include <fcntl.h>
+#include <signal.h>
 #include <string>
 #include <type_traits>
 #include <sys/mman.h>
@@ -194,6 +195,13 @@ static int JavaBackendRestoreRuntime(JavaBackendImpl *impl)
     if (impl->runtimeRestored) {
         return 0;
     }
+    bool targetExited = impl->pid <= 0 || (kill(static_cast<pid_t>(impl->pid), 0) != 0 && errno == ESRCH);
+    if (targetExited) {
+        JavaTraceLog(MakeLogMessage("[trace-java] skip restore: target pid no longer exists, pid=", impl->pid, "\n"));
+        impl->runtimeRestored = true;
+        impl->runtimeStopped = true;
+        return 0;
+    }
 
     int ret = JavaBackendRunAction(impl, "restore");
     if (ret == 0) {
@@ -248,10 +256,6 @@ static int PrepareJavaBackendOpen(JavaBackendImpl *impl, int pid, const char *in
 
 static int OpenJavaTraceStorage(JavaBackendImpl *impl)
 {
-    JavaTraceLog(MakeLogMessage("[trace-java] slotCount=", impl->slotCount,
-                                ", shmSize=", impl->shmSize,
-                                ", shmPath=", impl->shmPath,
-                                ", targetShmPath=", impl->target.shmPath, "\n"));
     impl->shmFd = open(impl->shmPath.c_str(), O_CREAT | O_RDWR | O_TRUNC, K_TRACE_FILE_MODE);
     if (impl->shmFd < 0) {
         int error = errno;
@@ -296,29 +300,41 @@ int JavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules)
     return OpenJavaTraceStorage(impl);
 }
 
-int JavaBackendEnable(JavaBackendImpl *impl)
+int JavaBackendPrepare(JavaBackendImpl *impl)
 {
     if (!impl || !impl->mapped) {
         return -1;
     }
+    if (impl->runtimePrepared) {
+        return 0;
+    }
     auto *mem = static_cast<uint8_t *>(impl->mapped);
-    // mark active before attach so TraceRuntime can write after TraceAgent configures the sink
-    StoreAtRelease<uint32_t>(mem, K_HEADER_ACTIVE, 1);
+    // The agent can retransform classes while the collection gate remains closed.
+    StoreAtRelease<uint32_t>(mem, K_HEADER_ACTIVE, 0);
 
     std::string cmd = BuildEnableCommand(*impl);
     if (cmd.empty()) {
-        StoreAtRelease<uint32_t>(mem, K_HEADER_ACTIVE, 0);
         return -1;
     }
     int ret = RunCommand(cmd);
     JavaTraceFlushTargetLog(*impl);
     if (ret != 0) {
-        StoreAtRelease<uint32_t>(mem, K_HEADER_ACTIVE, 0);
         (void)JavaBackendRestoreRuntime(impl);
         return ret;
     }
     impl->runtimeStopped = false;
     impl->runtimeRestored = false;
+    impl->runtimePrepared = true;
+    return 0;
+}
+
+int JavaBackendEnable(JavaBackendImpl *impl)
+{
+    if (JavaBackendPrepare(impl) != 0) {
+        return -1;
+    }
+    auto *mem = static_cast<uint8_t *>(impl->mapped);
+    StoreAtRelease<uint32_t>(mem, K_HEADER_ACTIVE, 1);
     return 0;
 }
 
@@ -329,15 +345,6 @@ int JavaBackendDisable(JavaBackendImpl *impl)
     }
     auto *mem = static_cast<uint8_t *>(impl->mapped);
     StoreAtRelease<uint32_t>(mem, K_HEADER_ACTIVE, 0);
-
-    uint64_t writeSeq = LoadAtAcquire<uint64_t>(mem, K_HEADER_WRITE_SEQ);
-    uint64_t dropped = LoadAtAcquire<uint64_t>(mem, K_HEADER_DROPPED);
-    uint32_t slotCount = LoadAtAcquire<uint32_t>(mem, K_HEADER_SLOT_COUNT);
-    uint64_t overwrittenByRing = (slotCount > 0 && writeSeq > slotCount) ? (writeSeq - slotCount) : 0;
-    JavaTraceLog(MakeLogMessage("[trace-java] disabled shm writing, active=0, writeSeq=", writeSeq,
-                                ", slotCount=", slotCount,
-                                ", overwrittenByRing=", overwrittenByRing,
-                                ", dropped=", dropped, "\n"));
     return 0;
 }
 

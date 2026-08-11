@@ -13,6 +13,7 @@
  * Description: Provide common file operation functions and system resource management functions.
  ******************************************************************************/
 
+#include <cctype>
 #include <cstring>
 #include <vector>
 #include <iostream>
@@ -52,6 +53,19 @@ bool IsValidPath(const std::string& filePath)
         return false;
     }
     return true;
+}
+
+std::string Trim(const std::string& value)
+{
+    size_t first = 0;
+    while (first < value.size() && std::isspace(static_cast<unsigned char>(value[first]))) {
+        ++first;
+    }
+    size_t last = value.size();
+    while (last > first && std::isspace(static_cast<unsigned char>(value[last - 1]))) {
+        --last;
+    }
+    return value.substr(first, last - first);
 }
 
 bool IsDirectory(const std::string& path)
