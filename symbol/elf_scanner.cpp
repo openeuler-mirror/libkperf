@@ -14,12 +14,18 @@
  ******************************************************************************/
 
 #include "elf_scanner.h"
+
+#ifdef UTRACE
+
+#include "name_resolve.h"
 #include "pcerr.h"
+#include <cstdlib>
 #include <cstring>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <capstone/capstone.h>
 
 std::unordered_map<std::string, std::string> ElfScanner::failedElf2Reason_;
 std::unordered_map<std::string, std::vector<std::string>> ElfScanner::elf2FailedSymbols_;
@@ -95,8 +101,8 @@ const Elf64_Ehdr *ElfScanner::VerifyElfHeader(const char *base, size_t fileSize)
         pcerr::New(LIBPERF_ERR_UTRACE_ELF_SCAN_FAILED, "Not a valid ELF file");
         return nullptr;
     }
-    if (ehdr->e_machine != EM_AARCH64) {
-        pcerr::New(LIBPERF_ERR_UTRACE_ELF_SCAN_FAILED, "Only ARM64 ELF files are supported");
+    if (ehdr->e_machine != EM_AARCH64 && ehdr->e_machine != EM_X86_64) {
+        pcerr::New(LIBPERF_ERR_UTRACE_ELF_SCAN_FAILED, "Only ARM64 and x86_64 ELF files are supported");
         return nullptr;
     }
     return ehdr;
@@ -133,8 +139,22 @@ std::unordered_map<std::string, ElfScanner::ElfSymEntry> ElfScanner::ExtractSymE
             for (size_t j = 0; j < symCount; ++j) {
                 const Elf64_Sym &s = symTable[j];
                 const char *symName = strTable + s.st_name;
-                if (targetSet.count(symName) && ELF64_ST_TYPE(s.st_info) == STT_FUNC) {
+                if (ELF64_ST_TYPE(s.st_info) != STT_FUNC) {
+                    continue;
+                }
+
+                // ELF stores C++ symbols as mangled names, while symbol resolving reports demangled names.
+                // Match both forms so symSrc accepts either representation.
+                if (targetSet.count(symName)) {
                     foundSymbols[symName] = {s.st_value, s.st_size, s.st_shndx};
+                } else {
+                    char *demangledName = CppNamedDemangle(symName);
+                    if (demangledName != nullptr) {
+                        if (targetSet.count(demangledName)) {
+                            foundSymbols[demangledName] = {s.st_value, s.st_size, s.st_shndx};
+                        }
+                        std::free(demangledName);
+                    }
                 }
             }
         }
@@ -149,32 +169,75 @@ uint64_t ElfScanner::GetSymFileOffset(const ElfScanner::ElfSymEntry &symEntry, c
 }
 
 std::vector<uint64_t> ElfScanner::GetRetInstOffsets(const ElfScanner::ElfSymEntry &symEntry, const char *base,
-    size_t fileSize, uint64_t baseVirtualAddr, uint64_t symbolFileOffset)
+    size_t fileSize, uint64_t baseVirtualAddr, uint64_t symbolFileOffset, uint16_t machineType)
 {
     std::vector<uint64_t> retOffsets;
-    const uint32_t RET_MASK = 0xFFFFFC1F;
-    const uint32_t RET_BASE = 0xD65F0000;
-    for (uint64_t offset = 0; offset + 4 <= symEntry.size; offset += 4) {
-        if (symbolFileOffset + offset + 4 > fileSize) {
-            break;
-        }
-        uint32_t inst;
-        memcpy(&inst, base + symbolFileOffset + offset, sizeof(inst));
-        if ((inst & RET_MASK) == RET_BASE) {
-            retOffsets.push_back((symEntry.value + offset) - baseVirtualAddr);
-        }
+
+    if (symbolFileOffset >= fileSize) {
+        return retOffsets;
     }
+    size_t codeSize = std::min(symEntry.size, fileSize - symbolFileOffset);
+    if (codeSize == 0) {
+        return retOffsets;
+    }
+
+    csh handle;
+    cs_err err;
+
+    if (machineType == EM_AARCH64) {
+        err = cs_open(CS_ARCH_ARM64, CS_MODE_ARM, &handle);
+    } else if (machineType == EM_X86_64) {
+        err = cs_open(CS_ARCH_X86, CS_MODE_64, &handle);
+    } else {
+        return retOffsets;
+    }
+
+    if (err != CS_ERR_OK) {
+        return retOffsets;
+    }
+
+    cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON);
+
+    cs_insn *insn = nullptr;
+    const uint8_t *codePtr = reinterpret_cast<const uint8_t *>(base + symbolFileOffset);
+
+    // 执行反汇编（代码指针，长度，起始虚拟地址，解析指令数(0代表全部)，返回的指令数组）
+    size_t count = cs_disasm(handle, codePtr, codeSize, symEntry.value, 0, &insn);
+    if (count > 0) {
+        for (size_t i = 0; i < count; i++) {
+            bool isRet = false;
+
+            if (machineType == EM_AARCH64) {
+                if (insn[i].id == ARM64_INS_RET) {
+                    isRet = true;
+                }
+            } else if (machineType == EM_X86_64) {
+                // x86_64 包括近返回和远返回
+                if (insn[i].id == X86_INS_RET || insn[i].id == X86_INS_RETF || insn[i].id == X86_INS_RETFQ) {
+                    isRet = true;
+                }
+            }
+
+            if (isRet) {
+                retOffsets.push_back(insn[i].address - baseVirtualAddr);
+            }
+        }
+        cs_free(insn,count);
+    }
+
+    cs_close(&handle);
+
     return retOffsets;
 }
 
 ProbePoints ElfScanner::ConstructProbePoints(const std::string &symbolName, const ElfScanner::ElfSymEntry &symEntry,
-    const Elf64_Shdr *shdr, const char *base, size_t fileSize, uint64_t baseVirtualAddr)
+    const Elf64_Shdr *shdr, const char *base, size_t fileSize, uint64_t baseVirtualAddr, uint16_t machineType)
 {
     ProbePoints info;
     info.symbolName = symbolName;
     info.entryOffset = symEntry.value - baseVirtualAddr;
     uint64_t fileOffset = GetSymFileOffset(symEntry, shdr);
-    info.retOffsets = GetRetInstOffsets(symEntry, base, fileSize, baseVirtualAddr, fileOffset);
+    info.retOffsets = GetRetInstOffsets(symEntry, base, fileSize, baseVirtualAddr, fileOffset, machineType);
     return info;
 }
 
@@ -197,6 +260,9 @@ std::vector<ProbePoints> ElfScanner::ResolveElf(
         failedElf2Reason_[filePath] = Perror();
         return probePoints;
     }
+
+    uint16_t machineType = ehdr->e_machine;
+
     const Elf64_Phdr *phdr = reinterpret_cast<const Elf64_Phdr *>(base + ehdr->e_phoff);
     const Elf64_Shdr *shdr = reinterpret_cast<const Elf64_Shdr *>(base + ehdr->e_shoff);
 
@@ -208,7 +274,7 @@ std::vector<ProbePoints> ElfScanner::ResolveElf(
     for (const auto &symbolName : symbolsToFind) {
         auto it = foundSymbols.find(symbolName);
         if (it != foundSymbols.end()) {
-            probePoints.push_back(ConstructProbePoints(symbolName, it->second, shdr, base, fileSize, baseVirtualAddr));
+            probePoints.push_back(ConstructProbePoints(symbolName, it->second, shdr, base, fileSize, baseVirtualAddr, machineType));
         } else {
             elf2FailedSymbols_[filePath].push_back(symbolName);
         }
@@ -254,3 +320,21 @@ std::string ElfScanner::FormatFailures()
     }
     return result;
 }
+
+#else
+
+std::unordered_map<std::string, std::string> ElfScanner::failedElf2Reason_;
+std::unordered_map<std::string, std::vector<std::string>> ElfScanner::elf2FailedSymbols_;
+
+std::unordered_map<std::string, std::vector<ProbePoints>> ElfScanner::ResolveElfs(
+    const std::unordered_map<std::string, std::vector<std::string>> &module2Symbols) 
+{
+    return std::unordered_map<std::string, std::vector<ProbePoints>>();
+}
+
+std::string ElfScanner::FormatFailures()
+{
+    return "";
+}
+
+#endif

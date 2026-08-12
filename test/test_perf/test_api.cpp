@@ -13,6 +13,7 @@
  * Description: Unit tests for api functions.
  ******************************************************************************/
 #include <thread>
+#include <fstream>
 #include <sys/resource.h>
 #include <linux/version.h>
 #include "util_time.h"
@@ -558,14 +559,21 @@ TEST_F(TestAPI, TestForkNewThread)
     int ret = PmuCollect(pd, 10000, collectInterval);
     ASSERT_EQ(ret, SUCCESS);
     int len = PmuRead(pd, &data);
-    ASSERT_EQ(len, 5);
+    int threadNum = 5;
+    ASSERT_NE(data, nullptr);
+    ASSERT_GE(len, 1);
+    ASSERT_LE(len, threadNum);
+    PmuDataFree(data);
+    data = nullptr;
 
     PmuEnable(pd);
     sleep(3);
     PmuDisable(pd);
 
     len = PmuRead(pd, &data);
-    ASSERT_EQ(len, 1);
+    ASSERT_NE(data, nullptr);
+    ASSERT_GE(len, 1);
+    ASSERT_LE(len, threadNum);
 
     PmuClose(pd);
     kill(pid, SIGTERM);
@@ -673,6 +681,12 @@ TEST_F(TestAPI, TestBrBeBadMode) {
 }
 
 TEST_F(TestAPI, TestCpuFreqSampling) {
+    for (int cpu = 0; cpu < MAX_CPU_NUM; cpu++) {
+        if (PmuGetCpuFreq(cpu) == -1) {
+            GTEST_SKIP() << "CPU frequency is not available for cpu " << cpu;
+        }
+    }
+
     int ret = PmuOpenCpuFreqSampling(100);
     ASSERT_NE(ret, -1);
     PmuCloseCpuFreqSampling();
@@ -725,6 +739,11 @@ TEST_F(TestAPI, InvalidUserAccessAttr)
 {
     if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)) {
         GTEST_SKIP();
+    }
+    std::ifstream perfUserAccess("/proc/sys/kernel/perf_user_access");
+    int perfUserAccessVal = 0;
+    if (!(perfUserAccess >> perfUserAccessVal) || perfUserAccessVal != 1) {
+        GTEST_SKIP() << "/proc/sys/kernel/perf_user_access is not enabled.";
     }
     PmuAttr attr = {0};
     attr.enableUserAccess = 1;

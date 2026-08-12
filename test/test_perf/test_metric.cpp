@@ -89,10 +89,16 @@ TEST_F(TestMetric, GetSmmuBdfList)
 
 TEST_F(TestMetric, GetCpuFreq)
 {
-    unsigned core = 6;
-    int64_t cpu6Freq = PmuGetCpuFreq(core);
-    ASSERT_EQ(Perrorno(), SUCCESS);
-    ASSERT_NE(cpu6Freq, -1);
+    for (const auto& core : GetOnLineCpuIds()) {
+        int64_t cpuFreq = PmuGetCpuFreq(core);
+        if (cpuFreq == -1) {
+            continue;
+        }
+        ASSERT_EQ(Perrorno(), SUCCESS);
+        ASSERT_GT(cpuFreq, 0);
+        return;
+    }
+    GTEST_SKIP() << "No online CPU exposes cpufreq/scaling_cur_freq.";
 }
 
 TEST_F(TestMetric, GetClusterIdListSuccess)

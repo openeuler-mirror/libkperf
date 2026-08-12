@@ -77,19 +77,6 @@ public:
     }
 };
 
-std::string& Trim(std::string &item, const std::string &delims)
-{
-    auto index = item.find_last_not_of(delims);
-    if (index != std::string::npos) {
-        item.erase(++index);
-    }
-    index = item.find_first_not_of(delims);
-    if (index != std::string::npos) {
-        item.erase(0, index);
-    }
-    return item;
-}
-
 void StrSplit(char *&line, std::vector<std::string> &vets, char split)
 {
     if (strlen(line) == 0)

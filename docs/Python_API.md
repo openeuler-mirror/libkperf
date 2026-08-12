@@ -30,6 +30,10 @@ kperf.open(collector_type: kperf.PmuTaskType, pmu_attr: kperf.PmuAttr)
     排除对用户态数据的采集
   * excludeKernel
     排除对内核态数据的采集
+  * excludeGuest
+    排除对虚拟机guest数据的采集
+  * excludeHost
+    排除对宿主机host数据的采集
   * symbolMode
     符号采集模式
     NO_SYMBOL_RESOLVE = 0 不支持符号采集
@@ -294,6 +298,8 @@ kperf.trace_open(trace_type: kperf.PmuTraceType, pmu_trace_attr: kperf.PmuTraceA
   * funcs：采集的系统调用函数列表，可以查看/usr/include/asm-generic/unistd.h文件，默认为空，表示采集所有系统调用函数
   * pidList：采集的进程列表，默认为空，表示采集所有进程
   * cpuList：采集的cpu列表，默认为空，表示采集所有cpu
+  * callStack：是否采集调用栈（True表示采集，False表示不采集）
+  * symbolMode：符号解析模式（0表示不解析符号，1表示仅解析ELF，2表示解析ELF和DWARF，3表示延迟解析ELF，4表示延迟解析ELF和DWARF）
 * 返回值是int类型的, pd > 0 表示打开成功， pd == -1 初始化失败，可通过kperf.error()查看错误信息，调用样例类似kperf.open()
 
 以下是kperf.trace_open的一个示例:
@@ -304,7 +310,7 @@ import kperf
 import time
 
 funcs = ["read", "write"]
-pmu_trace_attr = kperf.PmuTraceAttr(funcs=funcs)
+pmu_trace_attr = kperf.PmuTraceAttr(funcs=funcs, callStack=True)
 pd = kperf.trace_open(kperf.PmuTraceType.TRACE_SYS_CALL, pmu_trace_attr)
 if pd == -1:
     print(kperf.error())
@@ -330,6 +336,7 @@ pd为kperf.trace_open返回值
   * tid: 线程id
   * cpu: cpu号
   * comm: 执行指令名称
+  * stack: 调用栈信息（仅当callStack为True时可用，类型为ctypes.POINTER(CtypesStack)）
     以下为kperf.trace_read示例
 
 ```python
@@ -532,6 +539,7 @@ kperf.close(fd)
 目前该文件只支持SAMPLING模式，只支持基本信息的输出，比如id, tid, pid, addr，也包含brbe的数据。
 * path: 文件路径
 * pattr: 采集任务的PmuAttr
+* addIdHdr: 为属于非PERF_RECORD_SAMPLE采样的ID
 * 返回值: 文件句柄，用于下面两个API的调用
 
 ### kperf.write_data

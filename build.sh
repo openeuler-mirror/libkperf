@@ -21,6 +21,7 @@ BUILD_DIR=${PROJECT_DIR}/_build
 THIRD_PARTY=${PROJECT_DIR}/third_party/
 INSTALL_PATH=${PROJECT_DIR}/output/
 BPF_DIR=${PROJECT_DIR}/pmu/bpf
+LLVM_LIB_DIR=${PROJECT_DIR}/llvm-symbolizer/build/lib
 BUILD_TYPE=Release
 # Python module are not compiled by default.
 PYTHON=false
@@ -32,6 +33,12 @@ GO=false
 BPF=false
 # ASAN
 ASAN=false
+
+UTRACE=false
+
+JAVA_AGENT=false
+
+JAVA_TRACE=false
 
 source ${PROJECT_DIR}/build/common.sh
 
@@ -77,8 +84,27 @@ for arg in "$@"; do
         asan=*)
             ASAN="${arg#*=}"
             ;;
+        elf_llvm=*)
+            ELF_LLVM="${arg#*=}"
+            ;;
+        utrace=*)
+            UTRACE="${arg#*=}"
+            ;;
+        java_agent=*)
+            JAVA_AGENT="${arg#*=}"
+            ;;
+        java_trace=*)
+            JAVA_TRACE="${arg#*=}"
+            ;;
     esac
 done
+
+ARCH_TARGET="AArch64"
+ARCH=$(uname -m)
+case "$ARCH" in
+    x86_64|amd64) ARCH_TARGET="X86" ;;
+    aarch64|arm64) ARCH_TARGET="AArch64" ;;
+esac
 
 if [[ "$INCLUDE_TEST" == "true" ]]; then
     build_googletest $THIRD_PARTY
@@ -87,6 +113,18 @@ fi
 if [[ "$BPF" == "true" ]]; then
     build_libbpf $THIRD_PARTY
     build_skel_files $BPF_DIR $THIRD_PARTY
+fi
+
+if [[ "$UTRACE" == "true" ]]; then
+    build_capstone $THIRD_PARTY
+fi
+
+if [ "${JAVA_TRACE}" = "true" ];then
+    build_java_trace $INSTALL_PATH
+    if [ $? -ne 0 ]; then
+        echo "ERROR: failed to build java trace jar" >&2
+        exit 1
+    fi
 fi
 
 function build_elfin() {
@@ -122,7 +160,7 @@ function build_symbolizer()
     cd $PROJECT_DIR/llvm-symbolizer
     mkdir build
     cd build
-    cmake -DCMKAE_BUILD_TYPE=Release ..
+    cmake -DCMKAE_BUILD_TYPE=Release -DLLVM_TARGETS_TO_BUILD="${ARCH_TARGET}" ..
     make -j ${cpu_core_num}
 }
 
@@ -135,9 +173,13 @@ build_libkperf()
         "-DINCLUDE_TEST=${INCLUDE_TEST}"
         "-DPYTHON=${PYTHON}"
         "-DGO=${GO}"
+        "-DJAVA_AGENT=${JAVA_AGENT}"
         "-DCMAKE_INSTALL_PREFIX=${INSTALL_PATH}"
         "-DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
         "-DBPF=${BPF}"
+        "-DJAVA_TRACE=${JAVA_TRACE}"
+        "-DARCH_TARGET=${ARCH_TARGET}"
+        "-DELF_LLVM=${ELF_LLVM}"
     )
     if [ ! -z ${PYTHON_EXE} ];then
          CMAKE_ARGS+=("-DPYTHON_KPERF=${PYTHON_EXE}")
@@ -159,10 +201,64 @@ build_libkperf()
             "-DCAMKE_SHARED_LINKPER_FLAGS=-fsanitize=address"
        )
     fi
+    if [ "${UTRACE}" = "true" ];then
+       CMAKE_ARGS+=("-DUTRACE=${UTRACE}")
+    fi
     cmake "${CMAKE_ARGS[@]}" ..
     make -j ${cpu_core_num}
     make install
     echo "build libkperf success"
+}
+
+function merge_libsym()
+{
+    set +x
+    cd ${INSTALL_PATH}/lib
+    echo "CREATE libsym_bak.a" > merge.mri
+    
+    #copy avoid ++ error
+    if [ ! -f "${THIRD_PARTY}/local/elfin-parser/libelf.a" ];then
+        cp "${THIRD_PARTY}/local/elfin-parser/libelf++.a" "${THIRD_PARTY}/local/elfin-parser/libelf.a"
+    fi
+    echo "ADDLIB ${THIRD_PARTY}/local/elfin-parser/libelf.a" >> merge.mri
+    echo "ADDLIB ${INSTALL_PATH}/lib/libsym.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}AsmPrinter.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}AsmParser.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}Desc.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}Disassembler.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}Info.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVM${ARCH_TARGET}Utils.a" >> merge.mri
+
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMTarget.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMDebugInfoDWARF.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMDemangle.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMObject.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMOption.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMSupport.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMSymbolize.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMDebugInfoDWARF.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMObject.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMBitReader.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMCore.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMMCParser.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMMC.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMDebugInfoCodeView.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMBinaryFormat.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMSupport.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMDemangle.a" >> merge.mri
+    echo "ADDLIB ${LLVM_LIB_DIR}/libLLVMMCDisassembler.a" >> merge.mri
+    echo "SAVE" >> merge.mri
+    echo "END" >> merge.mri
+    #执行合并
+    ar -M < merge.mri
+    rm merge.mri
+    if [ ! -z libsym.a ];then
+        rm libsym.a
+    fi
+    mv libsym_bak.a libsym.a
+    if [ "${GO}" = "true" ];then
+        cp libsym.a ${PROJECT_DIR}/go/src/libkperf/static_lib/
+    fi
 }
 
 function build_test()
@@ -174,11 +270,11 @@ function build_test()
 
 main() {
     build_symbolizer
-    # build_elfin
+    build_elfin
     build_libkperf
     build_test
+    merge_libsym
 }
 
 # bash build.sh test=true installPath=/home/ build_type=Release .The last three settings are optional.
 main $@
-

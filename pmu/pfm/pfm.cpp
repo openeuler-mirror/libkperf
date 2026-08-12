@@ -144,14 +144,12 @@ static int GetEventType(const char *pmuName)
     if (CheckUncoreRawEvent(pmuName)) {
         return UNCORE_RAW_TYPE;
     }
-#ifdef IS_X86
-    return -1;
-#else
+
     // Kernel trace point event name like 'block:block_bio_complete'
     if (IsTraceEventFormat(pmuName) && CheckEventInList(TRACE_EVENT, pmuName)) {
         return TRACE_TYPE;
     }
-#endif
+
     return -1;
 }
 

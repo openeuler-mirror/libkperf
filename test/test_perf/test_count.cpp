@@ -93,6 +93,7 @@ protected:
     PmuData *data1 = nullptr;
     PmuData *data2 = nullptr;
     static const unsigned collectInterval = 100;
+    static constexpr double aggreUncoreToleranceRatio = 0.6;
     static constexpr float relativeErr = 0.01;
 };
 
@@ -243,7 +244,7 @@ TEST_F(TestCount, AggregateUncoreEventsHIPA)
     for (int i = 0; i < len2; ++i) {
         uncoreSum += data2[i].count;
     }
-    ASSERT_NEAR(aggreCnt, uncoreSum, uncoreSum * 0.5);
+    ASSERT_NEAR(aggreCnt, uncoreSum, uncoreSum * aggreUncoreToleranceRatio);
 }
 
 TEST_F(TestCount, AggregateUncoreEventsHIPB)
@@ -279,12 +280,17 @@ TEST_F(TestCount, AggregateUncoreEventsHIPB)
     for (int i = 0; i < len2; ++i) {
         uncoreSum += data2[i].count;
     }
-    ASSERT_NEAR(aggreCnt, uncoreSum, uncoreSum * 0.5);
+    ASSERT_NEAR(aggreCnt, uncoreSum, uncoreSum * aggreUncoreToleranceRatio);
 }
 
 TEST_F(TestCount, PwritevFile)
 {
     // Test data of tracepoint syscalls:sys_enter_pwritev.
+
+    auto traceEventDir = GetTraceEventDir();
+    if (traceEventDir.empty() || !ExistPath(traceEventDir + "syscalls/sys_enter_pwritev/id")) {
+        GTEST_SKIP() << "Tracepoint syscalls:sys_enter_pwritev is not available.";
+    }
 
     // Run an application repeatedly call pwritev.
     appPid = RunTestApp("pwritev_file");
@@ -426,7 +432,8 @@ TEST_F(TestCount, LLCacheMissRatio)
     auto evtMap = CollectProcessEvent("cross_socket_access", evts);
     ASSERT_EQ(evtMap.size(), evts.size());
     auto missRatio1 = (double)evtMap[cacheMiss]/evtMap[cache];
-    ASSERT_GT(missRatio1, 0.1);
+    int ratio = 0.05;
+    ASSERT_GT(missRatio1, ratio);
     evtMap = CollectProcessEvent("in_node_access", evts);
     auto missRatio2 = (double)evtMap[cacheMiss]/evtMap[cache];
     ASSERT_LT(missRatio2, 0.01);

@@ -21,6 +21,10 @@
 #include "core.h"
 #include "common.h"
 
+#ifndef PERF_COUNT_SW_CGROUP_SWITCHES
+#define PERF_COUNT_SW_CGROUP_SWITCHES 11
+#endif 
+
 using namespace std;
 using PMU_PAIR = std::pair<std::string, KUNPENG_PMU::CoreConfig>;
 static CHIP_TYPE g_chipType = UNDEFINED_TYPE;
@@ -153,6 +157,15 @@ namespace SOFTWARE_EVENT {
                     PERF_TYPE_SOFTWARE,
                     PERF_COUNT_SW_TASK_CLOCK,
                     KUNPENG_PMU::COMMON::TASK_CLOCK
+            }
+    };
+
+    PMU_PAIR CGROUP_SWITCHES = {
+            KUNPENG_PMU::COMMON::CGROUP_SWITCHES,
+            {
+                    PERF_TYPE_SOFTWARE,
+                    PERF_COUNT_SW_CGROUP_SWITCHES,
+                    KUNPENG_PMU::COMMON::CGROUP_SWITCHES
             }
     };
 } // namespace software event
@@ -819,6 +832,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_A_CORE_PMU_MA
         SOFTWARE_EVENT::PAGE_FAULTS,
         SOFTWARE_EVENT::FAULTS,
         SOFTWARE_EVENT::TASK_CLOCK,
+        SOFTWARE_EVENT::CGROUP_SWITCHES,
 };
 
 const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_B_CORE_PMU_MAP{
@@ -1004,6 +1018,7 @@ const std::unordered_map<std::string, KUNPENG_PMU::CoreConfig> HIP_G_CORE_PMU_MA
         SOFTWARE_EVENT::PAGE_FAULTS,
         SOFTWARE_EVENT::FAULTS,
         SOFTWARE_EVENT::TASK_CLOCK,
+        SOFTWARE_EVENT::CGROUP_SWITCHES,
         HW_CACHE_EVENT::L1_DCACHE_LOADS,
         HW_CACHE_EVENT::L1_DCACHE_LOAD_MISSES,
         HW_CACHE_EVENT::L1_ICACHE_LOADS,

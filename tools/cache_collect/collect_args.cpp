@@ -31,12 +31,27 @@ const std::unordered_map<std::string, BoltOption> boltOptionMap = {
     {"all", BoltOption::ALL}
 };
 
+const std::unordered_map<std::string, HotspotSortOption> hotspotSortOptionMap = {
+    {"cycles", HotspotSortOption::CYCLES},
+    {"l1", HotspotSortOption::L1},
+    {"l2", HotspotSortOption::L2}
+};
+
 BoltOption CollectArgs::ParseBoltOption(const std::string& value) {
     auto it = boltOptionMap.find(value);
     if (it != boltOptionMap.end()) {
         return it->second;
     }
     return BoltOption::NONE;
+}
+
+HotspotSortOption CollectArgs::ParseHotspotSortOption(const std::string& value)
+{
+    auto it = hotspotSortOptionMap.find(value);
+    if (it != hotspotSortOptionMap.end()) {
+        return it->second;
+    }
+    return HotspotSortOption::CYCLES;
 }
 
 static bool isNumber(const char* arg) {
@@ -71,12 +86,14 @@ bool CollectArgs::ParseOption(int argc, char* argv[])
     std::string level;
     std::string mode;
     std::string bolt;
+    std::string sort;
     struct option long_options[] = {
         {"help",      no_argument,       0, 'h'},
         {"pid",       required_argument, 0, 'p'},
         {"duration",  required_argument, 0, 'd'},
         {"level",     required_argument, 0, 'l'},
         {"mode",      required_argument, 0, 'm'},
+        {"sort",      required_argument, 0, 'o'},
         {"interval",  required_argument, 0, 'i'},
         {"frequency", required_argument, 0, 'f'},
         {"bolt",      required_argument, 0, 'b'},
@@ -84,7 +101,7 @@ bool CollectArgs::ParseOption(int argc, char* argv[])
         {0, 0, 0, 0}
     };
 
-    while ((opt = getopt_long(argc, argv, "hp:d:l:m:i:f:b:s:", long_options, &option_index)) != -1) {
+    while ((opt = getopt_long(argc, argv, "hp:d:l:m:o:i:f:b:s:", long_options, &option_index)) != -1) {
         switch (opt) {
             case 'h':
                 printUsage();
@@ -114,6 +131,14 @@ bool CollectArgs::ParseOption(int argc, char* argv[])
                     std::cerr << "Error: invalid input for --mode/-m, only support 'dcache'" << "\n";
                     return false;
                 }
+                break;
+            case 'o':
+                sort = optarg;
+                if (hotspotSortOptionMap.find(sort) == hotspotSortOptionMap.end()) {
+                    std::cerr << "Error: invalid input for --sort/-o, only support 'cycles', 'l1', and 'l2'" << "\n";
+                    return false;
+                }
+                hotspotSortOption = ParseHotspotSortOption(sort);
                 break;
             case 'i':
                 if (!ParsePositiveIntArg(optarg, "interval", interval)) {
@@ -189,12 +214,13 @@ void CollectArgs::printUsage()
     std::cerr << "Optional:\n";
     std::cerr << "  --duration/-d <seconds>  : Set collection time of hotspots. Unit: s, default: 10\n";
     std::cerr << "  --level/-l <level>       : Set to 'inst' for instruction-level summary. Default: function-level summary\n";
-    std::cerr << "  --mode/-m <mode>         : Set to 'dcache' to collect L2D cache data. Default: L2I cache data\n";
+    std::cerr << "  --mode/-m <mode>         : Set to 'dcache' to collect L1D/L2D cache data. Default: L1I/L2I cache data\n";
+    std::cerr << "  --sort/-o <sort>         : Sort hotspot table by 'cycles', 'l1', or 'l2'. Default: cycles\n";
     std::cerr << "  --interval/-i <ms>       : Interval for reading the ring buffer. Unit: ms, default: 1000\n";
     std::cerr << "  --frequency/-f <freq>    : Sampling frequency, default: 1000\n";
     std::cerr << "  --bolt/-b <option>       : Generate BOLT format output file. Options: 'cycles', 'l2i_cache', 'l2i_cache_refill', or 'all'. Only for default mode\n";
     std::cerr << "  --summary/-s <seconds>   : Set collection time of summary ratio and IPC collection. Unit: s, default: 5\n\n";
     std::cerr << "Examples:\n";
-    std::cerr << "  ./cache_collect -p 125785 -d 10 -l inst -m dcache -i 2000\n";
+    std::cerr << "  ./cache_collect -p 125785 -d 10 -l inst -m dcache -o l1 -i 2000\n";
     std::cerr << "  ./cache_collect -p 125785,143789 -m dcache -f 4000 -b cycles\n";
 }

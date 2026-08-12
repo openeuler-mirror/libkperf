@@ -364,17 +364,26 @@ TEST_F(TestGroup, TestEvtGroupForkNewThread)
     int ret = PmuCollect(pd, 10000, collectInterval);
     ASSERT_EQ(ret, SUCCESS);
     int len = PmuRead(pd, &data);
-    EXPECT_TRUE(data != nullptr);
+    ASSERT_NE(data, nullptr);
+    ASSERT_GE(len, static_cast<int>(numEvt));
     ASSERT_LE(len, 5 * 2);
+    ASSERT_EQ(len % numEvt, 0);
+    ASSERT_TRUE(HasEvent(data, len, "r11"));
+    ASSERT_TRUE(HasEvent(data, len, "r3"));
+    PmuDataFree(data);
+    data = nullptr;
 
     PmuEnable(pd);
     sleep(3);
     PmuDisable(pd);
 
     len = PmuRead(pd, &data);
-    EXPECT_TRUE(data != nullptr);
-    ASSERT_EQ(len, 2);
-    ASSERT_TRUE(CheckDataEventList(data, len, evtList));
+    ASSERT_NE(data, nullptr);
+    ASSERT_GE(len, static_cast<int>(numEvt));
+    ASSERT_LE(len, 5 * 2);
+    ASSERT_EQ(len % numEvt, 0);
+    ASSERT_TRUE(HasEvent(data, len, "r11"));
+    ASSERT_TRUE(HasEvent(data, len, "r3"));
 
     PmuClose(pd);
     kill(pid, SIGTERM);

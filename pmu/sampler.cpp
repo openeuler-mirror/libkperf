@@ -21,6 +21,7 @@
 #include <sys/syscall.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <ctime>
 #include <cstring>
 #include <linux/perf_event.h>
 #include "linked_list.h"
@@ -48,6 +49,8 @@ int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupEnable, const int grou
     attr.config2 = this->evt->config2;
     attr.size = sizeof(struct perf_event_attr);
     attr.sample_type = SAMPLING_SAMPLE_TYPE;
+    attr.use_clockid = 1;
+    attr.clockid = CLOCK_MONOTONIC;
     // if the branch sample type is not nullptr, set the branch sample type.                       
     if (branchSampleFilter != KPERF_NO_BRANCH_SAMPLE) {
         attr.sample_type |= PERF_SAMPLE_BRANCH_STACK;
@@ -61,6 +64,8 @@ int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupEnable, const int grou
      */
     attr.exclude_kernel = this->needTryExcludeKernel ? 1 : this->evt->excludeKernel;
     attr.exclude_user = this->evt->excludeUser;
+    attr.exclude_guest = this->evt->excludeGuest;
+    attr.exclude_host = this->evt->excludeHost;
 #ifdef IS_X86
     if (this->pid == -1) {
         attr.pinned = 0;
@@ -75,7 +80,6 @@ int KUNPENG_PMU::PerfSampler::MapPerfAttr(const bool groupEnable, const int grou
     attr.mmap2 = 1;
     attr.task = 1;
     attr.sample_id_all = 1;
-    attr.exclude_guest = 1;
 
     if (this->evt->enableOnExec) {
         attr.enable_on_exec = 1;

@@ -14,6 +14,7 @@
  ******************************************************************************/
 #include "test_common.h"
 #include "common.h"
+#include <fstream>
 #include <linux/version.h>
 
 using namespace std;
@@ -30,6 +31,13 @@ public:
     }
 
 protected:
+    bool IsPerfUserAccessEnabled()
+    {
+        std::ifstream perfUserAccess("/proc/sys/kernel/perf_user_access");
+        int perfUserAccessVal = 0;
+        return (perfUserAccess >> perfUserAccessVal) && perfUserAccessVal == 1;
+    }
+
     PmuAttr attr{0};
     int pids[1] = {0};
     int cpus[1] = {-1};
@@ -136,6 +144,9 @@ TEST_F(TestUserAccessCount, TestReadEvent)
     if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)) {
         GTEST_SKIP();
     }
+    if (!IsPerfUserAccessEnabled()) {
+        GTEST_SKIP() << "/proc/sys/kernel/perf_user_access is not enabled.";
+    }
     attr.numEvt = 1;
     char *evtList[1];
     for (int i = 0; i < events.size(); i++) {
@@ -164,14 +175,8 @@ TEST_F(TestUserAccessCount, TestReadEvent)
             if (len > 0) {
                 for (int j = 0; j < len; j++) {
                     printf("event:%s pid=%d tid=%d cpu=%d groupId=%d comm=%s count=%llu countpercent=%lf\n",
-                        data[j].evt,
-                        data[j].pid,
-                        data[j].tid,
-                        data[j].cpu,
-                        data[j].groupId,
-                        data[j].comm,
-                        data[j].count,
-                        data[j].countPercent);
+                        data[j].evt, data[j].pid, data[j].tid, data[j].cpu,
+                        data[j].groupId, data[j].comm, data[j].count, data[j].countPercent);
                 }
             } else {
                 printf("%s\n", Perror());

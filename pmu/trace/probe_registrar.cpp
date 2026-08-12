@@ -156,7 +156,11 @@ std::string ProbeRegistrar::ConvertToProbeStr(const ProbeEvent &probeEvent, bool
        << std::hex << probeEvent.offset;
 
     if (fetchG) {
+#if defined(__x86_64__)
+        ss << " g=%r14";
+#elif defined(__aarch64__)
         ss << " g=%x28";
+#endif
     }
     ss << "\n";
 

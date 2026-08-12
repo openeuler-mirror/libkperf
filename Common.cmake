@@ -13,17 +13,30 @@
 
 
 set(CMAKE_CXX_FLAGS_DEBUG " -O0 -g -Wall -pg -fno-gnu-unique -DDEBUG")
-set(CMAKE_CXX_FLAGS_RELEASE " -O3 -DNDEBUG -fstack-protector-all -Wl,-z,relro,-z,now -Wall -fPIE -s -fno-gnu-unique")
+set(CMAKE_CXX_FLAGS_RELEASE " -O3 -DNDEBUG -fstack-protector-all -Wl,-z,relro,-z,now -Wall -fPIE -s")
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    string(APPEND CMAKE_CXX_FLAGS_DEBUG   " -fno-gnu-unique")
+    string(APPEND CMAKE_CXX_FLAGS_RELEASE " -fno-gnu-unique")
+endif()
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 -g")
 set(CMAKE_CXX_FLAGS_MINSIZEREL "-Os -DNDEBUG")
-set(CMAKE_C_FLAGS_DEBUG " -O0 -g -Wall -pg -fno-gnu-unique -DDEBUG")
-set(CMAKE_C_FLAGS_RELEASE " -O3 -DNDEBUG -fstack-protector-all -Wl,-z,relro,-z,now -Wall -fPIE -s -fno-gnu-unique")
+set(CMAKE_C_FLAGS_DEBUG " -O0 -g -Wall -pg -DDEBUG")
+set(CMAKE_C_FLAGS_RELEASE " -O3 -DNDEBUG -fstack-protector-all -Wl,-z,relro,-z,now -Wall -fPIE -s")
 set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O3 -g")
 set(CMAKE_C_FLAGS_MINSIZEREL "-Os -DNDEBUG")
 
 set(CMAKE_EXE_LINKER_FLAGS_RELEASE " -Wl,-z,relro,-z,now,-z,noexecstack -pie -s")
 set(THIRD_PARTY ${PROJECT_TOP_DIR}/third_party)
 add_compile_options(-w) # 调试阶段先去除告警
+
+
+add_library(elf_static STATIC IMPORTED)
+set_property(TARGET elf_static PROPERTY IMPORTED_LOCATION ${THIRD_PARTY}/local/elfin-parser/libelf++.a)
+include_directories(${THIRD_PARTY}/elfin-parser/elf)
+
+if (ELF_LLVM)
+    add_definitions(-DELF_LLVM)    
+endif()
 
 include_directories(${PROJECT_TOP_DIR}/llvm-symbolizer/build/include)
 include_directories(${PROJECT_TOP_DIR}/llvm-symbolizer/include)

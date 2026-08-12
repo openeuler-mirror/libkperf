@@ -75,11 +75,11 @@ private:
 
     static uint64_t GetSymFileOffset(const ElfSymEntry &symbol, const Elf64_Shdr *shdr);
 
-    static std::vector<uint64_t> GetRetInstOffsets(const ElfSymEntry &symbol, const char *base, size_t fileSize,
-        uint64_t baseVirtualAddr, uint64_t symbolFileOffset);
+    static std::vector<uint64_t> GetRetInstOffsets(const ElfSymEntry &symEntry, const char *base, size_t fileSize,
+        uint64_t baseVirtualAddr, uint64_t symbolFileOffset, uint16_t machineType);
 
     static ProbePoints ConstructProbePoints(const std::string &name, const ElfSymEntry &symbol, const Elf64_Shdr *shdr,
-        const char *base, size_t fileSize, uint64_t baseVirtualAddr);
+        const char *base, size_t fileSize, uint64_t baseVirtualAddr, uint16_t machineType);
 
     static std::vector<ProbePoints> ResolveElf(
         const std::string &filePath, const std::vector<std::string> &symbolsToFind);

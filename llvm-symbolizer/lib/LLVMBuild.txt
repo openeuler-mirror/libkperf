@@ -27,6 +27,7 @@ subdirectories =
  Option
  Support
  TableGen
+ Target
 
 [component_0]
 type = Group

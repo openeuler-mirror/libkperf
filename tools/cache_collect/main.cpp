@@ -10,7 +10,7 @@
  * See the Mulan PSL v2 for more details.
  * Author: Wu
  * Create: 2025-10-21
- * Description: Collecting l2 icache miss, l2d tlb miss of process
+ * Description: Collecting L1/L2 icache and dcache miss of process
  ******************************************************************************/
 #include "collect_args.h"
 #include "collect.h"

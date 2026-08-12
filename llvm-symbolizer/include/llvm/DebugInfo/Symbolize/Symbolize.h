@@ -57,6 +57,9 @@ public:
     flush();
   }
 
+  Expected<DILineInfo> getPLTCode(const std::string &ModuleName,
+                                  uint64_t ModuleOffset);
+
   Expected<DILineInfo> symbolizeCode(const std::string &ModuleName,
                                      uint64_t ModuleOffset,
                                      StringRef DWPName = "");
@@ -65,12 +68,12 @@ public:
                                                 StringRef DWPName = "");
   Expected<DIGlobal> symbolizeData(const std::string &ModuleName,
                                    uint64_t ModuleOffset);
+  Expected<std::string> getAsmCode(const std::string &ModuleName, uint64_t StartAddr, uint64_t EndAddr);
   void flush();
 
   static std::string
   DemangleName(const std::string &Name,
                const SymbolizableModule *DbiModuleDescriptor);
-
 private:
   // Bundles together object file with code/data and object file with
   // corresponding debug info. These objects can be the same.

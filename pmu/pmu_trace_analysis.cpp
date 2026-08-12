@@ -199,7 +199,10 @@ int PmuTraceOpen(enum PmuTraceType traceType, struct PmuTraceAttr *traceAttr)
     attr.cpuList = traceAttr->cpuList;
     attr.numCpu = traceAttr->numCpu;
     attr.period = 1; // configured to sample once when an event occurs
-
+    // Support call stack if available.
+    attr.callStack = traceAttr->callStack;
+    attr.symbolMode = traceAttr->symbolMode;
+    
     int pd = PmuOpen(SAMPLING, &attr);
     if (pd == -1) {
         EraseTraceAttrEvtList(attr.evtList, attr.numEvt);

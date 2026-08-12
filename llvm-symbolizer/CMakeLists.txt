@@ -306,6 +306,12 @@ set(LLVM_CMAKE_PATH ${LLVM_MAIN_SRC_DIR}/cmake/modules)
 set(LLVM_EXAMPLES_BINARY_DIR ${LLVM_BINARY_DIR}/examples)
 set(LLVM_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/include)
 
+# List of all targets to be built by default:
+set(LLVM_ALL_TARGETS
+  AArch64
+  X86
+)
+
 # List of targets with JIT support:
 set(LLVM_TARGETS_WITH_JIT X86 PowerPC AArch64 ARM Mips SystemZ)
 
@@ -649,6 +655,36 @@ set(LLVM_ENUM_TARGETS "")
 set(LLVM_ENUM_ASM_PRINTERS "")
 set(LLVM_ENUM_ASM_PARSERS "")
 set(LLVM_ENUM_DISASSEMBLERS "")
+foreach(t ${LLVM_TARGETS_TO_BUILD})
+  set( td ${LLVM_MAIN_SRC_DIR}/lib/Target/${t} )
+
+  list(FIND LLVM_ALL_TARGETS ${t} idx)
+  list(FIND LLVM_EXPERIMENTAL_TARGETS_TO_BUILD ${t} idy)
+  # At this point, LLVMBUILDTOOL already checked all the targets passed in
+  # LLVM_TARGETS_TO_BUILD and LLVM_EXPERIMENTAL_TARGETS_TO_BUILD, so
+  # this test just makes sure that any experimental targets were passed via
+  # LLVM_EXPERIMENTAL_TARGETS_TO_BUILD, not LLVM_TARGETS_TO_BUILD.
+  if( idx LESS 0 AND idy LESS 0 )
+    message(FATAL_ERROR "The target `${t}' is experimental and must be passed "
+      "via LLVM_EXPERIMENTAL_TARGETS_TO_BUILD.")
+  else()
+    set(LLVM_ENUM_TARGETS "${LLVM_ENUM_TARGETS}LLVM_TARGET(${t})\n")
+  endif()
+
+  file(GLOB asmp_file "${td}/*AsmPrinter.cpp")
+  if( asmp_file )
+    set(LLVM_ENUM_ASM_PRINTERS
+      "${LLVM_ENUM_ASM_PRINTERS}LLVM_ASM_PRINTER(${t})\n")
+  endif()
+  if( EXISTS ${td}/AsmParser/CMakeLists.txt )
+    set(LLVM_ENUM_ASM_PARSERS
+      "${LLVM_ENUM_ASM_PARSERS}LLVM_ASM_PARSER(${t})\n")
+  endif()
+  if( EXISTS ${td}/Disassembler/CMakeLists.txt )
+    set(LLVM_ENUM_DISASSEMBLERS
+      "${LLVM_ENUM_DISASSEMBLERS}LLVM_DISASSEMBLER(${t})\n")
+  endif()
+endforeach(t)
 
 # Produce the target definition files, which provide a way for clients to easily
 # include various classes of targets.

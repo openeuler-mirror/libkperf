@@ -38,8 +38,8 @@ namespace KUNPENG_PMU {
         int Register(const int pd, PmuTraceAttr* traceParam);
         bool IsPdAlive(const unsigned pd) const;
         int GenerateSysCallTable();
-        std::vector<PmuTraceData>& AnalyzeRawTraceData(int pd, PmuData *pmuData, unsigned len);
-        std::vector<PmuTraceData>& AnalyzeTraceData(int pd, PmuData *pmuData, unsigned len);
+        std::vector<PmuTraceData>& AnalyzeRawTraceData(unsigned pd, PmuData *pmuData, unsigned len);
+        std::vector<PmuTraceData>& AnalyzeTraceData(unsigned pd, PmuData *pmuData, unsigned len);
         void Close(const int pd);
         void FreeTraceData(PmuTraceData* pmuTraceData);
 

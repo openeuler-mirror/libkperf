@@ -16,6 +16,7 @@
 #include <iostream>
 #include <fstream>
 #include <unistd.h>
+#include <signal.h>
 #include <linux/perf_event.h>
 #include <linux/version.h>
 #include <cstring>
@@ -102,7 +103,7 @@ static int CheckPidList(unsigned numPid, int* pidList)
         return LIBPERF_ERR_INVALID_PIDLIST;
     }
     for (int i = 0; i < numPid; i++) {
-        if (pidList[i] < 0) {
+        if (pidList[i] < 0 || kill(pidList[i], 0) == -1) {
             string errMsg = "Invalid pid: " + to_string(pidList[i]) + ", Please check pid config parameter.";
             New(LIBPERF_ERR_INVALID_PIDLIST, errMsg);
             return LIBPERF_ERR_INVALID_PIDLIST;
@@ -1129,6 +1130,14 @@ int GetCgroupFd(std::string& cgroupName) {
     return cgroupFd;
 }
 
+static inline int BuildScopedGroupId(int groupId, int cgroupFd)
+{
+    if (groupId < 0 || cgroupFd < 0) {
+        return groupId;
+    }
+    return ((cgroupFd & 0xffff) << 16) | (groupId & 0xffff);
+}
+
 static EvtAttr ResolveEvtAttrParams(struct PmuAttr *attr, int index) {
     // numEvt must be greater than numEvtAttr.The excludeUser, excluderKernel,and period attributes in PmuAttr have higher priority than those in EvtAttr. 
     int groupId = index >= attr->numEvtAttr? -1 : attr->evtAttr[index].groupId;
@@ -1186,13 +1195,15 @@ static struct PmuTaskAttr* AssignTaskParam(PmuTaskType collectType, PmuAttr *att
      */
     PrepareCpuList(attr, taskParam.get(), pmuEvt);
 
-    taskParam->groupId = evtAttrDto.groupId;
+    taskParam->groupId = BuildScopedGroupId(evtAttrDto.groupId, cgroupFd);
 
     taskParam->pmuEvt = shared_ptr<PmuEvt>(pmuEvt, PmuEvtFree);
     taskParam->pmuEvt->useFreq = attr->useFreq;
     taskParam->pmuEvt->period = evtAttrDto.period;
     taskParam->pmuEvt->excludeKernel = evtAttrDto.excludeKernel;
     taskParam->pmuEvt->excludeUser = evtAttrDto.excludeUser;
+    taskParam->pmuEvt->excludeGuest = attr->excludeGuest;
+    taskParam->pmuEvt->excludeHost = attr->excludeHost;
     taskParam->pmuEvt->callStack = attr->callStack;
     taskParam->pmuEvt->blockedSample = attr->blockedSample;
     taskParam->pmuEvt->includeNewFork = attr->includeNewFork;

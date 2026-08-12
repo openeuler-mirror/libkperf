@@ -312,6 +312,8 @@ class PmuAttr(_libkperf.PmuAttr):
             otherwise, it will be used as sample period.
         excludeUser: Don't count user.
         excludeKernel: Don't count kernel.
+        excludeGuest: Don't count guest.
+        excludeHost: Don't count host.
         symbolMode: This indicates how to analyze symbols of samples.
             Refer to  comments of SymbolMode.
         callStack: This indicates whether to collect whole callchains or only top frame.
@@ -337,6 +339,8 @@ class PmuAttr(_libkperf.PmuAttr):
                  useFreq = False,
                  excludeUser = False,
                  excludeKernel = False,
+                 excludeGuest = False,
+                 excludeHost = False,
                  symbolMode = 0,
                  callStack = False,
                  blockedSample = False,
@@ -359,6 +363,8 @@ class PmuAttr(_libkperf.PmuAttr):
             useFreq=useFreq,
             excludeUser=excludeUser,
             excludeKernel=excludeKernel,
+            excludeGuest=excludeGuest,
+            excludeHost=excludeHost,
             symbolMode=symbolMode,
             callStack=callStack,
             blockedSample=blockedSample,
@@ -408,16 +414,24 @@ class PmuTraceAttr(_libkperf.PmuTraceAttr):
         unsigned numPid;
         int* cpuList;
         unsigned numCpu;
+        // This indicates whether to collect whole callchains or only top frame.
+        unsigned callStack : 1;
+        // This indicates how to analyze symbols of samples.
+        enum SymbolMode symbolMode;
     };
     """
     def __init__(self,
                  funcs = None,
                  pidList = None,
-                 cpuList = None):
+                 cpuList = None,
+                 callStack=False,
+                 symbolMode=0):
         super(PmuTraceAttr, self).__init__(
             funcs=funcs,
             pidList=pidList,
-            cpuList=cpuList
+            cpuList=cpuList,
+            callStack=callStack,
+            symbolMode=symbolMode
         )
 
 class ImplPmuTraceData(_libkperf.ImplPmuTraceData):

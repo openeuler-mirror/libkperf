@@ -41,6 +41,8 @@ struct PmuEvt {
     std::vector<int> cpuMaskList; // representative CPU number list for each socket (package) in the motherboard.
     unsigned excludeUser : 1;     // don't count user
     unsigned excludeKernel : 1;   //  don't count kernel
+    unsigned excludeGuest : 1;    // don't count guest
+    unsigned excludeHost : 1;     // don't count host
     unsigned callStack : 1;   //  collect complete call stack
     unsigned blockedSample : 1; // collect on cpu and off cpu data at the same time
     union {

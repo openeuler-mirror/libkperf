@@ -13,6 +13,7 @@
  * Description: Provide common file operation functions and system resource management functions.
  ******************************************************************************/
 
+#include <cctype>
 #include <cstring>
 #include <vector>
 #include <iostream>
@@ -54,6 +55,19 @@ bool IsValidPath(const std::string& filePath)
     return true;
 }
 
+std::string Trim(const std::string& value)
+{
+    size_t first = 0;
+    while (first < value.size() && std::isspace(static_cast<unsigned char>(value[first]))) {
+        ++first;
+    }
+    size_t last = value.size();
+    while (last > first && std::isspace(static_cast<unsigned char>(value[last - 1]))) {
+        --last;
+    }
+    return value.substr(first, last - first);
+}
+
 bool IsDirectory(const std::string& path)
 {
     struct stat statbuf;
@@ -88,6 +102,19 @@ std::string ReadFileContent(const std::string& filePath)
     std::getline(file, content);
     file.close();
     return content;
+}
+
+std::string ReadFileAllContent(const std::string& filePath)
+{
+    std::ifstream file(filePath);
+    if (!file.is_open()) {
+        pcerr::New(LIBPERF_ERR_OPEN_INVALID_FILE, "Failed to open File: " + filePath);
+        return "";
+    }
+    std::ostringstream oss;
+    oss << file.rdbuf();
+    file.close();
+    return oss.str();
 }
 
 bool ExistPath(const std::string &filePath) {
@@ -261,5 +288,41 @@ std::string GetMntPoint(int pid)
     return mntPoint;
 }
 
+static std::string ReadAll(const std::string& path)
+{
+    std::ifstream in(path);
+    if (!in) {
+        return "";
+    }
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    return ss.str();
+}
 
+static bool FileContainsLine(const std::string& path, const std::string& key)
+{
+    std::ifstream in(path);
+    if (!in) {
+        return false;
+    }
 
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.find(key) != std::string::npos) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool IsJvmProcess(int pid)
+{
+    const std::string procPath = "/proc/" + std::to_string(pid);
+    const std::string cmdline = ReadAll(procPath + "/cmdline");
+    if (cmdline.find("java") != std::string::npos ||
+        cmdline.find("jdk") != std::string::npos) {
+        return true;
+    }
+    return FileContainsLine(procPath + "/maps", "libjvm.so");
+}

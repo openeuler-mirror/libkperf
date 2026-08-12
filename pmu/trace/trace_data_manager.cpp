@@ -18,9 +18,12 @@
 #include "symbol.h"
 #include <cstring>
 
-UTraceData *TraceDataManager::ConvertToTraceData(int pd, PmuData *data, int len)
+UTraceData *TraceDataManager::ConvertToTraceData(int pd, PmuData *data, int len, int *convertedLen)
 {
-    if (!data || len <= 0) {
+    if (convertedLen != nullptr) {
+        *convertedLen = 0;
+    }
+    if (data == nullptr || len <= 0) {
         return nullptr;
     }
 
@@ -37,6 +40,13 @@ UTraceData *TraceDataManager::ConvertToTraceData(int pd, PmuData *data, int len)
             traceData.push_back({data[i].stack->symbol->addr, data[i].comm, data[i].tid, data[i].cpu, data[i].ts, gPtr,
                 data[i].stack->symbol->module, binding.originalSymRef->c_str(), binding.isRet});
         }
+    }
+
+    if (convertedLen != nullptr) {
+        *convertedLen = static_cast<int>(traceData.size());
+    }
+    if (traceData.empty()) {
+        return nullptr;
     }
 
     pmu2trace_[data] = std::move(traceData);

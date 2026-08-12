@@ -29,19 +29,31 @@
 static bool dataCollect;
 static bool instStat;
 static BoltOption boltType;
+static HotspotSortOption hotspotSortType;
 
 static std::unordered_map<unsigned, uint64_t> pidPeriod;
 
 // for counting mode statustics of each pid
 struct PidSummary {
     int pid;
+    double l1Dcache_miss_rate;
+    double l1Icache_miss_rate;
     double l2Dcache_miss_rate;
     double l2Icache_miss_rate;
     double ipc;
 };
 
 struct HotspotFunc {
-    PmuData data;
+    int pid = 0;
+    std::string symbolName;
+    std::string moduleName;
+    std::string symbolKey;
+    unsigned long addr = 0;
+    unsigned long offset = 0;
+    unsigned long codeMapAddr = 0;
+    unsigned long codeMapEndAddr = 0;
+    uint64_t l1RefillPeriod = 0;
+    uint64_t l1AccessPeriod = 0;
     uint64_t l2RefillPeriod = 0;
     uint64_t l2AccessPeriod = 0;
     uint64_t cyclesPeriod = 0;
@@ -68,8 +80,8 @@ struct EventConfig {
     std::vector<char*> evtList;
 };
 
-// sampling mode: collect l2i cache miss or l2d tlb mis
+// sampling mode: collect L1/L2 icache miss or dcache miss
 void collectMiss(CollectArgs& args);
-// counting mode: collect ipc, l2i cache miss ratio and l2d cache miss ratio of process
+// counting mode: collect ipc, L1/L2 icache miss ratio and dcache miss ratio of process
 void collectSummaryData(CollectArgs& args);
 #endif

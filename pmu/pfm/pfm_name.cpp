@@ -71,6 +71,7 @@ const char* KUNPENG_PMU::COMMON::MINOR_FAULTS = "minor-faults";
 const char* KUNPENG_PMU::COMMON::PAGE_FAULTS = "page-faults";
 const char* KUNPENG_PMU::COMMON::FAULTS = "faults";
 const char* KUNPENG_PMU::COMMON::TASK_CLOCK = "task-clock";
+const char* KUNPENG_PMU::COMMON::CGROUP_SWITCHES = "cgroup-switches";
 const char* KUNPENG_PMU::HIP_A::CORE::L1D_CACHE_RD = "l1d_cache_rd";
 const char* KUNPENG_PMU::HIP_A::CORE::L1D_CACHE_WR = "l1d_cache_wr";
 const char* KUNPENG_PMU::HIP_A::CORE::L1D_CACHE_REFILL_RD = "l1d_cache_refill_rd";

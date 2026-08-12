@@ -47,6 +47,19 @@
 namespace llvm {
 namespace symbolize {
 
+Expected<DILineInfo> LLVMSymbolizer::getPLTCode(const std::string &ModuleName,
+                                                uint64_t ModuleOffset) {
+  SymbolizableModule *Info;
+  if (auto InfoOrErr = getOrCreateModuleInfo(ModuleName, ""))
+    Info = InfoOrErr.get();
+  else
+    return InfoOrErr.takeError();                                      
+  if (!Info) {
+      return DILineInfo();
+  }
+  return Info->getPLTSymbol(ModuleOffset);      
+}
+
 Expected<DILineInfo>
 LLVMSymbolizer::symbolizeCode(const std::string &ModuleName,
                               uint64_t ModuleOffset, StringRef DWPName) {
@@ -128,6 +141,16 @@ Expected<DIGlobal> LLVMSymbolizer::symbolizeData(const std::string &ModuleName,
     Global.Name = DemangleName(Global.Name, Info);
   return Global;
 }
+
+Expected<std::string> LLVMSymbolizer::getAsmCode(const std::string &ModuleName, uint64_t StartAddr, uint64_t EndAddr) {
+    SymbolizableModule *Info;
+    if (auto InfoOrErr = getOrCreateModuleInfo(ModuleName))
+        Info = InfoOrErr.get();
+    else 
+        return InfoOrErr.takeError();
+    return Info->getAsmCode(StartAddr, EndAddr);
+}
+
 
 void LLVMSymbolizer::flush() {
   ObjectForUBPathAndArch.clear();

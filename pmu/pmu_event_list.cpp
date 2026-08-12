@@ -210,10 +210,6 @@ const char** QueryUncoreEvent(unsigned *numEvt, bool eventCheck)
 
 const char** QueryTraceEvent(unsigned *numEvt, bool eventCheck)
 {
-#ifdef IS_X86
-    *numEvt = 0;
-    return nullptr;
-#else
     if (!traceEventList.empty()) {
         *numEvt = traceEventList.size();
         return traceEventList.data();
@@ -244,7 +240,6 @@ const char** QueryTraceEvent(unsigned *numEvt, bool eventCheck)
     closedir(dir);
     *numEvt = traceEventList.size();
     return traceEventList.data();
-#endif
 }
 
 const char** QueryAllEvent(unsigned *numEvt, bool eventCheck) {

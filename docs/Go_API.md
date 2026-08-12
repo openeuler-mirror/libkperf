@@ -30,6 +30,10 @@ func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error)
     排除对用户态数据的采集
   * ExcludeKernel bool
     排除对内核态数据的采集
+  * ExcludeGuest bool
+    排除对虚拟机guest数据的采集
+  * ExcludeHost bool
+    排除对宿主机host数据的采集
   * SymbolMode C.enum_SymbolMode
     符号采集模式
     ELF 仅支持ELF数据采集，解析function，不解析行号
@@ -78,10 +82,8 @@ func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error)
       branchSampleMode = kperf.BranchSampleFilter.KPERF_SAMPLE_BRANCH_ANY | kperf.BranchSampleFilter.KPERF_SAMPLE_BRANCH_USER
       pmu_attr = kperf.PmuAttr(sampleRate=1000, useFreq=True, pidList=pidList, evtList=evtList, branchSampleFilter=branchSampleMode)
       仅支持SAMPLING模式, 其中KPERF_SAMPLE_BRANCH_USER， KPERF_SAMPLE_BRANCH_KERNEL， KPERF_SAMPLE_BRANCH_HV使用时必须搭配KPERF_SAMPLE_BRANCH_ANY或者KPERF_SAMPLE_BRANCH_ANY之后的值一起使用
-  * char** cgroupNameList;
+  * CgroupNameList []string;
     采集cgroup的名称列表
-  * int numCgroup;
-    采集cgroup的个数
   * EnableUserAccess bool
     是否直接读取寄存器，仅支持COUNTING模式
   * EnableBpf bool
@@ -241,6 +243,8 @@ func PmuTraceOpen(traceType C.enum_PmuTraceType, traceAttr PmuTraceAttr) (int, e
   * Funcs []string 采集的系统调用函数列表，可以查看/usr/include/asm-generic/unistd.h文件，默认为空，表示采集所有系统调用函数
   * PidList []int采集的进程列表，默认为空，表示采集所有进程
   * CpuList []int采集的cpu列表，默认为空，表示采集所有cpu
+  * CallStack bool 是否采集调用栈（true表示采集，false表示不采集）
+  * SymbolMode C.enum_SymbolMode 符号解析模式
 * 返回值是int和error，如果error！=nil则采集初始化失败，error==nil则采集初始化成功
 
 以下是kperf.PmuTraceOpen用法:
@@ -250,7 +254,7 @@ import "libkperf/kperf"
 import "fmt"
 
 func main() {
-    traceAttr := kperf.PmuTraceAttr{Funcs:[]string{"read", "write"}}
+    traceAttr := kperf.PmuTraceAttr{Funcs:[]string{"read", "write"}, CallStack: true, SymbolMode: kperf.ELF_DWARF}
 	taskId, err := kperf.PmuTraceOpen(kperf.TRACE_SYS_CALL, traceAttr)
 	if err != nil {
 		fmt.Printf("pmu trace open failed, expect err is nil, but is %v\n", err)
@@ -300,6 +304,7 @@ func PmuTraceRead(taskId int) (PmuTraceDataVo, error)
   * Tid int 线程id
   * Cpu int cpu号
   * Comm string 执行指令名称
+  * Symbols []sym.Symbol 调用栈符号列表（仅当CallStack为true时可用）
 
 ```go
 traceList, err := kperf.PmuTraceRead(taskId)

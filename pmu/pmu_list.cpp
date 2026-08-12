@@ -1221,6 +1221,7 @@ namespace KUNPENG_PMU {
             int numChild = 0;
             int* childTidList = GetChildTid(masterPid, &numChild);
             if (childTidList == nullptr) {
+                New(LIBPERF_ERR_INVALID_PID);
                 return LIBPERF_ERR_INVALID_PID;
             }
             bool foundProc = false;
@@ -1292,7 +1293,9 @@ namespace KUNPENG_PMU {
         if (taskParam->pidList.empty()) {
             return;
         }
-        auto* dummyEvent = new DummyEvent(pd, ppidList.at(pd));
+        auto* dummyEvent = new DummyEvent(pd, ppidList.at(pd),
+                                         taskParam->pmuEvt->excludeGuest,
+                                         taskParam->pmuEvt->excludeHost);
         dummyEvent->ObserverForkThread();
         dummyList[pd] = dummyEvent;
     }

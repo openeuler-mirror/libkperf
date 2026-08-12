@@ -56,11 +56,10 @@ test_case_exclude=(
 )
 
 function set_hipa_exclude() {
-	test_case_exclude=(
-		"TestAPI.TestForkNewThread TestAPI.TestCpuFreqSampling TestCgroup.TestCgroupSampling \
-		 TestCount.PwritevFile TestGroup.TestEvtGroupForkNewThread TestMetric.GetCpuFreq"
-		""
-	)
+    test_case_exclude=(
+        ""
+        ""
+    )
 }
 
 function get_cpu_exclude() {
@@ -124,17 +123,31 @@ function execute_binary() {
 
 function build_libbpf() {
   local open_source_dir=$1
-  local cmake_target_dir=$1/bpf
-  if [ -d "${cmake_target_dir}" ];then
-    echo ${cmake_target_dir} "is exist"
-    return
-  else
-    echo ${cmake_target_dir} "is not exist"
+  local cmake_target_dir="${open_source_dir}/bpf"
+  local src_dir="${open_source_dir}/libbpf/src"
+  local file="${src_dir}/netlink.c"
+
+  if [ -d "${cmake_target_dir}" ]; then
+    echo "${cmake_target_dir} is exist"
+    return 0
   fi
-  pushd "$open_source_dir/libbpf/src"
-  make -j ${cpu_core_num}
-  make install DESTDIR=$open_source_dir/local/bpf
-  echo "install log path: $cmake_target_dir"
+
+  echo "${cmake_target_dir} is not exist"
+
+  if ! grep -q 'OPTS_SET(opts, feature_flags' "${file}"; then
+    echo "apply libbpf patch a20b60f"
+    sed -i \
+      -e 's/opts->feature_flags = md\.flags;/OPTS_SET(opts, feature_flags, md.flags);/' \
+      -e 's/opts->xdp_zc_max_segs = md\.xdp_zc_max_segs;/OPTS_SET(opts, xdp_zc_max_segs, md.xdp_zc_max_segs);/' \
+      "${file}"
+  fi
+
+  pushd "${src_dir}" >/dev/null || return 1
+  make -j "${cpu_core_num}" || return 1
+  make install DESTDIR="${open_source_dir}/local/bpf" || return 1
+  popd >/dev/null || return 1
+
+  echo "install log path: ${cmake_target_dir}"
 }
 
 function build_skel_files() {
@@ -164,4 +177,102 @@ function build_skel_files() {
     grep -q 'struct bpf_prog' "$skel_path" || { echo "Error: invalid skeleton format."; exit 1; }
     echo "generate: ${src_name}.skel.h"
   done
+}
+
+function build_capstone() {
+  local open_source_dir=$1
+  local cmake_target_dir=$1/local/capstone
+  if [ -d "${cmake_target_dir}" ];then
+    return
+  fi
+  cd "$open_source_dir/capstone"
+  mkdir -p build
+  pushd build
+  cmake -DCMAKE_INSTALL_PREFIX=$cmake_target_dir -DCMAKE_POSITION_INDEPENDENT_CODE=ON ..
+  make -j ${cpu_core_num}
+  make install
+}
+
+function build_java_trace() {
+  echo "enable java trace compilation"
+  local install_path=$1
+  local root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  local java_trace_dir="${root_dir}/java/java_trace"
+  local trace_filter_config="${root_dir}/pmu/trace/trace_filter.conf"
+  local trace_java_lib_dir="${install_path}/lib/java"
+  local trace_conf_dir="${install_path}/conf"
+  if [ ! -d "${java_trace_dir}" ]; then
+    echo "ERROR: java trace directory not found: ${java_trace_dir}" >&2
+    return 1
+  fi
+  mkdir -p "${trace_java_lib_dir}"
+  mkdir -p "${trace_conf_dir}"
+  pushd "${java_trace_dir}" >/dev/null || return 1
+  local build_ok=1
+
+  # try gradle
+  echo "try to build java-trace with Gradle"
+  local gradle_cmd="$(command -v gradle 2>/dev/null)"
+  if [ -n "${gradle_cmd}" ]; then
+    echo "using Gradle: ${gradle_cmd}"
+    if "${gradle_cmd}" clean build -PlibkperfJavaOutDir="${trace_java_lib_dir}"; then
+      build_ok=0
+    else
+      build_ok=$?
+      echo "Gradle build failed, exit code: ${build_ok}"
+    fi
+  else
+    echo "Gradle not found, skip Gradle build"
+    build_ok=1
+  fi
+
+  # try maven
+  if [ ${build_ok} -ne 0 ]; then
+    echo "try to build java-trace with Maven"
+    local maven_cmd="$(command -v mvn 2>/dev/null)"
+    if [ -n "${maven_cmd}" ]; then
+      echo "using Maven: ${maven_cmd}"
+      if "${maven_cmd}" clean package -Dlibkperf.java.out.dir="${trace_java_lib_dir}"; then
+        build_ok=0
+      else
+        build_ok=$?
+        echo "Maven build failed, exit code: ${build_ok}"
+      fi
+    else
+      echo "Maven not found, skip Maven build"
+      build_ok=1
+    fi
+  fi
+
+  popd >/dev/null || return 1
+  if [ ${build_ok} -ne 0 ]; then
+    echo "ERROR: java-trace build failed with both Gradle and Maven" >&2
+    return 1
+  fi
+
+  if [ ! -f "${trace_java_lib_dir}/trace_agent.jar" ]; then
+    echo "ERROR: missing ${trace_java_lib_dir}/trace_agent.jar" >&2
+    return 1
+  fi
+  if [ ! -f "${trace_java_lib_dir}/trace_cli.jar" ]; then
+    echo "ERROR: missing ${trace_java_lib_dir}/trace_cli.jar" >&2
+    return 1
+  fi
+  if [ ! -f "${trace_java_lib_dir}/libtracex_threadinfo.so" ]; then
+    echo "ERROR: missing ${trace_java_lib_dir}/libtracex_threadinfo.so" >&2
+    return 1
+  fi
+
+  # Install the shared trace filter configuration used by the Java backend.
+  if [ -f "${trace_filter_config}" ]; then
+    cp -f "${trace_filter_config}" "${trace_conf_dir}/trace_filter.conf"
+    echo "trace_filter.conf copied to ${trace_conf_dir}/"
+  else
+    echo "WARNING: trace filter config not found: ${trace_filter_config}" >&2
+  fi
+
+  echo "java trace artifacts generated:"
+  echo "  ${trace_java_lib_dir}/trace_agent.jar"
+  echo "  ${trace_java_lib_dir}/trace_cli.jar"
+  echo "  ${trace_java_lib_dir}/libtracex_threadinfo.so"
 }

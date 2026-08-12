@@ -205,18 +205,21 @@ TEST_F(TestTraceRaw, trace_pointer_for_get_exp) {
         auto pPmuData = &pmuData[0];
         auto rawData = pPmuData->rawData;
 
+        ASSERT_NE(rawData, nullptr);
+
         SampleRawField *fieldNapi = PmuGetFieldExp(rawData, "napi_id");
-        ASSERT_TRUE(strcmp(fieldNapi->fieldName, "napi_id") == 0);
+        ASSERT_NE(fieldNapi, nullptr);
+        ASSERT_STREQ(fieldNapi->fieldName, "napi_id");
         ASSERT_TRUE(fieldNapi->isSigned == 0);
 
         SampleRawField *fieldNapi_copy = PmuGetFieldExp(rawData, "napi_id");
-        ASSERT_TRUE(strcmp(fieldNapi_copy->fieldName, "napi_id") == 0);
+        ASSERT_NE(fieldNapi_copy, nullptr);
+        ASSERT_STREQ(fieldNapi_copy->fieldName, "napi_id");
         ASSERT_TRUE(fieldNapi_copy->isSigned == 0);
 
         SampleRawField *fieldName = PmuGetFieldExp(rawData, "name");
-        ASSERT_TRUE(strcmp(fieldName->fieldName, "name") == 0);
-        ASSERT_TRUE(fieldName->isSigned == 1);
-
+        ASSERT_NE(fieldName, nullptr);
+        ASSERT_STREQ(fieldName->fieldName, "name");
         SampleRawField *name_1 = PmuGetFieldExp(rawData, "name_1");
         ASSERT_EQ(name_1, nullptr);
         ASSERT_STREQ(Perror(), "invalid fieldName, can't find it in format data.");

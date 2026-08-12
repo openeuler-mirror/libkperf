@@ -148,6 +148,12 @@ namespace KUNPENG_PMU {
         traceDataItem.tid = enterPmuData.tid;
         traceDataItem.cpu = enterPmuData.cpu;
         traceDataItem.comm = enterPmuData.comm;
+        // Copy call stack if available. (determined by whether stack is nullptr in enterPmuData)
+        if (enterPmuData.stack != nullptr) {
+            traceDataItem.stack = enterPmuData.stack;
+        } else {
+            traceDataItem.stack = nullptr;
+        }
 
         traceData.emplace_back(traceDataItem);
     }
@@ -169,7 +175,7 @@ namespace KUNPENG_PMU {
         return syscallTable[NR_SYSCALL].c_str();
     }
 
-    std::vector<PmuTraceData>& PmuAnalysis::AnalyzeRawTraceData(int pd, PmuData *pmuData, unsigned len)
+    std::vector<PmuTraceData>& PmuAnalysis::AnalyzeRawTraceData(unsigned pd, PmuData *pmuData, unsigned len)
     {
         vector<PmuTraceData> traceData;
         const int pairNum = 2;
@@ -219,14 +225,14 @@ namespace KUNPENG_PMU {
         TraceEventData newTraceData = {
             .pd = pd,
             .traceType = TRACE_SYS_CALL,
-            .data = move(traceData),
+            .data = move(traceData)
         };
         oriPmuData[newTraceData.data.data()] = pmuData;
         auto inserted = traceDataList.emplace(newTraceData.data.data(), move(newTraceData));
         return inserted.first->second.data;
     }
 
-    std::vector<PmuTraceData>& PmuAnalysis::AnalyzeTraceData(int pd, PmuData *pmuData, unsigned len)
+    std::vector<PmuTraceData>& PmuAnalysis::AnalyzeTraceData(unsigned pd, PmuData *pmuData, unsigned len)
     {
         int oriDataLen = len;
         vector<string>& funList = funcsList.at(pd);
@@ -279,7 +285,7 @@ namespace KUNPENG_PMU {
         TraceEventData newTraceData = {
             .pd = pd,
             .traceType = TRACE_SYS_CALL,
-            .data = move(traceData),
+            .data = move(traceData)
         };
         oriPmuData[newTraceData.data.data()] = pmuData;
         auto inserted = traceDataList.emplace(newTraceData.data.data(), move(newTraceData));
