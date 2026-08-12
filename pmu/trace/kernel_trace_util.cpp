@@ -317,6 +317,51 @@ static bool IsCpuDirectory(const char *name)
     return true;
 }
 
+static bool SavePerCpuBufferSizes(const std::string &traceRoot,
+    std::unordered_map<std::string, std::string> &sizes, std::string *error)
+{
+    sizes.clear();
+    std::string perCpuPath = traceRoot + "/per_cpu";
+    DIR *perCpu = opendir(perCpuPath.c_str());
+    if (perCpu == nullptr) {
+        if (error != nullptr) {
+            *error = "Cannot open " + perCpuPath + " while saving per-CPU trace buffer sizes: " +
+                std::strerror(errno);
+        }
+        return false;
+    }
+
+    bool ok = true;
+    struct dirent *entry = nullptr;
+    while ((entry = readdir(perCpu)) != nullptr) {
+        if (!IsCpuDirectory(entry->d_name)) {
+            continue;
+        }
+        std::string cpuName = entry->d_name;
+        std::string path = perCpuPath + "/" + cpuName + "/buffer_size_kb";
+        std::string value;
+        if (!ReadTextFile(path, value) || Trim(value).empty()) {
+            if (error != nullptr) {
+                *error = "Cannot read per-CPU trace buffer size from " + path;
+            }
+            ok = false;
+            break;
+        }
+        sizes.emplace(std::move(cpuName), Trim(value));
+    }
+    closedir(perCpu);
+    if (ok && sizes.empty()) {
+        if (error != nullptr) {
+            *error = "No per-CPU trace buffer sizes found under " + perCpuPath;
+        }
+        ok = false;
+    }
+    if (!ok) {
+        sizes.clear();
+    }
+    return ok;
+}
+
 static bool TraceBufferIsEmpty(const std::string &tracePath, std::string *detail = nullptr)
 {
     // Prefer per-CPU statistics. Unlike the human-readable trace header, the
@@ -505,6 +550,12 @@ bool AcquireGlobalTraceFs(KernelTraceManager::Session &session, std::string *glo
     session.saved.bufferSizeKb = Trim(session.saved.bufferSizeKb);
     if (session.saved.clock.empty() || session.saved.bufferSizeKb.empty()) {
         return fail("Cannot determine global tracefs clock or buffer size");
+    }
+    if (session.saved.bufferSizeKb == "X") {
+        std::string bufferError;
+        if (!SavePerCpuBufferSizes(root, session.saved.perCpuBufferSizeKb, &bufferError)) {
+            return fail(bufferError);
+        }
     }
     for (const char *option : K_CHANGED_TRACE_OPTIONS) {
         std::string path = root + "/options/" + option;
@@ -925,7 +976,15 @@ void ResetGlobalTraceFs(KernelTraceManager::Session &session)
             TraceLog("[trace-kernel] warning: failed to restore option " + option.first + ": " + ignored + "\n");
         }
     }
-    if (!session.saved.bufferSizeKb.empty() &&
+    if (session.saved.bufferSizeKb == "X") {
+        for (const auto &buffer : session.saved.perCpuBufferSizeKb) {
+            std::string path = session.traceFsPath + "/per_cpu/" + buffer.first + "/buffer_size_kb";
+            if (!WriteTraceFile(path, buffer.second + "\n", &ignored)) {
+                TraceLog("[trace-kernel] warning: failed to restore buffer size for " + buffer.first + ": " +
+                    ignored + "\n");
+            }
+        }
+    } else if (!session.saved.bufferSizeKb.empty() &&
         !WriteTraceFile(session.traceFsPath + "/buffer_size_kb", session.saved.bufferSizeKb + "\n", &ignored)) {
         TraceLog("[trace-kernel] warning: failed to restore buffer size: " + ignored + "\n");
     }
