@@ -34,6 +34,7 @@ struct UTraceSymbolFilterConfig {
     std::vector<std::string> kernelExcludes;
     std::vector<std::string> nativeIncludes;
     std::vector<std::string> nativeExcludes;
+    std::vector<std::string> javaIncludes;
 };
 
 std::string StripTraceConfigComment(const std::string &line);

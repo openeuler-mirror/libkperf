@@ -640,6 +640,7 @@ int UTraceOpen(struct UTraceAttr *attr)
         pcerr::New(LIBPERF_ERR_NULL_POINTER, "UTraceAttr pidList cannot be null");
         return -1;
     }
+    TraceLog("[trace] UTraceOpen target pid=" + std::to_string(attr->pidList[0]) + "\n");
 
     UTraceSymbolFilterConfig filter = LoadUTraceSymbolFilterConfig(FilterConfigPath());
     if (!filter.valid) {
@@ -649,14 +650,28 @@ int UTraceOpen(struct UTraceAttr *attr)
     UTraceSymbolSplit symbols = SplitUTraceSymbols(attr, filter);
     size_t nativeAttrSymbols = symbols.userSymbols.size();
     size_t nativeIncludeMatched = AppendConfiguredNativeSymbols(symbols, filter);
-    bool isJvm = IsJvmProcess(attr->pidList[0]);
-    if (!isJvm) {
+    UTraceAttr userAttr = *attr;
+    userAttr.symSrc = symbols.userSymbols.empty() ? nullptr : symbols.userSymbols.data();
+    userAttr.numSym = static_cast<unsigned>(symbols.userSymbols.size());
+    SplitTraceAttr split = SplitSymbolsByRegex(&userAttr);
+    bool hasJavaSymbols = !split.javaSymSrc.empty();
+    bool hasJavaConfig = !filter.javaIncludes.empty();
+    bool isJvm = (hasJavaSymbols || hasJavaConfig) && IsJvmProcess(attr->pidList[0]);
+    if (hasJavaSymbols && !isJvm) {
+        pcerr::New(LIBPERF_ERR_UTRACE_JAVA_PROCESS_FAILED, "Java symbols were requested, but target process is not a JVM");
+        return -1;
+    }
+    bool hasJavaRequest = hasJavaSymbols || (hasJavaConfig && isJvm);
+    if (!hasJavaRequest) {
         size_t nativeExcludeMatched = FilterNativeSymbols(symbols.userSymbols, filter);
         TraceLog("[trace-native] config: attr_symbols=" + std::to_string(nativeAttrSymbols) +
             ", include_matched=" + std::to_string(nativeIncludeMatched) +
             ", exclude_matched=" + std::to_string(nativeExcludeMatched) + "\n");
     }
-    bool hasUserTrace = !symbols.userSymbols.empty();
+    TraceLog("[trace-java] decision: attr_symbols=" + std::to_string(split.javaSymSrc.size()) +
+        ", config_includes=" + std::to_string(filter.javaIncludes.size()) +
+        ", enabled=" + std::string(hasJavaRequest ? "true" : "false") + "\n");
+    bool hasUserTrace = !symbols.userSymbols.empty() || hasJavaRequest;
     bool hasKernelTrace = !symbols.kernelFunctions.empty() || !filter.kernelIncludes.empty();
     if (!hasUserTrace && !hasKernelTrace) {
         pcerr::New(LIBPERF_ERR_INVALID_TRACE_CONF, "UTraceAttr symSrc has no symbols allowed by trace_filter.conf");
@@ -668,10 +683,8 @@ int UTraceOpen(struct UTraceAttr *attr)
         traceLogSessionId, " =======================================\n"));
     int userPd = -1;
     if (hasUserTrace) {
-        UTraceAttr userAttr = *attr;
-        userAttr.symSrc = symbols.userSymbols.data();
-        userAttr.numSym = static_cast<unsigned>(symbols.userSymbols.size());
-        userPd = isJvm ? UTraceOpenJvm(&userAttr, filter, nativeIncludeMatched) : OpenNativeBackend(&userAttr, filter.nativeSamplePeriod);
+        userPd = hasJavaRequest ? UTraceOpenJvm(&userAttr, filter, nativeIncludeMatched) :
+            OpenNativeBackend(&userAttr, filter.nativeSamplePeriod);
         if (userPd < 0) {
             WriteTraceLogSessionEnd(traceLogSessionId, -1, "open_failed");
             return -1;
@@ -681,7 +694,7 @@ int UTraceOpen(struct UTraceAttr *attr)
         return CommitTraceLogSession(userPd, traceLogSessionId);
     }
 
-    if (isJvm && userPd >= 0 && PrepareJavaTrace(userPd) != 0) {
+    if (hasJavaRequest && userPd >= 0 && PrepareJavaTrace(userPd) != 0) {
         int err = Perrorno();
         std::string errMsg = Perror() == nullptr ? "" : Perror();
         CloseUserTrace(userPd);

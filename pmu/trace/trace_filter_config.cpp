@@ -121,6 +121,8 @@ UTraceSymbolFilterConfig LoadUTraceSymbolFilterConfig(const std::string &path)
                 rules = &out.nativeIncludes;
             } else if (section == "native_exclude") {
                 rules = &out.nativeExcludes;
+            } else if (section == "java_include") {
+                rules = &out.javaIncludes;
             } else {
                 rules = nullptr;
             }
