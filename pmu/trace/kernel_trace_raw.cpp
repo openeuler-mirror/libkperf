@@ -637,20 +637,6 @@ bool StartRawTraceStream(KernelTraceManager::Session &session, std::string *erro
         return false;
     }
     stream->readBuffer.resize(stream->subbufferSize);
-    TraceLog("[trace-kernel] raw format: subbuffer_size=" + std::to_string(stream->subbufferSize) +
-        ", page_timestamp=" + std::to_string(stream->pageFormat.timestamp.offset) + "/" +
-        std::to_string(stream->pageFormat.timestamp.size) +
-        ", page_commit=" + std::to_string(stream->pageFormat.commit.offset) + "/" +
-        std::to_string(stream->pageFormat.commit.size) +
-        ", page_data_offset=" + std::to_string(stream->pageFormat.data.offset) +
-        ", entry_id=" + std::to_string(stream->entryFormat.id) +
-        ", return_id=" + std::to_string(stream->returnFormat.id) +
-        ", common_type=" + std::to_string(stream->entryFormat.commonType.offset) + "/" +
-        std::to_string(stream->entryFormat.commonType.size) +
-        ", common_pid=" + std::to_string(stream->entryFormat.commonPid.offset) + "/" +
-        std::to_string(stream->entryFormat.commonPid.size) +
-        ", func=" + std::to_string(stream->entryFormat.function.offset) + "/" +
-        std::to_string(stream->entryFormat.function.size) + "\n");
 
     DIR *directory = opendir((root + "/per_cpu").c_str());
     if (directory == nullptr) {
@@ -794,29 +780,6 @@ bool TakeRawTraceEvents(KernelTraceManager::Session &session, std::vector<RawFun
         return false;
     }
 
-    std::ostringstream typeSummary;
-    bool firstType = true;
-    for (const auto &type : session.rawStream->observedEventTypes) {
-        if (!firstType) {
-            typeSummary << ",";
-        }
-        firstType = false;
-        typeSummary << type.first << ":" << type.second;
-    }
-    TraceLog("[trace-kernel] raw decode: pages=" + std::to_string(session.rawStream->rawPages) +
-        ", page_data_bytes=" + std::to_string(session.rawStream->pageDataBytes) +
-        ", ring_records=" + std::to_string(session.rawStream->ringRecords) +
-        ", data_records=" + std::to_string(session.rawStream->dataRecords) +
-        ", entry_records=" + std::to_string(session.rawStream->entryRecords) +
-        ", return_records=" + std::to_string(session.rawStream->returnRecords) +
-        ", other_event_records=" + std::to_string(session.rawStream->otherEventRecords) +
-        ", invalid_payload_records=" + std::to_string(session.rawStream->invalidPayloadRecords) +
-        ", adjusted_address_records=" + std::to_string(session.rawStream->adjustedAddressRecords) +
-        ", address_miss_records=" + std::to_string(session.rawStream->addressMissRecords) +
-        ", truncated_records=" + std::to_string(session.rawStream->truncatedRecords) +
-        ", missed_pages=" + std::to_string(session.rawStream->missedPages) +
-        ", missed_events=" + std::to_string(session.rawStream->missedEvents) +
-        ", observed_types=[" + typeSummary.str() + "]\n");
     if (session.rawStream->missedPages != 0) {
         if (error != nullptr) {
             *error = "trace_pipe_raw reported lost ring-buffer events: pages=" +

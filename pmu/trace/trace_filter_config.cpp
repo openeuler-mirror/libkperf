@@ -175,5 +175,5 @@ std::string FormatTraceFilterRuleStatus(const std::vector<std::string> &includes
     std::string ineffective;
     AppendRuleStatus(effective, ineffective, includes, includeMatched, "include");
     AppendRuleStatus(effective, ineffective, excludes, excludeMatched, "exclude");
-    return "effective=[" + effective + "], ineffective=[" + ineffective + "]";
+    return "matched=[" + effective + "], unmatched=[" + ineffective + "]";
 }

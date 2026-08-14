@@ -75,6 +75,12 @@ public final class TraceFilterFile {
                     return invalid(out, path, lineNo, "unknown section", s);
                 }
 
+                // Native and kernel sections are parsed by their own trace backends.
+                // Java must not validate their keys or rule syntax.
+                if (isNonJavaSection(section)) {
+                    continue;
+                }
+
                 int eq = s.indexOf('=');
                 if (eq >= 0) {
                     String k = s.substring(0, eq).trim();
@@ -103,10 +109,6 @@ public final class TraceFilterFile {
                     } else {
                         return invalid(out, path, lineNo, "unknown key", k);
                     }
-                    continue;
-                }
-
-                if (isNonJavaSection(section)) {
                     continue;
                 }
 

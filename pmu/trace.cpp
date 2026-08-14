@@ -545,7 +545,6 @@ static void WarnOptionalJvmNativeTraceFailure(int warning, const char *operation
 static int UTraceOpenJvm(UTraceAttr *attr, const UTraceSymbolFilterConfig &filter)
 {
     SplitTraceAttr split = SplitSymbolsByRegex(attr);
-    LogNativeFilterStatus(filter, split.nativeSymSrc);
     FilterNativeSymbols(split.nativeSymSrc, filter);
     bool hasNative = !split.nativeSymSrc.empty();
     int pd = PmuList::GetInstance()->NewPd();
@@ -660,8 +659,6 @@ int UTraceOpen(struct UTraceAttr *attr)
         pcerr::New(LIBPERF_ERR_NULL_POINTER, "UTraceAttr pidList cannot be null");
         return -1;
     }
-    TraceLog("[trace] UTraceOpen target pid=" + std::to_string(attr->pidList[0]) + "\n");
-
     UTraceSymbolFilterConfig filter = LoadUTraceSymbolFilterConfig(FilterConfigPath());
     if (!filter.valid) {
         pcerr::New(LIBPERF_ERR_INVALID_TRACE_CONF, filter.error);
@@ -682,12 +679,8 @@ int UTraceOpen(struct UTraceAttr *attr)
     }
     bool hasJavaRequest = hasJavaSymbols || (hasJavaConfig && isJvm);
     if (!hasJavaRequest) {
-        LogNativeFilterStatus(filter, symbols.userSymbols);
         FilterNativeSymbols(symbols.userSymbols, filter);
     }
-    TraceLog("[trace-java] decision: attr_symbols=" + std::to_string(split.javaSymSrc.size()) +
-        ", config_includes=" + std::to_string(filter.javaIncludes.size()) +
-        ", enabled=" + std::string(hasJavaRequest ? "true" : "false") + "\n");
     bool hasUserTrace = !symbols.userSymbols.empty() || hasJavaRequest;
     bool hasKernelTrace = !symbols.kernelFunctions.empty() || !filter.kernelIncludes.empty();
     if (!hasUserTrace && !hasKernelTrace) {
@@ -698,6 +691,8 @@ int UTraceOpen(struct UTraceAttr *attr)
     std::string traceLogSessionId = TimestampSuffix();
     TraceLog(MakeLogMessage("\n======================================= [trace-session] START id=",
         traceLogSessionId, " =======================================\n"));
+    TraceLog("[trace] UTraceOpen target pid=" + std::to_string(attr->pidList[0]) + "\n");
+    LogNativeFilterStatus(filter, split.nativeSymSrc);
     int userPd = -1;
     if (hasUserTrace) {
         userPd = hasJavaRequest ? UTraceOpenJvm(&userAttr, filter) :

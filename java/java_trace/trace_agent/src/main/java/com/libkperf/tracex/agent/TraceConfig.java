@@ -225,7 +225,7 @@ public final class TraceConfig {
         StringBuilder ineffective = new StringBuilder();
         appendRuleStatus(effective, ineffective, includeRules, matchedIncludeRules, "include");
         appendRuleStatus(effective, ineffective, excludeRules, matchedExcludeRules, "exclude");
-        return "effective=[" + effective + "], ineffective=[" + ineffective + "]";
+        return "matched=[" + effective + "], unmatched=[" + ineffective + "]";
     }
 
     private static void appendRuleStatus(StringBuilder effective, StringBuilder ineffective,
