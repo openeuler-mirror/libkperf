@@ -144,6 +144,31 @@ static size_t FilterNativeSymbols(std::vector<SymbolSource> &symbols, const UTra
     return before - symbols.size();
 }
 
+static std::vector<bool> MatchNativeRules(const std::vector<std::string> &rules,
+                                          const std::vector<SymbolSource> &symbols)
+{
+    std::vector<bool> matched(rules.size(), false);
+    for (const SymbolSource &source : symbols) {
+        std::string module = source.moduleName == nullptr ? "" : source.moduleName;
+        std::string symbol = source.symbolName == nullptr ? "" : source.symbolName;
+        for (size_t i = 0; i < rules.size(); ++i) {
+            if (MatchesTraceSymbolRule(rules[i], module, symbol)) {
+                matched[i] = true;
+            }
+        }
+    }
+    return matched;
+}
+
+static void LogNativeFilterStatus(const UTraceSymbolFilterConfig &filter,
+                                  const std::vector<SymbolSource> &symbols)
+{
+    TraceLog("[trace-native] filter: " + FormatTraceFilterRuleStatus(
+        filter.nativeIncludes, filter.nativeExcludes,
+        MatchNativeRules(filter.nativeIncludes, symbols),
+        MatchNativeRules(filter.nativeExcludes, symbols)) + "\n");
+}
+
 static bool IsLiteralNativeIncludeRule(const std::string &rule, std::string &module, std::string &symbol)
 {
     size_t separator = rule.rfind("::");
@@ -517,16 +542,10 @@ static void WarnOptionalJvmNativeTraceFailure(int warning, const char *operation
     pcerr::New(SUCCESS);
 }
 
-static int UTraceOpenJvm(UTraceAttr *attr, const UTraceSymbolFilterConfig &filter, size_t nativeIncludeMatched)
+static int UTraceOpenJvm(UTraceAttr *attr, const UTraceSymbolFilterConfig &filter)
 {
     SplitTraceAttr split = SplitSymbolsByRegex(attr);
-    size_t nativeSymbolsBeforeExclude = split.nativeSymSrc.size();
-    size_t nativeExcludeMatched = FilterNativeSymbols(split.nativeSymSrc, filter);
-    size_t nativeAttrSymbols = nativeSymbolsBeforeExclude >= nativeIncludeMatched ?
-        nativeSymbolsBeforeExclude - nativeIncludeMatched : nativeSymbolsBeforeExclude;
-    TraceLog("[trace-native] config: attr_symbols=" + std::to_string(nativeAttrSymbols) +
-        ", include_matched=" + std::to_string(nativeIncludeMatched) +
-        ", exclude_matched=" + std::to_string(nativeExcludeMatched) + "\n");
+    FilterNativeSymbols(split.nativeSymSrc, filter);
     bool hasNative = !split.nativeSymSrc.empty();
     int pd = PmuList::GetInstance()->NewPd();
     if (pd == -1) {
@@ -640,23 +659,29 @@ int UTraceOpen(struct UTraceAttr *attr)
         pcerr::New(LIBPERF_ERR_NULL_POINTER, "UTraceAttr pidList cannot be null");
         return -1;
     }
-
     UTraceSymbolFilterConfig filter = LoadUTraceSymbolFilterConfig(FilterConfigPath());
     if (!filter.valid) {
         pcerr::New(LIBPERF_ERR_INVALID_TRACE_CONF, filter.error);
         return -1;
     }
     UTraceSymbolSplit symbols = SplitUTraceSymbols(attr, filter);
-    size_t nativeAttrSymbols = symbols.userSymbols.size();
-    size_t nativeIncludeMatched = AppendConfiguredNativeSymbols(symbols, filter);
-    bool isJvm = IsJvmProcess(attr->pidList[0]);
-    if (!isJvm) {
-        size_t nativeExcludeMatched = FilterNativeSymbols(symbols.userSymbols, filter);
-        TraceLog("[trace-native] config: attr_symbols=" + std::to_string(nativeAttrSymbols) +
-            ", include_matched=" + std::to_string(nativeIncludeMatched) +
-            ", exclude_matched=" + std::to_string(nativeExcludeMatched) + "\n");
+    AppendConfiguredNativeSymbols(symbols, filter);
+    UTraceAttr userAttr = *attr;
+    userAttr.symSrc = symbols.userSymbols.empty() ? nullptr : symbols.userSymbols.data();
+    userAttr.numSym = static_cast<unsigned>(symbols.userSymbols.size());
+    SplitTraceAttr split = SplitSymbolsByRegex(&userAttr);
+    bool hasJavaSymbols = !split.javaSymSrc.empty();
+    bool hasJavaConfig = !filter.javaIncludes.empty();
+    bool isJvm = (hasJavaSymbols || hasJavaConfig) && IsJvmProcess(attr->pidList[0]);
+    if (hasJavaSymbols && !isJvm) {
+        pcerr::New(LIBPERF_ERR_UTRACE_JAVA_PROCESS_FAILED, "Java symbols were requested, but target process is not a JVM");
+        return -1;
     }
-    bool hasUserTrace = !symbols.userSymbols.empty();
+    bool hasJavaRequest = hasJavaSymbols || (hasJavaConfig && isJvm);
+    if (!hasJavaRequest) {
+        FilterNativeSymbols(symbols.userSymbols, filter);
+    }
+    bool hasUserTrace = !symbols.userSymbols.empty() || hasJavaRequest;
     bool hasKernelTrace = !symbols.kernelFunctions.empty() || !filter.kernelIncludes.empty();
     if (!hasUserTrace && !hasKernelTrace) {
         pcerr::New(LIBPERF_ERR_INVALID_TRACE_CONF, "UTraceAttr symSrc has no symbols allowed by trace_filter.conf");
@@ -666,12 +691,12 @@ int UTraceOpen(struct UTraceAttr *attr)
     std::string traceLogSessionId = TimestampSuffix();
     TraceLog(MakeLogMessage("\n======================================= [trace-session] START id=",
         traceLogSessionId, " =======================================\n"));
+    TraceLog("[trace] UTraceOpen target pid=" + std::to_string(attr->pidList[0]) + "\n");
+    LogNativeFilterStatus(filter, split.nativeSymSrc);
     int userPd = -1;
     if (hasUserTrace) {
-        UTraceAttr userAttr = *attr;
-        userAttr.symSrc = symbols.userSymbols.data();
-        userAttr.numSym = static_cast<unsigned>(symbols.userSymbols.size());
-        userPd = isJvm ? UTraceOpenJvm(&userAttr, filter, nativeIncludeMatched) : OpenNativeBackend(&userAttr, filter.nativeSamplePeriod);
+        userPd = hasJavaRequest ? UTraceOpenJvm(&userAttr, filter) :
+            OpenNativeBackend(&userAttr, filter.nativeSamplePeriod);
         if (userPd < 0) {
             WriteTraceLogSessionEnd(traceLogSessionId, -1, "open_failed");
             return -1;
@@ -681,7 +706,7 @@ int UTraceOpen(struct UTraceAttr *attr)
         return CommitTraceLogSession(userPd, traceLogSessionId);
     }
 
-    if (isJvm && userPd >= 0 && PrepareJavaTrace(userPd) != 0) {
+    if (hasJavaRequest && userPd >= 0 && PrepareJavaTrace(userPd) != 0) {
         int err = Perrorno();
         std::string errMsg = Perror() == nullptr ? "" : Perror();
         CloseUserTrace(userPd);

@@ -27,6 +27,8 @@ namespace kernel_trace {
 struct FunctionSelectionStats {
     size_t includeMatched = 0;
     size_t excludeMatched = 0;
+    std::vector<bool> includeRuleMatched;
+    std::vector<bool> excludeRuleMatched;
 };
 
 struct RawFunctionGraphEvent {

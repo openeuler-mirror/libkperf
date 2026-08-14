@@ -21,6 +21,7 @@
 #include <unordered_set>
 #include "pcerr.h"
 #include "trace_log.h"
+#include "trace_filter_config.h"
 
 using namespace pcerr;
 
@@ -84,8 +85,11 @@ int KernelTraceManager::Open(const UTraceAttr *traceAttr, const std::vector<std:
 
     kernel_trace::FunctionSelectionStats selectionStats;
     std::vector<std::string> selected;
-    if (!kernel_trace::SelectTraceableFunctions(functions, includePatterns, excludePatterns,
-                                  available, availablePath, selected, &selectionStats)) {
+    bool selectionOk = kernel_trace::SelectTraceableFunctions(functions, includePatterns, excludePatterns,
+                                  available, availablePath, selected, &selectionStats);
+    TraceLog("[trace-kernel] filter: " + FormatTraceFilterRuleStatus(includePatterns, excludePatterns,
+        selectionStats.includeRuleMatched, selectionStats.excludeRuleMatched) + "\n");
+    if (!selectionOk) {
         return -1;
     }
 
@@ -124,10 +128,6 @@ int KernelTraceManager::Open(const UTraceAttr *traceAttr, const std::vector<std:
         return -1;
     }
     sessions_.emplace(pd, std::move(session));
-    TraceLog("[trace-kernel] attr_symbols=" + std::to_string(functions.size()) +
-        ", include_matched=" + std::to_string(selectionStats.includeMatched) +
-        ", exclude_matched=" + std::to_string(selectionStats.excludeMatched) +
-        ", buffer_size_kb_per_cpu=" + std::to_string(bufferSizeKb) + "\n");
     return pd;
 }
 

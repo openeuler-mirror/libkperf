@@ -695,6 +695,8 @@ bool SelectTraceableFunctions(const std::vector<std::string> &requested, const s
 {
     if (stats != nullptr) {
         *stats = {};
+        stats->includeRuleMatched.resize(includePatterns.size(), false);
+        stats->excludeRuleMatched.resize(excludePatterns.size(), false);
     }
     std::unordered_set<std::string> seen;
     std::vector<std::string> candidates;
@@ -704,7 +706,17 @@ bool SelectTraceableFunctions(const std::vector<std::string> &requested, const s
         }
     }
     for (const std::string &function : available) {
-        if (MatchesAnyKernelRule(includePatterns, function)) {
+        bool included = false;
+        for (size_t i = 0; i < includePatterns.size(); ++i) {
+            if (!MatchesKernelRule(includePatterns[i], function)) {
+                continue;
+            }
+            included = true;
+            if (stats != nullptr) {
+                stats->includeRuleMatched[i] = true;
+            }
+        }
+        if (included) {
             if (stats != nullptr) {
                 ++stats->includeMatched;
             }
@@ -717,7 +729,17 @@ bool SelectTraceableFunctions(const std::vector<std::string> &requested, const s
     std::vector<std::string> excluded;
     std::vector<std::string> unavailable;
     for (const std::string &function : candidates) {
-        if (MatchesAnyKernelRule(excludePatterns, function)) {
+        bool excludedByRule = false;
+        for (size_t i = 0; i < excludePatterns.size(); ++i) {
+            if (!MatchesKernelRule(excludePatterns[i], function)) {
+                continue;
+            }
+            excludedByRule = true;
+            if (stats != nullptr) {
+                stats->excludeRuleMatched[i] = true;
+            }
+        }
+        if (excludedByRule) {
             excluded.push_back(function);
             if (stats != nullptr) {
                 ++stats->excludeMatched;
