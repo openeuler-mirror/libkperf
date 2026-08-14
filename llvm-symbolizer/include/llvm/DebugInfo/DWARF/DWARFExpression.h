@@ -55,7 +55,8 @@ public:
       DwarfNA, ///< Serves as a marker for unused entries
       Dwarf2 = 2,
       Dwarf3,
-      Dwarf4
+      Dwarf4,
+      Dwarf5
     };
 
     /// Description of the encoding of one expression Op.
