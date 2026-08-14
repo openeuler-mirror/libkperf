@@ -42,6 +42,8 @@ public final class TraceConfig {
     public final List<FilterRule> excludeRules;
 
     private volatile Set<MethodId> contextMethods = Collections.emptySet();
+    private final Set<FilterRule> matchedIncludeRules = Collections.synchronizedSet(new HashSet<FilterRule>());
+    private final Set<FilterRule> matchedExcludeRules = Collections.synchronizedSet(new HashSet<FilterRule>());
 
     private TraceConfig(Map<String, String> args) {
         this.shmPath = Util.get(args, "shmPath", "/tmp/utrace-java-default.shm");
@@ -166,21 +168,24 @@ public final class TraceConfig {
     }
 
     private boolean matchesConfigIncludeClass(String owner) {
+        boolean matched = false;
         for (FilterRule r : includeRules) {
             if (r.matchesClass(owner)) {
-                return true;
+                matched = true;
             }
         }
-        return false;
+        return matched;
     }
 
     private boolean matchesConfigIncludeMethod(String owner, String name, String desc) {
+        boolean matched = false;
         for (FilterRule r : includeRules) {
             if (r.matchesMethod(owner, name, desc)) {
-                return true;
+                matchedIncludeRules.add(r);
+                matched = true;
             }
         }
-        return false;
+        return matched;
     }
 
     private boolean hasContextMethodInClass(String owner) {
@@ -194,21 +199,44 @@ public final class TraceConfig {
     }
 
     boolean isExcludedClass(String owner) {
+        boolean matched = false;
         for (FilterRule r : excludeRules) {
             if (r.isClassOnly() && r.matchesClass(owner)) {
-                return true;
+                matchedExcludeRules.add(r);
+                matched = true;
             }
         }
-        return false;
+        return matched;
     }
 
     boolean isExcludedMethod(String owner, String name, String desc) {
+        boolean matched = false;
         for (FilterRule r : excludeRules) {
             if (r.matchesMethod(owner, name, desc)) {
-                return true;
+                matchedExcludeRules.add(r);
+                matched = true;
             }
         }
-        return false;
+        return matched;
+    }
+
+    public String filterRuleStatus() {
+        StringBuilder effective = new StringBuilder();
+        StringBuilder ineffective = new StringBuilder();
+        appendRuleStatus(effective, ineffective, includeRules, matchedIncludeRules, "include");
+        appendRuleStatus(effective, ineffective, excludeRules, matchedExcludeRules, "exclude");
+        return "effective=[" + effective + "], ineffective=[" + ineffective + "]";
+    }
+
+    private static void appendRuleStatus(StringBuilder effective, StringBuilder ineffective,
+                                         List<FilterRule> rules, Set<FilterRule> matched, String type) {
+        for (FilterRule rule : rules) {
+            StringBuilder target = matched.contains(rule) ? effective : ineffective;
+            if (target.length() > 0) {
+                target.append(", ");
+            }
+            target.append(type).append(':').append(rule.configuredText());
+        }
     }
 
     private static Map<String, String> parseKv(String agentArgs) {

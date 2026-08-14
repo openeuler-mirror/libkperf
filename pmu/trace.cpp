@@ -144,6 +144,31 @@ static size_t FilterNativeSymbols(std::vector<SymbolSource> &symbols, const UTra
     return before - symbols.size();
 }
 
+static std::vector<bool> MatchNativeRules(const std::vector<std::string> &rules,
+                                          const std::vector<SymbolSource> &symbols)
+{
+    std::vector<bool> matched(rules.size(), false);
+    for (const SymbolSource &source : symbols) {
+        std::string module = source.moduleName == nullptr ? "" : source.moduleName;
+        std::string symbol = source.symbolName == nullptr ? "" : source.symbolName;
+        for (size_t i = 0; i < rules.size(); ++i) {
+            if (MatchesTraceSymbolRule(rules[i], module, symbol)) {
+                matched[i] = true;
+            }
+        }
+    }
+    return matched;
+}
+
+static void LogNativeFilterStatus(const UTraceSymbolFilterConfig &filter,
+                                  const std::vector<SymbolSource> &symbols)
+{
+    TraceLog("[trace-native] filter: " + FormatTraceFilterRuleStatus(
+        filter.nativeIncludes, filter.nativeExcludes,
+        MatchNativeRules(filter.nativeIncludes, symbols),
+        MatchNativeRules(filter.nativeExcludes, symbols)) + "\n");
+}
+
 static bool IsLiteralNativeIncludeRule(const std::string &rule, std::string &module, std::string &symbol)
 {
     size_t separator = rule.rfind("::");
@@ -517,16 +542,11 @@ static void WarnOptionalJvmNativeTraceFailure(int warning, const char *operation
     pcerr::New(SUCCESS);
 }
 
-static int UTraceOpenJvm(UTraceAttr *attr, const UTraceSymbolFilterConfig &filter, size_t nativeIncludeMatched)
+static int UTraceOpenJvm(UTraceAttr *attr, const UTraceSymbolFilterConfig &filter)
 {
     SplitTraceAttr split = SplitSymbolsByRegex(attr);
-    size_t nativeSymbolsBeforeExclude = split.nativeSymSrc.size();
-    size_t nativeExcludeMatched = FilterNativeSymbols(split.nativeSymSrc, filter);
-    size_t nativeAttrSymbols = nativeSymbolsBeforeExclude >= nativeIncludeMatched ?
-        nativeSymbolsBeforeExclude - nativeIncludeMatched : nativeSymbolsBeforeExclude;
-    TraceLog("[trace-native] config: attr_symbols=" + std::to_string(nativeAttrSymbols) +
-        ", include_matched=" + std::to_string(nativeIncludeMatched) +
-        ", exclude_matched=" + std::to_string(nativeExcludeMatched) + "\n");
+    LogNativeFilterStatus(filter, split.nativeSymSrc);
+    FilterNativeSymbols(split.nativeSymSrc, filter);
     bool hasNative = !split.nativeSymSrc.empty();
     int pd = PmuList::GetInstance()->NewPd();
     if (pd == -1) {
@@ -648,8 +668,7 @@ int UTraceOpen(struct UTraceAttr *attr)
         return -1;
     }
     UTraceSymbolSplit symbols = SplitUTraceSymbols(attr, filter);
-    size_t nativeAttrSymbols = symbols.userSymbols.size();
-    size_t nativeIncludeMatched = AppendConfiguredNativeSymbols(symbols, filter);
+    AppendConfiguredNativeSymbols(symbols, filter);
     UTraceAttr userAttr = *attr;
     userAttr.symSrc = symbols.userSymbols.empty() ? nullptr : symbols.userSymbols.data();
     userAttr.numSym = static_cast<unsigned>(symbols.userSymbols.size());
@@ -663,10 +682,8 @@ int UTraceOpen(struct UTraceAttr *attr)
     }
     bool hasJavaRequest = hasJavaSymbols || (hasJavaConfig && isJvm);
     if (!hasJavaRequest) {
-        size_t nativeExcludeMatched = FilterNativeSymbols(symbols.userSymbols, filter);
-        TraceLog("[trace-native] config: attr_symbols=" + std::to_string(nativeAttrSymbols) +
-            ", include_matched=" + std::to_string(nativeIncludeMatched) +
-            ", exclude_matched=" + std::to_string(nativeExcludeMatched) + "\n");
+        LogNativeFilterStatus(filter, symbols.userSymbols);
+        FilterNativeSymbols(symbols.userSymbols, filter);
     }
     TraceLog("[trace-java] decision: attr_symbols=" + std::to_string(split.javaSymSrc.size()) +
         ", config_includes=" + std::to_string(filter.javaIncludes.size()) +
@@ -683,7 +700,7 @@ int UTraceOpen(struct UTraceAttr *attr)
         traceLogSessionId, " =======================================\n"));
     int userPd = -1;
     if (hasUserTrace) {
-        userPd = hasJavaRequest ? UTraceOpenJvm(&userAttr, filter, nativeIncludeMatched) :
+        userPd = hasJavaRequest ? UTraceOpenJvm(&userAttr, filter) :
             OpenNativeBackend(&userAttr, filter.nativeSamplePeriod);
         if (userPd < 0) {
             WriteTraceLogSessionEnd(traceLogSessionId, -1, "open_failed");

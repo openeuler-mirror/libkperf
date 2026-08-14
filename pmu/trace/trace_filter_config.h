@@ -41,3 +41,9 @@ std::string StripTraceConfigComment(const std::string &line);
 UTraceSymbolFilterConfig LoadUTraceSymbolFilterConfig(const std::string &path);
 bool IsTraceSymbolAllowed(const UTraceSymbolFilterConfig &config, TraceSymbolDomain domain,
                           const std::string &module, const std::string &symbol);
+bool MatchesTraceSymbolRule(const std::string &pattern, const std::string &module,
+                            const std::string &symbol);
+std::string FormatTraceFilterRuleStatus(const std::vector<std::string> &includes,
+                                        const std::vector<std::string> &excludes,
+                                        const std::vector<bool> &includeMatched,
+                                        const std::vector<bool> &excludeMatched);

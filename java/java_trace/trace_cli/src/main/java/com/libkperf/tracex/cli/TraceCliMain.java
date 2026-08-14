@@ -119,6 +119,12 @@ public final class TraceCliMain {
         return t instanceof IOException && t.getMessage() != null && t.getMessage().contains("Non-numeric value found");
     }
 
+    private static boolean isLegacyAttachSuccess(Throwable t) {
+        return t != null
+                && "com.sun.tools.attach.AgentLoadException".equals(t.getClass().getName())
+                && "0".equals(t.getMessage());
+    }
+
     // load through reflection, which ensures compatibility of JDK 8 and JDK 9+
     private static final class VirtualMachineAccess {
         private final Class<?> vmClass;
@@ -157,7 +163,8 @@ public final class TraceCliMain {
             try {
                 loadAgent.invoke(vm, agentJar, args == null ? "" : args);
             } catch (InvocationTargetException e) {
-                if (isNonNumericAttachReply(rootCause(e))) {
+                Throwable cause = rootCause(e);
+                if (isNonNumericAttachReply(cause) || isLegacyAttachSuccess(cause)) {
                     return;
                 }
                 throw e;

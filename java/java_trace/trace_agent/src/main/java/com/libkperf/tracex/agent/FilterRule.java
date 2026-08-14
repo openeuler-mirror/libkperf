@@ -17,6 +17,7 @@ package com.libkperf.tracex.agent;
 import java.util.regex.Pattern;
 
 public final class FilterRule {
+    private final String configuredText;
     private final String classPattern;
     private final String methodPattern;
     private final String descPattern;
@@ -24,7 +25,8 @@ public final class FilterRule {
     private final Pattern methodRegex;
     private final Pattern descRegex;
 
-    private FilterRule(String classPattern, String methodPattern, String descPattern) {
+    private FilterRule(String configuredText, String classPattern, String methodPattern, String descPattern) {
+        this.configuredText = configuredText;
         this.classPattern = normalizeClass(classPattern);
         this.methodPattern = normalizeMethod(methodPattern);
         this.descPattern = normalizeDescriptor(descPattern);
@@ -72,7 +74,7 @@ public final class FilterRule {
         if (method.length() == 0) {
             method = "*";
         }
-        return new FilterRule(cls, method, desc);
+        return new FilterRule(s, cls, method, desc);
     }
 
     public boolean matchesClass(String classNameInternal) {
@@ -110,6 +112,10 @@ public final class FilterRule {
     public boolean isClassOnly() {
         return (methodPattern.length() == 0 || "*".equals(methodPattern) || "**".equals(methodPattern))
                 && descPattern.length() == 0;
+    }
+
+    public String configuredText() {
+        return configuredText;
     }
 
     @Override

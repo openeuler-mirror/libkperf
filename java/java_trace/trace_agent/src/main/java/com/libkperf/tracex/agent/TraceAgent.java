@@ -307,6 +307,7 @@ public final class TraceAgent {
         if (!candidates.isEmpty()) {
             retransformSafely(inst, candidates);
         }
+        TraceLog.info("[trace-java] filter: " + config.filterRuleStatus());
     }
 
     // Collects all classes that are candidates for retransformation.

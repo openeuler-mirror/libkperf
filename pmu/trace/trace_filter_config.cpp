@@ -57,6 +57,20 @@ static bool TryParseFtraceBufferSizeKb(const std::string &value, uint32_t *size)
     *size = parsed;
     return true;
 }
+
+static void AppendRuleStatus(std::string &effective, std::string &ineffective,
+    const std::vector<std::string> &rules, const std::vector<bool> &matched, const char *type)
+{
+    for (size_t i = 0; i < rules.size(); ++i) {
+        std::string &target = i < matched.size() && matched[i] ? effective : ineffective;
+        if (!target.empty()) {
+            target += ", ";
+        }
+        target += type;
+        target += ':';
+        target += rules[i];
+    }
+}
 } // namespace
 
 std::string StripTraceConfigComment(const std::string &line)
@@ -141,10 +155,25 @@ bool IsTraceSymbolAllowed(const UTraceSymbolFilterConfig &config, TraceSymbolDom
 {
     const std::vector<std::string> &excludes =
         domain == TraceSymbolDomain::KERNEL ? config.kernelExcludes : config.nativeExcludes;
-    std::string qualified = module + "::" + symbol;
-    auto matches = [&symbol, &qualified](const std::string &pattern) {
-        return fnmatch(pattern.c_str(), symbol.c_str(), 0) == 0 ||
-               fnmatch(pattern.c_str(), qualified.c_str(), 0) == 0;
+    auto matches = [&module, &symbol](const std::string &pattern) {
+        return MatchesTraceSymbolRule(pattern, module, symbol);
     };
     return !std::any_of(excludes.begin(), excludes.end(), matches);
+}
+
+bool MatchesTraceSymbolRule(const std::string &pattern, const std::string &module, const std::string &symbol)
+{
+    std::string qualified = module + "::" + symbol;
+    return fnmatch(pattern.c_str(), symbol.c_str(), 0) == 0 || fnmatch(pattern.c_str(), qualified.c_str(), 0) == 0;
+}
+
+std::string FormatTraceFilterRuleStatus(const std::vector<std::string> &includes,
+    const std::vector<std::string> &excludes, const std::vector<bool> &includeMatched,
+    const std::vector<bool> &excludeMatched)
+{
+    std::string effective;
+    std::string ineffective;
+    AppendRuleStatus(effective, ineffective, includes, includeMatched, "include");
+    AppendRuleStatus(effective, ineffective, excludes, excludeMatched, "exclude");
+    return "effective=[" + effective + "], ineffective=[" + ineffective + "]";
 }
