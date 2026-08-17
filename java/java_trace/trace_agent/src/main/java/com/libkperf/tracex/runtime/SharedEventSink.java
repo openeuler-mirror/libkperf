@@ -20,6 +20,8 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -62,6 +64,9 @@ final class SharedEventSink implements AutoCloseable {
     private static final int DEFAULT_SLOT_COUNT = 524288;
     private static final int MAX_SLOT_COUNT = 67108864;
     private static final int SLOTS_PER_SEGMENT = 262144;
+    private static final long CLOSE_WAIT_NANOS = 1000000000L;
+    private static final long WRITER_CLOSED = Long.MIN_VALUE;
+    private static final long WRITER_COUNT_MASK = Long.MAX_VALUE;
 
     private final MappedByteBuffer headerBuffer;
     private final MappedByteBuffer[] slotBuffers;
@@ -69,6 +74,7 @@ final class SharedEventSink implements AutoCloseable {
     private final AtomicLong nextSequence = new AtomicLong(1L);
     private final AtomicLong publishedSequence = new AtomicLong(0L);
     private final AtomicLong droppedEvents = new AtomicLong(0L);
+    private final AtomicLong writerState = new AtomicLong(0L);
     private final AtomicBoolean publishing = new AtomicBoolean(false);
     private volatile boolean closed;
 
@@ -119,33 +125,51 @@ final class SharedEventSink implements AutoCloseable {
 
     boolean record(long addr, String comm, int tid, int cpu, long timestamp,
                    long gPtr, String module, String func, int isRet) {
-        if (!isActive()) {
+        if (!enterWriter()) {
             return false;
         }
+        try {
+            if (!isActive()) {
+                return false;
+            }
+            long seq = claimSequence();
+            if (seq <= 0L) {
+                return false;
+            }
 
-        long seq = claimSequence();
-        if (seq <= 0L) {
-            return false;
+            int slotIndex = (int) ((seq - 1L) % slotCount);
+            MappedByteBuffer slotBuffer = slotBuffer(slotIndex);
+            int base = slotOffset(slotIndex);
+
+            slotBuffer.putLong(base + SLOT_ADDR, addr);
+            slotBuffer.putInt(base + SLOT_TID, tid);
+            slotBuffer.putInt(base + SLOT_CPU, cpu);
+            slotBuffer.putLong(base + SLOT_TIMESTAMP, timestamp);
+            slotBuffer.putLong(base + SLOT_GPTR, gPtr);
+            slotBuffer.putInt(base + SLOT_IS_RET, isRet);
+
+            writeString(slotBuffer, base + SLOT_COMM, SLOT_COMM_LEN, comm);
+            writeString(slotBuffer, base + SLOT_MODULE, SLOT_MODULE_LEN, module);
+            writeString(slotBuffer, base + SLOT_FUNC, SLOT_FUNC_LEN, func);
+            // Publish this slot after all slot fields are written.
+            putLongRelease(slotBuffer, base + SLOT_SEQ, seq);
+            drainPublished();
+            return true;
+        } finally {
+            writerState.decrementAndGet();
         }
+    }
 
-        int slotIndex = (int) ((seq - 1L) % slotCount);
-        MappedByteBuffer slotBuffer = slotBuffer(slotIndex);
-        int base = slotOffset(slotIndex);
-
-        slotBuffer.putLong(base + SLOT_ADDR, addr);
-        slotBuffer.putInt(base + SLOT_TID, tid);
-        slotBuffer.putInt(base + SLOT_CPU, cpu);
-        slotBuffer.putLong(base + SLOT_TIMESTAMP, timestamp);
-        slotBuffer.putLong(base + SLOT_GPTR, gPtr);
-        slotBuffer.putInt(base + SLOT_IS_RET, isRet);
-
-        writeString(slotBuffer, base + SLOT_COMM, SLOT_COMM_LEN, comm);
-        writeString(slotBuffer, base + SLOT_MODULE, SLOT_MODULE_LEN, module);
-        writeString(slotBuffer, base + SLOT_FUNC, SLOT_FUNC_LEN, func);
-        // Publish this slot after all slot fields are written.
-        putLongRelease(slotBuffer, base + SLOT_SEQ, seq);
-        drainPublished();
-        return true;
+    private boolean enterWriter() {
+        while (true) {
+            long state = writerState.get();
+            if ((state & WRITER_CLOSED) != 0L) {
+                return false;
+            }
+            if (writerState.compareAndSet(state, state + 1L)) {
+                return true;
+            }
+        }
     }
 
     private long claimSequence() {
@@ -254,23 +278,85 @@ final class SharedEventSink implements AutoCloseable {
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
         if (closed) {
             return;
         }
         closed = true;
+        closeWriterGate();
 
         try {
             putIntRelease(HEADER_ACTIVE, 0);
         } catch (RuntimeException | LinkageError ignored) {
         }
 
-        try {
-            headerBuffer.force();
-            for (MappedByteBuffer slotBuffer : slotBuffers) {
-                slotBuffer.force();
+        long deadline = System.nanoTime() + CLOSE_WAIT_NANOS;
+        while (activeWriterCount() != 0L && System.nanoTime() - deadline < 0L) {
+            Thread.yield();
+        }
+
+        // Never unmap while a writer may still hold a buffer reference.
+        // Removing TraceRuntime's sink reference lets GC clean it later.
+        if (activeWriterCount() != 0L) {
+            return;
+        }
+
+        for (MappedByteBuffer slotBuffer : slotBuffers) {
+            BufferCleaner.clean(slotBuffer);
+        }
+        BufferCleaner.clean(headerBuffer);
+    }
+
+    private void closeWriterGate() {
+        while (true) {
+            long state = writerState.get();
+            if ((state & WRITER_CLOSED) != 0L ||
+                    writerState.compareAndSet(state, state | WRITER_CLOSED)) {
+                return;
             }
-        } catch (RuntimeException | LinkageError ignored) {
+        }
+    }
+
+    private long activeWriterCount() {
+        return writerState.get() & WRITER_COUNT_MASK;
+    }
+
+    private static final class BufferCleaner {
+        private BufferCleaner() {
+        }
+
+        static void clean(MappedByteBuffer buffer) {
+            if (buffer == null || cleanWithUnsafe(buffer)) {
+                return;
+            }
+            cleanWithLegacyCleaner(buffer);
+        }
+
+        private static boolean cleanWithUnsafe(ByteBuffer buffer) {
+            try {
+                Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+                Field field = unsafeClass.getDeclaredField("theUnsafe");
+                field.setAccessible(true);
+                Object unsafe = field.get(null);
+                Method invokeCleaner = unsafeClass.getMethod("invokeCleaner", ByteBuffer.class);
+                invokeCleaner.invoke(unsafe, buffer);
+                return true;
+            } catch (Throwable ignored) {
+                return false;
+            }
+        }
+
+        private static void cleanWithLegacyCleaner(ByteBuffer buffer) {
+            try {
+                Method cleanerMethod = buffer.getClass().getMethod("cleaner");
+                cleanerMethod.setAccessible(true);
+                Object cleaner = cleanerMethod.invoke(buffer);
+                if (cleaner != null) {
+                    Method cleanMethod = cleaner.getClass().getMethod("clean");
+                    cleanMethod.invoke(cleaner);
+                }
+            } catch (Throwable ignored) {
+            }
         }
     }
 

@@ -57,12 +57,12 @@ public final class TraceAgent {
         installBootstrapRuntime(inst);
         TraceConfig config = TraceConfig.parse(agentArgs);
         if (config.isStopAction()) {
-            TraceRuntime.setEnabled(false);
+            TraceRuntime.stop();
             removeActiveTransformer();
             return;
         }
         if (config.isRestoreAction()) {
-            TraceRuntime.setEnabled(false);
+            TraceRuntime.stop();
             removeActiveTransformer();
             try {
                 TraceClassFileTransformer.restoreAll(inst);
@@ -74,7 +74,7 @@ public final class TraceAgent {
         try {
             start(config, inst);
         } catch (Throwable t) {
-            TraceRuntime.setEnabled(false);
+            TraceRuntime.stop();
             removeActiveTransformer();
             TraceLog.warn("[trace-java-agent] start failed, skip instrumentation: " + t, t);
         }
