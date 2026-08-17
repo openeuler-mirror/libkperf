@@ -32,10 +32,13 @@
 #include <deque>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <time.h>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 using namespace KUNPENG_PMU;
@@ -98,6 +101,7 @@ struct UTraceSymbolSplit {
     std::vector<std::string> kernelFunctions;
     std::deque<std::string> configuredNativeModules;
     std::deque<std::string> configuredNativeSymbols;
+    std::vector<std::string> nativeDiagnostics;
 };
 
 static bool IsUnresolvedSymbolSource(const SymbolSource &source)
@@ -182,30 +186,159 @@ static bool IsLiteralNativeIncludeRule(const std::string &rule, std::string &mod
            module.find_first_of("*?[") == std::string::npos && symbol.find_first_of("*?[") == std::string::npos;
 }
 
-static size_t AppendConfiguredNativeSymbols(UTraceSymbolSplit &split, const UTraceSymbolFilterConfig &filter)
+static bool IsSymbolOnlyNativeIncludeRule(const std::string &rule)
+{
+    return !rule.empty() && rule.front() != '/' && rule.find_first_of("*?[") == std::string::npos;
+}
+
+static std::vector<std::string> ReadTargetExecutableModules(int pid, std::vector<std::string> &diagnostics)
+{
+    std::string procPrefix = "/proc/" + std::to_string(pid);
+    std::ifstream maps(procPrefix + "/maps");
+    if (!maps.is_open()) {
+        diagnostics.emplace_back(
+            "[trace-native] warning: cannot read target process maps for symbol-only includes\n");
+        return {};
+    }
+
+    std::vector<std::string> modules;
+    std::unordered_set<std::string> seen;
+    std::string line;
+    while (std::getline(maps, line)) {
+        std::istringstream fields(line);
+        std::string address;
+        std::string permissions;
+        std::string offset;
+        std::string device;
+        std::string inode;
+        if (!(fields >> address >> permissions >> offset >> device >> inode) ||
+            permissions.find('x') == std::string::npos) {
+            continue;
+        }
+        std::string mappedPath;
+        std::getline(fields, mappedPath);
+        mappedPath = Trim(mappedPath);
+        const std::string deletedSuffix = " (deleted)";
+        if (mappedPath.empty() || mappedPath.front() != '/' ||
+            (mappedPath.size() >= deletedSuffix.size() &&
+             mappedPath.compare(mappedPath.size() - deletedSuffix.size(), deletedSuffix.size(), deletedSuffix) == 0)) {
+            continue;
+        }
+        std::string hostPath = procPrefix + "/root" + mappedPath;
+        if (seen.insert(hostPath).second) {
+            modules.emplace_back(std::move(hostPath));
+        }
+    }
+    return modules;
+}
+
+static void AppendConfiguredNativeSymbol(UTraceSymbolSplit &split,
+                                         const std::string &module,
+                                         const std::string &symbol)
+{
+    bool alreadyPresent = std::any_of(split.userSymbols.begin(), split.userSymbols.end(),
+        [&module, &symbol](const SymbolSource &source) {
+            return source.moduleName != nullptr && source.symbolName != nullptr &&
+                   module == source.moduleName && symbol == source.symbolName;
+        });
+    if (alreadyPresent) {
+        return;
+    }
+    split.configuredNativeModules.emplace_back(module);
+    split.configuredNativeSymbols.emplace_back(symbol);
+    SymbolSource source = {0};
+    source.moduleName = const_cast<char *>(split.configuredNativeModules.back().c_str());
+    source.symbolName = const_cast<char *>(split.configuredNativeSymbols.back().c_str());
+    split.userSymbols.emplace_back(source);
+}
+
+static std::string TargetVisibleModulePath(const std::string &module, int pid)
+{
+    std::string procRoot = "/proc/" + std::to_string(pid) + "/root";
+    if (module.compare(0, procRoot.size(), procRoot) == 0 &&
+        module.size() > procRoot.size() && module[procRoot.size()] == '/') {
+        return module.substr(procRoot.size());
+    }
+    return module;
+}
+
+static std::string FormatNativeModuleCandidates(const std::vector<std::string> &modules, int pid)
+{
+    const size_t maxDisplayedModules = 8;
+    std::ostringstream output;
+    output << "[";
+    size_t displayed = std::min(modules.size(), maxDisplayedModules);
+    for (size_t i = 0; i < displayed; ++i) {
+        if (i != 0) {
+            output << ", ";
+        }
+        output << TargetVisibleModulePath(modules[i], pid);
+    }
+    if (modules.size() > displayed) {
+        output << ", ... (+" << (modules.size() - displayed) << ")";
+    }
+    output << "]";
+    return output.str();
+}
+
+static size_t AppendConfiguredNativeSymbols(UTraceSymbolSplit &split,
+                                            const UTraceSymbolFilterConfig &filter,
+                                            int pid)
 {
     size_t appended = 0;
+    std::vector<std::string> symbolOnlyRules;
     for (const std::string &rule : filter.nativeIncludes) {
         std::string module;
         std::string symbol;
-        if (!IsLiteralNativeIncludeRule(rule, module, symbol)) {
+        if (IsLiteralNativeIncludeRule(rule, module, symbol)) {
+            size_t before = split.userSymbols.size();
+            AppendConfiguredNativeSymbol(split, module, symbol);
+            appended += split.userSymbols.size() - before;
             continue;
         }
-        bool alreadyPresent = std::any_of(split.userSymbols.begin(), split.userSymbols.end(),
-            [&module, &symbol](const SymbolSource &source) {
-                return source.moduleName != nullptr && source.symbolName != nullptr &&
-                       module == source.moduleName && symbol == source.symbolName;
-            });
-        if (alreadyPresent) {
+        if (IsSymbolOnlyNativeIncludeRule(rule) &&
+            std::find(symbolOnlyRules.begin(), symbolOnlyRules.end(), rule) == symbolOnlyRules.end()) {
+            symbolOnlyRules.emplace_back(rule);
+        }
+    }
+    if (symbolOnlyRules.empty()) {
+        return appended;
+    }
+
+    std::vector<std::string> modules = ReadTargetExecutableModules(pid, split.nativeDiagnostics);
+    std::unordered_map<std::string, std::vector<std::string>> module2Symbols;
+    for (const std::string &module : modules) {
+        module2Symbols.emplace(module, symbolOnlyRules);
+    }
+    auto resolved = ElfScanner::ResolveElfs(module2Symbols, false);
+    std::unordered_map<std::string, std::vector<std::string>> symbol2Modules;
+    for (const auto &moduleEntry : resolved) {
+        for (const ProbePoints &point : moduleEntry.second) {
+            symbol2Modules[point.symbolName].emplace_back(moduleEntry.first);
+        }
+    }
+
+    for (const std::string &symbol : symbolOnlyRules) {
+        std::vector<std::string> &matches = symbol2Modules[symbol];
+        std::sort(matches.begin(), matches.end());
+        matches.erase(std::unique(matches.begin(), matches.end()), matches.end());
+        if (matches.size() == 1) {
+            size_t before = split.userSymbols.size();
+            AppendConfiguredNativeSymbol(split, matches.front(), symbol);
+            appended += split.userSymbols.size() - before;
+            split.nativeDiagnostics.emplace_back(MakeLogMessage(
+                "[trace-native] symbol-only include resolved: ", symbol, " -> ",
+                TargetVisibleModulePath(matches.front(), pid), "\n"));
             continue;
         }
-        split.configuredNativeModules.emplace_back(std::move(module));
-        split.configuredNativeSymbols.emplace_back(std::move(symbol));
-        SymbolSource source = {0};
-        source.moduleName = const_cast<char *>(split.configuredNativeModules.back().c_str());
-        source.symbolName = const_cast<char *>(split.configuredNativeSymbols.back().c_str());
-        split.userSymbols.emplace_back(source);
-        ++appended;
+        if (matches.empty()) {
+            split.nativeDiagnostics.emplace_back(MakeLogMessage(
+                "[trace-native] warning: symbol-only include not found: ", symbol, "\n"));
+        } else {
+            split.nativeDiagnostics.emplace_back(MakeLogMessage(
+                "[trace-native] warning: symbol-only include is ambiguous: ", symbol,
+                ", modules=", FormatNativeModuleCandidates(matches, pid), "\n"));
+        }
     }
     return appended;
 }
@@ -665,10 +798,8 @@ int UTraceOpen(struct UTraceAttr *attr)
         return -1;
     }
     UTraceSymbolSplit symbols = SplitUTraceSymbols(attr, filter);
-    AppendConfiguredNativeSymbols(symbols, filter);
-    UTraceAttr userAttr = *attr;
-    userAttr.symSrc = symbols.userSymbols.empty() ? nullptr : symbols.userSymbols.data();
-    userAttr.numSym = static_cast<unsigned>(symbols.userSymbols.size());
+    AppendConfiguredNativeSymbols(symbols, filter, attr->pidList[0]);
+    UTraceAttr userAttr = MakeSubAttr(attr, symbols.userSymbols);
     SplitTraceAttr split = SplitSymbolsByRegex(&userAttr);
     bool hasJavaSymbols = !split.javaSymSrc.empty();
     bool hasJavaConfig = !filter.javaIncludes.empty();
@@ -680,6 +811,7 @@ int UTraceOpen(struct UTraceAttr *attr)
     bool hasJavaRequest = hasJavaSymbols || (hasJavaConfig && isJvm);
     if (!hasJavaRequest) {
         FilterNativeSymbols(symbols.userSymbols, filter);
+        userAttr = MakeSubAttr(attr, symbols.userSymbols);
     }
     bool hasUserTrace = !symbols.userSymbols.empty() || hasJavaRequest;
     bool hasKernelTrace = !symbols.kernelFunctions.empty() || !filter.kernelIncludes.empty();
@@ -692,6 +824,9 @@ int UTraceOpen(struct UTraceAttr *attr)
     TraceLog(MakeLogMessage("\n======================================= [trace-session] START id=",
         traceLogSessionId, " =======================================\n"));
     TraceLog("[trace] UTraceOpen target pid=" + std::to_string(attr->pidList[0]) + "\n");
+    for (const std::string &diagnostic : symbols.nativeDiagnostics) {
+        TraceLog(diagnostic);
+    }
     LogNativeFilterStatus(filter, split.nativeSymSrc);
     int userPd = -1;
     if (hasUserTrace) {

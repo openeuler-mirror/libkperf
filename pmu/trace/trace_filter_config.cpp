@@ -71,6 +71,24 @@ static void AppendRuleStatus(std::string &effective, std::string &ineffective,
         target += rules[i];
     }
 }
+
+static std::string TargetVisibleModulePath(const std::string &module)
+{
+    const std::string procPrefix = "/proc/";
+    if (module.compare(0, procPrefix.size(), procPrefix) != 0) {
+        return module;
+    }
+    size_t pidEnd = module.find('/', procPrefix.size());
+    if (pidEnd == std::string::npos || pidEnd == procPrefix.size()) {
+        return module;
+    }
+    std::string pidText = module.substr(procPrefix.size(), pidEnd - procPrefix.size());
+    if (pidText.find_first_not_of(K_DIGITS) != std::string::npos ||
+        module.compare(pidEnd, 6, "/root/") != 0) {
+        return module;
+    }
+    return module.substr(pidEnd + 5);
+}
 } // namespace
 
 std::string StripTraceConfigComment(const std::string &line)
@@ -164,7 +182,11 @@ bool IsTraceSymbolAllowed(const UTraceSymbolFilterConfig &config, TraceSymbolDom
 bool MatchesTraceSymbolRule(const std::string &pattern, const std::string &module, const std::string &symbol)
 {
     std::string qualified = module + "::" + symbol;
-    return fnmatch(pattern.c_str(), symbol.c_str(), 0) == 0 || fnmatch(pattern.c_str(), qualified.c_str(), 0) == 0;
+    if (fnmatch(pattern.c_str(), symbol.c_str(), 0) == 0 || fnmatch(pattern.c_str(), qualified.c_str(), 0) == 0) {
+        return true;
+    }
+    std::string targetQualified = TargetVisibleModulePath(module) + "::" + symbol;
+    return targetQualified != qualified && fnmatch(pattern.c_str(), targetQualified.c_str(), 0) == 0;
 }
 
 std::string FormatTraceFilterRuleStatus(const std::vector<std::string> &includes,

@@ -75,17 +75,20 @@ size_t MappedFile::GetSize() const
 }
 
 std::unordered_map<std::string, std::vector<ProbePoints>> ElfScanner::ResolveElfs(
-    const std::unordered_map<std::string, std::vector<std::string>> &module2Symbols) 
+    const std::unordered_map<std::string, std::vector<std::string>> &module2Symbols, bool reportFailures)
 {
     std::unordered_map<std::string, std::vector<ProbePoints>> module2ProbePoints;
     for (const auto &pair : module2Symbols) {
         const std::string &filePath = pair.first;
         const std::vector<std::string> &symbols = pair.second;
 
-        std::vector<ProbePoints> probePoints = ResolveElf(filePath, symbols);
+        std::vector<ProbePoints> probePoints = ResolveElf(filePath, symbols, reportFailures);
         if (!probePoints.empty()) {
             module2ProbePoints[filePath] = std::move(probePoints);
         }
+    }
+    if (!reportFailures) {
+        pcerr::New(SUCCESS);
     }
     return module2ProbePoints;
 }
@@ -139,7 +142,8 @@ std::unordered_map<std::string, ElfScanner::ElfSymEntry> ElfScanner::ExtractSymE
             for (size_t j = 0; j < symCount; ++j) {
                 const Elf64_Sym &s = symTable[j];
                 const char *symName = strTable + s.st_name;
-                if (ELF64_ST_TYPE(s.st_info) != STT_FUNC) {
+                if (ELF64_ST_TYPE(s.st_info) != STT_FUNC ||
+                    s.st_shndx == SHN_UNDEF || s.st_shndx >= ehdr->e_shnum) {
                     continue;
                 }
 
@@ -242,14 +246,16 @@ ProbePoints ElfScanner::ConstructProbePoints(const std::string &symbolName, cons
 }
 
 std::vector<ProbePoints> ElfScanner::ResolveElf(
-    const std::string &filePath, const std::vector<std::string> &symbolsToFind)
+    const std::string &filePath, const std::vector<std::string> &symbolsToFind, bool reportFailures)
 {
     pcerr::New(SUCCESS);
     std::vector<ProbePoints> probePoints;
 
     MappedFile mappedFile(filePath);
     if (Perrorno() != SUCCESS) {
-        failedElf2Reason_[filePath] = Perror();
+        if (reportFailures) {
+            failedElf2Reason_[filePath] = Perror();
+        }
         return probePoints;
     }
     const char *base = static_cast<const char *>(mappedFile.GetBase());
@@ -257,7 +263,9 @@ std::vector<ProbePoints> ElfScanner::ResolveElf(
 
     const Elf64_Ehdr *ehdr = VerifyElfHeader(base, fileSize);
     if (ehdr == nullptr) {
-        failedElf2Reason_[filePath] = Perror();
+        if (reportFailures) {
+            failedElf2Reason_[filePath] = Perror();
+        }
         return probePoints;
     }
 
@@ -275,7 +283,7 @@ std::vector<ProbePoints> ElfScanner::ResolveElf(
         auto it = foundSymbols.find(symbolName);
         if (it != foundSymbols.end()) {
             probePoints.push_back(ConstructProbePoints(symbolName, it->second, shdr, base, fileSize, baseVirtualAddr, machineType));
-        } else {
+        } else if (reportFailures) {
             elf2FailedSymbols_[filePath].push_back(symbolName);
         }
     }
@@ -327,7 +335,7 @@ std::unordered_map<std::string, std::string> ElfScanner::failedElf2Reason_;
 std::unordered_map<std::string, std::vector<std::string>> ElfScanner::elf2FailedSymbols_;
 
 std::unordered_map<std::string, std::vector<ProbePoints>> ElfScanner::ResolveElfs(
-    const std::unordered_map<std::string, std::vector<std::string>> &module2Symbols) 
+    const std::unordered_map<std::string, std::vector<std::string>> &module2Symbols, bool)
 {
     return std::unordered_map<std::string, std::vector<ProbePoints>>();
 }

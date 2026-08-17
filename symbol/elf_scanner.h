@@ -50,8 +50,10 @@ private:
 
 class ElfScanner {
 public:
+    // Discovery scans may disable failure recording so missing symbols in unrelated
+    // mapped modules do not appear in the final trace warning.
     static std::unordered_map<std::string, std::vector<ProbePoints>> ResolveElfs(
-        const std::unordered_map<std::string, std::vector<std::string>> &module2Symbols);
+        const std::unordered_map<std::string, std::vector<std::string>> &module2Symbols, bool reportFailures = true);
 
     static std::string FormatFailures();
 
@@ -82,5 +84,5 @@ private:
         const char *base, size_t fileSize, uint64_t baseVirtualAddr, uint16_t machineType);
 
     static std::vector<ProbePoints> ResolveElf(
-        const std::string &filePath, const std::vector<std::string> &symbolsToFind);
+        const std::string &filePath, const std::vector<std::string> &symbolsToFind, bool reportFailures);
 };

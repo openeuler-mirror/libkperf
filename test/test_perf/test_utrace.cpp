@@ -1,9 +1,11 @@
 #include "common.h"
+#include "pcerr.h"
 #include "test_common.h"
 #include "elf_scanner.h"
 #include "probe_alias_manager.h"
 #include "probe_registrar.h"
 #include "trace_data_manager.h"
+#include "trace_filter_config.h"
 
 class ElfScannerTest : public ::testing::Test
 {
@@ -178,6 +180,27 @@ TEST_F(ElfScannerTest, ResolveElfs_MultipleModules)
     EXPECT_NE(failureMsg.find("libnon_existent_file.so"), std::string::npos);
     EXPECT_NE(failureMsg.find("Symbols not found"), std::string::npos);
     EXPECT_NE(failureMsg.find("libtest_utrace_elf.so [non_existent_symbol]"), std::string::npos);
+}
+
+TEST_F(ElfScannerTest, ResolveElfs_QuietScanDoesNotReportFailures)
+{
+    std::unordered_map<std::string, std::vector<std::string>> module2Symbols = {
+        {"/path/that/does/not/exist", {"missing_symbol"}}
+    };
+
+    auto result = ElfScanner::ResolveElfs(module2Symbols, false);
+
+    EXPECT_TRUE(result.empty());
+    EXPECT_EQ(Perrorno(), SUCCESS);
+    EXPECT_TRUE(ElfScanner::FormatFailures().empty());
+}
+
+TEST(TraceFilterConfigTest, MatchesTargetVisiblePathForProcRootModule)
+{
+    EXPECT_TRUE(MatchesTraceSymbolRule(
+        "/usr/lib64/libexample.so::target_func",
+        "/proc/12345/root/usr/lib64/libexample.so",
+        "target_func"));
 }
 
 class UTraceTest : public ::testing::Test
