@@ -75,12 +75,12 @@ bool ApplyGlobalNotraceFilter(std::vector<std::string> &functions, const std::st
 // resolve kernel function addresses from symbol information
 std::unordered_map<std::string, uint64_t> ResolveKernelSymbols(const std::vector<std::string> &functions);
 // Resolve dynamic-ftrace patch sites, which may differ from symbol starts.
-std::unordered_map<std::string, uint64_t> ResolveKernelPatchSites(const std::string &traceFsRoot,
+std::unordered_multimap<std::string, uint64_t> ResolveKernelPatchSites(const std::string &traceFsRoot,
     const std::vector<std::string> &functions);
 
 // configure global tracefs settings for raw kernel tracing
-bool ConfigureGlobalTraceFs(KernelTraceManager::Session &session, const std::vector<std::string> &functions,
-    uint32_t bufferSizeKb, std::string *error);
+bool ConfigureGlobalTraceFs(KernelTraceManager::Session &session,
+    const std::vector<std::string> &functions, uint32_t bufferSizeKb, bool traceIrqs, std::string *error);
 
 // configure the target thread IDs for ftrace filtering
 bool WritePidFilter(KernelTraceManager::Session &session, std::string *error);

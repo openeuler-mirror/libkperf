@@ -49,7 +49,8 @@ static const char *RecordCachedDataStr(KernelTraceManager::TraceBlock &block,
 } // namespace
 
 int KernelTraceManager::Open(const UTraceAttr *traceAttr, const std::vector<std::string> &functions,
-    const std::vector<std::string> &includePatterns, const std::vector<std::string> &excludePatterns, uint32_t bufferSizeKb)
+    const std::vector<std::string> &includePatterns, const std::vector<std::string> &excludePatterns,
+    uint32_t bufferSizeKb, bool traceIrqs)
 {
     New(SUCCESS);
     if (traceAttr == nullptr || traceAttr->pidList == nullptr || traceAttr->numPid == 0) {
@@ -89,6 +90,8 @@ int KernelTraceManager::Open(const UTraceAttr *traceAttr, const std::vector<std:
                                   available, availablePath, selected, &selectionStats);
     TraceLog("[trace-kernel] filter: " + FormatTraceFilterRuleStatus(includePatterns, excludePatterns,
         selectionStats.includeRuleMatched, selectionStats.excludeRuleMatched) + "\n");
+    TraceLog("[trace-kernel] options: buffer_size_kb_per_cpu=" + std::to_string(bufferSizeKb) +
+        ", funcgraph_irqs=" + std::string(traceIrqs ? "true" : "false") + "\n");
     if (!selectionOk) {
         return -1;
     }
@@ -121,7 +124,7 @@ int KernelTraceManager::Open(const UTraceAttr *traceAttr, const std::vector<std:
     }
     session.addresses = kernel_trace::ResolveKernelSymbols(selected);
     session.patchAddresses = kernel_trace::ResolveKernelPatchSites(traceFsRoot, selected);
-    if (!kernel_trace::ConfigureGlobalTraceFs(session, selected, bufferSizeKb, &error)) {
+    if (!kernel_trace::ConfigureGlobalTraceFs(session, selected, bufferSizeKb, traceIrqs, &error)) {
         kernel_trace::ResetGlobalTraceFs(session);
         New(LIBPERF_ERR_KERNEL_TRACE_FAILED, error);
         TraceLog("[trace-kernel] error: " + error + "\n");

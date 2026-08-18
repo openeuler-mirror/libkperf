@@ -793,14 +793,14 @@ std::unordered_map<std::string, uint64_t> ResolveKernelSymbols(const std::vector
     return addresses;
 }
 
-std::unordered_map<std::string, uint64_t> ResolveKernelPatchSites(const std::string &traceFsRoot,
+std::unordered_multimap<std::string, uint64_t> ResolveKernelPatchSites(const std::string &traceFsRoot,
     const std::vector<std::string> &functions)
 {
     std::unordered_set<std::string> wanted(functions.begin(), functions.end());
-    std::unordered_map<std::string, uint64_t> addresses;
+    std::unordered_multimap<std::string, uint64_t> addresses;
     std::ifstream input(traceFsRoot + "/available_filter_functions_addrs");
     std::string line;
-    while (!wanted.empty() && std::getline(input, line)) {
+    while (std::getline(input, line)) {
         std::istringstream fields(line);
         std::vector<std::string> tokens;
         std::string token;
@@ -827,7 +827,6 @@ std::unordered_map<std::string, uint64_t> ResolveKernelPatchSites(const std::str
             uint64_t address = std::strtoull(begin, &end, 16);
             if (errno == 0 && end != begin && *end == '\0' && address != 0) {
                 addresses.emplace(function, address);
-                wanted.erase(function);
                 break;
             }
         }
@@ -936,7 +935,7 @@ static bool SetTraceOption(const KernelTraceManager::Session &session, const std
 }
 
 bool ConfigureGlobalTraceFs(KernelTraceManager::Session &session,
-    const std::vector<std::string> &functions, uint32_t bufferSizeKb, std::string *error)
+    const std::vector<std::string> &functions, uint32_t bufferSizeKb, bool traceIrqs, std::string *error)
 {
     std::string onlineCpuMask;
     if (!BuildOnlineCpuMask(onlineCpuMask)) {
@@ -960,7 +959,7 @@ bool ConfigureGlobalTraceFs(KernelTraceManager::Session &session,
         return false;
     }
 
-    if (!SetTraceOption(session, "funcgraph-irqs", false, false, error) ||
+    if (!SetTraceOption(session, "funcgraph-irqs", traceIrqs, false, error) ||
         !SetTraceOption(session, "function-fork", true, true, error) ||
         !SetTraceOption(session, "overwrite", false, true, error) ||
         !SetTraceOption(session, "funcgraph-retaddr", false, false, error) ||

@@ -851,7 +851,7 @@ int UTraceOpen(struct UTraceAttr *attr)
     }
 
     int kernelPd = KernelTraceManager::GetInstance().Open(attr, symbols.kernelFunctions, filter.kernelIncludes,
-        filter.kernelExcludes, filter.kernelFtraceBufferSizeKb);
+        filter.kernelExcludes, filter.kernelFtraceBufferSizeKb, filter.kernelFtraceIrqs);
     if (kernelPd < 0) {
         int err = Perrorno();
         std::string errMsg = Perror() == nullptr ? "" : Perror();

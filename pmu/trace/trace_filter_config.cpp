@@ -27,6 +27,7 @@ namespace {
 static constexpr int K_NUMBER_BASE_DECIMAL = 10;
 static constexpr const char *K_NATIVE_SAMPLE_PERIOD_KEY = "native_sample_period";
 static constexpr const char *K_KERNEL_FTRACE_BUFFER_SIZE_KB_KEY = "kernel_ftrace_buffer_size_kb";
+static constexpr const char *K_KERNEL_FTRACE_IRQS_KEY = "kernel_ftrace_irqs";
 static constexpr const char *K_DIGITS = "0123456789";
 static constexpr uint32_t K_MAX_FTRACE_BUFFER_SIZE_KB = 16U * 1024U;
 
@@ -56,6 +57,22 @@ static bool TryParseFtraceBufferSizeKb(const std::string &value, uint32_t *size)
     }
     *size = parsed;
     return true;
+}
+
+static bool TryParseBool(const std::string &value, bool *result)
+{
+    if (result == nullptr) {
+        return false;
+    }
+    if (value == "true") {
+        *result = true;
+        return true;
+    }
+    if (value == "false") {
+        *result = false;
+        return true;
+    }
+    return false;
 }
 
 static void AppendRuleStatus(std::string &effective, std::string &ineffective,
@@ -132,6 +149,12 @@ UTraceSymbolFilterConfig LoadUTraceSymbolFilterConfig(const std::string &path)
                 !TryParseFtraceBufferSizeKb(value, &out.kernelFtraceBufferSizeKb)) {
                 out.valid = false;
                 out.error = "Invalid kernel_ftrace_buffer_size_kb: " + value + "; expected an integer in [1, 16384]";
+                break;
+            }
+            if (key == K_KERNEL_FTRACE_IRQS_KEY && !TryParseBool(value, &out.kernelFtraceIrqs)) {
+                out.valid = false;
+                out.error = "Invalid kernel_ftrace_irqs: " + value +
+                    "; expected true, false, 1, or 0";
                 break;
             }
             if (key == K_NATIVE_SAMPLE_PERIOD_KEY && !TryParseSamplePeriod(value, &out.nativeSamplePeriod)) {

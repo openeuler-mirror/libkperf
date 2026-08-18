@@ -28,6 +28,8 @@ struct UTraceSymbolFilterConfig {
     uint32_t nativeSamplePeriod = 4000;
     // ftrace buffer size per CPU, in KiB.
     uint32_t kernelFtraceBufferSizeKb = 1024;
+    // Include selected functions that execute in interrupt context.
+    bool kernelFtraceIrqs = true;
     bool valid = true;
     std::string error;
     std::vector<std::string> kernelIncludes;

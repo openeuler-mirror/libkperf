@@ -56,6 +56,7 @@ std::string BuildJavaSymSrc(const UTraceAttr *attr);
 
 std::string FilterConfigPath();
 JavaTraceLocalConfig LoadLocalConfig(const std::string &path);
+bool WriteJavaOnlyFilterConfig(const std::string &sourcePath, const std::string &targetPath);
 std::string JavaTraceLogPath();
 void JavaTraceLog(const std::string &message);
 bool JavaTracePrepareTargetFiles(JavaBackendImpl &impl);
