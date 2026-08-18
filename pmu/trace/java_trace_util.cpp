@@ -160,23 +160,20 @@ static std::string CurrentLibDir()
 
 static std::string FindJavaAsset(const char *fileName)
 {
-    // Prefer assets installed with the currently loaded libkperf. The caller's
-    // executable may belong to another installation and carry an older agent
-    // that is incompatible with the shared trace configuration.
-    std::string libDir = CurrentLibDir();
-    if (!libDir.empty()) {
-        std::string libRoot = DirName(libDir);
-        std::string p = JoinPath(JoinPath(libRoot, K_JAVA_REL_DIR), fileName);
-        if (IsReadableFile(p)) {
-            return p;
-        }
-    }
-
     std::string exeDir = SelfExeDir();
     if (!exeDir.empty()) {
         std::string toolRoot = DirName(exeDir);
         std::string p = JoinPath(JoinPath(toolRoot, K_JAVA_REL_DIR), fileName);
-        if (IsReadableFile(p)) {
+        if (FileExists(p)) {
+            return p;
+        }
+    }
+
+    std::string libDir = CurrentLibDir();
+    if (!libDir.empty()) {
+        std::string libRoot = DirName(libDir);
+        std::string p = JoinPath(JoinPath(libRoot, K_JAVA_REL_DIR), fileName);
+        if (FileExists(p)) {
             return p;
         }
     }
@@ -380,20 +377,20 @@ std::string BuildJavaSymSrc(const UTraceAttr *attr)
 
 std::string FilterConfigPath()
 {
-    std::string libDir = CurrentLibDir();
-    if (!libDir.empty()) {
-        std::string libRoot = DirName(libDir);
-        std::string confPath = JoinPath(JoinPath(libRoot, K_JAVA_CONF_REL_DIR),
+    std::string exeDir = SelfExeDir();
+    if (!exeDir.empty()) {
+        std::string toolRoot = DirName(exeDir);
+        std::string confPath = JoinPath(JoinPath(toolRoot, K_JAVA_CONF_REL_DIR),
                                         K_JAVA_FILTER_CONFIG_NAME);
         if (IsReadableFile(confPath)) {
             return confPath;
         }
     }
 
-    std::string exeDir = SelfExeDir();
-    if (!exeDir.empty()) {
-        std::string toolRoot = DirName(exeDir);
-        std::string confPath = JoinPath(JoinPath(toolRoot, K_JAVA_CONF_REL_DIR),
+    std::string libDir = CurrentLibDir();
+    if (!libDir.empty()) {
+        std::string libRoot = DirName(libDir);
+        std::string confPath = JoinPath(JoinPath(libRoot, K_JAVA_CONF_REL_DIR),
                                         K_JAVA_FILTER_CONFIG_NAME);
         if (IsReadableFile(confPath)) {
             return confPath;
