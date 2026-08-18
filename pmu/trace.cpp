@@ -232,9 +232,7 @@ static std::vector<std::string> ReadTargetExecutableModules(int pid, std::vector
     return modules;
 }
 
-static void AppendConfiguredNativeSymbol(UTraceSymbolSplit &split,
-                                         const std::string &module,
-                                         const std::string &symbol)
+static void AppendConfiguredNativeSymbol(UTraceSymbolSplit &split, const std::string &module, const std::string &symbol)
 {
     bool alreadyPresent = std::any_of(split.userSymbols.begin(), split.userSymbols.end(),
         [&module, &symbol](const SymbolSource &source) {
