@@ -96,6 +96,17 @@ static DescVector getDescriptions() {
   Descriptions[DW_OP_GNU_push_tls_address] = Desc(Op::Dwarf3);
   Descriptions[DW_OP_GNU_addr_index] = Desc(Op::Dwarf4, Op::SizeLEB);
   Descriptions[DW_OP_GNU_const_index] = Desc(Op::Dwarf4, Op::SizeLEB);
+  // DWARF5 operations
+  Descriptions[DW_OP_implicit_pointer] = Desc(Op::Dwarf5, Op::SizeLEB, Op::SignedSizeLEB);
+  Descriptions[DW_OP_addrx] = Desc(Op::Dwarf5, Op::SizeLEB);
+  Descriptions[DW_OP_constx] = Desc(Op::Dwarf5, Op::SizeLEB);
+  Descriptions[DW_OP_entry_value] = Desc(Op::Dwarf5, Op::SizeLEB, Op::SizeBlock);
+  Descriptions[DW_OP_const_type] = Desc(Op::Dwarf5, Op::SizeLEB, Op::SizeBlock);
+  Descriptions[DW_OP_regval_type] = Desc(Op::Dwarf5, Op::SizeLEB, Op::SizeLEB);
+  Descriptions[DW_OP_deref_type] = Desc(Op::Dwarf5, Op::SizeLEB);
+  Descriptions[DW_OP_xderef_type] = Desc(Op::Dwarf5, Op::SizeLEB);
+  Descriptions[DW_OP_convert] = Desc(Op::Dwarf5, Op::SizeLEB);
+  Descriptions[DW_OP_reinterpret] = Desc(Op::Dwarf5, Op::SizeLEB);
   return Descriptions;
 }
 

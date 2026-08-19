@@ -965,14 +965,19 @@ bool DWARFDebugLine::LineTable::lookupAddressRange(
 }
 
 bool DWARFDebugLine::LineTable::hasFileAtIndex(uint64_t FileIndex) const {
+  // DWARF v5 starts file indexes at 0, while v4 starts at 1.
+  if (Prologue.getVersion() >= 5)
+    return FileIndex < Prologue.FileNames.size();
   return FileIndex != 0 && FileIndex <= Prologue.FileNames.size();
 }
 
 Optional<StringRef> DWARFDebugLine::LineTable::getSourceByIndex(uint64_t FileIndex,
-                                                                FileLineInfoKind Kind) const {
+                                                                 FileLineInfoKind Kind) const {
   if (Kind == FileLineInfoKind::None || !hasFileAtIndex(FileIndex))
     return None;
-  const FileNameEntry &Entry = Prologue.FileNames[FileIndex - 1];
+  // DWARF v5 starts file indexes at 0, while v4 starts at 1.
+  uint64_t AdjustedIndex = Prologue.getVersion() >= 5 ? FileIndex : FileIndex - 1;
+  const FileNameEntry &Entry = Prologue.FileNames[AdjustedIndex];
   if (Optional<const char *> source = Entry.Source.getAsCString())
     return StringRef(*source);
   return None;
@@ -987,12 +992,14 @@ static bool isPathAbsoluteOnWindowsOrPosix(const Twine &Path) {
 }
 
 bool DWARFDebugLine::LineTable::getFileNameByIndex(uint64_t FileIndex,
-                                                   const char *CompDir,
-                                                   FileLineInfoKind Kind,
-                                                   std::string &Result) const {
+                                                    const char *CompDir,
+                                                    FileLineInfoKind Kind,
+                                                    std::string &Result) const {
   if (Kind == FileLineInfoKind::None || !hasFileAtIndex(FileIndex))
     return false;
-  const FileNameEntry &Entry = Prologue.FileNames[FileIndex - 1];
+  // DWARF v5 starts file indexes at 0, while v4 starts at 1.
+  uint64_t AdjustedIndex = Prologue.getVersion() >= 5 ? FileIndex : FileIndex - 1;
+  const FileNameEntry &Entry = Prologue.FileNames[AdjustedIndex];
   StringRef FileName = Entry.Name.getAsCString().getValue();
   if (Kind != FileLineInfoKind::AbsoluteFilePath ||
       isPathAbsoluteOnWindowsOrPosix(FileName)) {
@@ -1004,11 +1011,19 @@ bool DWARFDebugLine::LineTable::getFileNameByIndex(uint64_t FileIndex,
   uint64_t IncludeDirIndex = Entry.DirIdx;
   StringRef IncludeDir;
   // Be defensive about the contents of Entry.
-  if (IncludeDirIndex > 0 &&
-      IncludeDirIndex <= Prologue.IncludeDirectories.size())
-    IncludeDir = Prologue.IncludeDirectories[IncludeDirIndex - 1]
-                     .getAsCString()
-                     .getValue();
+  // DWARF v5 starts directory indexes at 0, while v4 starts at 1.
+  if (Prologue.getVersion() >= 5) {
+    if (IncludeDirIndex < Prologue.IncludeDirectories.size())
+      IncludeDir = Prologue.IncludeDirectories[IncludeDirIndex]
+                       .getAsCString()
+                       .getValue();
+  } else {
+    if (IncludeDirIndex > 0 &&
+        IncludeDirIndex <= Prologue.IncludeDirectories.size())
+      IncludeDir = Prologue.IncludeDirectories[IncludeDirIndex - 1]
+                       .getAsCString()
+                       .getValue();
+  }
 
   // We may still need to append compilation directory of compile unit.
   // We know that FileName is not absolute, the only way to have an
