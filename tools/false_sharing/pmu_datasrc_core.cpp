@@ -120,7 +120,7 @@ const struct option LONG_OPS[] =
 {
     {"pid", required_argument, nullptr, 'p'},
     {"duration", required_argument, nullptr, 'd'},
-    {"cgroupName", required_argument, nullptr, 'c'},
+    {"cpu", required_argument, nullptr, 'c'},
     {"help", no_argument, nullptr, 'h'},
     {"fs", no_argument, nullptr, 'f'},
     {"ts", no_argument, nullptr, 't'},
@@ -143,7 +143,7 @@ struct ArgsContext {
     int pid = -1;
     int duration = 10;
     bool isLaunch = false;
-    char* cgroupName = nullptr;
+    std::vector<int> cpus;
     bool computeFs = false;
     bool computeTs = false;
     int fd[2];
@@ -496,14 +496,87 @@ static void PrintHelp()
 {
     std::cout << "usage:\n"
         << "  ./pmu_datasrc -d 2 -p 10001\n"
+        << "  ./pmu_datasrc -d 2 -c 0-3\n"
         << "  ./pmu_datasrc -d 2 -f case/falsesharing_demo\n"
         << "options:\n"
         << "  -p, --pid <pid>\n"
         << "  -d, --duration <sec>\n"
-        << "  -c, --cgroupName <name>\n"
+        << "  -c, --cpu <cpu-list>  CPU list, e.g. 0,2,4-7\n"
         << "  -f, --fs  enable false sharing analysis\n"
         << "  -t, --ts  enable true sharing analysis\n"
         << "  -F, --format  output the standard format of FS/TS\n";
+}
+
+static bool ParseCpuId(const std::string& text, int& cpu)
+{
+    if (text.empty() || !std::all_of(text.begin(), text.end(), [](unsigned char ch) { return std::isdigit(ch); })) {
+        return false;
+    }
+
+    try {
+        size_t parsed = 0;
+        unsigned long value = std::stoul(text, &parsed);
+        if (parsed != text.size() || value > static_cast<unsigned long>(std::numeric_limits<int>::max())) {
+            return false;
+        }
+        cpu = static_cast<int>(value);
+    } catch (...) {
+        return false;
+    }
+    return true;
+}
+
+static bool ParseCpuList(const std::string& input, std::vector<int>& cpus)
+{
+    cpus.clear();
+    if (input.empty()) {
+        return false;
+    }
+
+    for (size_t start = 0; start < input.size();) {
+        size_t end = input.find(',', start);
+        std::string token = input.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        if (token.empty()) {
+            return false;
+        }
+
+        size_t dash = token.find('-');
+        if (dash == std::string::npos) {
+            int cpu = 0;
+            if (!ParseCpuId(token, cpu)) {
+                return false;
+            }
+            cpus.push_back(cpu);
+        } else {
+            if (token.find('-', dash + 1) != std::string::npos) {
+                return false;
+            }
+
+            int first = 0;
+            int last = 0;
+            if (!ParseCpuId(token.substr(0, dash), first) ||
+                !ParseCpuId(token.substr(dash + 1), last) || first > last) {
+                return false;
+            }
+
+            long configuredCpus = sysconf(_SC_NPROCESSORS_CONF);
+            if (configuredCpus > 0 && last >= configuredCpus) {
+                return false;
+            }
+            for (int cpu = first; cpu <= last; ++cpu) {
+                cpus.push_back(cpu);
+            }
+        }
+
+        if (end == std::string::npos) {
+            break;
+        }
+        start = end + 1;
+    }
+
+    std::sort(cpus.begin(), cpus.end());
+    cpus.erase(std::unique(cpus.begin(), cpus.end()), cpus.end());
+    return !cpus.empty();
 }
 
 int ParseArgv(int argc, char** argv, struct ArgsContext& act)
@@ -529,7 +602,10 @@ int ParseArgv(int argc, char** argv, struct ArgsContext& act)
                 }
                 break;
             case 'c':
-                act.cgroupName = optarg;
+                if (!ParseCpuList(optarg, act.cpus)) {
+                    std::cout << "Invalid CPU list: " << optarg << std::endl;
+                    return -1;
+                }
                 break;
             case 'h':
                 PrintHelp();
@@ -758,19 +834,18 @@ static inline void ProcessChunk(const ArgsContext& act, PmuData* chunk, int chun
     BuildAggregations(act, chunk, chunkLen, context);
 }
 
-static bool CollectPmuData(const ArgsContext& act, int& pd, StatContext& context, bool& useDataSrc)
+static bool CollectPmuData(ArgsContext& act, int& pd, StatContext& context, bool& useDataSrc)
 {
     PmuAttr attr = {0};
-    static char* cgroupNameList[1];
     static int pidList[1];
-    cgroupNameList[0] = act.cgroupName;
-    pidList[0] = act.pid;
-    if (act.cgroupName != nullptr) {
-        attr.cgroupNameList = cgroupNameList;
-        attr.numCgroup = 1;
-    } else {
+    if (act.pid > 0) {
+        pidList[0] = act.pid;
         attr.pidList = pidList;
         attr.numPid = 1;
+    }
+    if (!act.cpus.empty()) {
+        attr.cpuList = act.cpus.data();
+        attr.numCpu = static_cast<unsigned>(act.cpus.size());
     }
     attr.period = 256;
     attr.dataFilter = SPE_DATA_ALL;
@@ -1429,14 +1504,8 @@ int pmu_datasrc_run(int argc, char** argv)
     saInt.sa_flags = 0;
     sigaction(SIGINT, &saInt, NULL);
 
-    if (act.pid == -1 && act.cgroupName == nullptr) {
+    if (act.pid == -1 && act.cpus.empty()) {
         PrintHelp();
-        return -1;
-    }
-
-    if (act.pid > 0 && act.cgroupName != nullptr) {
-        KillApp(act.pid, act.isLaunch);
-        std::cout << "Cannot specify both cgroup and pid. Please use only one" << std::endl;
         return -1;
     }
 
