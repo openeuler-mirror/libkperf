@@ -771,16 +771,17 @@ bool SelectTraceableFunctions(const std::vector<std::string> &requested, const s
 
 std::unordered_map<std::string, uint64_t> ResolveKernelSymbols(const std::vector<std::string> &functions)
 {
-    std::unordered_set<std::string> unresolved(functions.begin(), functions.end());
+    (void)functions;
     std::unordered_map<std::string, uint64_t> addresses;
     std::ifstream kallsyms("/proc/kallsyms");
     std::string line;
-    while (!unresolved.empty() && std::getline(kallsyms, line)) {
+    while (std::getline(kallsyms, line)) {
         std::istringstream fields(line);
         std::string addressText;
         std::string type;
         std::string name;
-        if (!(fields >> addressText >> type >> name) || unresolved.find(name) == unresolved.end()) {
+        if (!(fields >> addressText >> type >> name) ||
+            (type != "t" && type != "T" && type != "w" && type != "W")) {
             continue;
         }
         char *end = nullptr;
@@ -788,7 +789,6 @@ std::unordered_map<std::string, uint64_t> ResolveKernelSymbols(const std::vector
         if (end != addressText.c_str() && *end == '\0' && address != 0) {
             addresses.emplace(name, address);
         }
-        unresolved.erase(name);
     }
     return addresses;
 }
@@ -912,6 +912,25 @@ static bool WriteFunctionFilter(const KernelTraceManager::Session &session,
     return true;
 }
 
+static bool WriteGraphFunctionFilter(const KernelTraceManager::Session &session,
+    const std::vector<std::string> &functions, std::string *error)
+{
+    std::string path = session.traceFsPath + "/set_graph_function";
+    // set_graph_function is not available on every supported tracefs version
+    if (!IsRegularOrVirtualFile(path)) {
+        return true;
+    }
+    if (!ClearTraceFile(path, error)) {
+        return false;
+    }
+    for (const std::string &function : functions) {
+        if (!AppendTraceFile(path, function + "\n", error)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool SetTraceOption(const KernelTraceManager::Session &session, const std::string &name,
     bool enabled, bool required, std::string *error)
 {
@@ -955,7 +974,8 @@ bool ConfigureGlobalTraceFs(KernelTraceManager::Session &session,
         !WriteOptionalTraceFile(session.traceFsPath + "/max_graph_depth", "0\n", error) ||
         !WriteOptionalTraceFile(session.traceFsPath + "/tracing_thresh", "0\n", error) ||
         !WriteOptionalTraceFile(session.traceFsPath + "/tracing_cpumask", onlineCpuMask + "\n", error) ||
-        !WriteFunctionFilter(session, functions, error)) {
+        !WriteFunctionFilter(session, functions, error) ||
+        !WriteGraphFunctionFilter(session, functions, error)) {
         return false;
     }
 

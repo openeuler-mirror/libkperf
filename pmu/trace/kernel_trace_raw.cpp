@@ -275,6 +275,7 @@ struct RawTraceStream {
     EventFormat entryFormat;
     EventFormat returnFormat;
     std::unordered_map<uint64_t, uint64_t> canonicalAddressByTraceAddress;
+    std::vector<std::pair<uint64_t, uint64_t>> canonicalAddressRanges;
     std::unordered_map<int, std::string> commByTid;
     std::vector<CpuPipe> pipes;
     std::vector<RawFunctionGraphEvent> events;
@@ -294,6 +295,7 @@ struct RawTraceStream {
     uint64_t otherEventRecords = 0;
     uint64_t invalidPayloadRecords = 0;
     uint64_t adjustedAddressRecords = 0;
+    uint64_t rangeResolvedAddressRecords = 0;
     uint64_t addressMissRecords = 0;
     uint64_t truncatedRecords = 0;
     uint64_t missedPages = 0;
@@ -377,9 +379,11 @@ struct RawTraceStream {
             ++invalidPayloadRecords;
             return;
         }
-        uint64_t canonicalAddress = functionAddress;
-        auto functionIt = canonicalAddressByTraceAddress.find(canonicalAddress);
-        if (functionIt == canonicalAddressByTraceAddress.end()) {
+        uint64_t canonicalAddress = 0;
+        auto functionIt = canonicalAddressByTraceAddress.find(functionAddress);
+        if (functionIt != canonicalAddressByTraceAddress.end()) {
+            canonicalAddress = functionIt->second;
+        } else {
             // Convert the architecture-specific fentry call-site IP to the
             // symbol start. Exact matching remains the primary path.
 #if defined(__aarch64__)
@@ -404,11 +408,30 @@ struct RawTraceStream {
             }
 #endif
         }
-        if (functionIt == canonicalAddressByTraceAddress.end()) {
+
+        if (canonicalAddress == 0 && !canonicalAddressRanges.empty()) {
+            // Function-graph records the architecture's ftrace IP. The
+            // kernel documentation explicitly permits this patch site to
+            // differ from the /proc/kallsyms symbol address. If tracefs does
+            // not provide available_filter_functions_addrs, symbolize the IP
+            // in the same way as kallsyms: use the nearest preceding text
+            // symbol. All records reaching this path have already been
+            // identified as funcgraph entry/exit events.
+            auto next = std::upper_bound(canonicalAddressRanges.begin(), canonicalAddressRanges.end(),
+                functionAddress,
+                [](uint64_t address, const std::pair<uint64_t, uint64_t> &symbol) {
+                    return address < symbol.first;
+                });
+            if (next != canonicalAddressRanges.begin()) {
+                --next;
+                canonicalAddress = next->second;
+                ++rangeResolvedAddressRecords;
+            }
+        }
+        if (canonicalAddress == 0) {
             ++addressMissRecords;
             return;
         }
-        canonicalAddress = functionIt->second;
 
         int tid = static_cast<int>(pidValue);
         if (commByTid.find(tid) == commByTid.end()) {
@@ -613,8 +636,21 @@ bool StartRawTraceStream(KernelTraceManager::Session &session, std::string *erro
     for (const auto &symbol : session.addresses) {
         if (symbol.second != 0) {
             stream->canonicalAddressByTraceAddress.emplace(symbol.second, symbol.second);
+            stream->canonicalAddressRanges.emplace_back(symbol.second, symbol.second);
         }
     }
+    std::sort(stream->canonicalAddressRanges.begin(), stream->canonicalAddressRanges.end(),
+        [](const std::pair<uint64_t, uint64_t> &left,
+            const std::pair<uint64_t, uint64_t> &right) {
+            return left.first < right.first;
+        });
+    stream->canonicalAddressRanges.erase(
+        std::unique(stream->canonicalAddressRanges.begin(), stream->canonicalAddressRanges.end(),
+            [](const std::pair<uint64_t, uint64_t> &left,
+                const std::pair<uint64_t, uint64_t> &right) {
+                return left.first == right.first;
+            }),
+        stream->canonicalAddressRanges.end());
     for (const auto &patchSite : session.patchAddresses) {
         auto canonical = session.addresses.find(patchSite.first);
         if (canonical != session.addresses.end() && canonical->second != 0 && patchSite.second != 0) {
@@ -805,6 +841,10 @@ bool TakeRawTraceEvents(KernelTraceManager::Session &session, std::vector<RawFun
             ", other_events=" + std::to_string(session.rawStream->otherEventRecords);
         TraceLog("[trace-kernel] warning: " + message + "\n");
         pcerr::SetWarn(LIBPERF_WARN_UTRACE_KERNEL_FAILED, message);
+    }
+    if (session.rawStream->rangeResolvedAddressRecords != 0) {
+        TraceLog("[trace-kernel] symbolized ftrace IPs by kernel symbol range: count=" +
+            std::to_string(session.rawStream->rangeResolvedAddressRecords) + "\n");
     }
     if (session.rawStream->events.empty() && !session.rawStream->firstPagePrefix.empty()) {
         static constexpr char K_HEX[] = "0123456789abcdef";
