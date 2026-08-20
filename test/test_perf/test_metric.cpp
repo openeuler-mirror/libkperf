@@ -15,6 +15,7 @@
 #include "test_common.h"
 #include "common.h"
 #include "cpu_map.h"
+#include <cstring>
 #include <dirent.h>
 
 using namespace std;
@@ -63,6 +64,48 @@ TEST_F(TestMetric, GetInvalidBdfList)
     const char** bdfList = PmuDeviceBdfList(bdfType, &bdfLen);
     ASSERT_EQ(Perrorno(), 1064);
     ASSERT_EQ(bdfList, nullptr);
+}
+
+TEST_F(TestMetric, GetMetricRejectsInvalidPcieBdfFormat)
+{
+    CHIP_TYPE chipType = GetCpuType();
+    if (chipType != HIPB && chipType != HIPG) {
+        GTEST_SKIP() << "PCIe device metrics are unsupported on this chip";
+    }
+
+    char invalidBdf[] = "not-a-bdf";
+    PmuDeviceAttr devAttr = {};
+    devAttr.metric = PMU_PCIE_RX_MRD_BW;
+    devAttr.bdf = invalidBdf;
+    char event[] = "cycles";
+    PmuData unrelatedData = {};
+    unrelatedData.evt = event;
+
+    int len = PmuGetDevMetric(&unrelatedData, 1, &devAttr, 1, &devData);
+    ASSERT_EQ(len, -1);
+    ASSERT_EQ(devData, nullptr);
+    ASSERT_EQ(Perrorno(), LIBPERF_ERR_INVALID_BDF_VALUE);
+    ASSERT_NE(strlen(Perror()), 0);
+}
+
+TEST_F(TestMetric, RejectUnmatchedMetricData)
+{
+    CHIP_TYPE chipType = GetCpuType();
+    if (chipType != HIPA && chipType != HIPB && chipType != HIPG) {
+        GTEST_SKIP() << "Device metrics are unsupported on this chip";
+    }
+
+    char event[] = "cycles";
+    PmuData unrelatedData = {};
+    unrelatedData.evt = event;
+    PmuDeviceAttr devAttr = {};
+    devAttr.metric = PMU_L3_TRAFFIC;
+
+    int len = PmuGetDevMetric(&unrelatedData, 1, &devAttr, 1, &devData);
+    ASSERT_EQ(len, -1);
+    ASSERT_EQ(devData, nullptr);
+    ASSERT_EQ(Perrorno(), LIBPERF_ERR_PMU_DATA_NO_FOUND);
+    ASSERT_NE(strlen(Perror()), 0);
 }
 
 TEST_F(TestMetric, GetPcieBdfList)
