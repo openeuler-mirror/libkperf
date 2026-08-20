@@ -49,7 +49,8 @@ public:
     KernelTraceManager &operator=(const KernelTraceManager &) = delete;
 
     int Open(const struct UTraceAttr *traceAttr, const std::vector<std::string> &functions,
-        const std::vector<std::string> &includePatterns, const std::vector<std::string> &excludePatterns, uint32_t bufferSizeKb);
+        const std::vector<std::string> &includePatterns, const std::vector<std::string> &excludePatterns,
+        uint32_t bufferSizeKb, bool traceIrqs);
     int Enable(int pd);
     int Disable(int pd);
     int Read(int pd, struct KernelTraceData **traceData);
@@ -87,7 +88,7 @@ public:
         SavedTraceFsState saved;
         std::vector<int> targetPids;
         std::unordered_map<std::string, uint64_t> addresses;
-        std::unordered_map<std::string, uint64_t> patchAddresses;
+        std::unordered_multimap<std::string, uint64_t> patchAddresses;
         std::unordered_map<int, int> tgidByTid;
         std::shared_ptr<kernel_trace::RawTraceStream> rawStream;
     };

@@ -14,6 +14,7 @@
  ******************************************************************************/
 
 #include "kernel_trace_util.h"
+#include "pcerr.h"
 #include "common.h"
 #include "trace_log.h"
 
@@ -788,8 +789,7 @@ bool TakeRawTraceEvents(KernelTraceManager::Session &session, std::vector<RawFun
         }
         return false;
     }
-    if (session.rawStream->truncatedRecords != 0 || session.rawStream->invalidPayloadRecords != 0 ||
-        session.rawStream->addressMissRecords != 0 || session.rawStream->otherEventRecords != 0) {
+    if (session.rawStream->truncatedRecords != 0 || session.rawStream->invalidPayloadRecords != 0) {
         if (error != nullptr) {
             *error = "trace_pipe_raw decode was incomplete: truncated=" +
                 std::to_string(session.rawStream->truncatedRecords) + ", invalid=" +
@@ -798,6 +798,13 @@ bool TakeRawTraceEvents(KernelTraceManager::Session &session, std::vector<RawFun
                 std::to_string(session.rawStream->otherEventRecords);
         }
         return false;
+    }
+    if (session.rawStream->addressMissRecords != 0 || session.rawStream->otherEventRecords != 0) {
+        std::string message = "Skipped raw records not usable by the function graph decoder: "
+            "address_miss=" + std::to_string(session.rawStream->addressMissRecords) +
+            ", other_events=" + std::to_string(session.rawStream->otherEventRecords);
+        TraceLog("[trace-kernel] warning: " + message + "\n");
+        pcerr::SetWarn(LIBPERF_WARN_UTRACE_KERNEL_FAILED, message);
     }
     if (session.rawStream->events.empty() && !session.rawStream->firstPagePrefix.empty()) {
         static constexpr char K_HEX[] = "0123456789abcdef";

@@ -149,6 +149,16 @@ static bool HasAvailableSpace(const std::string &path, size_t bytes)
     }
     return true;
 }
+
+static void DeactivateSharedMemory(JavaBackendImpl *impl)
+{
+    if (impl == nullptr || impl->mapped == nullptr || impl->shmSize < K_HEADER_SIZE) {
+        return;
+    }
+    auto *mem = static_cast<uint8_t *>(impl->mapped);
+    StoreAtRelease<uint32_t>(mem, K_HEADER_ACTIVE, 0);
+}
+
 static int JavaBackendRunAction(JavaBackendImpl *impl, const char *action)
 {
     if (!impl || !action) {
@@ -163,8 +173,8 @@ static int JavaBackendRunAction(JavaBackendImpl *impl, const char *action)
     int ret = RunCommand(cmd);
     JavaTraceFlushTargetLog(*impl);
     if (ret != 0) {
-        JavaTraceLog(MakeLogMessage("[trace-java] action=", action, " failed, ret=", ret,
-                                    ", cmd=", cmd, "\n"));
+        DeactivateSharedMemory(impl);
+        JavaTraceLog(MakeLogMessage("[trace-java] action=", action, " failed, ret=", ret, ", cmd=", cmd, "\n"));
         return ret;
     }
 
@@ -316,14 +326,17 @@ int JavaBackendPrepare(JavaBackendImpl *impl)
     if (cmd.empty()) {
         return -1;
     }
+    impl->runtimeStopped = false;
+    impl->runtimeRestored = false;
     int ret = RunCommand(cmd);
     JavaTraceFlushTargetLog(*impl);
     if (ret != 0) {
-        (void)JavaBackendRestoreRuntime(impl);
+        DeactivateSharedMemory(impl);
+        if (JavaBackendRestoreRuntime(impl) != 0) {
+            (void)JavaBackendStopRuntime(impl);
+        }
         return ret;
     }
-    impl->runtimeStopped = false;
-    impl->runtimeRestored = false;
     impl->runtimePrepared = true;
     return 0;
 }
@@ -343,8 +356,7 @@ int JavaBackendDisable(JavaBackendImpl *impl)
     if (!impl || !impl->mapped) {
         return -1;
     }
-    auto *mem = static_cast<uint8_t *>(impl->mapped);
-    StoreAtRelease<uint32_t>(mem, K_HEADER_ACTIVE, 0);
+    DeactivateSharedMemory(impl);
     return 0;
 }
 
@@ -463,14 +475,17 @@ void JavaBackendClose(JavaBackendImpl *impl)
     if (!impl) {
         return;
     }
-    // Close is the final cleanup point: restore bytecode if possible.
+    DeactivateSharedMemory(impl);
+    // restore stops the runtime before restoring bytecode
     int ret = JavaBackendRestoreRuntime(impl);
     if (ret != 0) {
         JavaTraceLog(MakeLogMessage("[trace-java] warning: action=restore failed, ret=", ret, "\n"));
+        int stopRet = JavaBackendStopRuntime(impl);
+        if (stopRet != 0) {
+            JavaTraceLog(MakeLogMessage("[trace-java] warning: fallback action=stop failed, ret=", stopRet, "\n"));
+        }
     }
     if (impl->mapped && impl->shmSize) {
-        auto *mem = static_cast<uint8_t *>(impl->mapped);
-        StoreAtRelease<uint32_t>(mem, K_HEADER_ACTIVE, 0);
         munmap(impl->mapped, impl->shmSize);
         impl->mapped = nullptr;
     }

@@ -534,9 +534,15 @@ static bool CopyTargetAssets(JavaBackendImpl &impl, const std::string &targetDir
         !CopyToTargetDir(nativeLib, targetDirHost, &ignored, &impl.target.nativeLibPath)) {
         return false;
     }
-    if (!impl.filterConfigPath.empty() &&
-        !CopyToTargetDir(impl.filterConfigPath, targetDirHost, &ignored, &impl.target.filterConfigPath)) {
-        return false;
+    if (!impl.filterConfigPath.empty()) {
+        const std::string configName = BaseName(impl.filterConfigPath);
+        const std::string targetConfigHost = JoinPath(targetDirHost, configName);
+        if (!WriteJavaOnlyFilterConfig(impl.filterConfigPath, targetConfigHost)) {
+            JavaTraceLog(MakeLogMessage("[trace-java] create target Java filter config failed: ",
+                                        impl.filterConfigPath, " -> ", targetConfigHost, "\n"));
+            return false;
+        }
+        impl.target.filterConfigPath = JoinPath("/tmp/" + BaseName(targetDirHost), configName);
     }
     return true;
 }
@@ -828,6 +834,85 @@ JavaTraceLocalConfig LoadLocalConfig(const std::string &path)
     LocalConfigParseContext context(path, &out);
     out.valid = ParseLocalConfigStream(input, &context);
     return out;
+}
+
+struct JavaOnlyFilterConfigContent {
+    std::vector<std::string> parameters;
+    std::vector<std::string> includes;
+    std::vector<std::string> excludes;
+};
+
+static bool CollectJavaOnlyFilterConfigItem(LocalConfigParseContext *context, const std::string &item,
+                                            JavaOnlyFilterConfigContent *content)
+{
+    if (item.front() == '[' || item.back() == ']') {
+        return ParseLocalConfigSection(context, item);
+    }
+    if (IsNonJavaTraceSection(context->section)) {
+        return true;
+    }
+
+    const size_t equalPos = item.find('=');
+    if (equalPos != std::string::npos) {
+        const std::string key = Trim(item.substr(0, equalPos));
+        const std::string value = Trim(item.substr(equalPos + 1));
+        if (!ParseLocalConfigKeyValue(context, key, value)) {
+            return false;
+        }
+        if (!IsNonJavaTraceKey(key)) {
+            content->parameters.emplace_back(key + "=" + value);
+        }
+        return true;
+    }
+
+    if (!ParseLocalConfigRule(*context, item)) {
+        return false;
+    }
+    std::vector<std::string> &rules = context->section == K_JAVA_INCLUDE_SECTION ?
+        content->includes : content->excludes;
+    rules.emplace_back(item);
+    return true;
+}
+
+bool WriteJavaOnlyFilterConfig(const std::string &sourcePath, const std::string &targetPath)
+{
+    std::ifstream input(sourcePath);
+    if (!input.is_open()) {
+        return false;
+    }
+
+    JavaTraceLocalConfig parsed{K_DEFAULT_SLOT_COUNT, false};
+    LocalConfigParseContext context(sourcePath, &parsed);
+    JavaOnlyFilterConfigContent content;
+    std::string line;
+    while (std::getline(input, line)) {
+        ++context.lineNo;
+        const std::string item = Trim(StripTraceConfigComment(line));
+        if (!item.empty() && !CollectJavaOnlyFilterConfigItem(&context, item, &content)) {
+            return false;
+        }
+    }
+    if (!input.eof()) {
+        return false;
+    }
+
+    std::ofstream output(targetPath, std::ios::trunc);
+    if (!output.is_open()) {
+        return false;
+    }
+    for (const auto &parameter : content.parameters) {
+        output << parameter << '\n';
+    }
+    output << "\n[" << K_JAVA_INCLUDE_SECTION << "]\n";
+    for (const auto &rule : content.includes) {
+        output << rule << '\n';
+    }
+    output << "\n[" << K_JAVA_EXCLUDE_SECTION << "]\n";
+    for (const auto &rule : content.excludes) {
+        output << rule << '\n';
+    }
+    output.flush();
+    return output.good();
 }
 
 std::string TimestampSuffix()

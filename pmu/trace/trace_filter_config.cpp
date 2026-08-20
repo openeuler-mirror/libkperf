@@ -27,6 +27,7 @@ namespace {
 static constexpr int K_NUMBER_BASE_DECIMAL = 10;
 static constexpr const char *K_NATIVE_SAMPLE_PERIOD_KEY = "native_sample_period";
 static constexpr const char *K_KERNEL_FTRACE_BUFFER_SIZE_KB_KEY = "kernel_ftrace_buffer_size_kb";
+static constexpr const char *K_KERNEL_FTRACE_IRQS_KEY = "kernel_ftrace_irqs";
 static constexpr const char *K_DIGITS = "0123456789";
 static constexpr uint32_t K_MAX_FTRACE_BUFFER_SIZE_KB = 16U * 1024U;
 
@@ -58,6 +59,22 @@ static bool TryParseFtraceBufferSizeKb(const std::string &value, uint32_t *size)
     return true;
 }
 
+static bool TryParseBool(const std::string &value, bool *result)
+{
+    if (result == nullptr) {
+        return false;
+    }
+    if (value == "true") {
+        *result = true;
+        return true;
+    }
+    if (value == "false") {
+        *result = false;
+        return true;
+    }
+    return false;
+}
+
 static void AppendRuleStatus(std::string &effective, std::string &ineffective,
     const std::vector<std::string> &rules, const std::vector<bool> &matched, const char *type)
 {
@@ -70,6 +87,24 @@ static void AppendRuleStatus(std::string &effective, std::string &ineffective,
         target += ':';
         target += rules[i];
     }
+}
+
+static std::string TargetVisibleModulePath(const std::string &module)
+{
+    const std::string procPrefix = "/proc/";
+    if (module.compare(0, procPrefix.size(), procPrefix) != 0) {
+        return module;
+    }
+    size_t pidEnd = module.find('/', procPrefix.size());
+    if (pidEnd == std::string::npos || pidEnd == procPrefix.size()) {
+        return module;
+    }
+    std::string pidText = module.substr(procPrefix.size(), pidEnd - procPrefix.size());
+    if (pidText.find_first_not_of(K_DIGITS) != std::string::npos ||
+        module.compare(pidEnd, 6, "/root/") != 0) {
+        return module;
+    }
+    return module.substr(pidEnd + 5);
 }
 } // namespace
 
@@ -114,6 +149,12 @@ UTraceSymbolFilterConfig LoadUTraceSymbolFilterConfig(const std::string &path)
                 !TryParseFtraceBufferSizeKb(value, &out.kernelFtraceBufferSizeKb)) {
                 out.valid = false;
                 out.error = "Invalid kernel_ftrace_buffer_size_kb: " + value + "; expected an integer in [1, 16384]";
+                break;
+            }
+            if (key == K_KERNEL_FTRACE_IRQS_KEY && !TryParseBool(value, &out.kernelFtraceIrqs)) {
+                out.valid = false;
+                out.error = "Invalid kernel_ftrace_irqs: " + value +
+                    "; expected true, false, 1, or 0";
                 break;
             }
             if (key == K_NATIVE_SAMPLE_PERIOD_KEY && !TryParseSamplePeriod(value, &out.nativeSamplePeriod)) {
@@ -164,7 +205,11 @@ bool IsTraceSymbolAllowed(const UTraceSymbolFilterConfig &config, TraceSymbolDom
 bool MatchesTraceSymbolRule(const std::string &pattern, const std::string &module, const std::string &symbol)
 {
     std::string qualified = module + "::" + symbol;
-    return fnmatch(pattern.c_str(), symbol.c_str(), 0) == 0 || fnmatch(pattern.c_str(), qualified.c_str(), 0) == 0;
+    if (fnmatch(pattern.c_str(), symbol.c_str(), 0) == 0 || fnmatch(pattern.c_str(), qualified.c_str(), 0) == 0) {
+        return true;
+    }
+    std::string targetQualified = TargetVisibleModulePath(module) + "::" + symbol;
+    return targetQualified != qualified && fnmatch(pattern.c_str(), targetQualified.c_str(), 0) == 0;
 }
 
 std::string FormatTraceFilterRuleStatus(const std::vector<std::string> &includes,

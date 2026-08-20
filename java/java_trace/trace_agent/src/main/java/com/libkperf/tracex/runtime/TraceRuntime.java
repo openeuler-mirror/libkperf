@@ -100,6 +100,9 @@ public final class TraceRuntime {
             if (s == null) {
                 return Context.SKIPPED;
             }
+            if (!s.isActive()) {
+                return Context.SKIPPED;
+            }
 
             RUNTIME_DEPTH.set(runtimeDepth + 1);
             try {
