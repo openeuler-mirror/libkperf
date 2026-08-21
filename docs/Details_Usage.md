@@ -1,5 +1,7 @@
 Details
 ============
+编译和运行请参考[README 文档](../README.md)。
+
 以下示例中所使用API及其参数的详细介绍，可参考C_C++_API、Go_API和Python_API文档。
 
 ### Counting
@@ -132,7 +134,7 @@ pid 4156 tid 4158 count 64574 evt branch-misses
 ...
 ```
 
-完整的counting采集示例代码见READ.md文档相关章节：C++ [编译运行示例程序](../README.md), Python [Python:读取PMU计数](../README.md), Go [Go:读取PMU计数](../README.md)
+完整的counting采集示例代码见README.md文档相关章节：C++ [编译运行示例程序](../README.md#3-编译运行示例程序), Python [Python:读取PMU计数](../README.md#python读取-pmu-计数), Go [Go:读取PMU计数](../README.md#go读取-pmu-计数)
 
 #### User Access Counting
 
@@ -2278,11 +2280,12 @@ func main() {
 ### IO和计算热点混合采样(Blocked Sample)
 Blocked Sample是一种新增的采样模式，该模式下会同时采集进程处于on cpu和off cpu数据，通过配置blockedSample字段去进行使能，去同时采集cycles和context-switches事件，换算off cpu的period数据。
 
-详细使用方法可以参考example/pmu_hotspot.cpp
+详细使用方法可以参考tools/pmu_hotspot.cpp
 编译命令：
 ```
 g++ -g pmu_hotspot.cpp -o pmu_hotspot -I /path/to/libkperf/include -L /path/to/libkperf/lib -lkperf -lsym
 ```
+或执行`bash build_tools.sh`编译`tools`目录下所有工具，工具二进制编译后位于tools/bin文件夹下
 
 对于例子：
 ```
@@ -2306,7 +2309,7 @@ thread2
 
 使用pmu_hotspot采集：
 ```
-pmu_hotspot 5 1 1 <test>
+./pmu_hotspot 5 1 1 <test>
 ```
 
 输出结果：
@@ -2466,14 +2469,14 @@ evt=instructions, cgroup=my_cgroup, cpu=127, count=369345
 ### 生成perf.data
 libkperf支持把采集数据生成为perf.data，以便通过perf report或者编译反馈优化工具使用。目前只支持Sampling数据的输出。  
 
-c++示例参考example/pmu_perfdata.cpp.  
-编译该文件：
+c++示例参考tools/pmu_perfdata.cpp.
+可执行`bash build_tools.sh`统一编译目录下工具，或仅编译该文件：
 ```
 g++ -g pmu_perfdata.cpp -I /path/to/install/include/ -L /path/to/install/lib/ -lkperf -lsym -O3 -o pmu_perfdata
 ```
 执行命令，采集进程三秒，并输出libkperf.data到当前目录：
 ```
-LD_LIBRARY_PATH=/path/to/install/lib/ ./pmu_perfdata -d 3 -- /tmp/test
+LD_LIBRARY_PATH=/path/to/install/lib/ ./pmu_perfdata -d 3 -p pid
 ```
 
 ```python
@@ -2562,10 +2565,9 @@ func main() {
 
 ### 通过pmu_datasrc定位falsesharing问题
 ```shell
-cd example
-g++ -o pmu_datasrc pmu_datasrc.cpp -L ../output/lib -I ../output/include -lsym -lkperf
-cd case
-gcc -o falsesharing_demo -g falsesharing_demo.c -lpthread
+cd tools
+bash build_tools.sh
+cd bin
 ./pmu_datasrc -d 2 case/falsesharing_demo
 # 如果数据结果中带有HITM标志则表示对应的加载操作发生了虚假共享。
 # HIP_PEER_CPU            = 0,
@@ -2583,17 +2585,17 @@ gcc -o falsesharing_demo -g falsesharing_demo.c -lpthread
 # HIP_L2_HITM             = 17,
 # HIP_L1                  = 18,
 HIP_L2_HITM 190
-    |——4009cc sum_a(void*)+0x1c8 /home/test/libkperf/example/case/falsesharing_long.c:33 [77]
-    |——400bbc inc_b(void*)+0x1cc /home/test/libkperf/example/case/falsesharing_long.c:59 [70]
-    |——4009bc sum_a(void*)+0x1b8 /home/test/libkperf/example/case/falsesharing_long.c:32 [27]
-    |——400bac inc_b(void*)+0x1bc /home/test/libkperf/example/case/falsesharing_long.c:58 [16]
+    |——4009cc sum_a(void*)+0x1c8 /home/test/libkperf/tools/bin/case/falsesharing_demo.c:33 [77]
+    |——400bbc inc_b(void*)+0x1cc /home/test/libkperf/tools/bin/case/falsesharing_demo.c:59 [70]
+    |——4009bc sum_a(void*)+0x1b8 /home/test/libkperf/tools/bin/case/falsesharing_demo.c:32 [27]
+    |——400bac inc_b(void*)+0x1bc /home/test/libkperf/tools/bin/case/falsesharing_demo.c:58 [16]
 HIP_L1 1952
-    |——400bd0 inc_b(void*)+0x1e0 /home/test/libkperf/example/case/falsesharing_long.c:57 [491]
-    |——4009e0 sum_a(void*)+0x1dc /home/test/libkperf/example/case/falsesharing_long.c:31 [489]
-    |——4009bc sum_a(void*)+0x1b8 /home/test/libkperf/example/case/falsesharing_long.c:32 [352]
-    |——400bac inc_b(void*)+0x1bc /home/test/libkperf/example/case/falsesharing_long.c:58 [349]
-    |——4009cc sum_a(void*)+0x1c8 /home/test/libkperf/example/case/falsesharing_long.c:33 [151]
-    |——400bbc inc_b(void*)+0x1cc /home/test/libkperf/example/case/falsesharing_long.c:59 [114]
+    |——400bd0 inc_b(void*)+0x1e0 /home/test/libkperf/tools/bin/case/falsesharing_demo.c:57 [491]
+    |——4009e0 sum_a(void*)+0x1dc /home/test/libkperf/tools/bin/case/falsesharing_demo.c:31 [489]
+    |——4009bc sum_a(void*)+0x1b8 /home/test/libkperf/tools/bin/case/falsesharing_demo.c:32 [352]
+    |——400bac inc_b(void*)+0x1bc /home/test/libkperf/tools/bin/case/falsesharing_demo.c:58 [349]
+    |——4009cc sum_a(void*)+0x1c8 /home/test/libkperf/tools/bin/case/falsesharing_demo.c:33 [151]
+    |——400bbc inc_b(void*)+0x1cc /home/test/libkperf/tools/bin/case/falsesharing_demo.c:59 [114]
 ```
 
 ### 通过使能enableExecOn的方式采集进程
@@ -2796,6 +2798,7 @@ import (
     "os/exec"
     "syscall"
     "time"
+
     "libkperf/kperf"
 )
 
@@ -2813,39 +2816,63 @@ func main() {
     cmd.Stderr = os.Stderr
     cmd.ExtraFiles = []*os.File{rp}
 
-    cmd.SysProcAttr = &syscall.SysProcAttr {
+    cmd.SysProcAttr = &syscall.SysProcAttr{
         Setpgid: true,
     }
 
     if err := cmd.Start(); err != nil {
         panic(err)
     }
+
     defer func() {
         _ = cmd.Process.Kill()
         _ = cmd.Wait()
     }()
 
-    attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, SymbolMode:kperf.ELF_DWARF, SampleRate: 4096, UseFreq:true, EnableOnExec:true, PidList:[]int{cmd.Process.Pid}}
+    attr := kperf.PmuAttr{
+        EvtList:      []string{"cycles"},
+        SymbolMode:   kperf.ELF_DWARF,
+        SampleRate:   4096,
+        UseFreq:      true,
+        EnableOnExec: true,
+        PidList:      []int{cmd.Process.Pid},
+    }
+
     pd, err := kperf.PmuOpen(kperf.SAMPLE, attr)
     if err != nil {
         fmt.Printf("kperf pmuopen sample failed, expect err is nil, but is %v\n", err)
         return
     }
+    defer kperf.PmuClose(pd)
 
     if _, err = wp.Write([]byte("start")); err != nil {
         fmt.Printf("failed to start child process: %v\n", err)
         return
     }
+
     time.Sleep(time.Second)
+
     dataVo, err := kperf.PmuRead(pd)
     if err != nil {
         fmt.Printf("kperf pmuread failed, expect err is nil, but is %v\n", err)
         return
     }
+    defer kperf.PmuDataFree(dataVo)
+
     for _, o := range dataVo.GoData {
         fmt.Printf("%v %v %v %v ", o.Comm, o.Ts, o.Pid, o.Tid)
+
         for _, s := range o.Symbols {
-            fmt.Printf("%#x %v+%#x %v %v (%v:%v) \n", s.Addr, s.SymbolName, s.Offset, s.CodeMapAddr, s.Module, s.FileName, s.LineNum)
+            fmt.Printf(
+                "%#x %v+%#x %v %v (%v:%v)\n",
+                s.Addr,
+                s.SymbolName,
+                s.Offset,
+                s.CodeMapAddr,
+                s.Module,
+                s.FileName,
+                s.LineNum,
+            )
         }
     }
 }
@@ -2853,14 +2880,17 @@ func main() {
 func childProc() {
     pipe := os.NewFile(3, "signal_pipe")
     defer pipe.Close()
+
     buf := make([]byte, 10)
     _, err := pipe.Read(buf)
     if err != nil {
         panic(err)
     }
+
     cmdPath := "/bin/ls"
     args := []string{"ls", "-l"}
     env := os.Environ()
+
     callErr := syscall.Exec(cmdPath, args, env)
     if callErr != nil {
         fmt.Printf("%v: %v\n", cmdPath, callErr)
@@ -2873,7 +2903,5 @@ func init() {
         childProc()
         os.Exit(0)
     }
-    kperf.PmuDataFree(dataVo)
-    kperf.PmuClose(pd)
 }
 ```
