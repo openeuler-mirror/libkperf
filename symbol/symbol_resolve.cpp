@@ -23,6 +23,7 @@
 #include <climits>
 #include <set>
 #include <elf.h>
+#include <cstring>
 #include "pcerr.h"
 #include "common.h"
 #include "name_resolve.h"
@@ -741,6 +742,13 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
             symbol->fileName = GetCharFromStr(ResOrErr->FileName);
             symbol->firstLine = ResOrErr->StartLine;
         }
+
+        if (symbol->symbolName == UNKNOWN && ResOrErr->FunctionName != "<invalid>") {
+            symbol->symbolName = GetCharFromStr(ResOrErr->FunctionName);
+            symbol->mangleName = GetCharFromStr(ResOrErr->MangleName);
+            symbol->offset = ResOrErr->Offset;
+            symbol->codeMapEndAddr = ResOrErr->CodeEndAddr;
+        }
     }
 #else
     auto ResOrErr = Symbolizer.symbolizeCode(moduleName, addrToSearch);
@@ -987,6 +995,13 @@ struct Symbol* SymbolResolve::MapCodeAddr(const char* moduleName, unsigned long 
             symbol->lineNum = ResOrErr->Line;
             symbol->firstLine = ResOrErr->StartLine;
             symbol->fileName = GetCharFromStr(ResOrErr->FileName);
+        }
+
+        if (symbol->symbolName == UNKNOWN && ResOrErr->FunctionName != "<invalid>") {
+            symbol->symbolName = GetCharFromStr(ResOrErr->FunctionName);
+            symbol->mangleName = GetCharFromStr(ResOrErr->MangleName);
+            symbol->offset = ResOrErr->Offset;
+            symbol->codeMapEndAddr = ResOrErr->CodeEndAddr;
         }
     }
 #else 
