@@ -28,6 +28,7 @@
 #include <fstream>
 #include <mutex>
 #include <iomanip>
+#include <stdexcept>
 #include <sys/stat.h>
 #include <limits.h>
 #include "common.h"
@@ -464,24 +465,40 @@ namespace KUNPENG_PMU {
     static int ConvertBdfStringToValue(const string& bdfStr, uint16_t& bdfValue)
     {
         vector<string> busDeviceFunction = SplitStringByDelimiter(bdfStr, ':');
-        vector<string> deviceFunction = SplitStringByDelimiter(busDeviceFunction[1], '.');
-        if (busDeviceFunction.size() != 2 || deviceFunction.size() != 2) {
-            New(LIBPERF_ERR_INVALID_BDF_VALUE, "bdf value is invalid, shoubld be like 00:00.0");
+        if (busDeviceFunction.size() != 2) {
+            New(LIBPERF_ERR_INVALID_BDF_VALUE, "BDF value is invalid; expected format is 00:00.0.");
             return LIBPERF_ERR_INVALID_BDF_VALUE;
         }
-        uint16_t bus = 0;
-        uint16_t device = 0;
-        uint16_t function = 0;
+        vector<string> deviceFunction = SplitStringByDelimiter(busDeviceFunction[1], '.');
+        if (deviceFunction.size() != 2 || busDeviceFunction[0].empty() || busDeviceFunction[0].size() > 2 ||
+            deviceFunction[0].empty() || deviceFunction[0].size() > 2 ||
+            deviceFunction[1].empty() || deviceFunction[1].size() > 1) {
+            New(LIBPERF_ERR_INVALID_BDF_VALUE, "BDF value is invalid; expected format is 00:00.0.");
+            return LIBPERF_ERR_INVALID_BDF_VALUE;
+        }
+        unsigned long bus = 0;
+        unsigned long device = 0;
+        unsigned long function = 0;
         try {
-            bus = static_cast<uint16_t>(stoul(busDeviceFunction[0], nullptr, 16));
-            device = static_cast<uint16_t>(stoul(deviceFunction[0], nullptr, 16));
-            function = static_cast<uint16_t>(stoul(deviceFunction[1], nullptr, 16));
-        } catch (const std::invalid_argument& e) {
-            New(LIBPERF_ERR_INVALID_BDF_VALUE, "bdf value is invalid, shoubld be like 00:00.0");
+            size_t parsed = 0;
+            bus = stoul(busDeviceFunction[0], &parsed, 16);
+            if (parsed != busDeviceFunction[0].size()) {
+                throw std::invalid_argument("invalid bus");
+            }
+            device = stoul(deviceFunction[0], &parsed, 16);
+            if (parsed != deviceFunction[0].size()) {
+                throw std::invalid_argument("invalid device");
+            }
+            function = stoul(deviceFunction[1], &parsed, 16);
+            if (parsed != deviceFunction[1].size()) {
+                throw std::invalid_argument("invalid function");
+            }
+        } catch (const std::exception&) {
+            New(LIBPERF_ERR_INVALID_BDF_VALUE, "BDF value is invalid; expected format is 00:00.0.");
             return LIBPERF_ERR_INVALID_BDF_VALUE;
         }
         if (bus > 0xFF || device > 0x1F || function > 0x7) {
-            New(LIBPERF_ERR_INVALID_BDF_VALUE, "bdf value is invalid, shoubld be like 00:00.0");
+            New(LIBPERF_ERR_INVALID_BDF_VALUE, "BDF value is out of range; bus <= ff, device <= 1f, function <= 7.");
             return LIBPERF_ERR_INVALID_BDF_VALUE;
         }
         bdfValue = (static_cast<uint16_t>(bus) << 8) | (static_cast<uint16_t>(device) << 3) | function;
@@ -964,6 +981,11 @@ namespace KUNPENG_PMU {
             return {};
         }
         auto classifiedDevices = ClassifyDevicesByPrefix(config.devicePrefix, config.subDeviceName, config.splitPosition);
+        if (classifiedDevices.empty()) {
+            New(LIBPERF_ERR_NOT_SUPPORT_METRIC, "No PMU device was found for metric " + GetMetricString(deviceAttr.metric)
+                + " under " + SYS_DEVICE_PATH + ". Please check that the corresponding kernel PMU driver is loaded.");
+            return {};
+        }
         return GenerateEventStrings(classifiedDevices, deviceAttr, config);
     }
 
@@ -983,33 +1005,48 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    static bool CheckPcieBdf(char* bdf)
+    static int CheckPcieBdf(const char* bdf)
     {
+        uint16_t bdfValue = 0;
+        int err = ConvertBdfStringToValue(bdf, bdfValue);
+        if (err != SUCCESS) {
+            return err;
+        }
         unsigned numBdf = 0;
-        const char** pcieBdfList = nullptr;
-        pcieBdfList = PmuDeviceBdfList(PmuBdfType::PMU_BDF_TYPE_PCIE, &numBdf);
-        bool find = false;
+        const char** validBdfList = PmuDeviceBdfList(PmuBdfType::PMU_BDF_TYPE_PCIE, &numBdf);
+        if (validBdfList == nullptr && Perrorno() != SUCCESS) {
+            return Perrorno();
+        }
         for (int i = 0; i < numBdf; ++i) {
-            if (strcmp(pcieBdfList[i], bdf) == 0) {
-                find = true;
-                break;
+            if (strcmp(validBdfList[i], bdf) == 0) {
+                return SUCCESS;
             }
         }
-        return find;
+        New(LIBPERF_ERR_NOT_SUPPORT_PCIE_BDF, "BDF '" + string(bdf) +
+            "' is not managed by a PCIe PMU device. Use PmuDeviceBdfList to query the BDF values supported on this system.");
+        return LIBPERF_ERR_NOT_SUPPORT_PCIE_BDF;
     }
 
-    static bool CheckSmmuBdf(char* bdf)
+    static int CheckSmmuBdf(const char* bdf)
     {
+        uint16_t bdfValue = 0;
+        int err = ConvertBdfStringToValue(bdf, bdfValue);
+        if (err != SUCCESS) {
+            return err;
+        }
         unsigned numBdf = 0;
-        const char** smmuBdfList = nullptr;
-        smmuBdfList = PmuDeviceBdfList(PmuBdfType::PMU_BDF_TYPE_SMMU, &numBdf);
-        bool find = false;
+        const char** validBdfList = PmuDeviceBdfList(PmuBdfType::PMU_BDF_TYPE_SMMU, &numBdf);
+        if (validBdfList == nullptr && Perrorno() != SUCCESS) {
+            return Perrorno();
+        }
         for (int i = 0; i < numBdf; ++i) {
-            if (strcmp(smmuBdfList[i], bdf) == 0) {
-                find = true;
+            if (strcmp(validBdfList[i], bdf) == 0) {
+                return SUCCESS;
             }
         }
-        return find;
+        New(LIBPERF_ERR_NOT_SUPPORT_SMMU_BDF, "BDF '" + string(bdf) +
+            "' is not managed by an SMMU PMU device. Use PmuDeviceBdfList to query the BDF values supported on this system.");
+        return LIBPERF_ERR_NOT_SUPPORT_SMMU_BDF;
     }
 
     static int CheckBdf(struct PmuDeviceAttr& deviceAttr)
@@ -1019,10 +1056,9 @@ namespace KUNPENG_PMU {
                 New(LIBPERF_ERR_INVALID_PMU_DEVICES_BDF, "When collecting pcie bandwidth, bdf value can not be nullptr!");
                 return LIBPERF_ERR_INVALID_PMU_DEVICES_BDF;
             }
-            if (!CheckPcieBdf(deviceAttr.bdf)) {
-                New(LIBPERF_ERR_NOT_SUPPORT_PCIE_BDF, "this bdf not support pcie metric counting."
-                    " Please use PmuDeviceBdfList to query.");
-                return LIBPERF_ERR_NOT_SUPPORT_PCIE_BDF;
+            int err = CheckPcieBdf(deviceAttr.bdf);
+            if (err != SUCCESS) {
+                return err;
             }
         }
         if (deviceAttr.metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT && deviceAttr.metric <= PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT) {
@@ -1030,9 +1066,14 @@ namespace KUNPENG_PMU {
                 New(LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT, "When collect pcie latency, the port can not be nullptr!");
                 return LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT;
             }
-            if (!CheckPcieBdf(deviceAttr.port)) {
-                New(LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT, "the port not support pcie metric counting. ");
-                return LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT;
+            int err = CheckPcieBdf(deviceAttr.port);
+            if (err != SUCCESS) {
+                if (err == LIBPERF_ERR_NOT_SUPPORT_PCIE_BDF) {
+                    New(LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT, "Port BDF '" + string(deviceAttr.port) +
+                        "' is not managed by a PCIe PMU device. Use PmuDeviceBdfList to query the ports supported on this system.");
+                    return LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT;
+                }
+                return err;
             }
         }
         if (deviceAttr.metric == PmuDeviceMetric::PMU_SMMU_TRAN) {
@@ -1040,10 +1081,9 @@ namespace KUNPENG_PMU {
                 New(LIBPERF_ERR_INVALID_PMU_DEVICES_BDF, "When collecting smmu metric, bdf value can not be nullptr!");
                 return LIBPERF_ERR_INVALID_PMU_DEVICES_BDF;
             }
-            if (!CheckSmmuBdf(deviceAttr.bdf)) {
-                New(LIBPERF_ERR_NOT_SUPPORT_SMMU_BDF, "this bdf not support smmu metric counting."
-                " Please use PmuDeviceBdfList to query.");
-                return LIBPERF_ERR_NOT_SUPPORT_SMMU_BDF;
+            int err = CheckSmmuBdf(deviceAttr.bdf);
+            if (err != SUCCESS) {
+                return err;
             }
         }
         New(SUCCESS);
@@ -1081,7 +1121,8 @@ namespace KUNPENG_PMU {
         for (int i = 0; i < len; ++i) {
             std::string key = "";
             if (IsBdfMetric(attr[i].metric)) {
-                if (attr->metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT && attr->metric <= PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT) {
+                if (attr[i].metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT &&
+                    attr[i].metric <= PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT) {
                     key = std::to_string(attr[i].metric) + "_" + attr[i].port;
                 } else {
                     key = std::to_string(attr[i].metric) + "_" + attr[i].bdf;
@@ -1692,6 +1733,18 @@ namespace KUNPENG_PMU {
             }
             devDataList.emplace_back(devData);
         }
+        if (devDataList.empty()) {
+            string target;
+            if (devAttr.metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT && devAttr.metric <= PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT
+                && devAttr.port != nullptr) {
+                target = " for port '" + string(devAttr.port) + "'";
+            } else if (IsBdfMetric(devAttr.metric) && devAttr.bdf != nullptr) {
+                target = " for BDF '" + string(devAttr.bdf) + "'";
+            }
+            New(LIBPERF_ERR_PMU_DATA_NO_FOUND, "No input PMU data matched metric " + GetMetricString(devAttr.metric) + target +
+                ". Ensure the required PMU driver/device is available.");
+            return LIBPERF_ERR_PMU_DATA_NO_FOUND;
+        }
         metricMap.emplace_back(std::make_pair(devAttr.metric, move(devDataList)));
         return SUCCESS;
     }
@@ -1840,6 +1893,11 @@ int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
 #else 
     SetWarn(SUCCESS);
     try {
+        if (data == nullptr) {
+            New(LIBPERF_ERR_NULL_POINTER, "PmuDeviceData output pointer cannot be nullptr.");
+            return -1;
+        }
+        *data = nullptr;
         if (CheckPmuDeviceVar(pmuData, len, attr, attrLen) != SUCCESS) {
             return -1;
         }
@@ -1855,7 +1913,6 @@ int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
         for (unsigned i = 0; i < deviceAttr.size(); ++i) {
             int ret = GetDevMetric(pmuData, len, deviceAttr[i], metricMap);
             if (ret != SUCCESS) {
-                New(ret);
                 return -1;
             }
         }
@@ -1863,6 +1920,7 @@ int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
         // Aggregate each metric data by core id, numa id or bdf.
         vector<PmuDeviceData> devData;
         for (auto &metricData : metricMap) {
+            size_t previousSize = devData.size();
             auto findAggregate = aggregateMap.find(metricData.first);
             int ret;
             if (findAggregate == aggregateMap.end()) {
@@ -1872,7 +1930,14 @@ int PmuGetDevMetric(struct PmuData *pmuData, unsigned len,
                 ret = findAggregate->second(metricData.first, metricData.second, devData);
             }
             if (ret != SUCCESS) {
-                New(ret);
+                if (Perrorno() != ret) {
+                    New(ret);
+                }
+                return -1;
+            }
+            if (devData.size() == previousSize) {
+                New(LIBPERF_ERR_PMU_DATA_NO_FOUND, "PMU data for metric " + GetMetricString(metricData.first) +
+                    " is incomplete and cannot be aggregated. Ensure all events were collected successfully.");
                 return -1;
             }
         }

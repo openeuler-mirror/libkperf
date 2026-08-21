@@ -13,7 +13,7 @@ perf stat -e cycles,branch-misses
 对于libkperf，可以这样来设置PmuAttr：
 
 ```c++
-// c++代码示例
+// c++代码示例片段
 char *evtList[2];
 evtList[0] = "cycles";
 evtList[1] = "branch-misses";
@@ -27,7 +27,7 @@ if (pd == -1) {
 ```
 
 ```python
-# python代码示例
+# python代码示例片段
 import time
 import kperf
 
@@ -40,6 +40,7 @@ if pd == -1:
 ```
 
 ```go
+// go代码示例片段
 import "libkperf/kperf"
 import "fmt"
 
@@ -57,35 +58,35 @@ func main() {
 通过调用```PmuOpen```初始化了采集任务，并获得了任务的标识符pd。
 然后，可以利用pd来启动采集：
 ```c++
-// c++代码示例
+// c++代码示例片段
 PmuEnable(pd);
 sleep(any_duration);
 PmuDisable(pd);
 ```
 
 ```python
-# python代码示例
+# python代码示例片段
 kperf.enable(pd)
 time.sleep(1)
 kperf.disable(pd)
 ```
 
 ```go
-// go代码示例
+// go代码示例片段
 kperf.PmuEnable(pd)
 time.Sleep(time.Second)
 kperf.PmuDisable(pd)
 ```
 不论是否停止了采集，都可以通过```PmuRead```来读取采集数据：
 ```c++
-// c++代码示例
+// c++代码示例片段
 PmuData *data = NULL;
 int len = PmuRead(pd, &data);
 ```
 ```PmuRead```会返回采集数据的长度。
                                               
 ```python
-# python代码示例
+# python代码示例片段
 pmu_data = kperf.read(pd)
 for data in pmu_data.iter:
     print(f"cpu {data.cpu} count {data.count} evt {data.evt}")
@@ -93,7 +94,7 @@ for data in pmu_data.iter:
 ```kperf.read```会返回采集数据链表,可以通过遍历的方式读取。
 
 ```go
-// go代码示例
+// go代码示例片段
 dataVo, err := kperf.PmuRead(fd)
 if err != nil {
     fmt.Printf("kperf pmuread failed, expect err is nil, but is %v\n", err)
@@ -130,6 +131,8 @@ pid 4156 tid 4157 count 5123  evt branch-misses
 pid 4156 tid 4158 count 64574 evt branch-misses
 ...
 ```
+
+完整的counting采集示例代码见READ.md文档相关章节：C++ [编译运行示例程序](../README.md), Python [Python:读取PMU计数](../README.md), Go [Go:读取PMU计数](../README.md)
 
 #### User Access Counting
 
@@ -172,14 +175,13 @@ int main() {
     int pd = PmuOpen(COUNTING, &attr);
     if (pd == -1) {
         printf("PmuOpen failed : %s\n", Perror());
-        PmuClose(pd);
-        return 0;
+        return 1;
     }
     int err = PmuEnable(pd);
     if (err != SUCCESS) {
         printf("PmuEnable failed: %s\n", Perror());
         PmuClose(pd);
-        return 0;
+        return 1;
     }
     PmuData *data = nullptr;
     int len = PmuRead(pd, &data);
@@ -243,9 +245,9 @@ kperf.close(pd)
     <summary>点击查看Go代码示例</summary>
 
 ```go
+package main
 import "libkperf/kperf"
 import "fmt"
-import "time"
 
 func main() {
     attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, PidList:[]int{0}, CpuList:[]int{-1}, EnableUserAccess:true}
@@ -254,7 +256,7 @@ func main() {
 		fmt.Printf("perf user access counting open failed : %v\n", err)
         return
 	}
-	err := kperf.PmuEnable(fd)
+	err = kperf.PmuEnable(fd)
     if err != nil {
         fmt.Printf("PmuEnable failed: %v", err)
         return
@@ -301,6 +303,7 @@ func main() {
 ```c++
 #include <stdio.h>
 #include <cstring>
+#include <unistd.h>
 #include "pcerrc.h"
 #include "pmu.h"
 
@@ -322,8 +325,7 @@ int main() {
     int pd = PmuOpen(COUNTING, &attr);
     if (pd == -1) {
         printf("PmuOpen failed : %s\n", Perror());
-        PmuClose(pd);
-        return 0;
+        return 1;
     }
     PmuEnable(pd);
     sleep(1);
@@ -356,14 +358,17 @@ pidList = [1] # 该pid值替换成对应需要采集应用的pid
 pmu_attr = kperf.PmuAttr(evtList=evtList, pidList=pidList, enableBpf=True)
 pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
 if pd == -1:
-    print(kperf.error())
+    print(f"PmuOpen failed ({kperf.errorno()}): {kperf.error()}")
     exit(1)
 kperf.enable(pd)
 time.sleep(1)
 kperf.disable(pd)
 pmu_data = kperf.read(pd)
+if len(pmu_data) == 0:
+    print(f"PmuRead returned no data ({kperf.errorno()}): {kperf.error()}")
 for data in pmu_data.iter:
     print(f"cpu {data.cpu} evt {data.evt} count {data.count}")
+kperf.close(pd)
 ```
 
 </details>
@@ -372,12 +377,17 @@ for data in pmu_data.iter:
     <summary>点击查看Go代码示例</summary>
 
 ```go
-import "libkperf/kperf"
-import "fmt"
-import "time"
+package main
+
+import (
+    "fmt"
+    "os"
+    "time"
+    "libkperf/kperf"
+)
 
 func main() {
-    pidList := []int{1} // 该pid值替换成对应需要采集应用的pid
+    pidList := []int{os.Getpid()}
     attr := kperf.PmuAttr{EvtList:[]string{"cycles", "branch-misses"}, PidList: pidList, EnableBpf: true}
 	fd, err := kperf.PmuOpen(kperf.COUNT, attr)
 	if err != nil {
@@ -414,30 +424,47 @@ perf record -e cycles,branch-misses
 设置PmuAttr的方式和Counting一样，在调用PmuOpen的时候，把任务类型设置为SAMPLING，并且设置采样频率：
 ```c++
 // c++代码示例
-#include <iostream>
-#include "symbol.h"
-#include "pmu.h"
-#include "pcerrc.h"
+#include <cstdio>
+#include <unistd.h>
 
-PmuAttr attr = {0};
-char* evtList[1] = {"cycles"};
-attr.freq = 1000; // 采样频率是1000HZ
-attr.useFreq = 1;
-attr.evtList = evtList;
-attr.numEvt = 1;
-int pd = PmuOpen(SAMPLING, &attr);
-if ( pd == -1) {
-   printf("kperf pmuopen counting failed, expect err is nil, but is %s\n", Perror());
+#include "pcerrc.h"
+#include "pmu.h"
+
+int main()
+{
+    char cycles[] = "cycles";
+    char *evtList[] = {cycles};
+    PmuAttr attr = {0};
+    attr.freq = 1000;
+    attr.useFreq = 1;
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+
+    int pd = PmuOpen(SAMPLING, &attr);
+    if (pd == -1) {
+        std::fprintf(stderr, "PmuOpen failed: %s\n", Perror());
+        return 1;
+    }
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+
+    PmuData *data = nullptr;
+    int len = PmuRead(pd, &data);
+    if (len < 0) {
+        std::fprintf(stderr, "PmuRead failed: %s\n", Perror());
+        PmuClose(pd);
+        return 1;
+    }
+    for (int i = 0; i < len; ++i) {
+        std::printf("cpu=%d pid=%d tid=%d period=%llu\n", data[i].cpu, data[i].pid,
+                    data[i].tid, static_cast<unsigned long long>(data[i].period));
+    }
+
+    PmuDataFree(data);
+    PmuClose(pd);
+    return 0;
 }
-PmuEnable(pd);
-sleep(1);
-PmuDisable(pd);
-PmuData* data = nullptr;
-int len = PmuRead(pd, &data);
-for (int i = 0; i < len; i++) {
-    printf("cpu=%d pid=%d tid=%d period=%ld\n", data[i].cpu, data[i].pid, data[i].tid, data[i].period);
-}
-PmuClose(pd);
 ```
 
 ```python
@@ -454,19 +481,26 @@ pmu_attr = kperf.PmuAttr(
     )
 pd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
 if pd == -1:
-    print(f"kperf pmuopen sample failed, expect err is nil, but is {kperf.error()}\n")
-kperf.enable(pd)
-time.sleep(1)
-kperf.disable(pd)
-
-pmu_data = kperf.read(pd)
-for item in pmu_data.iter:
-    print(f"cpu {item.cpu} pid {item.pid} tid {item.tid} period {item.period}")
-kperf.close(pd)
+    print(f"PmuOpen failed ({kperf.errorno()}): {kperf.error()}")
+    exit(1)
+try:
+    kperf.enable(pd)
+    time.sleep(1)
+    kperf.disable(pd)
+    pmu_data = kperf.read(pd)
+    if len(pmu_data) == 0:
+        print(f"PmuRead returned no data ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    for item in pmu_data.iter:
+        print(f"cpu {item.cpu} pid {item.pid} tid {item.tid} period {item.period}")
+finally:
+    kperf.close(pd)
 ```
 
 ```go
 //go代码示例
+package main
+
 import "libkperf/kperf"
 import "fmt"
 import "time"
@@ -489,6 +523,7 @@ func main() {
     for _, o := range dataVo.GoData {
         fmt.Printf("cpu=%d pid=%d tid=%d period=%v\n", o.Cpu, o.Pid, o.Tid, o.Period)
     }
+    kperf.PmuDataFree(dataVo)
     kperf.PmuClose(pd)
 }
 ```
@@ -524,31 +559,49 @@ perf record -e arm_spe_0/load_filter=1/
 对于libkperf，可以这样设置PmuAttr：
 ```c++
 // c++代码示例
-#include <iostream>
+#include <cstdio>
+#include <unistd.h>
 
-#include "symbol.h"
-#include "pmu.h"
 #include "pcerrc.h"
+#include "pmu.h"
 
-PmuAttr attr = {0};
-attr.period = 8192; // 采样周期是8192
-attr.dataFilter = LOAD_FILTER; // 设置filter属性为load_filter
+int main()
+{
+    PmuAttr attr = {0};
+    attr.period = 8192;
+    attr.dataFilter = LOAD_FILTER;
 
-int pd = PmuOpen(SPE_SAMPLING, &attr);
-if ( pd == -1) {
-   printf("kperf pmuopen counting failed, expect err is nil, but is %s\n", Perror());
+    int pd = PmuOpen(SPE_SAMPLING, &attr);
+    if (pd == -1) {
+        std::fprintf(stderr, "PmuOpen failed: %s\n", Perror());
+        return 1;
+    }
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+
+    PmuData *data = nullptr;
+    int len = PmuRead(pd, &data);
+    if (len < 0) {
+        std::fprintf(stderr, "PmuRead failed: %s\n", Perror());
+        PmuClose(pd);
+        return 1;
+    }
+    for (int i = 0; i < len; ++i) {
+        const PmuData &item = data[i];
+        std::printf("spe base info comm=%s, pid=%d, tid=%d, coreId=%d, numaId=%d, socketId=%d\n",
+                    item.comm, item.pid, item.tid, item.cpuTopo->coreId,
+                    item.cpuTopo->numaId, item.cpuTopo->socketId);
+        if (item.ext != nullptr) {
+            std::printf("spe ext info pa=%lu, va=%lu, event=%lu, latency=%u\n",
+                        item.ext->pa, item.ext->va, item.ext->event, item.ext->lat);
+        }
+    }
+
+    PmuDataFree(data);
+    PmuClose(pd);
+    return 0;
 }
-PmuEnable(pd);
-sleep(1);
-PmuDisable(pd);
-PmuData* data = nullptr;
-int len = PmuRead(pd, &data);
-for (int i = 0; i < len; i++) {
-    auto o = data[i];
-    printf("spe base info comm=%s, pid=%d, tid=%d, coreId=%d, numaId=%d, sockedId=%d\n", o.comm, o.pid, o.tid, o.cpuTopo->coreId, o.cpuTopo->numaId, o.cpuTopo->socketId);
-	printf("spe ext info pa=%lu, va=%lu, event=%lu, latency=%lu\n", o.ext->pa, o.ext->va, o.ext->event, o.ext->lat);
-}
-PmuClose(pd);
 ```
 
 ```python
@@ -563,20 +616,28 @@ pmu_attr = kperf.PmuAttr(
 ) 
 # 需要root权限才能运行
 pd = kperf.open(kperf.PmuTaskType.SPE_SAMPLING, pmu_attr)
-
-kperf.enable(pd)
-time.sleep(1)
-kperf.disable(pd)
-
-pmu_data = kperf.read(pd)
-for item in pmu_data.iter:
-    print(f"spe base info comm={item.comm}, pid={item.pid}, tid={item.tid}, coreId={item.cpuTopo.coreId}, numaId={item.cpuTopo.numaId}, sockedId={item.cpuTopo.socketId}")
-    print(f"spe ext info pa={item.ext.pa}, va={item.ext.va}, event={item.ext.event}, latency={item.ext.lat}\n")
-kperf.close(pd)
+if pd == -1:
+    print(f"PmuOpen failed ({kperf.errorno()}): {kperf.error()}")
+    exit(1)
+try:
+    kperf.enable(pd)
+    time.sleep(1)
+    kperf.disable(pd)
+    pmu_data = kperf.read(pd)
+    if len(pmu_data) == 0:
+        print(f"PmuRead returned no data ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    for item in pmu_data.iter:
+        print(f"spe base info comm={item.comm}, pid={item.pid}, tid={item.tid}, coreId={item.cpuTopo.coreId}, numaId={item.cpuTopo.numaId}, sockedId={item.cpuTopo.socketId}")
+        print(f"spe ext info pa={item.ext.pa}, va={item.ext.va}, event={item.ext.event}, latency={item.ext.lat}\n")
+finally:
+    kperf.close(pd)
 ```
 
 ```go
 // go代码示例
+package main
+
 import "libkperf/kperf"
 import "fmt"
 import "time"
@@ -596,6 +657,7 @@ func main() {
 	dataVo, err := kperf.PmuRead(pd)
 	if err != nil {
 		fmt.Printf("kperf pmuread failed, expect err is nil, but is %v\n", err)
+		return
 	}
 
 	for _, o := range dataVo.GoData {
@@ -603,7 +665,7 @@ func main() {
 		fmt.Printf("spe ext info pa=%v, va=%v, event=%v, latency=%v\n", o.SpeExt.Pa, o.SpeExt.Va, o.SpeExt.Event, o.SpeExt.Lat)
 	}
 	kperf.PmuDataFree(dataVo)
-	kperf.PmuClose(pd)
+    kperf.PmuClose(pd)
 }
 
 ```
@@ -614,7 +676,7 @@ func main() {
 - SPE采样的调用栈只有一层，而Sampling可以有多层调用栈。
 - SPE的PmuData提供了额外的数据struct PmuDataExt *ext.
 PmuDataExt包含spe特有的数据：访存的物理地址、虚拟地址和事件bit。
-```c++
+```text
 struct PmuDataExt {
     unsigned long pa;               // physical address
     unsigned long va;               // virtual address
@@ -625,7 +687,7 @@ struct PmuDataExt {
 ```
 其中，物理地址pa需要在启用PA_ENABLE的情况下才能采集。
 event是一个bit map，是多个事件的集合，每一个事件占据一个bit，事件对应的bit参考枚举SPE_EVENTS：
-```c++
+```text
 enum SPE_EVENTS {
     SPE_EV_EXCEPT       = 1 << 0,
     SPE_EV_RETIRED      = 1 << 1,
@@ -644,7 +706,7 @@ enum SPE_EVENTS {
 };
 ```
 对于PmuDataExt中的source字段，以下记录不同加载或存储操作对应的bit值
-```c++
+```text
 enum HIP_DATA_SOURCE {
     HIP_PEER_CPU            = 0,
     HIP_PEER_CPU_HITM       = 1,
@@ -664,7 +726,7 @@ enum HIP_DATA_SOURCE {
 ```
 ### 获取符号信息
 结构体PmuData里提供了采样数据的调用栈信息，包含调用栈的地址、符号名称等。
-```c++
+```text
 struct Symbol {
     unsigned long addr;
     char* module;
@@ -701,29 +763,45 @@ libkperf支持uncore事件的采集，只有Counting模式支持uncore事件的�
 可以像这样设置PmuAttr：
 ```c++
 // c++代码示例
-#include <iostream>
-#include "symbol.h"
-#include "pmu.h"
-#include "pcerrc.h"
+#include <cstdio>
+#include <unistd.h>
 
-char *evtList[1];
-evtList[0] = "hisi_sccl1_ddrc0/flux_rd/";
-PmuAttr attr = {0};
-attr.evtList = evtList;
-attr.numEvt = 1;
-int pd = PmuOpen(COUNTING, &attr);
-if ( pd == -1) {
-   printf("kperf pmuopen counting failed, expect err is nil, but is %s\n", Perror());
+#include "pcerrc.h"
+#include "pmu.h"
+
+int main()
+{
+    char readFlux[] = "hisi_sccl1_ddrc0/flux_rd/";
+    char *evtList[] = {readFlux};
+    PmuAttr attr = {0};
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+
+    int pd = PmuOpen(COUNTING, &attr);
+    if (pd == -1) {
+        std::fprintf(stderr, "PmuOpen failed: %s\n", Perror());
+        return 1;
+    }
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+
+    PmuData *data = nullptr;
+    int len = PmuRead(pd, &data);
+    if (len < 0) {
+        std::fprintf(stderr, "PmuRead failed: %s\n", Perror());
+        PmuClose(pd);
+        return 1;
+    }
+    for (int i = 0; i < len; ++i) {
+        std::printf("evt=%s, count=%llu\n", data[i].evt,
+                    static_cast<unsigned long long>(data[i].count));
+    }
+
+    PmuDataFree(data);
+    PmuClose(pd);
+    return 0;
 }
-PmuEnable(pd);
-sleep(1);
-PmuDisable(pd);
-PmuData* data = nullptr;
-int len = PmuRead(pd, &data);
-for (int i = 0; i < len; i++) {
-    printf("evt=%s, count=%d\n", data[i].evt, data[i].count);
-}
-PmuClose(pd);
 ```
 
 ```python
@@ -734,17 +812,27 @@ import time
 evtList = ["hisi_sccl1_ddrc0/flux_rd/"]
 pmu_attr = kperf.PmuAttr(evtList=evtList)
 pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
-kperf.enable(pd)
-time.sleep(1)
-kperf.disable(pd)
-pmu_data = kperf.read(pd)
-for item in pmu_data.iter:
-    print(f"evt={item.evt} count={item.count}")
-kperf.close(pd)
+if pd == -1:
+    print(f"PmuOpen failed ({kperf.errorno()}): {kperf.error()}")
+    exit(1)
+try:
+    kperf.enable(pd)
+    time.sleep(1)
+    kperf.disable(pd)
+    pmu_data = kperf.read(pd)
+    if len(pmu_data) == 0:
+        print(f"PmuRead returned no data ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    for item in pmu_data.iter:
+        print(f"evt={item.evt} count={item.count}")
+finally:
+    kperf.close(pd)
 ```
 
 ```go
 // go代码示例
+package main
+
 import "libkperf/kperf"
 import "fmt"
 import "time"
@@ -768,6 +856,7 @@ func main() {
     for _, o := range dataVo.GoData {
         fmt.Printf("evt=%v count=%v \n", o.Evt, o.Count)
     }
+    kperf.PmuDataFree(dataVo)
     kperf.PmuClose(pd)
 }
 ```
@@ -819,75 +908,65 @@ libkperf支持tracepoint的采集，支持的tracepoint事件可以通过perf li
 #include "symbol.h"
 #include "pmu.h"
 #include "pcerrc.h"
+#include "pmu.h"
 
-char *evtList[1];
-evtList[0] = "sched:sched_switch";
-PmuAttr attr = {0};
-attr.evtList = evtList;
-attr.numEvt = 1;
-attr.period = 1000;
-int pd = PmuOpen(SAMPLING, &attr);
-```
+int main()
+{
+    char schedSwitch[] = "sched:sched_switch";
+    char *evtList[] = {schedSwitch};
+    PmuAttr attr = {0};
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+    attr.period = 1000;
 
-```python
-# python代码示例
-import kperf
-import ksym
-import time
-from ctypes import *
+    int pd = PmuOpen(SAMPLING, &attr);
+    if (pd == -1) {
+        std::fprintf(stderr, "PmuOpen failed: %s\n", Perror());
+        return 1;
+    }
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
 
-evtList = ["sched:sched_switch"]
-pmu_attr = kperf.PmuAttr(
-    evtList=evtList,
-    sampleRate=1000,
-    symbolMode=kperf.SymbolMode.RESOLVE_ELF # 不需要符号解析，可以不使用该参数
-)
-pd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
-```
+    PmuData *data = nullptr;
+    int len = PmuRead(pd, &data);
+    if (len < 0) {
+        std::fprintf(stderr, "PmuRead failed: %s\n", Perror());
+        PmuClose(pd);
+        return 1;
+    }
+    for (int i = 0; i < len; ++i) {
+        int prevPid = 0;
+        char nextComm[16] = {};
+        if (PmuGetField(data[i].rawData, "prev_pid", &prevPid, sizeof(prevPid)) != SUCCESS ||
+            PmuGetField(data[i].rawData, "next_comm", nextComm, sizeof(nextComm)) != SUCCESS) {
+            std::fprintf(stderr, "PmuGetField failed: %s\n", Perror());
+            continue;
+        }
+        std::printf("next_comm=%s;prev_pid=%d\n", nextComm, prevPid);
+    }
 
-```go
-// go代码示例
-import "libkperf/kperf"
-import "fmt"
-
-func main() {
-    evtList := []string{"sched:sched_switch"}
-    attr := kperf.PmuAttr{EvtList:evtList, SymbolMode:kperf.ELF, SampleRate: 1000}
-	pd, err := kperf.PmuOpen(kperf.SAMPLE, attr)
-	if err != nil {
-	    fmt.Printf("kperf pmuopen sample failed, expect err is nil, but is %v\n", err)
-        return
-	}
+    PmuDataFree(data);
+    PmuClose(pd);
+    return 0;
 }
+```
 
+```text
+# Python 配置片段（完整程序见下方）
+pmu_attr = kperf.PmuAttr(evtList=["sched:sched_switch"], sampleRate=1000)
+```
+
+```text
+// Go 配置片段（完整程序见下方）
+attr := kperf.PmuAttr{EvtList: []string{"sched:sched_switch"}, SampleRate: 1000}
 ```
 
 tracepoint支持Counting和Sampling两种模式，API调用流程和两者相似。
 tracepoint能够获取每个事件特有的数据，比如sched:sched_switch包含的数据有：prev_comm, prev_pid, prev_prio, prev_state, next_comm, next_pid, next_prio.
 想要查询每个事件包含哪些数据，可以查看/sys/kernel/tracing/events下面的文件内容，比如/sys/kernel/tracing/events/sched/sched_switch/format。
 
-libkperf提供了接口PmuGetField来获取tracepoint的数据。比如对于sched:sched_switch，可以这样调用：
-```c++
-// c++代码示例
-#include <iostream>
-#include "symbol.h"
-#include "pmu.h"
-#include "pcerrc.h"
-
-PmuEnable(pd);
-sleep(1);
-PmuDisable(pd);
-PmuData* data = nullptr;
-int len = PmuRead(pd, &data);
-for (int i = 0; i < len; i++) {
-   auto pmuData = &data[i];
-   int prev_pid;
-   PmuGetField(pmuData->rawData, "prev_pid", &prev_pid, sizeof(prev_pid));
-   char next_comm[16];
-   PmuGetField(pmuData->rawData, "next_comm", &next_comm, sizeof(next_comm));
-   printf("next_comm=%s;prev_pid=%d\n", next_comm, prev_pid);
-}
-```
+libkperf提供了接口PmuGetField来获取tracepoint的数据。上面的完整 C++ 示例展示了如何读取 `sched:sched_switch` 的 `prev_pid` 和 `next_comm` 字段。
 
 ```python
 # python代码示例
@@ -895,10 +974,17 @@ import kperf
 import time
 from ctypes import *
 
+attr = kperf.PmuAttr(evtList=["sched:sched_switch"], sampleRate=1000)
+pd = kperf.open(kperf.PmuTaskType.SAMPLING, attr)
+if pd == -1:
+    print(f"PmuOpen failed ({kperf.errorno()}): {kperf.error()}")
+    exit(1)
 kperf.enable(pd)
-time.sleep(3)
+time.sleep(1)
 kperf.disable(pd)
 pmu_data = kperf.read(pd)
+if len(pmu_data) == 0:
+    print(f"PmuRead returned no data ({kperf.errorno()}): {kperf.error()}")
 for data in pmu_data.iter:
     next_comm = create_string_buffer(128) #该长度可适当减少，但最好设置比最终获取的长度大，否则最终将无法获取对应结果。
     kperf.get_field(data, "next_comm", next_comm)
@@ -908,11 +994,14 @@ for data in pmu_data.iter:
     kperf.get_field(data, "prev_pid", pointer(prev_pid))
 
     print(f"next_comm={next_comm};prev_pid={prev_pid.value}")
+kperf.close(pd)
 ```
 这里调用者需要提前了解数据的类型，并且指定数据的大小。数据的类型和大小仍然可以从/sys/kernel/tracing/下每个事件的format文件来得知。
 
 ```go
 // go代码示例
+package main
+
 import "libkperf/kperf"
 import "time"
 import "fmt"
@@ -936,7 +1025,7 @@ func main() {
         return
 	}
     for _, v := range dataVo.GoData {
-		var cArray [15]C.char
+		var cArray [128]C.char // 必须不小于 format 中 next_comm 字段的大小（sched_switch 为 16）。
         nextErr := v.GetField("next_comm", unsafe.Pointer(&cArray))
         if nextErr != nil {
             fmt.Printf("get next_comm failed err is%v\n",nextErr)
@@ -953,6 +1042,8 @@ func main() {
             fmt.Printf("prev=%v\n", int(prevPid))
         }
 	}
+    kperf.PmuDataFree(dataVo)
+    kperf.PmuClose(pd)
 }
 
 ```
@@ -976,35 +1067,55 @@ perf stat -e "{inst_retired,inst_spec,cycles}","{inst_retired,cycles}"
 #include <iostream>
 #include <map>
 #include <cstdint>
-#include "symbol.h"
-#include "pmu.h"
-#include "pcerrc.h"
+#include <unistd.h>
 
-// 指定5个事件，因为inst_retired和cycles会重复出现在多个指标中，所以需要重复指定事件。
-char *evtList[5] = {"inst_retired", "inst_spec", "cycles", "inst_retired", "cycles"};
-// 指定事件分组编号，前三个事件为一组，后两个事件为一组。设置EvtAttr属性groupId=-1表示对应事件不参与分组。
-// 当事件数量numEvt超过事件单独属性数量numEvtAttr时，超过数量的事件的groupId默认为-1，即不参与分组。
-EvtAttr attrList[5] = {{1},{1},{1},{2},{2}};
-PmuAttr attr = {0};
-attr.evtList = evtList;
-attr.numEvt = 5;
-attr.evtAttr = attrList;
-attr.numEvtAttr = 5;
-int pd = PmuOpen(COUNTING, &attr);
-PmuEnable(pd);
-sleep(1);
-PmuDisable(pd);
-PmuData *data = nullptr;
-int len = PmuRead(pd, &data);
-// 根据分组来聚合数据
-std::map<int, std::map<std::string, uint64_t>> evtMap;
-for (int i=0;i<len;++i) {
-    evtMap[data[i].groupId][data[i].evt] += data[i].count;
+#include "pcerrc.h"
+#include "pmu.h"
+
+int main()
+{
+    char instRetired1[] = "inst_retired";
+    char instSpec[] = "inst_spec";
+    char cycles1[] = "cycles";
+    char instRetired2[] = "inst_retired";
+    char cycles2[] = "cycles";
+    char *evtList[5] = {instRetired1, instSpec, cycles1, instRetired2, cycles2};
+    EvtAttr attrList[5] = {{1}, {1}, {1}, {2}, {2}};
+    PmuAttr attr = {0};
+    attr.evtList = evtList;
+    attr.numEvt = 5;
+    attr.evtAttr = attrList;
+    attr.numEvtAttr = 5;
+
+    int pd = PmuOpen(COUNTING, &attr);
+    if (pd == -1) {
+        std::cerr << "PmuOpen failed: " << Perror() << '\n';
+        return 1;
+    }
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+
+    PmuData *data = nullptr;
+    int len = PmuRead(pd, &data);
+    if (len < 0) {
+        std::cerr << "PmuRead failed: " << Perror() << '\n';
+        PmuClose(pd);
+        return 1;
+    }
+    std::map<int, std::map<std::string, uint64_t>> evtMap;
+    for (int i = 0; i < len; ++i) {
+        evtMap[data[i].groupId][data[i].evt] += data[i].count;
+    }
+    if (evtMap[1]["cycles"] != 0 && evtMap[2]["cycles"] != 0) {
+        std::cout << "bad spec: " << static_cast<double>(evtMap[1]["inst_spec"] - evtMap[1]["inst_retired"]) / evtMap[1]["cycles"] << '\n';
+        std::cout << "retiring: " << static_cast<double>(evtMap[2]["inst_retired"]) / (6 * evtMap[2]["cycles"]) << '\n';
+    }
+
+    PmuDataFree(data);
+    PmuClose(pd);
+    return 0;
 }
-// 获取第一个分组的数据，计算bad speculation。
-std::cout << "bad spec: " << (double)(evtMap[1]["inst_spec"] - evtMap[1]["inst_retired"])/evtMap[1]["cycles"] << "\n";
-// 获取第二个分组的数据，计算retiring。
-std::cout << "retiring: " << (double)evtMap[2]["inst_retired"]/(6*evtMap[2]["cycles"]) << "\n";
 ```
 
 ```python
@@ -1018,23 +1129,35 @@ evtList = ["inst_retired", "inst_spec", "cycles", "inst_retired", "cycles"]
 evtAttrList = [kperf.EvtAttr(1),kperf.EvtAttr(1),kperf.EvtAttr(1),kperf.EvtAttr(2),kperf.EvtAttr(2)]
 pmu_attr = kperf.PmuAttr(evtList=evtList, evtAttr = evtAttrList)
 pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
-kperf.enable(pd)
-time.sleep(1)
-kperf.disable(pd)
-pmu_data = kperf.read(pd)
-evtMap = defaultdict(lambda: defaultdict(int))
-for data in pmu_data.iter:
-    evtMap[data.groupId][data.evt] += data.count
-
-bad_spec = (evtMap[1]["inst_spec"]-evtMap[1]["inst_retired"])/evtMap[1]["cycles"]
-retiring = evtMap[2]["inst_retired"]/(6*evtMap[2]["cycles"])
-print(f"bad spec: {bad_spec}")
-print(f"retiring: {retiring}")
-kperf.close(pd)
+if pd == -1:
+    print(f"PmuOpen failed ({kperf.errorno()}): {kperf.error()}")
+    exit(1)
+try:
+    kperf.enable(pd)
+    time.sleep(1)
+    kperf.disable(pd)
+    pmu_data = kperf.read(pd)
+    if len(pmu_data) == 0:
+        print(f"PmuRead returned no data ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    evtMap = defaultdict(lambda: defaultdict(int))
+    for data in pmu_data.iter:
+        evtMap[data.groupId][data.evt] += data.count
+    if evtMap[1]["cycles"] == 0 or evtMap[2]["cycles"] == 0:
+        print("Cannot calculate grouped metrics because the cycles count is zero")
+        exit(1)
+    bad_spec = (evtMap[1]["inst_spec"] - evtMap[1]["inst_retired"]) / evtMap[1]["cycles"]
+    retiring = evtMap[2]["inst_retired"] / (6 * evtMap[2]["cycles"])
+    print(f"bad spec: {bad_spec}")
+    print(f"retiring: {retiring}")
+finally:
+    kperf.close(pd)
 ```
 
 ```go
 // go代码示例
+package main
+
 import "libkperf/kperf"
 import "fmt"
 import "time"
@@ -1085,6 +1208,7 @@ func main() {
         }
     }
 
+    kperf.PmuDataFree(dataVo)
     kperf.PmuClose(pd)
 }
 ```
@@ -1101,13 +1225,9 @@ c --end perf--> d(子线程退出)
 考虑上面的场景：用perf stat对进程采集，之后进程创建了子线程，采集一段事件后，停止perf。
 查看采集结果，perf只会显示主线程的采集结果，而无法看到子线程的结果：count = count(main thread) + count(thread). perf把子线程的数据聚合到了主线程上。
 
-libkperf提供了采集子线程的能力。如果想要在上面场景中获取子线程的计数，可以把PmuAttr.incluceNewFork设置为1.
-```c++
-// c++代码示例
-attr.includeNewFork = 1;
-```
-```python
-# python代码示例
+libkperf提供了采集子线程的能力。如果想要在上面场景中获取子线程的计数，可以在完整 Counting 示例的 `PmuOpen` 调用前设置 `attr.includeNewFork = 1`。
+```text
+# Python 配置片段
 pmu_attr = kperf.PmuAttr(evtList=evtList, includeNewFork=True)
 ```
 然后，通过PmuRead获取到的PmuData，便能包含子线程计数信息了。
@@ -1120,41 +1240,57 @@ pmu_attr = kperf.PmuAttr(evtList=evtList, includeNewFork=True)
 参考代码：
 ```c++
 // c++代码示例
+#include <cstdio>
 #include <iostream>
-#include "symbol.h"
+#include <unistd.h>
+
+#include "pcerrc.h"
 #include "pmu.h"
 
-PmuDeviceAttr devAttr[2];
-// DDR读带宽
-devAttr[0].metric = PMU_DDR_READ_BW;
-// DDR写带宽
-devAttr[1].metric = PMU_DDR_WRITE_BW;
-// 初始化采集任务
-int pd = PmuDeviceOpen(devAttr, 2);
-// 开始采集
-PmuEnable(pd);
-sleep(1);
-PmuDisable(pd);
-// 读取原始信息
-PmuData *oriData = nullptr;
-int oriLen = PmuRead(pd, &oriData);
-PmuDeviceData *devData = nullptr;
-auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
-// devData的长度为2 * n (总通道数)。前n个是读带宽，后n个是写带宽。
-for (int i = 0; i < len / 2; ++i) {
-    // socketId表示数据对应的socket节点。
-    // ddrNumaId表示数据对应的numa节点。
-    // channelID表示数据对应的通道ID。
-    // count是距离上次采集的DDR总读/写包长，单位是Byte，
-    // 需要除以时间间隔得到带宽（这里的时间间隔是1秒）。
-    std::cout << "read bandwidth(Socket: " << devData[i].socketId << " Numa: " << devData[i].ddrNumaId << " Channel: " << devData[i].channelId << "): " << devData[i].count/1024/1024 << "M/s\n";
+int main()
+{
+    PmuDeviceAttr devAttr[2] = {};
+    devAttr[0].metric = PMU_DDR_READ_BW;
+    devAttr[1].metric = PMU_DDR_WRITE_BW;
+
+    int pd = PmuDeviceOpen(devAttr, 2);
+    if (pd == -1) {
+        std::fprintf(stderr, "PmuDeviceOpen failed (%d): %s\n", Perrorno(), Perror());
+        return 1;
+    }
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+
+    PmuData *oriData = nullptr;
+    int oriLen = PmuRead(pd, &oriData);
+    if (oriLen < 0) {
+        std::fprintf(stderr, "PmuRead failed (%d): %s\n", Perrorno(), Perror());
+        PmuClose(pd);
+        return 1;
+    }
+    PmuDeviceData *devData = nullptr;
+    int len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
+    if (len < 0) {
+        std::fprintf(stderr, "PmuGetDevMetric failed (%d): %s\n", Perrorno(), Perror());
+        PmuDataFree(oriData);
+        PmuClose(pd);
+        return 1;
+    }
+
+    for (int i = 0; i < len; ++i) {
+        const char *direction = devData[i].metric == PMU_DDR_READ_BW ? "read" : "write";
+        std::cout << direction << " bandwidth(Socket: " << devData[i].socketId
+                  << " Numa: " << devData[i].ddrNumaId << " Channel: "
+                  << devData[i].channelId << "): " << devData[i].count / 1024 / 1024
+                  << " M/s\n";
+    }
+
+    DevDataFree(devData);
+    PmuDataFree(oriData);
+    PmuClose(pd);
+    return 0;
 }
-for (int i = len / 2; i < len; ++i) {
-    std::cout << "write bandwidth(Socket: " << devData[i].socketId << " Numa: " << devData[i].ddrNumaId << " Channel: " << devData[i].channelId << "): " << devData[i].count/1024/1024 << "M/s\n";
-}
-DevDataFree(devData);
-PmuDataFree(oriData);
-PmuClose(pd);
 ```
 
 ```python
@@ -1167,42 +1303,76 @@ dev_attr = [
     kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_DDR_WRITE_BW)
 ]
 pd = kperf.device_open(dev_attr)
-kperf.enable(pd)
-time.sleep(1)
-kperf.disable(pd)
-ori_data = kperf.read(pd)
-dev_data = kperf.get_device_metric(ori_data, dev_attr)
-for data in dev_data.iter:
-    if data.metric == kperf.PmuDeviceMetric.PMU_DDR_READ_BW:
-        print(f"read bandwidth(Socket: {data.socketId} Numa: {data.ddrNumaId} Channel: {data.channelId}): {data.count/1024/1024} M/s")
-    if data.metric == kperf.PmuDeviceMetric.PMU_DDR_WRITE_BW:
-        print(f"write bandwidth(Socket: {data.socketId} Numa: {data.ddrNumaId} Channel: {data.channelId}): {data.count/1024/1024} M/s")
+if pd == -1:
+    print(f"PmuDeviceOpen failed ({kperf.errorno()}): {kperf.error()}")
+    exit(1)
+try:
+    kperf.enable(pd)
+    time.sleep(1)
+    kperf.disable(pd)
+    ori_data = kperf.read(pd)
+    if len(ori_data) == 0:
+        print(f"PmuRead returned no data ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    dev_data = kperf.get_device_metric(ori_data, dev_attr)
+    if len(dev_data) == 0:
+        print(f"PmuGetDevMetric returned no data ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    for data in dev_data.iter:
+        if data.metric == kperf.PmuDeviceMetric.PMU_DDR_READ_BW:
+            print(f"read bandwidth(Socket: {data.socketId} Numa: {data.ddrNumaId} Channel: {data.channelId}): {data.count/1024/1024} M/s")
+        if data.metric == kperf.PmuDeviceMetric.PMU_DDR_WRITE_BW:
+            print(f"write bandwidth(Socket: {data.socketId} Numa: {data.ddrNumaId} Channel: {data.channelId}): {data.count/1024/1024} M/s")
+finally:
+    kperf.close(pd)
 ```
 
 ```go
 // go代码用例
-import "libkperf/kperf"
-import "fmt"
-import "time"
+package main
 
-deviceAttrs := []kperf.PmuDeviceAttr{kperf.PmuDeviceAttr{Metric: kperf.PMU_DDR_READ_BW}, kperf.PmuDeviceAttr{Metric: kperf.PMU_DDR_WRITE_BW}}
-fd, _ := kperf.PmuDeviceOpen(deviceAttrs)
-kperf.PmuEnable(fd)
-time.Sleep(1 * time.Second)
-kperf.PmuDisable(fd)
-dataVo, _ := kperf.PmuRead(fd)
-deivceDataVo, _ := kperf.PmuGetDevMetric(dataVo, deviceAttrs)
-for _, v := range deivceDataVo.GoDeviceData {
-    if v.Metric == kperf.PMU_DDR_READ_BW {
-	    fmt.Printf("read bandwidth(Socket: %v Numa: %v Channel: %v): %v M/s\n", v.SocketId, v.DdrNumaId, v.ChannelId, v.Count/1024/1024)
+import (
+    "fmt"
+    "time"
+
+    "libkperf/kperf"
+)
+
+func main() {
+    attrs := []kperf.PmuDeviceAttr{
+        {Metric: kperf.PMU_DDR_READ_BW},
+        {Metric: kperf.PMU_DDR_WRITE_BW},
     }
-    if v.Metric == kperf.PMU_DDR_WRITE_BW {
-	    fmt.Printf("write bandwidth(Socket: %v Numa: %v Channel: %v): %v M/s\n", v.SocketId, v.DdrNumaId, v.ChannelId, v.Count/1024/1024)
+    fd, err := kperf.PmuDeviceOpen(attrs)
+    if err != nil {
+        fmt.Printf("PmuDeviceOpen failed: %v\n", err)
+        return
     }
+    kperf.PmuEnable(fd)
+    time.Sleep(time.Second)
+    kperf.PmuDisable(fd)
+    dataVo, err := kperf.PmuRead(fd)
+    if err != nil {
+        fmt.Printf("PmuRead failed: %v\n", err)
+        return
+    }
+    deviceDataVo, err := kperf.PmuGetDevMetric(dataVo, attrs)
+    if err != nil {
+        fmt.Printf("PmuGetDevMetric failed: %v\n", err)
+        return
+    }
+    defer kperf.DevDataFree(deviceDataVo)
+    for _, data := range deviceDataVo.GoDeviceData {
+        direction := "write"
+        if data.Metric == kperf.PMU_DDR_READ_BW {
+            direction = "read"
+        }
+        fmt.Printf("%s bandwidth(Socket: %v Numa: %v Channel: %v): %v M/s\n",
+            direction, data.SocketId, data.DdrNumaId, data.ChannelId, data.Count/1024/1024)
+    }
+    kperf.PmuDataFree(dataVo)
+    kperf.PmuClose(fd)
 }
-kperf.DevDataFree(deivceDataVo)
-kperf.PmuDataFree(dataVo)
-kperf.PmuClose(fd)
 ```
 
 执行上述代码，输出的结果类似如下：
@@ -1232,32 +1402,54 @@ libkperf提供了采集L3 cache平均时延的能力，用于分析访存型应�
 
 参考代码：
 ```c++
+#include <cstdio>
 #include <iostream>
-#include "symbol.h"
+#include <unistd.h>
+
+#include "pcerrc.h"
 #include "pmu.h"
 
 // c++代码示例
-PmuDeviceAttr devAttr[1];
-// L3平均时延
-devAttr[0].metric = PMU_L3_LAT;
-// 初始化采集任务
-int pd = PmuDeviceOpen(devAttr, 1);
-// 开始采集
-PmuEnable(pd);
-sleep(1);
-PmuDisable(pd);
-PmuData *oriData = nullptr;
-int oriLen = PmuRead(pd, &oriData);
-PmuDeviceData *devData = nullptr;
-auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 1, &devData);
-// devData的长度等于cluster个数
-for (int i=0;i<len;++i) {
-    // 每个devData表示一个cluster的L3平均时延，是以ns为单位
-    std::cout << "L3 latency(" << devData[i].clusterId << "): " << devData[i].count<< " ns\n";
+int main()
+{
+    PmuDeviceAttr devAttr[1] = {};
+    devAttr[0].metric = PMU_L3_LAT;
+
+    int pd = PmuDeviceOpen(devAttr, 1);
+    if (pd == -1) {
+        std::fprintf(stderr, "PmuDeviceOpen failed (%d): %s\n", Perrorno(), Perror());
+        return 1;
+    }
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+
+    PmuData *oriData = nullptr;
+    int oriLen = PmuRead(pd, &oriData);
+    if (oriLen < 0) {
+        std::fprintf(stderr, "PmuRead failed (%d): %s\n", Perrorno(), Perror());
+        PmuClose(pd);
+        return 1;
+    }
+    PmuDeviceData *devData = nullptr;
+    int len = PmuGetDevMetric(oriData, oriLen, devAttr, 1, &devData);
+    if (len < 0) {
+        std::fprintf(stderr, "PmuGetDevMetric failed (%d): %s\n", Perrorno(), Perror());
+        PmuDataFree(oriData);
+        PmuClose(pd);
+        return 1;
+    }
+
+    for (int i = 0; i < len; ++i) {
+        std::cout << "L3 latency(" << devData[i].clusterId << "): "
+                  << devData[i].count << " ns\n";
+    }
+
+    DevDataFree(devData);
+    PmuDataFree(oriData);
+    PmuClose(pd);
+    return 0;
 }
-DevDataFree(devData);
-PmuDataFree(oriData);
-PmuClose(pd);
 ```
 
 ```python
@@ -1269,34 +1461,65 @@ dev_attr = [
     kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_L3_LAT)
 ]
 pd = kperf.device_open(dev_attr)
-kperf.enable(pd)
-time.sleep(1)
-kperf.disable(pd)
-ori_data = kperf.read(pd)
-dev_data = kperf.get_device_metric(ori_data, dev_attr)
-for data in dev_data.iter:
-    print(f"L3 latency({data.clusterId}): {data.count} ns")
+if pd == -1:
+    print(f"PmuDeviceOpen failed ({kperf.errorno()}): {kperf.error()}")
+    exit(1)
+try:
+    kperf.enable(pd)
+    time.sleep(1)
+    kperf.disable(pd)
+    ori_data = kperf.read(pd)
+    if len(ori_data) == 0:
+        print(f"PmuRead returned no data ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    dev_data = kperf.get_device_metric(ori_data, dev_attr)
+    if len(dev_data) == 0:
+        print(f"PmuGetDevMetric returned no data ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    for data in dev_data.iter:
+        print(f"L3 latency({data.clusterId}): {data.count} ns")
+finally:
+    kperf.close(pd)
 ```
 
 ```go
 // go代码用例
-import "libkperf/kperf"
-import "fmt"
-import "time"
+package main
 
-deviceAttrs := []kperf.PmuDeviceAttr{kperf.PmuDeviceAttr{Metric: kperf.PMU_L3_LAT}}
-fd, _ := kperf.PmuDeviceOpen(deviceAttrs)
-kperf.PmuEnable(fd)
-time.Sleep(1 * time.Second)
-kperf.PmuDisable(fd)
-dataVo, _ := kperf.PmuRead(fd)
-deivceDataVo, _ := kperf.PmuGetDevMetric(dataVo, deviceAttrs)
-for _, v := range deivceDataVo.GoDeviceData {
-	fmt.Printf("L3 latency(%v): %v ns\n", v.ClusterId, v.Count)
+import (
+    "fmt"
+    "time"
+
+    "libkperf/kperf"
+)
+
+func main() {
+    attrs := []kperf.PmuDeviceAttr{{Metric: kperf.PMU_L3_LAT}}
+    fd, err := kperf.PmuDeviceOpen(attrs)
+    if err != nil {
+        fmt.Printf("PmuDeviceOpen failed: %v\n", err)
+        return
+    }
+    kperf.PmuEnable(fd)
+    time.Sleep(time.Second)
+    kperf.PmuDisable(fd)
+    dataVo, err := kperf.PmuRead(fd)
+    if err != nil {
+        fmt.Printf("PmuRead failed: %v\n", err)
+        return
+    }
+    deviceDataVo, err := kperf.PmuGetDevMetric(dataVo, attrs)
+    if err != nil {
+        fmt.Printf("PmuGetDevMetric failed: %v\n", err)
+        return
+    }
+    defer kperf.DevDataFree(deviceDataVo)
+    for _, data := range deviceDataVo.GoDeviceData {
+        fmt.Printf("L3 latency(%v): %v ns\n", data.ClusterId, data.Count)
+    }
+    kperf.PmuDataFree(dataVo)
+    kperf.PmuClose(fd)
 }
-kperf.DevDataFree(deivceDataVo)
-kperf.PmuDataFree(dataVo)
-kperf.PmuClose(fd)
 ```
 
 执行上述代码，输出的结果类似如下：
@@ -1311,37 +1534,71 @@ L3 latency(3): 198.4 ns
 ### 采集PCIE带宽
 libkperf提供了采集PCIE带宽的能力，采集tx和rx方向的读写带宽，用于监控外部设备（nvme、gpu等）的带宽。
 并不是所有的PCIE设备都可以被采集带宽，鲲鹏的pmu设备只覆盖了一部分PCIE设备，可以通过PmuDeviceBdfList来获取当前环境可采集的PCIE设备或Root port。
+调用方式片段（完整程序见下方）：
+```text
+    enum PmuBdfType bdfType = PMU_BDF_TYPE_PCIE;
+    unsigned bdfLen = 0;
+    const char** bdfList = PmuDeviceBdfList(bdfType, &bdfLen);
+    for (int i = 0; i < bdfLen; ++i) {
+        std::cout << bdfList[i] << std::endl;
+    }
+```
 
 参考代码：
 ```c++
 // c++代码示例
+#include <cstdio>
 #include <iostream>
-#include "symbol.h"
+#include <unistd.h>
+
+#include "pcerrc.h"
 #include "pmu.h"
 
-PmuDeviceAttr devAttr[1];
-// 采集PCIE设备RX的读带宽
-devAttr[0].metric = PMU_PCIE_RX_MRD_BW;
-// 设置PCIE的bdf号
-devAttr[0].bdf = "16:04.0";
-// 初始化采集任务
-int pd = PmuDeviceOpen(devAttr, 1);
-// 开始采集
-PmuEnable(pd);
-sleep(1);
-PmuDisable(pd);
-PmuData *oriData = nullptr;
-int oriLen = PmuRead(pd, &oriData);
-PmuDeviceData *devData = nullptr;
-auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 1, &devData);
-// devData的长度等于pcie设备的个数
-for (int i=0;i<len;++i) {
-    // 带宽的单位是Bytes/us
-    std::cout << "pcie bw(" << devData[i].bdf << "): " << devData[i].count<< " Bytes/us\n";
+int main()
+{
+    unsigned bdfLen = 0;
+    const char **bdfList = PmuDeviceBdfList(PMU_BDF_TYPE_PCIE, &bdfLen);
+    if (bdfList == nullptr || bdfLen == 0) {
+        std::fprintf(stderr, "No collectable PCIe BDF (%d): %s\n", Perrorno(), Perror());
+        return 1;
+    }
+
+    PmuDeviceAttr devAttr[1] = {};
+    devAttr[0].metric = PMU_PCIE_RX_MRD_BW;
+    devAttr[0].bdf = const_cast<char *>(bdfList[0]);
+    int pd = PmuDeviceOpen(devAttr, 1);
+    if (pd == -1) {
+        std::fprintf(stderr, "PmuDeviceOpen failed for BDF %s (%d): %s\n", devAttr[0].bdf, Perrorno(), Perror());
+        return 1;
+    }
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+
+    PmuData *oriData = nullptr;
+    int oriLen = PmuRead(pd, &oriData);
+    if (oriLen < 0) {
+        std::fprintf(stderr, "PmuRead failed (%d): %s\n", Perrorno(), Perror());
+        PmuClose(pd);
+        return 1;
+    }
+    PmuDeviceData *devData = nullptr;
+    int len = PmuGetDevMetric(oriData, oriLen, devAttr, 1, &devData);
+    if (len < 0) {
+        std::fprintf(stderr, "PmuGetDevMetric failed (%d): %s\n", Perrorno(), Perror());
+        PmuDataFree(oriData);
+        PmuClose(pd);
+        return 1;
+    }
+    for (int i = 0; i < len; ++i) {
+        std::cout << "pcie bw(" << devData[i].bdf << "): " << devData[i].count << " Bytes/us\n";
+    }
+
+    DevDataFree(devData);
+    PmuDataFree(oriData);
+    PmuClose(pd);
+    return 0;
 }
-DevDataFree(devData);
-PmuDataFree(oriData);
-PmuClose(pd);
 ```
 
 ```python
@@ -1349,38 +1606,79 @@ PmuClose(pd);
 import kperf
 import time
 
-dev_attr = [
-    kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_PCIE_RX_MRD_BW, bdf="16:04.0")
-]
+bdf_list = list(kperf.device_bdf_list(kperf.PmuBdfType.PMU_BDF_TYPE_PCIE))
+if not bdf_list:
+    print(f"No collectable PCIe BDF ({kperf.errorno()}): {kperf.error()}")
+    exit(1)
+dev_attr = [kperf.PmuDeviceAttr(
+    metric=kperf.PmuDeviceMetric.PMU_PCIE_RX_MRD_BW,
+    bdf=bdf_list[0]
+)]
 pd = kperf.device_open(dev_attr)
-kperf.enable(pd)
-time.sleep(1)
-kperf.disable(pd)
-ori_data = kperf.read(pd)
-dev_data = kperf.get_device_metric(ori_data, dev_attr)
-for data in dev_data.iter:
-    print(f"pcie bw({data.bdf}): {data.count} Bytes/us")
+if pd == -1:
+    print(f"PmuDeviceOpen failed ({kperf.errorno()}): {kperf.error()}")
+    exit(1)
+try:
+    kperf.enable(pd)
+    time.sleep(1)
+    kperf.disable(pd)
+    ori_data = kperf.read(pd)
+    if len(ori_data) == 0:
+        print(f"PmuRead returned no data ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    dev_data = kperf.get_device_metric(ori_data, dev_attr)
+    if len(dev_data) == 0:
+        print(f"PmuGetDevMetric returned no data ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    for data in dev_data.iter:
+        print(f"pcie bw({data.bdf}): {data.count} Bytes/us")
+finally:
+    kperf.close(pd)
 ```
 
 ```go
 // go代码用例
-import "libkperf/kperf"
-import "fmt"
-import "time"
+package main
 
-deviceAttrs := []kperf.PmuDeviceAttr{kperf.PmuDeviceAttr{Metric: kperf.PMU_PCIE_RX_MRD_BW, Bdf: "16:04.0"}}
-fd, _ := kperf.PmuDeviceOpen(deviceAttrs)
-kperf.PmuEnable(fd)
-time.Sleep(1 * time.Second)
-kperf.PmuDisable(fd)
-dataVo, _ := kperf.PmuRead(fd)
-deivceDataVo, _ := kperf.PmuGetDevMetric(dataVo, deviceAttrs)
-for _, v := range deivceDataVo.GoDeviceData {
-	fmt.Printf("pcie bw(%v): %v Bytes/us\n", v.Bdf, v.Count)
+import (
+    "fmt"
+    "time"
+
+    "libkperf/kperf"
+)
+
+func main() {
+    bdfList, err := kperf.PmuDeviceBdfList(kperf.PMU_BDF_TYPE_PCIE)
+    if err != nil || len(bdfList) == 0 {
+        fmt.Printf("No collectable PCIe BDF: %v\n", err)
+        return
+    }
+    attrs := []kperf.PmuDeviceAttr{{Metric: kperf.PMU_PCIE_RX_MRD_BW, Bdf: bdfList[0]}}
+    fd, err := kperf.PmuDeviceOpen(attrs)
+    if err != nil {
+        fmt.Printf("PmuDeviceOpen failed: %v\n", err)
+        return
+    }
+    kperf.PmuEnable(fd)
+    time.Sleep(time.Second)
+    kperf.PmuDisable(fd)
+    dataVo, err := kperf.PmuRead(fd)
+    if err != nil {
+        fmt.Printf("PmuRead failed: %v\n", err)
+        return
+    }
+    deviceDataVo, err := kperf.PmuGetDevMetric(dataVo, attrs)
+    if err != nil {
+        fmt.Printf("PmuGetDevMetric failed: %v\n", err)
+        return
+    }
+    defer kperf.DevDataFree(deviceDataVo)
+    for _, data := range deviceDataVo.GoDeviceData {
+        fmt.Printf("pcie bw(%v): %v Bytes/us\n", data.Bdf, data.Count)
+    }
+    kperf.PmuDataFree(dataVo)
+    kperf.PmuClose(fd)
 }
-kperf.DevDataFree(deivceDataVo)
-kperf.PmuDataFree(dataVo)
-kperf.PmuClose(fd)
 ```
 
 执行上述代码，输出的结果类似如下：
@@ -1395,33 +1693,59 @@ libkperf提供了采集PCIE延时的能力，采集rx方向的读写延时和tx�
 参考代码：
 ```c++
 // c++代码示例
+#include <cstdio>
 #include <iostream>
-#include "symbol.h"
+#include <unistd.h>
+
+#include "pcerrc.h"
 #include "pmu.h"
 
-PmuDeviceAttr devAttr[1];
-// 采集PCIE设备RX的读延时，PMU_PCIE_RX_MWR_LAT为RX的写延时，PMU_PCIE_TX_MRD_LAT为TX的读延时
-devAttr[0].metric = PMU_PCIE_RX_MRD_LAT;
-// 设置PCIE的port号
-devAttr[0].port = "c0:00.0";
-// 初始化采集任务
-int pd = PmuDeviceOpen(devAttr, 1);
-// 开始采集
-PmuEnable(pd);
-sleep(1);
-PmuDisable(pd);
-PmuData *oriData = nullptr;
-int oriLen = PmuRead(pd, &oriData);
-PmuDeviceData *devData = nullptr;
-auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 1, &devData);
-// devData的长度等于pcie设备的个数
-for (int i=0;i<len;++i) {
-    // PCIE延时的单位是ns
-    std::cout << "pcie lat(" << devData[i].port << "): " << devData[i].count<< " ns\n";
+int main()
+{
+    unsigned portLen = 0;
+    const char **portList = PmuDeviceBdfList(PMU_BDF_TYPE_PCIE, &portLen);
+    if (portList == nullptr || portLen == 0) {
+        std::fprintf(stderr, "No collectable PCIe port (%d): %s\n", Perrorno(), Perror());
+        return 1;
+    }
+
+    PmuDeviceAttr devAttr[1] = {};
+    devAttr[0].metric = PMU_PCIE_RX_MRD_LAT;
+    devAttr[0].port = const_cast<char *>(portList[0]);
+    int pd = PmuDeviceOpen(devAttr, 1);
+    if (pd == -1) {
+        std::fprintf(stderr, "PmuDeviceOpen failed for port %s (%d): %s\n", devAttr[0].port, Perrorno(), Perror());
+        return 1;
+    }
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+
+    PmuData *oriData = nullptr;
+    int oriLen = PmuRead(pd, &oriData);
+    if (oriLen < 0) {
+        std::fprintf(stderr, "PmuRead failed (%d): %s\n", Perrorno(), Perror());
+        PmuClose(pd);
+        return 1;
+    }
+    PmuDeviceData *devData = nullptr;
+    int len = PmuGetDevMetric(oriData, oriLen, devAttr, 1, &devData);
+    if (len < 0) {
+        std::fprintf(stderr, "PmuGetDevMetric failed (%d): %s\n", Perrorno(), Perror());
+        PmuDataFree(oriData);
+        PmuClose(pd);
+        return 1;
+    }
+
+    for (int i = 0; i < len; ++i) {
+        std::cout << "pcie lat(" << devData[i].port << "): " << devData[i].count << " ns\n";
+    }
+
+    DevDataFree(devData);
+    PmuDataFree(oriData);
+    PmuClose(pd);
+    return 0;
 }
-DevDataFree(devData);
-PmuDataFree(oriData);
-PmuClose(pd);
 ```
 
 ```python
@@ -1429,38 +1753,79 @@ PmuClose(pd);
 import kperf
 import time
 
-dev_attr = [
-    kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_PCIE_RX_MRD_LAT, port="c0:00.0")
-]
+port_list = list(kperf.device_bdf_list(kperf.PmuBdfType.PMU_BDF_TYPE_PCIE))
+if not port_list:
+    print(f"No collectable PCIe port ({kperf.errorno()}): {kperf.error()}")
+    exit(1)
+dev_attr = [kperf.PmuDeviceAttr(
+    metric=kperf.PmuDeviceMetric.PMU_PCIE_RX_MRD_LAT,
+    port=port_list[0]
+)]
 pd = kperf.device_open(dev_attr)
-kperf.enable(pd)
-time.sleep(1)
-kperf.disable(pd)
-ori_data = kperf.read(pd)
-dev_data = kperf.get_device_metric(ori_data, dev_attr)
-for data in dev_data.iter:
-    print(f"pcie lat({data.port}): {data.count} ns")
+if pd == -1:
+    print(f"PmuDeviceOpen failed ({kperf.errorno()}): {kperf.error()}")
+    exit(1)
+try:
+    kperf.enable(pd)
+    time.sleep(1)
+    kperf.disable(pd)
+    ori_data = kperf.read(pd)
+    if len(ori_data) == 0:
+        print(f"PmuRead returned no data ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    dev_data = kperf.get_device_metric(ori_data, dev_attr)
+    if len(dev_data) == 0:
+        print(f"PmuGetDevMetric returned no data ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    for data in dev_data.iter:
+        print(f"pcie lat({data.port}): {data.count} ns")
+finally:
+    kperf.close(pd)
 ```
 
 ```go
 // go代码用例
-import "libkperf/kperf"
-import "fmt"
-import "time"
+package main
 
-deviceAttrs := []kperf.PmuDeviceAttr{kperf.PmuDeviceAttr{Metric: kperf.PMU_PCIE_RX_MRD_LAT, Port: "c0:00.0"}}
-fd, _ := kperf.PmuDeviceOpen(deviceAttrs)
-kperf.PmuEnable(fd)
-time.Sleep(1 * time.Second)
-kperf.PmuDisable(fd)
-dataVo, _ := kperf.PmuRead(fd)
-deivceDataVo, _ := kperf.PmuGetDevMetric(dataVo, deviceAttrs)
-for _, v := range deivceDataVo.GoDeviceData {
-	fmt.Printf("pcie lat(%v): %v ns\n", v.Port, v.Count)
+import (
+    "fmt"
+    "time"
+
+    "libkperf/kperf"
+)
+
+func main() {
+    portList, err := kperf.PmuDeviceBdfList(kperf.PMU_BDF_TYPE_PCIE)
+    if err != nil || len(portList) == 0 {
+        fmt.Printf("No collectable PCIe port: %v\n", err)
+        return
+    }
+    attrs := []kperf.PmuDeviceAttr{{Metric: kperf.PMU_PCIE_RX_MRD_LAT, Port: portList[0]}}
+    fd, err := kperf.PmuDeviceOpen(attrs)
+    if err != nil {
+        fmt.Printf("PmuDeviceOpen failed: %v\n", err)
+        return
+    }
+    kperf.PmuEnable(fd)
+    time.Sleep(time.Second)
+    kperf.PmuDisable(fd)
+    dataVo, err := kperf.PmuRead(fd)
+    if err != nil {
+        fmt.Printf("PmuRead failed: %v\n", err)
+        return
+    }
+    deviceDataVo, err := kperf.PmuGetDevMetric(dataVo, attrs)
+    if err != nil {
+        fmt.Printf("PmuGetDevMetric failed: %v\n", err)
+        return
+    }
+    defer kperf.DevDataFree(deviceDataVo)
+    for _, data := range deviceDataVo.GoDeviceData {
+        fmt.Printf("pcie lat(%v): %v ns\n", data.Port, data.Count)
+    }
+    kperf.PmuDataFree(dataVo)
+    kperf.PmuClose(fd)
 }
-kperf.DevDataFree(deivceDataVo)
-kperf.PmuDataFree(dataVo)
-kperf.PmuClose(fd)
 ```
 
 执行上述代码，输出的结果类似如下：
@@ -1474,35 +1839,55 @@ libkperf提供了采集跨numa/跨socket访问HHA的操作比例的能力，用�
 参考代码：
 ```c++
 // c++代码示例
+#include <cstdio>
 #include <iostream>
-#include "symbol.h"
+#include <unistd.h>
+
+#include "pcerrc.h"
 #include "pmu.h"
 
-PmuDeviceAttr devAttr[2];
-// 采集跨numa访问HHA的操作比例
-devAttr[0].metric = PMU_HHA_CROSS_NUMA;
-// 采集跨socket访问HHA的操作比例
-devAttr[1].metric = PMU_HHA_CROSS_SOCKET;
-// 初始化采集任务
-int pd = PmuDeviceOpen(devAttr, 2);
-// 开始采集
-PmuEnable(pd);
-sleep(1);
-PmuDisable(pd);
-PmuData *oriData = nullptr;
-int oriLen = PmuRead(pd, &oriData);
-PmuDeviceData *devData = nullptr;
-auto len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
-// devData的长度等于设备numa的个数
-for (int i = 0; i < len / 2; ++i) {
-    std::cout << "HHA cross-numa operations ratio (Numa: " << devData[i].numaId << "): " << devData[i].count<< "\n";
+int main()
+{
+    PmuDeviceAttr devAttr[2] = {};
+    devAttr[0].metric = PMU_HHA_CROSS_NUMA;
+    devAttr[1].metric = PMU_HHA_CROSS_SOCKET;
+
+    int pd = PmuDeviceOpen(devAttr, 2);
+    if (pd == -1) {
+        std::fprintf(stderr, "PmuDeviceOpen failed (%d): %s\n", Perrorno(), Perror());
+        return 1;
+    }
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+
+    PmuData *oriData = nullptr;
+    int oriLen = PmuRead(pd, &oriData);
+    if (oriLen < 0) {
+        std::fprintf(stderr, "PmuRead failed (%d): %s\n", Perrorno(), Perror());
+        PmuClose(pd);
+        return 1;
+    }
+    PmuDeviceData *devData = nullptr;
+    int len = PmuGetDevMetric(oriData, oriLen, devAttr, 2, &devData);
+    if (len < 0) {
+        std::fprintf(stderr, "PmuGetDevMetric failed (%d): %s\n", Perrorno(), Perror());
+        PmuDataFree(oriData);
+        PmuClose(pd);
+        return 1;
+    }
+
+    for (int i = 0; i < len; ++i) {
+        const char *scope = devData[i].metric == PMU_HHA_CROSS_NUMA ? "numa" : "socket";
+        std::cout << "HHA cross-" << scope << " operations ratio (Numa: "
+                  << devData[i].numaId << "): " << devData[i].count << "\n";
+    }
+
+    DevDataFree(devData);
+    PmuDataFree(oriData);
+    PmuClose(pd);
+    return 0;
 }
-for (int i = len / 2; i < len; ++i) {
-    std::cout << "HHA cross-socket operations ratio (Numa: " << devData[i].numaId << "): " << devData[i].count<< "\n";
-}
-DevDataFree(devData);
-PmuDataFree(oriData);
-PmuClose(pd);
 ```
 
 ```python
@@ -1515,42 +1900,76 @@ dev_attr = [
     kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_HHA_CROSS_SOCKET)
 ]
 pd = kperf.device_open(dev_attr)
-kperf.enable(pd)
-time.sleep(1)
-kperf.disable(pd)
-ori_data = kperf.read(pd)
-dev_data = kperf.get_device_metric(ori_data, dev_attr)
-for data in dev_data.iter:
-    if data.metric == kperf.PmuDeviceMetric.PMU_HHA_CROSS_NUMA:
-        print(f"HHA cross-numa operations ratio (Numa: {data.numaId}): {data.count}")
-    if data.metric == kperf.PmuDeviceMetric.PMU_HHA_CROSS_SOCKET:
-        print(f"HHA cross-socket operations ratio (Numa: {data.numaId}): {data.count}")
+if pd == -1:
+    print(f"PmuDeviceOpen failed ({kperf.errorno()}): {kperf.error()}")
+    exit(1)
+try:
+    kperf.enable(pd)
+    time.sleep(1)
+    kperf.disable(pd)
+    ori_data = kperf.read(pd)
+    if len(ori_data) == 0:
+        print(f"PmuRead returned no data ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    dev_data = kperf.get_device_metric(ori_data, dev_attr)
+    if len(dev_data) == 0:
+        print(f"PmuGetDevMetric returned no data ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    for data in dev_data.iter:
+        if data.metric == kperf.PmuDeviceMetric.PMU_HHA_CROSS_NUMA:
+            print(f"HHA cross-numa operations ratio (Numa: {data.numaId}): {data.count}")
+        if data.metric == kperf.PmuDeviceMetric.PMU_HHA_CROSS_SOCKET:
+            print(f"HHA cross-socket operations ratio (Numa: {data.numaId}): {data.count}")
+finally:
+    kperf.close(pd)
 ```
 
 ```go
 // go代码用例
-import "libkperf/kperf"
-import "fmt"
-import "time"
+package main
 
-deviceAttrs := []kperf.PmuDeviceAttr{kperf.PmuDeviceAttr{Metric: kperf.PMU_HHA_CROSS_NUMA}, kperf.PmuDeviceAttr{Metric: kperf.PMU_HHA_CROSS_SOCKET}}
-fd, _ := kperf.PmuDeviceOpen(deviceAttrs)
-kperf.PmuEnable(fd)
-time.Sleep(1 * time.Second)
-kperf.PmuDisable(fd)
-dataVo, _ := kperf.PmuRead(fd)
-deivceDataVo, _ := kperf.PmuGetDevMetric(dataVo, deviceAttrs)
-for _, v := range deivceDataVo.GoDeviceData {
-    if v.Metric == kperf.PMU_HHA_CROSS_NUMA {
-	    fmt.Printf("HHA cross-numa operations ratio (Numa: %v): %v\n", v.NumaId, v.Count)
+import (
+    "fmt"
+    "time"
+
+    "libkperf/kperf"
+)
+
+func main() {
+    attrs := []kperf.PmuDeviceAttr{
+        {Metric: kperf.PMU_HHA_CROSS_NUMA},
+        {Metric: kperf.PMU_HHA_CROSS_SOCKET},
     }
-    if v.Metric == kperf.PMU_HHA_CROSS_SOCKET {
-	    fmt.Printf("HHA cross-socket operations ratio (Numa: %v): %v\n", v.NumaId, v.Count)
+    fd, err := kperf.PmuDeviceOpen(attrs)
+    if err != nil {
+        fmt.Printf("PmuDeviceOpen failed: %v\n", err)
+        return
     }
+    kperf.PmuEnable(fd)
+    time.Sleep(time.Second)
+    kperf.PmuDisable(fd)
+    dataVo, err := kperf.PmuRead(fd)
+    if err != nil {
+        fmt.Printf("PmuRead failed: %v\n", err)
+        return
+    }
+    deviceDataVo, err := kperf.PmuGetDevMetric(dataVo, attrs)
+    if err != nil {
+        fmt.Printf("PmuGetDevMetric failed: %v\n", err)
+        return
+    }
+    defer kperf.DevDataFree(deviceDataVo)
+    for _, data := range deviceDataVo.GoDeviceData {
+        scope := "socket"
+        if data.Metric == kperf.PMU_HHA_CROSS_NUMA {
+            scope = "numa"
+        }
+        fmt.Printf("HHA cross-%s operations ratio (Numa: %v): %v\n",
+            scope, data.NumaId, data.Count)
+    }
+    kperf.PmuDataFree(dataVo)
+    kperf.PmuClose(fd)
 }
-kperf.DevDataFree(deivceDataVo)
-kperf.PmuDataFree(dataVo)
-kperf.PmuClose(fd)
 ```
 
 执行上述代码，输出的结果类似如下：
@@ -1576,27 +1995,49 @@ perf trace -e read,write
 比如，可以这样调用：
 ```c++
 // c++代码示例
-#include <iostream>
-#include "symbol.h"
+#include <cstdio>
+#include <unistd.h>
+
+#include "pcerrc.h"
 #include "pmu.h"
 
-unsigned numFunc = 2;
-const char *funs1 = "read";
-const char *funs2 = "write";
-const char *funcs[numFunc] = {funs1,funs2};
-PmuTraceAttr traceAttr = {0};
-traceAttr.funcs = funcs;
-traceAttr.numFuncs = numFunc;
-int pd = PmuTraceOpen(TRACE_SYS_CALL, &traceAttr);
-PmuTraceEnable(pd);
-sleep(1);
-PmuTraceDisable(pd);
-PmuTraceData *data = nullptr;
-int len = PmuTraceRead(pd, &data);
-for(int i = 0; i < len; ++i) {
-    printf("funcName: %s, elapsedTime: %f ms pid: %d tid: %d cpu: %d comm: %s\n", data[i].funcs, data[i].elapsedTime, data[i].pid, data[i].tid, data[i].cpu, data[i].comm);
+int main()
+{
+    const char *funcs[] = {"read", "write"};
+    PmuTraceAttr traceAttr = {0};
+    traceAttr.funcs = funcs;
+    traceAttr.numFuncs = 2;
+
+    int pd = PmuTraceOpen(TRACE_SYS_CALL, &traceAttr);
+    if (pd == -1) {
+        std::fprintf(stderr, "PmuTraceOpen failed: %s\n", Perror());
+        return 1;
+    }
+    if (PmuTraceEnable(pd) != SUCCESS) {
+        std::fprintf(stderr, "PmuTraceEnable failed: %s\n", Perror());
+        PmuTraceClose(pd);
+        return 1;
+    }
+    sleep(1);
+    PmuTraceDisable(pd);
+
+    PmuTraceData *data = nullptr;
+    int len = PmuTraceRead(pd, &data);
+    if (len < 0) {
+        std::fprintf(stderr, "PmuTraceRead failed: %s\n", Perror());
+        PmuTraceClose(pd);
+        return 1;
+    }
+    for (int i = 0; i < len; ++i) {
+        std::printf("funcName: %s, elapsedTime: %f ms pid: %d tid: %d cpu: %d comm: %s\n",
+                    data[i].funcs, data[i].elapsedTime, data[i].pid, data[i].tid,
+                    data[i].cpu, data[i].comm);
+    }
+
+    PmuTraceDataFree(data);
+    PmuTraceClose(pd);
+    return 0;
 }
-PmuTraceClose(pd);
 ```
 
 ```python
@@ -1607,17 +2048,31 @@ import time
 funcList = ["read","write"]
 pmu_trace_attr = kperf.PmuTraceAttr(funcs=funcList)
 pd = kperf.trace_open(kperf.PmuTraceType.TRACE_SYS_CALL, pmu_trace_attr)
-kperf.trace_enable(pd)
-time.sleep(1)
-kperf.trace_disable(pd)
-pmu_trace_data = kperf.trace_read(pd)
-for data in pmu_trace_data.iter:
-    print(f"funcName: {data.funcs} elapsedTime: {data.elapsedTime} ms pid: {data.pid} tid: {data.tid} cpu: {data.cpu} comm: {data.comm}")
-kperf.trace_close(pd)
+if pd == -1:
+    print(f"PmuTraceOpen failed ({kperf.errorno()}): {kperf.error()}")
+    exit(1)
+try:
+    if kperf.trace_enable(pd) != 0:
+        print(f"PmuTraceEnable failed ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    time.sleep(1)
+    if kperf.trace_disable(pd) != 0:
+        print(f"PmuTraceDisable failed ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    pmu_trace_data = kperf.trace_read(pd)
+    if len(pmu_trace_data) == 0:
+        print(f"PmuTraceRead returned no data ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    for data in pmu_trace_data.iter:
+        print(f"funcName: {data.funcs} elapsedTime: {data.elapsedTime} ms pid: {data.pid} tid: {data.tid} cpu: {data.cpu} comm: {data.comm}")
+finally:
+    kperf.trace_close(pd)
 ```
 
 ```go
 // go代码示例
+package main
+
 import "libkperf/kperf"
 import "fmt"
 import "time"
@@ -1628,11 +2083,19 @@ func main() {
 	taskId, err := kperf.PmuTraceOpen(kperf.TRACE_SYS_CALL, traceAttr)
 	if err != nil {
 		fmt.Printf("pmu trace open failed, expect err is nil, but is %v\n", err)
+		return
 	}
+	defer kperf.PmuTraceClose(taskId)
 
-	kperf.PmuTraceEnable(taskId)
+	if err = kperf.PmuTraceEnable(taskId); err != nil {
+		fmt.Printf("PmuTraceEnable failed: %v\n", err)
+		return
+	}
 	time.Sleep(time.Second)
-	kperf.PmuTraceDisable(taskId)
+	if err = kperf.PmuTraceDisable(taskId); err != nil {
+		fmt.Printf("PmuTraceDisable failed: %v\n", err)
+		return
+	}
 
 	traceList, err := kperf.PmuTraceRead(taskId)
 
@@ -1640,12 +2103,11 @@ func main() {
 		fmt.Printf("pmu trace read failed, expect err is nil, but is %v\n", err)
         return
 	}
+	defer kperf.PmuTraceFree(traceList)
 
 	for _, v := range traceList.GoTraceData {
 		fmt.Printf("funcName: %v, elapsedTime: %v ms pid: %v tid: %v, cpu: %v comm: %v\n", v.FuncName, v.ElapsedTime, v.Pid, v.Tid, v.Cpu, v.Comm)
 	}
-	kperf.PmuTraceFree(traceList)
-	kperf.PmuTraceClose(taskId)
 }
 ```
 执行上述代码，输出的结果类似如下：
@@ -1664,51 +2126,63 @@ funcName: write elapsedTime: 0.00118 ms pid: 997235 tid: 997235 cpu: 110 comm: t
 libkperf基于sampling的能力，增加了对branch sample stack数据的采集能力，用于获取CPU的跳转记录， 通过branchSampleFilter可指定获取不同类型的分支跳转记录。
 ```c++
 #include <iostream>
-#include "symbol.h"
+#include <unistd.h>
+
+#include "pcerrc.h"
 #include "pmu.h"
 
-char* evtList[1] = {"cycles"};
-int* cpuList = nullptr;
-PmuAttr attr = {0};
-attr.evtList = evtList;
-attr.numEvt = 1; 
-attr.cpuList = cpuList;
-attr.numCpu = 0;
-attr.freq = 1000;
-attr.useFreq = 1;
-attr.symbolMode = NO_SYMBOL_RESOLVE;
-int pidList[1] = {1}; // 该pid值替换成对应需要采集应用的pid
-attr.pidList = pidList;
-attr.numPid = 1;
-attr.branchSampleFilter = KPERF_SAMPLE_BRANCH_USER | KPERF_SAMPLE_BRANCH_ANY;
-int pd = PmuOpen(SAMPLING, &attr);
-if (pd == -1) {
-    std::cout << Perror() << std::endl;
-    return;
-}
-PmuEnable(pd);
-sleep(3);
-PmuDisable(pd);
-PmuData* data = nullptr;
-int len = PmuRead(pd, &data);
-for (int i = 0; i < len; i++)
+int main()
 {
-    PmuData &pmuData = data[i];
-    if (pmuData.ext)
+    char cycles[] = "cycles";
+    char* evtList[1] = {cycles};
+    int* cpuList = nullptr;
+    PmuAttr attr = {0};
+    attr.evtList = evtList;
+    attr.numEvt = 1; 
+    attr.cpuList = cpuList;
+    attr.numCpu = 0;
+    attr.freq = 1000;
+    attr.useFreq = 1;
+    attr.symbolMode = NO_SYMBOL_RESOLVE;
+    int pidList[1] = {1}; // 该pid值替换成对应需要采集应用的pid
+    attr.pidList = pidList;
+    attr.numPid = 1;
+    attr.branchSampleFilter = KPERF_SAMPLE_BRANCH_USER | KPERF_SAMPLE_BRANCH_ANY;
+    int pd = PmuOpen(SAMPLING, &attr);
+    if (pd == -1) {
+        std::cout << Perror() << std::endl;
+        return 1;
+    }
+    PmuEnable(pd);
+    sleep(3);
+    PmuDisable(pd);
+    PmuData* data = nullptr;
+    int len = PmuRead(pd, &data);
+    if (len < 0) {
+        std::cerr << "PmuRead failed: " << Perror() << std::endl;
+        PmuClose(pd);
+        return 1;
+    }
+    for (int i = 0; i < len; i++)
     {
-        for (int j = 0; j < pmuData.ext->nr; j++)
+        PmuData &pmuData = data[i];
+        if (pmuData.ext)
         {
-            auto *rd = pmuData.ext->branchRecords;
-            std::string predStr = "P";
-            if (rd[j].misPred == 1) {
-                predStr = "M";
+            for (int j = 0; j < pmuData.ext->nr; j++)
+            {
+                auto *rd = pmuData.ext->branchRecords;
+                std::string predStr = "P";
+                if (rd[j].misPred == 1) {
+                    predStr = "M";
+                }
+                std::cout << std::hex << rd[j].fromAddr << "->" << rd[j].toAddr << " " << std::dec << rd[j].cycles << " " << predStr << std::endl;
             }
-            std::cout << std::hex << rd[j].fromAddr << "->" << rd[j].toAddr << " " << std::dec << rd[j].cycles << " " << predStr << std::endl;
         }
     }
+    PmuDataFree(data);
+    PmuClose(pd);
+    return 0;
 }
-PmuDataFree(data);
-PmuClose(pd);
 ```
 执行上述代码，输出的结果类似如下：
 ```
@@ -1723,34 +2197,44 @@ ffff88f60aa0->ffff88f60618 1  P
 import time
 import ksym
 import kperf
+import os
 
 evtList = ["cycles"]
-pidList = [1] # 该pid值替换成对应需要采集应用的pid
+pidList = [os.getpid()]
 branchSampleMode = kperf.BranchSampleFilter.KPERF_SAMPLE_BRANCH_ANY | kperf.BranchSampleFilter.KPERF_SAMPLE_BRANCH_USER
 pmu_attr = kperf.PmuAttr(sampleRate=1000, useFreq=True, pidList=pidList, evtList=evtList, branchSampleFilter=branchSampleMode)
 pd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
 if pd == -1:
-    print(kperf.error())
+    print(f"PmuOpen failed ({kperf.errorno()}): {kperf.error()}")
     exit(1)
 kperf.enable(pd)
 time.sleep(1)
 kperf.disable(pd)
 pmu_data = kperf.read(pd)
+if len(pmu_data) == 0:
+    print(f"PmuRead returned no data ({kperf.errorno()}): {kperf.error()}")
 for data in pmu_data.iter:
     if data.ext and data.ext.branchRecords:
         for item in data.ext.branchRecords.iter:
             preStr = 'M' if item.misPred == 1 else 'P'
             print(f"{hex(item.fromAddr)}->{hex(item.toAddr)} {item.cycles} {preStr}")
+kperf.close(pd)
 ```
 
 ```go
 // go代码示例
-import "libkperf/kperf"
-import "time"
-import "fmt"
+package main
+
+import (
+    "fmt"
+    "os"
+    "time"
+
+    "libkperf/kperf"
+)
 
 func main() {
-    pidList := []int{1} // 该pid值替换成对应需要采集应用的pid
+    pidList := []int{os.Getpid()}
     attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, SymbolMode:kperf.ELF_DWARF, CallStack:true, SampleRate: 1000, UseFreq:true, BranchSampleFilter: kperf.KPERF_SAMPLE_BRANCH_ANY | kperf.KPERF_SAMPLE_BRANCH_USER, PidList: pidList}
 	fd, err := kperf.PmuOpen(kperf.SAMPLE, attr)
 	if err != nil {
@@ -1852,33 +2336,52 @@ perf record -e arm_spe_0/load_filter=1/ -G test_cgroup
 以counting模式为例，可以像这样设置PmuAttr：
 ```c++
 // c++代码示例
-#include <iostream>
+#include <cstdio>
+#include <unistd.h>
 
-#include "symbol.h"
-#include "pmu.h"
 #include "pcerrc.h"
+#include "pmu.h"
 
-PmuAttr attr = {0};
-char *evtList[2] = {"cycles", "instructions"};
-attr.evtList = evtList;
-attr.numEvt = 2;
-char *cgroupNames[2] = {"test_cgroup", "my_cgroup"};
-attr.cgroupNameList = cgroupNames;
-attr.numCgroup = 2;
-int pd = PmuOpen(COUNTING, &attr);
-if (pd == -1) {
-   printf("kperf pmuopen counting failed: %s\n", Perror());
+int main()
+{
+    char cycles[] = "cycles";
+    char instructions[] = "instructions";
+    char *evtList[] = {cycles, instructions};
+    char testCgroup[] = "test_cgroup";
+    char myCgroup[] = "my_cgroup";
+    char *cgroupNames[] = {testCgroup, myCgroup};
+    PmuAttr attr = {0};
+    attr.evtList = evtList;
+    attr.numEvt = 2;
+    attr.cgroupNameList = cgroupNames;
+    attr.numCgroup = 2;
+
+    int pd = PmuOpen(COUNTING, &attr);
+    if (pd == -1) {
+        std::fprintf(stderr, "PmuOpen failed: %s\n", Perror());
+        return 1;
+    }
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+
+    PmuData *data = nullptr;
+    int len = PmuRead(pd, &data);
+    if (len < 0) {
+        std::fprintf(stderr, "PmuRead failed: %s\n", Perror());
+        PmuClose(pd);
+        return 1;
+    }
+    for (int i = 0; i < len; ++i) {
+        std::printf("evt=%s, cgroup=%s, cpu=%d, count=%llu\n", data[i].evt,
+                    data[i].cgroupName, data[i].cpu,
+                    static_cast<unsigned long long>(data[i].count));
+    }
+
+    PmuDataFree(data);
+    PmuClose(pd);
+    return 0;
 }
-PmuEnable(pd);
-sleep(1);
-PmuDisable(pd);
-PmuData* data = nullptr;
-int len = PmuRead(pd, &data);
-//counting模式下data长度为numCgroup * cpu * numEvt
-for (int i = 0; i < len; i++) {
-    printf("evt=%s, cgroup=%s, cpu=%d, count=%d\n", data[i].evt, data[i].cgroupName, data[i].cpu, data[i].count);
-}
-PmuClose(pd);
 ```
 
 ```python
@@ -1891,19 +2394,26 @@ cgroupNames = ["test_cgroup", "my_cgroup"]
 pmu_attr = kperf.PmuAttr(evtList=evtList, cgroupNameList=cgroupNames)
 pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
 if pd == -1:
-    print(kperf.error())
-    excit(1)
-kperf.enable(pd)
-time.sleep(1)
-kperf.disable(pd)
-pmu_data = kperf.read(pd)
-for item in pmu_data.iter:
-    print(f"evt={item.evt} cgroup={item.cgroupName} cpu={item.cpu} count={item.count}")
-kperf.close(pd)
+    print(f"PmuOpen failed ({kperf.errorno()}): {kperf.error()}")
+    exit(1)
+try:
+    kperf.enable(pd)
+    time.sleep(1)
+    kperf.disable(pd)
+    pmu_data = kperf.read(pd)
+    if len(pmu_data) == 0:
+        print(f"PmuRead returned no data ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    for item in pmu_data.iter:
+        print(f"evt={item.evt} cgroup={item.cgroupName} cpu={item.cpu} count={item.count}")
+finally:
+    kperf.close(pd)
 ```
 
 ```go
 // go代码示例
+package main
+
 import "libkperf/kperf"
 import "fmt"
 import "time"
@@ -1928,6 +2438,7 @@ func main() {
     for _, o := range dataVo.GoData {
         fmt.Printf("evt=%v cgroup=%v cpu=%v count=%v \n", o.Evt, o.CgroupName, o.Cpu, o.Count)
     }
+    kperf.PmuDataFree(dataVo)
     kperf.PmuClose(pd)
 }
 ```
@@ -1967,8 +2478,12 @@ LD_LIBRARY_PATH=/path/to/install/lib/ ./pmu_perfdata -d 3 -- /tmp/test
 
 ```python
 # python代码示例
+import time
+import kperf
+import os
+
 evtList = ["cycles"]
-pidlist = [273282]
+pidlist = [os.getpid()]
 pmu_attr = kperf.PmuAttr(
         evtList=evtList,
         pidList=pidlist,
@@ -1977,26 +2492,43 @@ pmu_attr = kperf.PmuAttr(
     )
 pd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
 if pd == -1:
-    print(f"kperf pmuopen sample failed, expect err is nil, but is {kperf.error()}")
-    exit(0)
-kperf.enable(pd)
-time.sleep(1)
-kperf.disable(pd)
-
-pmu_data = kperf.read(pd)
-file = kperf.begin_write("/tmp/test.data", pmu_attr, 0)
-kperf.write_data(file, pmu_data)
-kperf.end_write(file)
-kperf.close(pd)
+    print(f"PmuOpen failed ({kperf.errorno()}): {kperf.error()}")
+    exit(1)
+try:
+    kperf.enable(pd)
+    time.sleep(1)
+    kperf.disable(pd)
+    pmu_data = kperf.read(pd)
+    if len(pmu_data) == 0:
+        print(f"PmuRead returned no data ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    file = kperf.begin_write("/tmp/test.data", pmu_attr, 0)
+    if not file:
+        print(f"PmuBeginWrite failed ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    try:
+        if kperf.write_data(file, pmu_data) != 0:
+            print(f"PmuWriteData failed ({kperf.errorno()}): {kperf.error()}")
+            exit(1)
+    finally:
+        kperf.end_write(file)
+finally:
+    kperf.close(pd)
 ```
 
 ```go
-import "libkperf/kperf"
-import "fmt"
-import "time"
+package main
+
+import (
+    "fmt"
+    "os"
+    "time"
+
+    "libkperf/kperf"
+)
 
 func main() {
-    pidlist := []int{273282}
+    pidlist := []int{os.Getpid()}
     attr := kperf.PmuAttr{EvtList:[]string{"task-clock"}, SymbolMode:kperf.ELF, SampleRate: 1000, PidList: pidlist}
     pd, err := kperf.PmuOpen(kperf.SAMPLE, attr)
     if err != nil {
@@ -2008,14 +2540,22 @@ func main() {
     time.Sleep(time.Second)
     kperf.PmuDisable(pd)
     dataVo, err := kperf.PmuRead(pd)
+    if err != nil {
+        fmt.Printf("PmuRead failed: %v\n", err)
+        return
+    }
     file, err := kperf.PmuBeginWrite("/tmp/test.data", attr, 0)
     if file == nil {
-        fmt.Printf("failed to write: %v\n", err)
+        fmt.Printf("PmuBeginWrite failed: %v\n", err)
         return
     }
 
-    kperf.PmuWriteData(file, dataVo)
+    if err = kperf.PmuWriteData(file, dataVo); err != nil {
+        fmt.Printf("PmuWriteData failed: %v\n", err)
+    }
     kperf.PmuEndWrite(file)
+    kperf.PmuDataFree(dataVo)
+    kperf.PmuClose(pd)
 }
 ```
 
@@ -2121,7 +2661,8 @@ int main() {
         attr.numPid = 1;
         attr.pidList = pidList;
 
-        char* evtList[1] = {"cycles"};
+        char cycles[] = "cycles";
+        char* evtList[1] = {cycles};
         attr.evtList = evtList;
         attr.numEvt = 1;
         attr.symbolMode = RESOLVE_ELF_DWARF;
@@ -2153,6 +2694,12 @@ int main() {
         }
 
         int len = PmuRead(pd, &data);
+        if (len < 0) {
+            std::cout << "PmuRead failed: " << Perror() << std::endl;
+            PmuClose(pd);
+            kill(pid, 9);
+            return 1;
+        }
         for (int i = 0; i < len; i++) {
             std::cout << "comm=" << data[i].comm << " " << data[i].ts << " " << data[i].pid  << " " << data[i].tid;
 
@@ -2166,8 +2713,11 @@ int main() {
                 std::cout << std::endl;
             }
         }
+        PmuDataFree(data);
+        PmuClose(pd);
         kill(pid, 9);
     }
+    return 0;
 }
 ```
 
@@ -2186,7 +2736,7 @@ def child_proc(event, args):
     try:
         os.execvp(args[0], args)
     except OSError as e:
-        print(f"{args[0]:{str(e)}}")
+        print(f"{args[0]}: {e}")
         os.kill(os.getppid(), signal.SIGUSR1)
 
 def signal_handler(sig, fm):
@@ -2217,11 +2767,14 @@ if __name__ == "__main__":
     pd = kperf.open(kperf.PmuTaskType.SAMPLING, pmu_attr)
     if pd == -1:
         print(f"pmu open failed, err is {kperf.error()}")
-        os.kill(pid, 9)
-        exit(1)
+        pro.kill()
+        pro.join()
+        sys.exit(1)
     event.set()
     time.sleep(1)
     pmu_data = kperf.read(pd)
+    if len(pmu_data) == 0:
+        print(f"PmuRead returned no data ({kperf.errorno()}): {kperf.error()}")
     for item in pmu_data.iter:
         print(f"comm={item.comm} {item.ts} {item.pid} {item.tid} {item.period} ", end="")
         if item.stack:
@@ -2229,7 +2782,9 @@ if __name__ == "__main__":
         else:
             print("\n")
     kperf.close(pd)
-    os.kill(pid, 9)
+    if pro.is_alive():
+        pro.kill()
+    pro.join()
 ```
 
 ```go
@@ -2265,6 +2820,10 @@ func main() {
     if err := cmd.Start(); err != nil {
         panic(err)
     }
+    defer func() {
+        _ = cmd.Process.Kill()
+        _ = cmd.Wait()
+    }()
 
     attr := kperf.PmuAttr{EvtList:[]string{"cycles"}, SymbolMode:kperf.ELF_DWARF, SampleRate: 4096, UseFreq:true, EnableOnExec:true, PidList:[]int{cmd.Process.Pid}}
     pd, err := kperf.PmuOpen(kperf.SAMPLE, attr)
@@ -2273,7 +2832,10 @@ func main() {
         return
     }
 
-    wp.Write([]byte("start"))
+    if _, err = wp.Write([]byte("start")); err != nil {
+        fmt.Printf("failed to start child process: %v\n", err)
+        return
+    }
     time.Sleep(time.Second)
     dataVo, err := kperf.PmuRead(pd)
     if err != nil {
@@ -2286,10 +2848,6 @@ func main() {
             fmt.Printf("%#x %v+%#x %v %v (%v:%v) \n", s.Addr, s.SymbolName, s.Offset, s.CodeMapAddr, s.Module, s.FileName, s.LineNum)
         }
     }
-    kperf.PmuDataFree(dataVo)
-    kperf.PmuClose(pd)
-    cmd.Process.Kill()
-    cmd.Wait()
 }
 
 func childProc() {
@@ -2315,5 +2873,7 @@ func init() {
         childProc()
         os.Exit(0)
     }
+    kperf.PmuDataFree(dataVo)
+    kperf.PmuClose(pd)
 }
 ```
