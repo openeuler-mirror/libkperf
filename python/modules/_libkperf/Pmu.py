@@ -865,6 +865,9 @@ class PmuDeviceData:
     def iter(self):
         return self.__iter
     
+    def pointer(self):
+        return self.__pointer
+
     def free(self):
         if self.__pointer is not None:
             DevDataFree(self.__pointer)
@@ -1204,6 +1207,15 @@ class BranchRecords():
         self.__pointer = pointer
         self.__len = nr
         self.__iter = (ImplBranchRecords.from_c_branch_record(self.__pointer[i]) for i in range(self.__len))
+
+    def __len__(self):
+        return self.__len
+
+    def __iter__(self):
+        return self.__iter
+
+    def pointer(self):
+        return self.__pointer
     
     @property
     def len(self):
@@ -1800,6 +1812,12 @@ class PmuTraceData:
         self.__pointer = pointer
         self.__len = len
         self.__iter = (ImplPmuTraceData.from_c_pmu_trace_data(self.__pointer[i]) for i in range(self.__len))
+
+    def __len__(self):
+        return self.__len
+
+    def __iter__(self):
+        return self.__iter
     
     def __del__(self):
         self.free()
@@ -1812,6 +1830,9 @@ class PmuTraceData:
     def iter(self):
         return self.__iter
     
+    def pointer(self):
+        return self.__pointer
+
     def free(self):
         if self.__pointer is not None:
             PmuTraceDataFree(self.__pointer)
@@ -2333,6 +2354,15 @@ class PmuCpuFreqDetail:
         self.__pointer = pointer
         self.__len = len
         self.__iter = (ImplPmuCpuFreqDetail.from_c_pmu_cpu_freq_detail(self.__pointer[i]) for i in range(self.__len))
+
+    def __len__(self):
+        return self.__len
+
+    def __iter__(self):
+        return self.__iter
+
+    def pointer(self):
+        return self.__pointer
     
     @property
     def len(self):
@@ -2689,6 +2719,12 @@ class UTraceDataList:
         self.__pointer = pointer
         self.__len = len
         self.__iter = (UTraceData.from_c_u_trace_data(self.__pointer[i]) for i in range(self.__len))
+
+    def __len__(self):
+        return self.__len
+
+    def __iter__(self):
+        return self.__iter
     
     def __del__(self):
         self.free()
@@ -2701,6 +2737,9 @@ class UTraceDataList:
     def iter(self):
         return self.__iter
     
+    def pointer(self):
+        return self.__pointer
+
     def free(self):
         if self.__pointer is not None:
             UTraceDataFree(self.__pointer)
