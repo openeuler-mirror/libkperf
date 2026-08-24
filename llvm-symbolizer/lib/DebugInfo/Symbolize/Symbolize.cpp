@@ -294,23 +294,93 @@ ObjectFile *LLVMSymbolizer::lookUpDsymFile(const std::string &ExePath,
   return nullptr;
 }
 
+bool getBuildID(const ObjectFile *Obj, std::string &BuildId) {
+  if (!Obj) {
+    return false;
+  }
+  for (const SectionRef &Section : Obj->sections()) {
+    StringRef Name;
+    Section.getName(Name);
+    Name = Name.substr(Name.find_first_not_of("._"));
+    if (Name != "note.gnu.build-id" && Name != "note")
+      continue;
+    StringRef Data;
+    Section.getContents(Data);
+    DataExtractor DE(Data, Obj->isLittleEndian(), 0);
+    uint32_t Offset = 0;
+    if (!DE.isValidOffsetForDataOfSize(Offset, 12))
+      continue;
+    uint32_t NameSize = DE.getU32(&Offset);
+    uint32_t DescSize = DE.getU32(&Offset);
+    uint32_t Type = DE.getU32(&Offset);
+    if (Type != 3)
+      continue;;
+    if (!DE.isValidOffsetForDataOfSize(Offset + NameSize, DescSize))
+      continue;
+    if (NameSize >= 4) {
+      StringRef NoteName = Data.substr(Offset, NameSize);
+      if (NoteName.find("GNU") == StringRef::npos)
+        continue;
+    }
+    Offset += NameSize;
+    Offset = (Offset + 3) & ~0x3;
+    StringRef Desc = Data.substr(Offset, DescSize);
+    std::string Hex;
+    raw_string_ostream OS(Hex);
+    for (unsigned char C : Desc)
+      OS << format("%02x", C);
+    OS.flush();
+    BuildId = Hex;
+    return true;
+  }
+  return false;
+}
+
+bool findDebugBinaryByBuildID(const std::string &BuildID,
+                              std::string &Result) {
+  if (BuildID.size() < 3)
+    return false;
+  std::string Prefix = BuildID.substr(0, 2);
+  std::string Suffix = BuildID.substr(2);
+  const char *DebugDirs[] = {"/usr/lib/debug", "/root/.debug"};
+  for (const char *Dir : DebugDirs) {
+    SmallString<128> Path(Dir);
+    llvm::sys::path::append(Path, ".build-id", Prefix, Suffix + ".debug");
+    if (sys::fs::exists(Path)) {
+      Result = Path.str();
+      return true;
+    }
+    Path = Dir;
+    llvm::sys::path::append(Path, ".build-id", Prefix, Suffix, "debug");
+    if (sys::fs::exists(Path)) {
+      Result = Path.str();
+      return true;
+    }
+  }
+  return false;
+}
+
 ObjectFile *LLVMSymbolizer::lookUpDebuglinkObject(const std::string &Path,
                                                   const ObjectFile *Obj,
                                                   const std::string &ArchName) {
   std::string DebuglinkName;
   uint32_t CRCHash;
   std::string DebugBinaryPath;
-  if (!getGNUDebuglinkContents(Obj, DebuglinkName, CRCHash))
-    return nullptr;
-  if (!findDebugBinary(Path, DebuglinkName, CRCHash, DebugBinaryPath))
-    return nullptr;
-  auto DbgObjOrErr = getOrCreateObject(DebugBinaryPath, ArchName);
-  if (!DbgObjOrErr) {
-    // Ignore errors, the file might not exist.
-    consumeError(DbgObjOrErr.takeError());
-    return nullptr;
+  std::string BuildID;
+  if (getGNUDebuglinkContents(Obj, DebuglinkName, CRCHash) &&
+      findDebugBinary(Path, DebuglinkName, CRCHash, DebugBinaryPath)) {
+    auto DbgObjOrErr = getOrCreateObject(DebugBinaryPath, ArchName);
+    if (DbgObjOrErr)
+      return DbgObjOrErr.get();
+    consumeError(DbgObjOrErr.takeError());  
   }
-  return DbgObjOrErr.get();
+  if (getBuildID(Obj, BuildID) && findDebugBinaryByBuildID(BuildID, DebugBinaryPath)) {
+    auto DbgObjOrErr = getOrCreateObject(DebugBinaryPath, ArchName);
+    if (DbgObjOrErr)
+      return DbgObjOrErr.get();
+    consumeError(DbgObjOrErr.takeError());
+  }
+  return nullptr;
 }
 
 Expected<LLVMSymbolizer::ObjectPair>
