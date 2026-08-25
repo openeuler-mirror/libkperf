@@ -199,7 +199,7 @@ namespace KUNPENG_SYM {
         SYMBOL_UNMAP symbolUnmap{};
         STACK_MAP stackMap{};
         MODULE_MAP moduleMap{};
-        std::vector<std::shared_ptr<Symbol>> ksymArray;
+        std::map<__u64, std::shared_ptr<Symbol>> ksymArray;
         SymbolResolve()
         {}
 

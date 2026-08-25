@@ -627,26 +627,13 @@ struct Stack* SymbolResolve::StackToHash(int pid, unsigned long* stack, int nr)
 
 struct Symbol* SymbolResolve::MapKernelAddr(unsigned long addr)
 {
-    ssize_t start = 0;
-    ssize_t end = this->ksymArray.size() - 1;
-    ssize_t mid;
-    __u64 symAddr;
-
-    while (start < end) {
-        mid = start + (end - start + 1) / BINARY_HALF;
-        symAddr = this->ksymArray[mid]->addr;
-        if (symAddr <= addr) {
-            start = mid;
-        } else {
-            end = mid - 1;
-        }
+    auto it = this->ksymArray.upper_bound(addr);
+    if (it == this->ksymArray.cbegin()) {
+        pcerr::New(LIBSYM_ERR_MAP_KERNAL_ADDR_FAILED, "libsym cannot find the corresponding kernel address");
+        return nullptr;
     }
-
-    if (start == end && this->ksymArray[start]->addr <= addr) {
-        return this->ksymArray[start].get();
-    }
-    pcerr::New(LIBSYM_ERR_MAP_KERNAL_ADDR_FAILED, "libsym cannot find the corresponding kernel address");
-    return nullptr;
+    --it;
+    return it->second.get();
 }
 
 char* SymbolResolve::GetCharFromStr(const std::string& str) 
@@ -854,7 +841,6 @@ int SymbolResolve::RecordKernel()
     }
     //  Prevent multiple threads from processing kernel data at the same time.
     std::lock_guard<std::mutex> guard(kernelMutex);
-
     FILE* kallsyms = fopen("/proc/kallsyms", "r");
     if (__glibc_unlikely(kallsyms == nullptr)) {
         pcerr::New(LIBSYM_ERR_KALLSYMS_INVALID,
@@ -878,7 +864,7 @@ int SymbolResolve::RecordKernel()
         data->fileName = KERNEL;
         data->module = KERNEL;
         data->lineNum = 0;
-        this->ksymArray.emplace_back(data);
+        this->ksymArray.emplace(addr, data);
     }
 
     fclose(kallsyms);
