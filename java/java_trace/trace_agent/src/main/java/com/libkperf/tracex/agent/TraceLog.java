@@ -19,10 +19,20 @@ import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.EnumSet;
+import java.util.Set;
 
 public final class TraceLog {
+    private static final Set<PosixFilePermission> PRIVATE_FILE_PERMISSIONS =
+        EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE);
     private static volatile String logFile;
 
     private TraceLog() {}
@@ -31,10 +41,26 @@ public final class TraceLog {
         if (path == null || path.length() == 0) {
             return;
         }
-        logFile = path;
         File parent = new File(path).getParentFile();
         if (parent != null) {
             parent.mkdirs();
+        }
+        if (ensurePrivateLogFile(path)) {
+            logFile = path;
+        }
+    }
+
+    private static boolean ensurePrivateLogFile(String path) {
+        Path logPath = Paths.get(path);
+        try {
+            try {
+                Files.createFile(logPath, PosixFilePermissions.asFileAttribute(PRIVATE_FILE_PERMISSIONS));
+            } catch (FileAlreadyExistsException ignored) {
+            }
+            Files.setPosixFilePermissions(logPath, PRIVATE_FILE_PERMISSIONS);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
         }
     }
 
