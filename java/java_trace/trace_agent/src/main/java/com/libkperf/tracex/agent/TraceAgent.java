@@ -105,7 +105,9 @@ public final class TraceAgent {
             inst.appendToBootstrapClassLoaderSearch(runtimeJar);
             appended = true;
             bootstrapRuntimeJar = runtimeJar;
-            runtimeJarFile.deleteOnExit();
+            if (!runtimeJarFile.delete()) {
+                runtimeJarFile.deleteOnExit();
+            }
             verifyBootstrapClass("com.libkperf.tracex.agent.TraceLog");
             verifyBootstrapClass("com.libkperf.tracex.runtime.TraceRuntime");
             bootstrapModuleReadEdges = addBootstrapRuntimeReadEdges(inst);

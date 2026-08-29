@@ -455,7 +455,9 @@ int SymbolResolve::RecordModule(int pid, RecordModuleType recordModuleType)
         int ret = attach_java_process(pid, &attachInfo);
         if (ret == 0) {
             JavaElf javaElf(pid, attachInfo.perfMapPath);
-            javaElfArr[pid] = javaElf;
+            if (javaElf.Load() == 0) {
+                javaElfArr[pid] = javaElf;
+            }
         }
     }
     this->moduleMap.insert({pid, modVec});
@@ -767,12 +769,13 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
     return symbol;
 }
 
-int JavaElf::FindElf(unsigned long addr, struct JavaEntry& javaEntry) {
+int JavaElf::Load() {
     if (!hasLoad) {
         std::string path = perfMapPath.empty() ? "/tmp/perf-" + std::to_string(pid) + ".map" : perfMapPath;
         
         std::ifstream fileTmp(path.c_str());
         if (!fileTmp.is_open()) {
+            (void)std::remove(path.c_str());
             return -1;
         }
         std::string line;
@@ -803,9 +806,21 @@ int JavaElf::FindElf(unsigned long addr, struct JavaEntry& javaEntry) {
             JavaEntry entry = {.start=addr, .end=addr + size, .symbolName=symbolName, .fileName=fileName, .line=(unsigned int)lineNum};
             symbolList[addr] = entry;
         }
-        if (!symbolList.empty()) {
-            hasLoad = true;
+        bool readOk = !fileTmp.bad();
+        fileTmp.close();
+        (void)std::remove(path.c_str());
+        if (!readOk) {
+            symbolList.clear();
+            return -1;
         }
+        hasLoad = true;
+    }
+    return 0;
+}
+
+int JavaElf::FindElf(unsigned long addr, struct JavaEntry& javaEntry) {
+    if (Load() != 0) {
+        return -1;
     }
     auto it = symbolList.upper_bound(addr);
     if (it == symbolList.cbegin()) {

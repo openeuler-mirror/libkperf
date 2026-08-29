@@ -271,23 +271,39 @@ static std::string WriteIncludeFile(const JavaBackendImpl &impl)
     }
 
     std::string path = impl.shmPath + ".includes";
-    std::ofstream output(path, std::ios::binary | std::ios::trunc);
-    if (!output.is_open()) {
+    int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW,
+                  K_PRIVATE_FILE_MODE);
+    if (fd < 0) {
         JavaTraceLog(MakeLogMessage("[trace-java] open include file failed: ", path,
                                     ", errno=", errno, "(", std::strerror(errno), ")\n"));
         return "";
     }
-
-    output.write(impl.includeRules.data(), static_cast<std::streamsize>(impl.includeRules.size()));
-    if (!output.good()) {
-        JavaTraceLog(MakeLogMessage("[trace-java] write include file failed: ", path, "\n"));
-        output.close();
+    if (fchmod(fd, K_PRIVATE_FILE_MODE) != 0) {
+        JavaTraceLog(MakeLogMessage("[trace-java] chmod include file failed: ", path,
+                                    ", errno=", errno, "(", std::strerror(errno), ")\n"));
+        (void)close(fd);
         std::remove(path.c_str());
         return "";
     }
-    output.close();
-    if (!output.good()) {
-        JavaTraceLog(MakeLogMessage("[trace-java] close include file failed: ", path, "\n"));
+
+    size_t written = 0;
+    while (written < impl.includeRules.size()) {
+        ssize_t count = write(fd, impl.includeRules.data() + written, impl.includeRules.size() - written);
+        if (count < 0 && errno == EINTR) {
+            continue;
+        }
+        if (count <= 0) {
+            JavaTraceLog(MakeLogMessage("[trace-java] write include file failed: ", path,
+                                        ", errno=", errno, "(", std::strerror(errno), ")\n"));
+            (void)close(fd);
+            std::remove(path.c_str());
+            return "";
+        }
+        written += static_cast<size_t>(count);
+    }
+    if (close(fd) != 0) {
+        JavaTraceLog(MakeLogMessage("[trace-java] close include file failed: ", path,
+                                    ", errno=", errno, "(", std::strerror(errno), ")\n"));
         std::remove(path.c_str());
         return "";
     }

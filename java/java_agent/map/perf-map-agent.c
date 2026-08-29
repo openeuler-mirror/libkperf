@@ -18,12 +18,14 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <limits.h>
 #include <pthread.h>
+#include <sys/stat.h>
 
 #include <jni.h>
 #include <jvmti.h>
@@ -38,6 +40,9 @@
 #define PATH_MAX 4096
 #endif
 #define MAP_FILE_OPTION "file="
+#define AGENT_PATH_OPTION "agentpath="
+#define TEMP_AGENT_PATH_PREFIX "/tmp/libkperfmap.so."
+#define TEMP_PERF_MAP_PATH_PREFIX "/tmp/perf-"
 
 bool unfold_inlined_methods = false;
 bool unfold_simple = false;
@@ -53,6 +58,8 @@ bool debug_dump_unfold_entries = false;
 
 FILE *method_file = NULL;
 static char map_file_path[PATH_MAX] = "";
+static char agent_file_path[PATH_MAX] = "";
+static char perf_map_cleanup_path[PATH_MAX] = "";
 static pthread_mutex_t attach_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void lock_attach() {
@@ -91,22 +98,87 @@ void close_map_file() {
     method_file = NULL;
 }
 
-static void parse_map_file_path(char *options) {
-    if (options == NULL)
+static void parse_path_option(const char *options, const char *option, char *path, size_t path_size) {
+    if (options == NULL || option == NULL || path == NULL || path_size == 0)
         return;
 
-    char *start = strstr(options, MAP_FILE_OPTION);
+    const char *start = strstr(options, option);
     if (start == NULL)
         return;
 
-    start += strlen(MAP_FILE_OPTION);
+    start += strlen(option);
     size_t len = strcspn(start, ",;");
     if (len == 0)
         return;
-    if (len >= sizeof(map_file_path))
-        len = sizeof(map_file_path) - 1;
-    memcpy(map_file_path, start, len);
-    map_file_path[len] = '\0';
+    if (len >= path_size)
+        len = path_size - 1;
+    memcpy(path, start, len);
+    path[len] = '\0';
+}
+
+static void parse_map_file_path(const char *options) {
+    parse_path_option(options, MAP_FILE_OPTION, map_file_path, sizeof(map_file_path));
+}
+
+static void parse_agent_file_path(const char *options) {
+    parse_path_option(options, AGENT_PATH_OPTION, agent_file_path, sizeof(agent_file_path));
+}
+
+static bool is_temporary_agent_path(const char *path) {
+    char expected_prefix[128];
+    int prefix_len = snprintf(expected_prefix, sizeof(expected_prefix), "%s%d.",
+                              TEMP_AGENT_PATH_PREFIX, (int)getpid());
+    if (path == NULL || prefix_len <= 0 || (size_t)prefix_len >= sizeof(expected_prefix) ||
+        strncmp(path, expected_prefix, (size_t)prefix_len) != 0 || path[prefix_len] == '\0')
+        return false;
+    for (const char *p = path + prefix_len; *p != '\0'; ++p) {
+        if (*p < '0' || *p > '9')
+            return false;
+    }
+    return true;
+}
+
+static bool is_temporary_perf_map_path(const char *path) {
+    char expected_path[128];
+    int path_len = snprintf(expected_path, sizeof(expected_path), "%s%d.map",
+                            TEMP_PERF_MAP_PATH_PREFIX, (int)getpid());
+    if (path == NULL || path_len <= 0 || (size_t)path_len >= sizeof(expected_path))
+        return false;
+    return strcmp(path, expected_path) == 0;
+}
+
+static void unlink_owned_regular_file(char *path, const char *description) {
+    struct stat st;
+    if (lstat(path, &st) != 0) {
+        if (errno == ENOENT) {
+            path[0] = '\0';
+            return;
+        }
+        fprintf(stderr, "libkperfmap: failed to inspect temporary %s %s: %s\n",
+                description, path, strerror(errno));
+        return;
+    }
+    if (!S_ISREG(st.st_mode) || st.st_uid != geteuid()) {
+        fprintf(stderr, "libkperfmap: refused to remove temporary %s with unexpected type or owner: %s\n",
+                description, path);
+        return;
+    }
+    if (unlink(path) == 0 || errno == ENOENT) {
+        path[0] = '\0';
+        return;
+    }
+    fprintf(stderr, "libkperfmap: failed to remove temporary %s %s: %s\n",
+            description, path, strerror(errno));
+}
+
+static void unlink_temporary_agent_file() {
+    if (is_temporary_agent_path(agent_file_path))
+        unlink_owned_regular_file(agent_file_path, "agent");
+}
+
+static void unlink_temporary_perf_map_file() {
+    if (is_temporary_perf_map_path(perf_map_cleanup_path))
+        unlink_owned_regular_file(perf_map_cleanup_path, "perf map");
 }
 
 void deallocate(jvmtiEnv *jvmti, void *string) {
@@ -381,6 +453,15 @@ Agent_OnAttach(JavaVM *vm, char *options, void *reserved) {
 
     do {
         parse_map_file_path(options);
+        parse_agent_file_path(options);
+        // The library is already loaded when Agent_OnAttach is invoked. Remove
+        // its temporary pathname now so SIGKILL cannot leave it in /tmp.
+        // Keep the path on unlink failure for Agent_OnUnload to retry.
+        unlink_temporary_agent_file();
+        if (is_temporary_perf_map_path(map_file_path)) {
+            strncpy(perf_map_cleanup_path, map_file_path, sizeof(perf_map_cleanup_path) - 1);
+            perf_map_cleanup_path[sizeof(perf_map_cleanup_path) - 1] = '\0';
+        }
         open_map_file();
         if (method_file == NULL) {
             break;
@@ -420,4 +501,16 @@ Agent_OnAttach(JavaVM *vm, char *options, void *reserved) {
     close_map_file();
     unlock_attach();
     return result;
+}
+
+JNIEXPORT void JNICALL
+Agent_OnUnload(JavaVM *vm) {
+    (void)vm;
+    lock_attach();
+    close_map_file();
+    unlink_temporary_perf_map_file();
+    perf_map_cleanup_path[0] = '\0';
+    unlink_temporary_agent_file();
+    agent_file_path[0] = '\0';
+    unlock_attach();
 }
