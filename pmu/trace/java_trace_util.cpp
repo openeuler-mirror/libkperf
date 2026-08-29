@@ -33,6 +33,7 @@
 #include <cctype>
 #include <dlfcn.h>
 #include <exception>
+#include <fcntl.h>
 #include <fstream>
 #include <limits.h>
 #include <regex>
@@ -54,6 +55,7 @@ static constexpr uint32_t K_DEFAULT_SLOT_COUNT = 524288U;
 static constexpr uint32_t K_MAX_SLOT_COUNT = 67108864U;
 static constexpr const char *K_DEFAULT_JAVA_BIN = "java";
 static constexpr mode_t K_PRIVATE_DIR_MODE = 0700;
+static constexpr mode_t K_PRIVATE_FILE_MODE = 0600;
 static constexpr size_t K_EXTRA_CHARS = 2;
 static constexpr size_t K_JAVA_FUNCTION_MATCH_SIZE = 3;
 static constexpr size_t K_ENABLE_COMMAND_RESERVE = 2048;
@@ -427,17 +429,47 @@ std::string JavaTraceLogPath()
     return path;
 }
 
+static int OpenPrivateTraceLog()
+{
+    int fd = open(JavaTraceLogPath().c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, K_PRIVATE_FILE_MODE);
+    if (fd < 0) {
+        return -1;
+    }
+    if (fchmod(fd, K_PRIVATE_FILE_MODE) != 0) {
+        (void)close(fd);
+        return -1;
+    }
+    return fd;
+}
+
 void TraceLog(const std::string &message)
 {
     if (message.empty()) {
         return;
     }
 
-    std::ofstream output(JavaTraceLogPath(), std::ios::binary | std::ios::app);
-    if (!output.is_open()) {
+    int fd = OpenPrivateTraceLog();
+    if (fd < 0) {
         return;
     }
-    output << message;
+
+    const char *data = message.data();
+    size_t remaining = message.size();
+    while (remaining > 0) {
+        ssize_t written = write(fd, data, remaining);
+        if (written < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            break;
+        }
+        if (written == 0) {
+            break;
+        }
+        data += written;
+        remaining -= static_cast<size_t>(written);
+    }
+    (void)close(fd);
 }
 
 void JavaTraceLog(const std::string &message)
@@ -1010,7 +1042,12 @@ std::string BuildActionCommand(const JavaBackendImpl &impl, const char *action)
 
 int RunCommand(const std::string &cmd)
 {
-    std::string loggedCmd = cmd + " >> " + EscapeShell(JavaTraceLogPath()) + " 2>&1";
+    int logFd = OpenPrivateTraceLog();
+    if (logFd < 0) {
+        return -2;
+    }
+    (void)close(logFd);
+    std::string loggedCmd = "umask 077; " + cmd + " >> " + EscapeShell(JavaTraceLogPath()) + " 2>&1";
     int status = std::system(loggedCmd.c_str());
     if (status == -1) {
         return -2;
