@@ -29,15 +29,16 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 final class SharedEventSink implements AutoCloseable {
 
-    // Shared memory ABI. The C++ reader in pmu/trace/java_backend.cpp uses the same offsets
+    // Shared memory ABI v2. Strings live in dictionaries and compact event slots contain ids
     static final long MAGIC = 0x5554524356415731L; // UTRCVAW1
-    static final int VERSION = 1;
+    static final int VERSION = 2;
 
-    static final int HEADER_SIZE = 64;
+    static final int HEADER_SIZE = 128;
     static final int HEADER_MAGIC = 0;
     static final int HEADER_VERSION = 8;
     static final int HEADER_ACTIVE = 12;
@@ -45,32 +46,60 @@ final class SharedEventSink implements AutoCloseable {
     static final int HEADER_SLOT_SIZE = 20;
     static final int HEADER_WRITE_SEQ = 24;
     static final int HEADER_DROPPED = 32;
+    static final int HEADER_METHOD_CAPACITY = 40;
+    static final int HEADER_METHOD_ENTRY_SIZE = 44;
+    static final int HEADER_THREAD_CAPACITY = 48;
+    static final int HEADER_THREAD_ENTRY_SIZE = 52;
+    static final int HEADER_METHOD_COUNT = 56;
+    static final int HEADER_THREAD_COUNT = 60;
+    static final int HEADER_EVENT_OFFSET = 64;
 
-    static final int SLOT_SIZE = 512;
+    static final int METHOD_CAPACITY = 131072;
+    static final int METHOD_ENTRY_SIZE = 448;
+    static final int METHOD_SEQ = 0;
+    static final int METHOD_ADDR = 8;
+    static final int METHOD_MODULE = 16;
+    static final int METHOD_MODULE_LEN = 160;
+    static final int METHOD_FUNC = 176;
+    static final int METHOD_FUNC_LEN = 256;
+
+    static final int THREAD_CAPACITY = 65536;
+    static final int THREAD_ENTRY_SIZE = 48;
+    static final int THREAD_SEQ = 0;
+    static final int THREAD_TID = 4;
+    static final int THREAD_COMM = 8;
+    static final int THREAD_COMM_LEN = 32;
+
+    static final int SLOT_SIZE = 64;
     static final int SLOT_SEQ = 0;
     static final int SLOT_ADDR = 8;
-    static final int SLOT_TID = 16;
-    static final int SLOT_CPU = 20;
-    static final int SLOT_TIMESTAMP = 24;
-    static final int SLOT_GPTR = 32;
-    static final int SLOT_IS_RET = 40;
-    static final int SLOT_COMM = 48;
-    static final int SLOT_COMM_LEN = 32;
-    static final int SLOT_MODULE = 80;
-    static final int SLOT_MODULE_LEN = 160;
-    static final int SLOT_FUNC = 240;
-    static final int SLOT_FUNC_LEN = 256;
+    static final int SLOT_METHOD_ID = 16;
+    static final int SLOT_COMM_ID = 20;
+    static final int SLOT_TID = 24;
+    static final int SLOT_CPU = 28;
+    static final int SLOT_TIMESTAMP = 32;
+    static final int SLOT_GPTR = 40;
+    static final int SLOT_IS_RET = 48;
 
-    private static final int DEFAULT_SLOT_COUNT = 524288;
+    private static final int DEFAULT_SLOT_COUNT = 2097152;
     private static final int MAX_SLOT_COUNT = 67108864;
-    private static final int SLOTS_PER_SEGMENT = 262144;
+    private static final int SLOTS_PER_SEGMENT = 2097152;
+    private static final int SEGMENT_SHIFT = 21;
+    private static final int SEGMENT_SLOT_MASK = SLOTS_PER_SEGMENT - 1;
     private static final long CLOSE_WAIT_NANOS = 1000000000L;
     private static final long WRITER_CLOSED = Long.MIN_VALUE;
     private static final long WRITER_COUNT_MASK = Long.MAX_VALUE;
+    private static final byte[] EMPTY_BYTES = new byte[0];
 
     private final MappedByteBuffer headerBuffer;
+    private final MappedByteBuffer methodBuffer;
+    private final MappedByteBuffer threadBuffer;
     private final MappedByteBuffer[] slotBuffers;
     private final int slotCount;
+    private final int slotMask;
+    private final long eventOffset;
+    private final AtomicInteger nextThreadId = new AtomicInteger(0);
+    private final AtomicInteger threadCount = new AtomicInteger(0);
     private final AtomicLong nextSequence = new AtomicLong(1L);
     private final AtomicLong publishedSequence = new AtomicLong(0L);
     private final AtomicLong droppedEvents = new AtomicLong(0L);
@@ -80,8 +109,13 @@ final class SharedEventSink implements AutoCloseable {
 
     SharedEventSink(String shmPath, int slotCount) throws IOException {
         this.slotCount = clampSlotCount(slotCount);
+        this.slotMask = isPowerOfTwo(this.slotCount) ? this.slotCount - 1 : -1;
+        long methodBytes = (long) METHOD_CAPACITY * METHOD_ENTRY_SIZE;
+        long threadBytes = (long) THREAD_CAPACITY * THREAD_ENTRY_SIZE;
+        this.eventOffset = HEADER_SIZE + methodBytes + threadBytes;
+
         Path p = Paths.get(shmPath).toAbsolutePath().normalize();
-        long size = HEADER_SIZE + (long) this.slotCount * SLOT_SIZE;
+        long size = eventOffset + (long) this.slotCount * SLOT_SIZE;
         int segmentCount = (this.slotCount + SLOTS_PER_SEGMENT - 1) / SLOTS_PER_SEGMENT;
 
         try (RandomAccessFile raf = new RandomAccessFile(p.toFile(), "rw");
@@ -89,12 +123,17 @@ final class SharedEventSink implements AutoCloseable {
             raf.setLength(size);
             this.headerBuffer = channel.map(FileChannel.MapMode.READ_WRITE, 0, HEADER_SIZE);
             this.headerBuffer.order(ByteOrder.nativeOrder());
+            this.methodBuffer = channel.map(FileChannel.MapMode.READ_WRITE, HEADER_SIZE, methodBytes);
+            this.methodBuffer.order(ByteOrder.nativeOrder());
+            this.threadBuffer = channel.map(FileChannel.MapMode.READ_WRITE,
+                    HEADER_SIZE + methodBytes, threadBytes);
+            this.threadBuffer.order(ByteOrder.nativeOrder());
 
             MappedByteBuffer[] segments = new MappedByteBuffer[segmentCount];
             for (int i = 0; i < segmentCount; i++) {
                 int firstSlot = i * SLOTS_PER_SEGMENT;
                 int slotsInSegment = Math.min(SLOTS_PER_SEGMENT, this.slotCount - firstSlot);
-                long segmentOffset = HEADER_SIZE + (long) firstSlot * SLOT_SIZE;
+                long segmentOffset = eventOffset + (long) firstSlot * SLOT_SIZE;
                 long segmentSize = (long) slotsInSegment * SLOT_SIZE;
                 MappedByteBuffer segment = channel.map(FileChannel.MapMode.READ_WRITE, segmentOffset, segmentSize);
                 segment.order(ByteOrder.nativeOrder());
@@ -113,7 +152,61 @@ final class SharedEventSink implements AutoCloseable {
         headerBuffer.putInt(HEADER_SLOT_SIZE, SLOT_SIZE);
         headerBuffer.putLong(HEADER_WRITE_SEQ, 0L);
         headerBuffer.putLong(HEADER_DROPPED, 0L);
+        headerBuffer.putInt(HEADER_METHOD_CAPACITY, METHOD_CAPACITY);
+        headerBuffer.putInt(HEADER_METHOD_ENTRY_SIZE, METHOD_ENTRY_SIZE);
+        headerBuffer.putInt(HEADER_THREAD_CAPACITY, THREAD_CAPACITY);
+        headerBuffer.putInt(HEADER_THREAD_ENTRY_SIZE, THREAD_ENTRY_SIZE);
+        headerBuffer.putInt(HEADER_METHOD_COUNT, 0);
+        headerBuffer.putInt(HEADER_THREAD_COUNT, 0);
+        headerBuffer.putLong(HEADER_EVENT_OFFSET, eventOffset);
         putIntRelease(HEADER_ACTIVE, 1);
+    }
+
+    synchronized boolean registerMethod(int id, long addr, byte[] module, byte[] func) {
+        if (closed || id < 0 || id >= METHOD_CAPACITY) {
+            return false;
+        }
+        int base = id * METHOD_ENTRY_SIZE;
+        methodBuffer.putLong(base + METHOD_ADDR, addr);
+        writeBytesAbsolute(methodBuffer, base + METHOD_MODULE, METHOD_MODULE_LEN, module);
+        writeBytesAbsolute(methodBuffer, base + METHOD_FUNC, METHOD_FUNC_LEN, func);
+        putIntRelease(methodBuffer, base + METHOD_SEQ, id + 1);
+        int count = id + 1;
+        if (count > headerBuffer.getInt(HEADER_METHOD_COUNT)) {
+            putIntRelease(HEADER_METHOD_COUNT, count);
+        }
+        return true;
+    }
+
+    int registerThread(int tid, byte[] comm) {
+        if (!enterWriter()) {
+            return -1;
+        }
+        try {
+            int id = nextThreadId.getAndIncrement();
+            if (closed || id < 0 || id >= THREAD_CAPACITY) {
+                return -1;
+            }
+            int base = id * THREAD_ENTRY_SIZE;
+            threadBuffer.putInt(base + THREAD_TID, tid);
+            writeBytesAbsolute(threadBuffer, base + THREAD_COMM, THREAD_COMM_LEN, comm);
+            putIntRelease(threadBuffer, base + THREAD_SEQ, id + 1);
+            publishThreadCount(id + 1);
+            return id;
+        } finally {
+            writerState.decrementAndGet();
+        }
+    }
+
+    private void publishThreadCount(int value) {
+        int current;
+        do {
+            current = threadCount.get();
+            if (value <= current) {
+                return;
+            }
+        } while (!threadCount.compareAndSet(current, value));
+        putIntRelease(HEADER_THREAD_COUNT, value);
     }
 
     boolean isActive() {
@@ -123,8 +216,8 @@ final class SharedEventSink implements AutoCloseable {
         return getIntAcquire(HEADER_ACTIVE) != 0;
     }
 
-    boolean record(long addr, String comm, int tid, int cpu, long timestamp,
-                   long gPtr, String module, String func, int isRet) {
+    boolean record(long addr, int methodId, int commId, int tid, int cpu,
+                   long timestamp, long gPtr, int isRet) {
         if (!enterWriter()) {
             return false;
         }
@@ -137,20 +230,19 @@ final class SharedEventSink implements AutoCloseable {
                 return false;
             }
 
-            int slotIndex = (int) ((seq - 1L) % slotCount);
+            int slotIndex = slotIndex(seq);
             MappedByteBuffer slotBuffer = slotBuffer(slotIndex);
             int base = slotOffset(slotIndex);
 
             slotBuffer.putLong(base + SLOT_ADDR, addr);
+            slotBuffer.putInt(base + SLOT_METHOD_ID, methodId);
+            slotBuffer.putInt(base + SLOT_COMM_ID, commId);
             slotBuffer.putInt(base + SLOT_TID, tid);
             slotBuffer.putInt(base + SLOT_CPU, cpu);
             slotBuffer.putLong(base + SLOT_TIMESTAMP, timestamp);
             slotBuffer.putLong(base + SLOT_GPTR, gPtr);
             slotBuffer.putInt(base + SLOT_IS_RET, isRet);
 
-            writeString(slotBuffer, base + SLOT_COMM, SLOT_COMM_LEN, comm);
-            writeString(slotBuffer, base + SLOT_MODULE, SLOT_MODULE_LEN, module);
-            writeString(slotBuffer, base + SLOT_FUNC, SLOT_FUNC_LEN, func);
             // Publish this slot after all slot fields are written.
             putLongRelease(slotBuffer, base + SLOT_SEQ, seq);
             drainPublished();
@@ -201,7 +293,7 @@ final class SharedEventSink implements AutoCloseable {
                 if (next >= nextSequence.get()) {
                     return;
                 }
-                int slotIndex = (int) ((next - 1L) % slotCount);
+                int slotIndex = slotIndex(next);
                 MappedByteBuffer slotBuffer = slotBuffer(slotIndex);
                 int base = slotOffset(slotIndex);
                 if (getLongAcquire(slotBuffer, base + SLOT_SEQ) != next) {
@@ -216,23 +308,30 @@ final class SharedEventSink implements AutoCloseable {
         }
     }
 
+    private int slotIndex(long sequence) {
+        long zeroBased = sequence - 1L;
+        return slotMask >= 0 ? (int) (zeroBased & slotMask) : (int) (zeroBased % slotCount);
+    }
+
     private MappedByteBuffer slotBuffer(int slotIndex) {
-        return slotBuffers[slotIndex / SLOTS_PER_SEGMENT];
+        return slotBuffers[slotIndex >>> SEGMENT_SHIFT];
     }
 
     private int slotOffset(int slotIndex) {
-        return (slotIndex % SLOTS_PER_SEGMENT) * SLOT_SIZE;
+        return (slotIndex & SEGMENT_SLOT_MASK) * SLOT_SIZE;
     }
 
-    private void writeString(MappedByteBuffer target, int offset, int cap, String value) {
-        byte[] bytes = value == null ? new byte[0] : value.getBytes(StandardCharsets.UTF_8);
+    private void writeBytesAbsolute(ByteBuffer target, int offset, int cap, byte[] value) {
+        byte[] bytes = value == null ? EMPTY_BYTES : value;
         int len = Math.min(bytes.length, cap - 1);
         for (int i = 0; i < len; i++) {
             target.put(offset + i, bytes[i]);
         }
-        for (int i = len; i < cap; i++) {
-            target.put(offset + i, (byte) 0);
-        }
+        target.put(offset + len, (byte) 0);
+    }
+
+    static byte[] utf8(String value) {
+        return value == null || value.length() == 0 ? EMPTY_BYTES : value.getBytes(StandardCharsets.UTF_8);
     }
 
     private void incrementDropped() {
@@ -247,6 +346,10 @@ final class SharedEventSink implements AutoCloseable {
         return Math.min(value, MAX_SLOT_COUNT);
     }
 
+    private static boolean isPowerOfTwo(int value) {
+        return (value & (value - 1)) == 0;
+    }
+
     private int getIntAcquire(int offset) {
         int value = headerBuffer.getInt(offset);
         MemoryFence.acquireFence();
@@ -257,22 +360,26 @@ final class SharedEventSink implements AutoCloseable {
         return getLongAcquire(headerBuffer, offset);
     }
 
-    private long getLongAcquire(MappedByteBuffer target, int offset) {
+    private long getLongAcquire(ByteBuffer target, int offset) {
         long value = target.getLong(offset);
         MemoryFence.acquireFence();
         return value;
     }
 
     private void putIntRelease(int offset, int value) {
+        putIntRelease(headerBuffer, offset, value);
+    }
+
+    private void putIntRelease(ByteBuffer target, int offset, int value) {
         MemoryFence.releaseFence();
-        headerBuffer.putInt(offset, value);
+        target.putInt(offset, value);
     }
 
     private void putLongRelease(int offset, long value) {
         putLongRelease(headerBuffer, offset, value);
     }
 
-    private void putLongRelease(MappedByteBuffer target, int offset, long value) {
+    private void putLongRelease(ByteBuffer target, int offset, long value) {
         MemoryFence.releaseFence();
         target.putLong(offset, value);
     }
@@ -304,6 +411,8 @@ final class SharedEventSink implements AutoCloseable {
         for (MappedByteBuffer slotBuffer : slotBuffers) {
             BufferCleaner.clean(slotBuffer);
         }
+        BufferCleaner.clean(threadBuffer);
+        BufferCleaner.clean(methodBuffer);
         BufferCleaner.clean(headerBuffer);
     }
 

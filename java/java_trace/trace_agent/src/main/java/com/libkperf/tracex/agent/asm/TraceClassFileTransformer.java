@@ -36,6 +36,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class TraceClassFileTransformer implements ClassFileTransformer {
     public static final String TRACE_RUNTIME_OWNER = "com/libkperf/tracex/runtime/TraceRuntime";
+    private static final String TRACE_RUNTIME_PACKAGE = "com/libkperf/tracex/runtime/";
     private static final int RESTORE_BATCH_SIZE = 64;
 
     // prevent the same class from being instrumented repeatedly
@@ -58,6 +59,9 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
 
     public boolean isStructuralExcluded(String className) {
         if (className == null || className.length() == 0) {
+            return true;
+        }
+        if (className.startsWith(TRACE_RUNTIME_PACKAGE)) {
             return true;
         }
         if (className.endsWith("package-info") || className.indexOf("$$Lambda$") >= 0) {

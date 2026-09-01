@@ -35,8 +35,8 @@
 
 namespace {
 static constexpr uint64_t K_MAGIC = 0x5554524356415731ULL; // UTRCVAW1
-static constexpr uint32_t K_VERSION = 1;
-static constexpr size_t K_HEADER_SIZE = 64;
+static constexpr uint32_t K_VERSION = 2;
+static constexpr size_t K_HEADER_SIZE = 128;
 static constexpr size_t K_HEADER_MAGIC = 0;
 static constexpr size_t K_HEADER_VERSION = 8;
 static constexpr size_t K_HEADER_ACTIVE = 12;
@@ -44,22 +44,44 @@ static constexpr size_t K_HEADER_SLOT_COUNT = 16;
 static constexpr size_t K_HEADER_SLOT_SIZE = 20;
 static constexpr size_t K_HEADER_WRITE_SEQ = 24;
 static constexpr size_t K_HEADER_DROPPED = 32;
-static constexpr size_t K_HEADER_DEADLINE_NS = 40;
+static constexpr size_t K_HEADER_METHOD_CAPACITY = 40;
+static constexpr size_t K_HEADER_METHOD_ENTRY_SIZE = 44;
+static constexpr size_t K_HEADER_THREAD_CAPACITY = 48;
+static constexpr size_t K_HEADER_THREAD_ENTRY_SIZE = 52;
+static constexpr size_t K_HEADER_METHOD_COUNT = 56;
+static constexpr size_t K_HEADER_THREAD_COUNT = 60;
+static constexpr size_t K_HEADER_EVENT_OFFSET = 64;
 
-static constexpr size_t K_SLOT_SIZE = 512;
+static constexpr uint32_t K_METHOD_CAPACITY = 131072;
+static constexpr size_t K_METHOD_ENTRY_SIZE = 448;
+static constexpr size_t K_METHOD_SEQ = 0;
+static constexpr size_t K_METHOD_ADDR = 8;
+static constexpr size_t K_METHOD_MODULE = 16;
+static constexpr size_t K_METHOD_MODULE_LEN = 160;
+static constexpr size_t K_METHOD_FUNC = 176;
+static constexpr size_t K_METHOD_FUNC_LEN = 256;
+
+static constexpr uint32_t K_THREAD_CAPACITY = 65536;
+static constexpr size_t K_THREAD_ENTRY_SIZE = 48;
+static constexpr size_t K_THREAD_SEQ = 0;
+static constexpr size_t K_THREAD_TID = 4;
+static constexpr size_t K_THREAD_COMM = 8;
+static constexpr size_t K_THREAD_COMM_LEN = 32;
+
+static constexpr size_t K_SLOT_SIZE = 64;
 static constexpr size_t K_SLOT_SEQ = 0;
 static constexpr size_t K_SLOT_ADDR = 8;
-static constexpr size_t K_SLOT_TID = 16;
-static constexpr size_t K_SLOT_CPU = 20;
-static constexpr size_t K_SLOT_TIMESTAMP = 24;
-static constexpr size_t K_SLOT_GPTR = 32;
-static constexpr size_t K_SLOT_IS_RET = 40;
-static constexpr size_t K_SLOT_COMM = 48;
-static constexpr size_t K_SLOT_COMM_LEN = 32;
-static constexpr size_t K_SLOT_MODULE = 80;
-static constexpr size_t K_SLOT_MODULE_LEN = 160;
-static constexpr size_t K_SLOT_FUNC = 240;
-static constexpr size_t K_SLOT_FUNC_LEN = 256;
+static constexpr size_t K_SLOT_METHOD_ID = 16;
+static constexpr size_t K_SLOT_COMM_ID = 20;
+static constexpr size_t K_SLOT_TID = 24;
+static constexpr size_t K_SLOT_CPU = 28;
+static constexpr size_t K_SLOT_TIMESTAMP = 32;
+static constexpr size_t K_SLOT_GPTR = 40;
+static constexpr size_t K_SLOT_IS_RET = 48;
+
+static constexpr size_t K_METHOD_BYTES = static_cast<size_t>(K_METHOD_CAPACITY) * K_METHOD_ENTRY_SIZE;
+static constexpr size_t K_THREAD_BYTES = static_cast<size_t>(K_THREAD_CAPACITY) * K_THREAD_ENTRY_SIZE;
+static constexpr size_t K_EVENT_OFFSET = K_HEADER_SIZE + K_METHOD_BYTES + K_THREAD_BYTES;
 
 static constexpr mode_t K_TRACE_FILE_MODE = 0600;
 
@@ -106,18 +128,51 @@ static void FreeJavaTraceBlockRaw(uint8_t *raw, UTraceData *block, size_t count)
     std::free(raw);
 }
 
-static bool FillTraceDataStrings(UTraceData &data, const uint8_t *slot)
+static bool FillTraceDataStrings(UTraceData &data, const uint8_t *mem,
+                                 uint32_t methodId, int32_t commId,
+                                 bool &metadataMismatch)
 {
-    data.comm = TraceDupString(ReadFixedString(slot, K_SLOT_COMM, K_SLOT_COMM_LEN));
+    std::string module = "<unknown>";
+    std::string func = "<unknown>";
+    std::string comm = "unknown";
+
+    if (methodId < K_METHOD_CAPACITY) {
+        const uint8_t *method = mem + K_HEADER_SIZE + static_cast<size_t>(methodId) * K_METHOD_ENTRY_SIZE;
+        if (LoadAtAcquire<uint32_t>(method, K_METHOD_SEQ) == methodId + 1 &&
+            LoadAt<uint64_t>(method, K_METHOD_ADDR) == static_cast<uint64_t>(data.addr)) {
+            module = ReadFixedString(method, K_METHOD_MODULE, K_METHOD_MODULE_LEN);
+            func = ReadFixedString(method, K_METHOD_FUNC, K_METHOD_FUNC_LEN);
+        } else {
+            metadataMismatch = true;
+        }
+    } else {
+        metadataMismatch = true;
+    }
+
+    if (commId >= 0 && static_cast<uint32_t>(commId) < K_THREAD_CAPACITY) {
+        const uint32_t threadId = static_cast<uint32_t>(commId);
+        const uint8_t *thread = mem + K_HEADER_SIZE + K_METHOD_BYTES +
+                                static_cast<size_t>(threadId) * K_THREAD_ENTRY_SIZE;
+        if (LoadAtAcquire<uint32_t>(thread, K_THREAD_SEQ) == threadId + 1 &&
+            LoadAt<int32_t>(thread, K_THREAD_TID) == data.tid) {
+            comm = ReadFixedString(thread, K_THREAD_COMM, K_THREAD_COMM_LEN);
+        } else {
+            metadataMismatch = true;
+        }
+    } else {
+        metadataMismatch = true;
+    }
+
+    data.comm = TraceDupString(comm);
     if (data.comm == nullptr) {
         return false;
     }
-    data.module = TraceDupString(ReadFixedString(slot, K_SLOT_MODULE, K_SLOT_MODULE_LEN));
+    data.module = TraceDupString(module);
     if (data.module == nullptr) {
         FreeTraceDataFields(data);
         return false;
     }
-    data.func = TraceDupString(ReadFixedString(slot, K_SLOT_FUNC, K_SLOT_FUNC_LEN));
+    data.func = TraceDupString(func);
     if (data.func == nullptr) {
         FreeTraceDataFields(data);
         return false;
@@ -251,7 +306,7 @@ static int PrepareJavaBackendOpen(JavaBackendImpl *impl, int pid, const char *in
     }
     impl->slotCount = localConfig.slotCount;
     impl->shmName = "utrace_java_" + std::to_string(pid) + "_" + TimestampSuffix();
-    impl->shmSize = K_HEADER_SIZE + static_cast<size_t>(impl->slotCount) * K_SLOT_SIZE;
+    impl->shmSize = K_EVENT_OFFSET + static_cast<size_t>(impl->slotCount) * K_SLOT_SIZE;
 
     if (!JavaTracePrepareTargetFiles(*impl)) {
         JavaTraceCleanupTargetAssets(impl);
@@ -382,20 +437,33 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
 
     const uint32_t slotCount = LoadAtAcquire<uint32_t>(mem, K_HEADER_SLOT_COUNT);
     const uint32_t slotSize = LoadAtAcquire<uint32_t>(mem, K_HEADER_SLOT_SIZE);
+    const uint32_t methodCapacity = LoadAtAcquire<uint32_t>(mem, K_HEADER_METHOD_CAPACITY);
+    const uint32_t methodEntrySize = LoadAtAcquire<uint32_t>(mem, K_HEADER_METHOD_ENTRY_SIZE);
+    const uint32_t threadCapacity = LoadAtAcquire<uint32_t>(mem, K_HEADER_THREAD_CAPACITY);
+    const uint32_t threadEntrySize = LoadAtAcquire<uint32_t>(mem, K_HEADER_THREAD_ENTRY_SIZE);
+    const uint32_t methodCount = LoadAtAcquire<uint32_t>(mem, K_HEADER_METHOD_COUNT);
+    const uint32_t threadCount = LoadAtAcquire<uint32_t>(mem, K_HEADER_THREAD_COUNT);
+    const uint64_t eventOffset = LoadAtAcquire<uint64_t>(mem, K_HEADER_EVENT_OFFSET);
     // shared memory layout is abnormal
-    if (slotCount == 0 || slotSize != K_SLOT_SIZE) {
+    if (slotCount == 0 || slotSize != K_SLOT_SIZE ||
+        methodCapacity != K_METHOD_CAPACITY || methodEntrySize != K_METHOD_ENTRY_SIZE ||
+        threadCapacity != K_THREAD_CAPACITY || threadEntrySize != K_THREAD_ENTRY_SIZE ||
+        methodCount > methodCapacity || threadCount > threadCapacity ||
+        eventOffset != K_EVENT_OFFSET || eventOffset > impl->shmSize ||
+        slotCount > (impl->shmSize - static_cast<size_t>(eventOffset)) / K_SLOT_SIZE) {
         return -5;
     }
 
     const uint64_t writeSeq = LoadAtAcquire<uint64_t>(mem, K_HEADER_WRITE_SEQ);
+    const uint64_t dropped = LoadAtAcquire<uint64_t>(mem, K_HEADER_DROPPED);
     const uint64_t prevReadSeq = impl->readSeq;
-    const uint64_t overwrittenByRing = (slotCount > 0 && writeSeq > slotCount) ? (writeSeq - slotCount) : 0;
     // no new readSeq index to read
     if (writeSeq <= impl->readSeq) {
         return 0;
     }
 
     const uint64_t oldest = writeSeq > slotCount ? (writeSeq - slotCount + 1) : 1;
+    const uint64_t overwrittenSinceLastRead = oldest > impl->readSeq + 1 ? oldest - (impl->readSeq + 1) : 0;
     const uint64_t startSeq = std::max<uint64_t>(impl->readSeq + 1, oldest);
     if (startSeq > writeSeq) {
         impl->readSeq = writeSeq;
@@ -416,9 +484,10 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
 
     size_t outIdx = 0;
     size_t seqMismatch = 0;
+    size_t metadataMismatch = 0;
     for (uint64_t seq = startSeq; seq <= writeSeq; ++seq) {
         size_t slotIndex = static_cast<size_t>((seq - 1) % slotCount);
-        const uint8_t *slot = mem + K_HEADER_SIZE + slotIndex * K_SLOT_SIZE;
+        const uint8_t *slot = mem + static_cast<size_t>(eventOffset) + slotIndex * K_SLOT_SIZE;
         uint64_t slotSeq = LoadAtAcquire<uint64_t>(slot, K_SLOT_SEQ);
         if (slotSeq != seq) {
             ++seqMismatch;
@@ -430,11 +499,17 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
         block[outIdx].timestamp = LoadAt<int64_t>(slot, K_SLOT_TIMESTAMP);
         block[outIdx].gPtr = LoadAt<uint64_t>(slot, K_SLOT_GPTR);
         block[outIdx].isRet = LoadAt<uint32_t>(slot, K_SLOT_IS_RET);
-        if (!FillTraceDataStrings(block[outIdx], slot)) {
+        const uint32_t methodId = LoadAt<uint32_t>(slot, K_SLOT_METHOD_ID);
+        const int32_t commId = LoadAt<int32_t>(slot, K_SLOT_COMM_ID);
+        bool mismatched = false;
+        if (!FillTraceDataStrings(block[outIdx], mem, methodId, commId, mismatched)) {
             JavaTraceLog(MakeLogMessage(
                 "[trace-java] JavaBackendRead failed: duplicate string failed, outIdx=", outIdx, "\n"));
             FreeJavaTraceBlockRaw(raw, block, outIdx + 1);
             return -7;
+        }
+        if (mismatched) {
+            ++metadataMismatch;
         }
         ++outIdx;
     }
@@ -445,8 +520,10 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
                                 ", writeSeq=", writeSeq,
                                 ", startSeq=", startSeq,
                                 ", slotCount=", slotCount,
-                                ", overwrittenByRing=", overwrittenByRing,
+                                ", overwrittenSinceLastRead=", overwrittenSinceLastRead,
+                                ", dropped=", dropped,
                                 ", seqMismatch=", seqMismatch,
+                                ", metadataMismatch=", metadataMismatch,
                                 ", out=", outIdx, "\n"));
     if (outIdx == 0) {
         std::free(raw);

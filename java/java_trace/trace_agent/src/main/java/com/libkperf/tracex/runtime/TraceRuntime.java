@@ -16,35 +16,63 @@ package com.libkperf.tracex.runtime;
 
 import com.libkperf.tracex.agent.TraceLog;
 
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 
 public final class TraceRuntime {
 
-    private static final AtomicBoolean ENABLED = new AtomicBoolean(false);
+    private static final int INITIAL_METHOD_CAPACITY = 256;
+    private static final Map<String, Integer> METHOD_IDS = new HashMap<String, Integer>();
+    private static volatile MethodMetadata[] methodTable = new MethodMetadata[INITIAL_METHOD_CAPACITY];
 
+    private static volatile boolean enabled;
     private static volatile SharedEventSink sink;
 
-    // prevent self-recursion at runtime
-    private static final ThreadLocal<Integer> RUNTIME_DEPTH = new ThreadLocal<Integer>() {
+    private static final ThreadLocal<ThreadState> THREAD_STATE = new ThreadLocal<ThreadState>() {
         @Override
-        protected Integer initialValue() {
-            return 0;
-        }
-    };
-
-    // method call depth
-    private static final ThreadLocal<Integer> CALL_DEPTH = new ThreadLocal<Integer>() {
-        @Override
-        protected Integer initialValue() {
-            return 0;
+        protected ThreadState initialValue() {
+            return new ThreadState();
         }
     };
 
     private TraceRuntime() {
     }
 
+    public static int registerMethod(String module, String func) {
+        long addr = fnv1a64(module + "!" + func) & 0x0000FFFFFFFFFFFFL;
+        return registerMethod(addr, module, func);
+    }
+
+    public static synchronized int registerMethod(long addr, String module, String func) {
+        String key = module + '\u0000' + func;
+        Integer existing = METHOD_IDS.get(key);
+        if (existing != null) {
+            return existing.intValue();
+        }
+
+        int id = METHOD_IDS.size();
+        if (id >= SharedEventSink.METHOD_CAPACITY) {
+            throw new IllegalStateException("trace method dictionary is full: " + id);
+        }
+        MethodMetadata[] table = methodTable;
+        if (id >= table.length) {
+            table = Arrays.copyOf(table, table.length << 1);
+        }
+        MethodMetadata metadata = new MethodMetadata(id, addr, SharedEventSink.utf8(module), SharedEventSink.utf8(func));
+        table[id] = metadata;
+        methodTable = table;
+        METHOD_IDS.put(key, Integer.valueOf(id));
+
+        SharedEventSink current = sink;
+        if (current != null && !current.registerMethod(metadata.id, metadata.addr, metadata.module, metadata.func)) {
+            throw new IllegalStateException("failed to publish trace method metadata: " + id);
+        }
+        return id;
+    }
+
     public static synchronized void reconfigure(String shmPath, int slotCount) throws Exception {
-        ENABLED.set(false);
+        enabled = false;
 
         SharedEventSink old = sink;
         sink = null;
@@ -58,16 +86,26 @@ public final class TraceRuntime {
         }
 
         SharedEventSink next = new SharedEventSink(shmPath, slotCount);
+        MethodMetadata[] table = methodTable;
+        for (MethodMetadata metadata : table) {
+            if (metadata == null) {
+                continue;
+            }
+            if (!next.registerMethod(metadata.id, metadata.addr, metadata.module, metadata.func)) {
+                next.close();
+                throw new IllegalStateException("failed to initialize trace method dictionary: " + metadata.id);
+            }
+        }
         sink = next;
 
         TraceLog.info("[trace-java-runtime] reconfigured" + ", shmPath=" + shmPath +
                             ", slotCount=" + slotCount + ", active=" + next.isActive());
 
-        ENABLED.set(true);
+        enabled = true;
     }
 
     public static synchronized void stop() {
-        ENABLED.set(false);
+        enabled = false;
 
         SharedEventSink old = sink;
         sink = null;
@@ -83,45 +121,70 @@ public final class TraceRuntime {
         TraceLog.info("[trace-java-runtime] disabled");
     }
 
-    public static void setEnabled(boolean enabled) {
-        ENABLED.set(enabled);
+    public static void setEnabled(boolean value) {
+        enabled = value;
     }
 
     public static Context enter(String classNameInternal, String methodName, String descriptor) {
         try {
-            if (!ENABLED.get()) {
+            String module = classNameInternal.replace('/', '.');
+            String func = methodName + descriptor;
+            return enter(registerMethod(module, func));
+        } catch (ThreadDeath t) {
+            throw t;
+        } catch (VirtualMachineError e) {
+            throw e;
+        } catch (Throwable ignored) {
+            return Context.SKIPPED;
+        }
+    }
+
+    public static Context enter(long addr, String module, String func) {
+        try {
+            return enter(registerMethod(addr, module, func));
+        } catch (ThreadDeath t) {
+            throw t;
+        } catch (VirtualMachineError e) {
+            throw e;
+        } catch (Throwable ignored) {
+            return Context.SKIPPED;
+        }
+    }
+
+    public static Context enter(int methodId) {
+        try {
+            MethodMetadata[] table = methodTable;
+            if (!enabled || methodId < 0 || methodId >= table.length) {
                 return Context.SKIPPED;
             }
-            int runtimeDepth = RUNTIME_DEPTH.get();
-            if (runtimeDepth > 0) {
+            MethodMetadata method = table[methodId];
+            if (method == null) {
+                return Context.SKIPPED;
+            }
+            ThreadState state = THREAD_STATE.get();
+            if (state.runtimeDepth > 0) {
                 return Context.SKIPPED;
             }
             SharedEventSink s = sink;
             if (s == null) {
                 return Context.SKIPPED;
             }
-            if (!s.isActive()) {
-                return Context.SKIPPED;
-            }
 
-            RUNTIME_DEPTH.set(runtimeDepth + 1);
+            state.runtimeDepth++;
             try {
-                int depth = CALL_DEPTH.get();
-                String module = classNameInternal.replace('/', '.');
-                String func = methodName + descriptor;
-                long addr = fnv1a64(module + "!" + func) & 0x0000FFFFFFFFFFFFL;
+                int depth = state.callDepth;
                 long ts = NativeThreadInfo.currentTimeNanosSafe();
-                String comm = currentThreadName();
-                int tid = NativeThreadInfo.currentTidSafe();
+                int tid = state.tid();
+                int commId = state.commId(s, tid);
                 int cpu = NativeThreadInfo.currentCpuSafe();
                 long gPtr = 0L;
-                if (!s.record(addr, comm, tid, cpu, ts, gPtr, module, func, 0)) {
+                if (!s.record(method.addr, method.id, commId, tid, cpu, ts, gPtr, 0)) {
                     return Context.SKIPPED;
                 }
-                CALL_DEPTH.set(depth + 1);
-                return new Context(s, addr, gPtr, module, func, comm, tid, cpu, depth, false);
+                state.callDepth = depth + 1;
+                return new Context(state, s, method, commId, tid, cpu, depth, false);
             } finally {
-                RUNTIME_DEPTH.set(runtimeDepth);
+                state.runtimeDepth--;
             }
         } catch (ThreadDeath t) {
             throw t;
@@ -137,26 +200,23 @@ public final class TraceRuntime {
             if (context == null || context.skipped) {
                 return;
             }
-            CALL_DEPTH.set(Math.max(0, CALL_DEPTH.get() - 1));
-            if (!ENABLED.get()) {
-                return;
-            }
-            int runtimeDepth = RUNTIME_DEPTH.get();
-            if (runtimeDepth > 0) {
+            ThreadState state = context.state;
+            state.callDepth = Math.max(0, state.callDepth - 1);
+            if (!enabled || state.runtimeDepth > 0) {
                 return;
             }
             SharedEventSink s = context.sink;
             if (s == null) {
                 return;
             }
-            RUNTIME_DEPTH.set(runtimeDepth + 1);
+            state.runtimeDepth++;
             try {
                 long ts = NativeThreadInfo.currentTimeNanosSafe();
                 int cpu = NativeThreadInfo.currentCpuSafe();
-                s.record(context.addr, context.comm, context.tid, cpu, ts,
-                         context.gPtr, context.module, context.func, 1);
+                MethodMetadata method = context.method;
+                s.record(method.addr, method.id, context.commId, context.tid, cpu, ts, context.gPtr, 1);
             } finally {
-                RUNTIME_DEPTH.set(runtimeDepth);
+                state.runtimeDepth--;
             }
         } catch (ThreadDeath t) {
             throw t;
@@ -182,28 +242,75 @@ public final class TraceRuntime {
         return h;
     }
 
-    public static final class Context {
-        static final Context SKIPPED = new Context(null, 0L, 0L, "", "", "", 0, -1, 0, true);
-
-        final SharedEventSink sink;
+    private static final class MethodMetadata {
+        final int id;
         final long addr;
+        final byte[] module;
+        final byte[] func;
+
+        MethodMetadata(int id, long addr, byte[] module, byte[] func) {
+            this.id = id;
+            this.addr = addr;
+            this.module = module;
+            this.func = func;
+        }
+    }
+
+    private static final class ThreadState {
+        int runtimeDepth;
+        int callDepth;
+        private int cachedTid;
+        private byte[] cachedComm;
+        private SharedEventSink registeredSink;
+        private int registeredCommId = -1;
+
+        int tid() {
+            if (cachedTid == 0) {
+                cachedTid = NativeThreadInfo.currentTidSafe();
+            }
+            return cachedTid;
+        }
+
+        byte[] comm() {
+            if (cachedComm == null) {
+                cachedComm = SharedEventSink.utf8(currentThreadName());
+            }
+            return cachedComm;
+        }
+
+        int commId(SharedEventSink sink, int tid) {
+            if (registeredSink != sink) {
+                int id = sink.registerThread(tid, comm());
+                if (id < 0) {
+                    return -1;
+                }
+                registeredCommId = id;
+                registeredSink = sink;
+            }
+            return registeredCommId;
+        }
+    }
+
+    public static final class Context {
+        static final Context SKIPPED = new Context(null, null, null, -1, 0, -1, 0, true);
+
+        private final ThreadState state;
+        final SharedEventSink sink;
+        private final MethodMetadata method;
+        final int commId;
         final long gPtr;
-        final String module;
-        final String func;
-        final String comm;
         final int tid;
         final int cpu;
         final int depth;
         final boolean skipped;
 
-        Context(SharedEventSink sink, long addr, long gPtr, String module, String func,
-                String comm, int tid, int cpu, int depth, boolean skipped) {
+        private Context(ThreadState state, SharedEventSink sink, MethodMetadata method,
+                int commId, int tid, int cpu, int depth, boolean skipped) {
+            this.state = state;
             this.sink = sink;
-            this.addr = addr;
-            this.gPtr = gPtr;
-            this.module = module;
-            this.func = func;
-            this.comm = comm;
+            this.method = method;
+            this.commId = commId;
+            this.gPtr = 0L;
             this.tid = tid;
             this.cpu = cpu;
             this.depth = depth;
