@@ -124,6 +124,7 @@ namespace KUNPENG_SYM {
         JavaElf() = default;
         explicit JavaElf(int pid) : pid(pid) {};
         JavaElf(int pid, const std::string& perfMapPath) : pid(pid), perfMapPath(perfMapPath) {};
+        int Load();
         int FindElf(unsigned long addr, struct JavaEntry& entry);
     private:
         volatile bool hasLoad = false;

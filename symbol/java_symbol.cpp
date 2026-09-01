@@ -46,6 +46,7 @@ const static char* KPERF_MAP_NAME = "libkperfmap.so";
 const static char* LD_LIBRARY_PATH = "LD_LIBRARY_PATH";
 const static char* KPERF_MAP_SYMBOL_NAME = "perf_map_open";
 const static char* PERF_MAP_OPTION_PREFIX = "file=";
+const static char* AGENT_PATH_OPTION_PREFIX = "agentpath=";
 const static size_t K_PROC_STAT_AFTER_COMM_OFFSET = 2;
 const static int K_PROC_STAT_STATE_FIELD = 3;
 const static int K_PROC_STAT_STARTTIME_FIELD = 22;
@@ -67,7 +68,19 @@ struct ProcessCredentials {
 struct TargetAgentPath {
     std::string targetVisiblePath;
     std::string hostPath;
-    bool created = false;
+    std::string fileName;
+    int targetTmpDirFd = -1;
+
+    TargetAgentPath() = default;
+    TargetAgentPath(const TargetAgentPath&) = delete;
+    TargetAgentPath& operator=(const TargetAgentPath&) = delete;
+
+    ~TargetAgentPath()
+    {
+        if (targetTmpDirFd >= 0) {
+            close(targetTmpDirFd);
+        }
+    }
 };
 
 static inline bool FindPath(const std::string& path) {
@@ -279,12 +292,11 @@ static bool IsRegularFile(const std::string& path)
 
 static void SetAgentFilePermission(const std::string& path, const ProcessCredentials& credentials)
 {
-    chmod(path.c_str(), S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+    chmod(path.c_str(), S_IRUSR | S_IWUSR);
     chown(path.c_str(), credentials.euid, credentials.egid);
 }
 
-static bool CopyAgentToStablePath(const std::string& stablePath, const ProcessCredentials& credentials,
-                                  bool& createdAgentPath)
+static bool CopyAgentToStablePath(const std::string& stablePath, const ProcessCredentials& credentials)
 {
     std::string templ = stablePath + ".copy." + std::to_string(getpid()) + ".XXXXXX";
     std::vector<char> pathBuf(templ.begin(), templ.end());
@@ -304,7 +316,6 @@ static bool CopyAgentToStablePath(const std::string& stablePath, const ProcessCr
     SetAgentFilePermission(tmpPath, credentials);
 
     if (link(tmpPath.c_str(), stablePath.c_str()) == 0) {
-        createdAgentPath = true;
         unlink(tmpPath.c_str());
         return true;
     }
@@ -324,28 +335,49 @@ static bool PrepareTargetAgentPath(int pid, int nsPid, const ProcessCredentials&
     if (agentPath == nullptr) {
         return false;
     }
-    *agentPath = TargetAgentPath{};
     std::string targetTmpDir = ProcRootPrefix(pid) + "/tmp";
-    agentPath->hostPath = targetTmpDir + "/" + KPERF_MAP_NAME + "." + std::to_string(nsPid) + "." +
+    agentPath->fileName = std::string(KPERF_MAP_NAME) + "." + std::to_string(nsPid) + "." +
                           GetProcessStartTime(pid);
+    agentPath->hostPath = targetTmpDir + "/" + agentPath->fileName;
+    agentPath->targetVisiblePath = "/tmp/" + agentPath->fileName;
+    agentPath->targetTmpDirFd = open(targetTmpDir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     if (IsRegularFile(agentPath->hostPath)) {
         SetAgentFilePermission(agentPath->hostPath, credentials);
-        agentPath->targetVisiblePath = agentPath->hostPath.substr(ProcRootPrefix(pid).size());
         return true;
     }
-    if (!CopyAgentToStablePath(agentPath->hostPath, credentials, agentPath->created)) {
+    if (!CopyAgentToStablePath(agentPath->hostPath, credentials)) {
         agentPath->hostPath.clear();
         return false;
     }
-    agentPath->targetVisiblePath = agentPath->hostPath.substr(ProcRootPrefix(pid).size());
     return true;
+}
+
+static bool UnlinkTargetAgentPath(const TargetAgentPath& agentPath)
+{
+    int unlinkError = ENOENT;
+    if (agentPath.targetTmpDirFd >= 0 && !agentPath.fileName.empty()) {
+        if (unlinkat(agentPath.targetTmpDirFd, agentPath.fileName.c_str(), 0) == 0 || errno == ENOENT) {
+            return true;
+        }
+        unlinkError = errno;
+    } else if (!agentPath.hostPath.empty()) {
+        if (unlink(agentPath.hostPath.c_str()) == 0) {
+            return true;
+        }
+        if (errno == ENOENT) {
+            return true;
+        }
+        unlinkError = errno;
+    }
+    fprintf(stderr, "Failed to remove temporary Java agent %s: %s\n", agentPath.targetVisiblePath.c_str(), strerror(unlinkError));
+    return false;
 }
 
 static void CleanupAgentPathOnFailure(const TargetAgentPath& agentPath)
 {
-    if (agentPath.created && !agentPath.hostPath.empty()) {
-        unlink(agentPath.hostPath.c_str());
-    }
+    // The path is dedicated to this JVM start time and is always disposable,
+    // including when left by an earlier interrupted attach attempt.
+    (void)UnlinkTargetAgentPath(agentPath);
 }
 
 static bool CreateAttachFile(const std::string& attachPath, const ProcessCredentials& credentials)
@@ -498,7 +530,8 @@ int attach_java_process(int pid, JavaAttachInfo* info) {
     WriteDataToSocket(fd, CMD);
     WriteDataToSocket(fd, agentPath.targetVisiblePath);
     WriteDataToSocket(fd, ABSOLUTE);
-    WriteDataToSocket(fd, std::string(PERF_MAP_OPTION_PREFIX) + targetPerfMapPath);
+    WriteDataToSocket(fd, std::string(PERF_MAP_OPTION_PREFIX) + targetPerfMapPath + "," +
+                           AGENT_PATH_OPTION_PREFIX + agentPath.targetVisiblePath);
     unsigned char buf[128];
     ssize_t readLen = read(fd, buf, 1);
     if (readLen > 0) {
@@ -506,12 +539,18 @@ int attach_java_process(int pid, JavaAttachInfo* info) {
             if (info != nullptr) {
                 info->nspid = nsPid;
                 info->perfMapPath = perfMapPath;
+            } else {
+                unlink(perfMapPath.c_str());
             }
             close(fd);
+            // Agent_OnAttach normally removes this path inside the target mount
+            // namespace. Retry through the pinned target /tmp directory.
+            UnlinkTargetAgentPath(agentPath);
             return 0;
         }
     }
     close(fd);
+    unlink(perfMapPath.c_str());
     CleanupAgentPathOnFailure(agentPath);
     return -1;
 }
