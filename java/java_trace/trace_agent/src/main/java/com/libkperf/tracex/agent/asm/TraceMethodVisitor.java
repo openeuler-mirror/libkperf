@@ -14,6 +14,8 @@
  ******************************************************************************/
 package com.libkperf.tracex.agent.asm;
 
+import com.libkperf.tracex.runtime.TraceRuntime;
+
 import org.objectweb.asm.Label;
 import org.objectweb.asm.Handle;
 import org.objectweb.asm.MethodVisitor;
@@ -33,7 +35,7 @@ import java.util.List;
  * After transformation:
  * public int add(int a, int b)
  * {
- *     TraceRuntime.Context context = TraceRuntime.enter("com/example/Foo", "add", "(II)I");
+ *     TraceRuntime.Context context = TraceRuntime.enter(methodId);
  *     try {
  *         int result = a + b;
  *         TraceRuntime.exit(context);
@@ -48,9 +50,9 @@ public final class TraceMethodVisitor extends AdviceAdapter {
     private static final Type CONTEXT_TYPE = Type.getObjectType("com/libkperf/tracex/runtime/TraceRuntime$Context");
     private static final Type THROWABLE_TYPE = Type.getType(Throwable.class);
     private static final Type ERROR_TYPE = Type.getType(Error.class);
-    private final String methodName;
-    private final String methodDesc;
-    private final String owner;
+    private final String moduleName;
+    private final String functionName;
+    private final int methodId;
     private final List<TryRange> tryRanges = new ArrayList<TryRange>();
     private int contextLocal = -1;
     private Label currentTryStart;
@@ -59,20 +61,17 @@ public final class TraceMethodVisitor extends AdviceAdapter {
 
     public TraceMethodVisitor(int api, MethodVisitor mv, int access, String name, String descriptor, String owner) {
         super(api, mv, access, name, descriptor);
-        this.methodName = name;
-        this.owner = owner;
-        this.methodDesc = descriptor;
+        this.moduleName = owner.replace('/', '.');
+        this.functionName = name + descriptor;
+        this.methodId = TraceRuntime.registerMethod(moduleName, functionName);
     }
 
     @Override
     protected void onMethodEnter() {
-        // TraceRuntime.Context context = TraceRuntime.enter(owner, methodName, methodDesc)
         injectingProbe = true;
-        visitLdcInsn(owner);
-        visitLdcInsn(methodName);
-        visitLdcInsn(methodDesc);
+        visitLdcInsn(methodId);
         visitMethodInsn(INVOKESTATIC, TraceClassFileTransformer.TRACE_RUNTIME_OWNER, "enter",
-            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/libkperf/tracex/runtime/TraceRuntime$Context;", false);
+            "(I)Lcom/libkperf/tracex/runtime/TraceRuntime$Context;", false);
         contextLocal = newLocal(CONTEXT_TYPE);
         storeLocal(contextLocal);
         injectingProbe = false;

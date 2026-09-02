@@ -23,7 +23,7 @@ import java.util.Map;
 import java.util.Set;
 
 public final class TraceConfig {
-    private static final int DEFAULT_SLOT_COUNT = 524288;
+    private static final int DEFAULT_SLOT_COUNT = 2097152;
     private static final int MAX_SLOT_COUNT = 67108864;
 
     public final String shmPath;
