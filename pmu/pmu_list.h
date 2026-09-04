@@ -143,7 +143,6 @@ private:
     void AddSpeCpu(const unsigned &pd, const int &cpu);
     void EraseSpeCpu(const unsigned &pd);
     void ClearExitFd(const unsigned &pd);
-    void RemoveInitErrEvt(const unsigned &pd);
     int PrepareCpuTopoList(
         const unsigned& pd, PmuTaskAttr* pmuTaskAttrHead, std::vector<CpuPtr>& cpuTopoList);
     int PrepareProcTopoList(PmuTaskAttr* pmuTaskAttrHead, std::vector<ProcPtr>& procTopoList, const int pd);

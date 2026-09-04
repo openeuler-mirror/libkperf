@@ -31,22 +31,6 @@ public final class Util {
         return v == null ? d : v;
     }
 
-    public static int parseInt(String v, int fallback) {
-        try {
-            return Integer.parseInt(v.trim());
-        } catch (Exception ignored) {
-            return fallback;
-        }
-    }
-
-    public static long parseLong(String v, long fallback) {
-        try {
-            return Long.parseLong(v.trim());
-        } catch (Exception ignored) {
-            return fallback;
-        }
-    }
-
     public static String stripComment(String line) {
         int hash = line.indexOf('#');
         int slashes = line.indexOf("//");

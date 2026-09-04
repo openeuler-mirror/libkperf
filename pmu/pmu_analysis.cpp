@@ -105,11 +105,6 @@ namespace KUNPENG_PMU {
         return funcsList.find(pd) != funcsList.end();
     }
 
-    static bool CheckEventIsRawSysCall(const char *evt)
-    {
-        return (strcmp(evt, ENTER_RAW_SYSCALL) == 0) || (strcmp(evt, EXIT_RAW_SYSCALL) == 0);
-    }
-
     static bool CheckEventIsFunName(const char *evt, const char *funName)
     {
         const char *pos;
