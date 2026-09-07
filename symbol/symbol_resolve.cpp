@@ -299,13 +299,6 @@ void SymbolUtils::FreeSymbol(struct Symbol* symbol)
     }
 }
 
-void SymbolUtils::StrCpy(char* dst, int dstLen, const char* src)
-{
-    int size = strlen(src) > dstLen ? dstLen + 1 : strlen(src) + 1;
-    memcpy(dst, src, size);
-    dst[dstLen] = '\0';
-}
-
 #ifndef ELF_LLVM
 static inline void ElfInfoRecord(ParserElf& myElf, const elf::section& sec)
 {

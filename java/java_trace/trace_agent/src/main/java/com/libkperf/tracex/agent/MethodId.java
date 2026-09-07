@@ -25,10 +25,6 @@ public final class MethodId {
         this.desc = desc == null ? "" : desc;
     }
 
-    public String func() {
-        return name + desc;
-    }
-
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

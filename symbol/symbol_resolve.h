@@ -152,7 +152,6 @@ namespace KUNPENG_SYM {
         static unsigned long SymStoul(const std::string& addrStr);
         static bool IsNumber(const std::string& str);
         static void FreeStackAsm(struct StackAsm** stackAsm);
-        static void StrCpy(char* dst, int dstLen, const char* src);
     };
     class SymbolResolve {
     public:

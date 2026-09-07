@@ -68,13 +68,6 @@ public final class TraceLog {
         write(message, null);
     }
 
-    public static void infoBatch(Iterable<String> messages) {
-        if (messages == null) {
-            return;
-        }
-        writeBatch(messages);
-    }
-
     public static void warn(String message, Throwable t) {
         write(message, t);
     }
@@ -87,23 +80,6 @@ public final class TraceLog {
         try (PrintWriter out = new PrintWriter(
             new OutputStreamWriter(new FileOutputStream(path, true), StandardCharsets.UTF_8))) {
             printEntry(out, new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS"), message, t);
-        } catch (Throwable ignored) {
-        }
-    }
-
-    private static synchronized void writeBatch(Iterable<String> messages) {
-        String path = logFile;
-        if (path == null || path.length() == 0) {
-            return;
-        }
-        try (PrintWriter out = new PrintWriter(
-            new OutputStreamWriter(new FileOutputStream(path, true), StandardCharsets.UTF_8))) {
-            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
-            for (String message : messages) {
-                if (message != null) {
-                    printEntry(out, dateFormat, message, null);
-                }
-            }
         } catch (Throwable ignored) {
         }
     }
