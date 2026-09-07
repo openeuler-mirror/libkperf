@@ -88,6 +88,10 @@ static int CheckSysCallName(const char **funList, unsigned numFuns)
         sysCallFuns = SysCallFuncList.data();
         numSysCall = SysCallFuncList.size();
     }
+    if (sysCallFuns == nullptr) {
+        New(LIBPERF_ERR_QUERY_SYSCALL_LIST_FAILED, "Query system call function list failed!");
+        return LIBPERF_ERR_QUERY_SYSCALL_LIST_FAILED;
+    }
     for (int i = 0; i < numFuns; ++i) {
         bool isValid = false;
         for (int j = 0; j < numSysCall; ++j) {
