@@ -446,6 +446,9 @@ int SymbolResolve::RecordModule(int pid, RecordModuleType recordModuleType)
             continue;
         }
         item->isExecFile = myElf.IsExecFile();
+        if (!item->isExecFile) {
+            item->bias = myElf.GetLoadBias(static_cast<off_t>(item->fileOffset));
+        }
 #ifndef ELF_LLVM
         this->RecordElf(moduleName.c_str());
 #endif
@@ -698,7 +701,7 @@ struct Symbol* SymbolResolve::MapUserAddr(int pid, unsigned long addr)
     if (!module->isExecFile) {
         // /proc/<pid>/maps provides mapping address and file offset. ELF symbols are
         // relative to the image base, not the individual mapping (notably on x86_64).
-        addrToSearch = addrToSearch - module->start + module->fileOffset;
+        addrToSearch = addrToSearch - module->start + module->fileOffset + module->bias;
     }
 
     std::string moduleName = module->moduleName;
@@ -905,6 +908,9 @@ int SymbolResolve::UpdateModule(int pid, const char* moduleName, unsigned long s
         return ret;
     }
     data->isExecFile = myElf.IsExecFile();
+    if (!data->isExecFile) {
+        data->bias = myElf.GetLoadBias(static_cast<off_t>(data->fileOffset));
+    }
     data->moduleType = recordModuleType;
 #ifndef ELF_LLVM
     this->RecordElf(recordModule.c_str());
@@ -1045,6 +1051,52 @@ int MyElf::LoadMmap() {
 
 const void* MyElf::Load(off_t offset, size_t size) {
     return loadElf(offset, size, lim, base);
+}
+
+template<typename Ehdr, typename Phdr>
+unsigned long MyElf::GetLoadBiasImpl(off_t fileOffset)
+{
+    Ehdr* ehdr = reinterpret_cast<Ehdr*>(base);
+    Phdr* phdr = reinterpret_cast<Phdr*>(static_cast<uint8_t*>(base) + ehdr->e_phoff);
+    long pageSize = sysconf(_SC_PAGESIZE);
+    if (pageSize <= 0) {
+        pageSize = 4096;
+    }
+    unsigned long pageMask = static_cast<unsigned long>(pageSize) - 1;
+    unsigned long bias = 0;
+    bool found = false;
+    for (int i = 0; i < ehdr->e_phnum; i++) {
+        if (phdr[i].p_type != PT_LOAD) {
+            continue;
+        }
+        unsigned long alignedOffset = phdr[i].p_offset & ~pageMask;
+        if (static_cast<unsigned long>(fileOffset) >= alignedOffset &&
+            static_cast<unsigned long>(fileOffset) < phdr[i].p_offset + phdr[i].p_filesz) {
+            unsigned long segBias = phdr[i].p_vaddr - phdr[i].p_offset;
+            if (!found) {
+                bias = segBias;
+                found = true;
+            }
+
+            if (phdr[i].p_flags & PF_X) {
+                return segBias;
+            }
+        }
+    }
+    return bias;
+}
+
+unsigned long MyElf::GetLoadBias(off_t fileOffset)
+{
+    if (elfHdr == nullptr) {
+        return 0;
+    }
+    if (elfHdr->elfClass == ELFCLASS32) {
+        return GetLoadBiasImpl<Elf32_Ehdr, Elf32_Phdr>(fileOffset);
+    } else if (elfHdr->elfClass == ELFCLASS64) {
+        return GetLoadBiasImpl<Elf64_Ehdr, Elf64_Phdr>(fileOffset);
+    }
+    return 0;
 }
 
 int MyElf::CheckElfHeader() {
