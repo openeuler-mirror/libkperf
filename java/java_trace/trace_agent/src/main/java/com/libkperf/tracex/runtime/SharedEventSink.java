@@ -28,6 +28,9 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -100,12 +103,45 @@ final class SharedEventSink implements AutoCloseable {
     private final long eventOffset;
     private final AtomicInteger nextThreadId = new AtomicInteger(0);
     private final AtomicInteger threadCount = new AtomicInteger(0);
+    private final Map<ThreadMetadataKey, Integer> threadIds =
+            new HashMap<ThreadMetadataKey, Integer>();
     private final AtomicLong nextSequence = new AtomicLong(1L);
     private final AtomicLong publishedSequence = new AtomicLong(0L);
     private final AtomicLong droppedEvents = new AtomicLong(0L);
     private final AtomicLong writerState = new AtomicLong(0L);
     private final AtomicBoolean publishing = new AtomicBoolean(false);
     private volatile boolean closed;
+
+    private static final class ThreadMetadataKey {
+        private final int tid;
+        private final byte[] comm;
+        private final int hashCode;
+
+        ThreadMetadataKey(int tid, byte[] comm) {
+            this.tid = tid;
+            byte[] value = comm == null ? EMPTY_BYTES : comm;
+            int length = Math.min(value.length, THREAD_COMM_LEN - 1);
+            this.comm = Arrays.copyOf(value, length);
+            this.hashCode = 31 * tid + Arrays.hashCode(this.comm);
+        }
+
+        @Override
+        public int hashCode() {
+            return hashCode;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other) {
+                return true;
+            }
+            if (!(other instanceof ThreadMetadataKey)) {
+                return false;
+            }
+            ThreadMetadataKey that = (ThreadMetadataKey) other;
+            return tid == that.tid && Arrays.equals(comm, that.comm);
+        }
+    }
 
     SharedEventSink(String shmPath, int slotCount) throws IOException {
         this.slotCount = clampSlotCount(slotCount);
@@ -178,7 +214,15 @@ final class SharedEventSink implements AutoCloseable {
         return true;
     }
 
-    int registerThread(int tid, byte[] comm) {
+    synchronized int registerThread(int tid, byte[] comm) {
+        if (closed) {
+            return -1;
+        }
+        ThreadMetadataKey key = new ThreadMetadataKey(tid, comm);
+        Integer existing = threadIds.get(key);
+        if (existing != null) {
+            return existing.intValue();
+        }
         if (!enterWriter()) {
             return -1;
         }
@@ -192,6 +236,7 @@ final class SharedEventSink implements AutoCloseable {
             writeBytesAbsolute(threadBuffer, base + THREAD_COMM, THREAD_COMM_LEN, comm);
             putIntRelease(threadBuffer, base + THREAD_SEQ, id + 1);
             publishThreadCount(id + 1);
+            threadIds.put(key, Integer.valueOf(id));
             return id;
         } finally {
             writerState.decrementAndGet();

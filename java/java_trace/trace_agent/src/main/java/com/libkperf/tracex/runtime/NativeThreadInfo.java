@@ -58,6 +58,10 @@ public final class NativeThreadInfo {
         }
     }
 
+    public static boolean isNativeTidAvailable() {
+        return loaded;
+    }
+
     public static int currentCpuSafe() {
         if (!loaded) {
             return -1;

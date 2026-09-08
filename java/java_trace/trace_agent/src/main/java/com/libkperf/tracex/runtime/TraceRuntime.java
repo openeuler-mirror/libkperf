@@ -16,6 +16,7 @@ package com.libkperf.tracex.runtime;
 
 import com.libkperf.tracex.agent.TraceLog;
 
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -99,7 +100,9 @@ public final class TraceRuntime {
         sink = next;
 
         TraceLog.info("[trace-java-runtime] reconfigured" + ", shmPath=" + shmPath +
-                            ", slotCount=" + slotCount + ", active=" + next.isActive());
+                            ", slotCount=" + slotCount + ", active=" + next.isActive() +
+                            ", virtualThreads=" + VirtualThreadSupport.isSupported() +
+                            ", carrierTid=" + NativeThreadInfo.isNativeTidAvailable());
 
         enabled = true;
     }
@@ -177,12 +180,12 @@ public final class TraceRuntime {
                 int tid = state.tid();
                 int commId = state.commId(s, tid);
                 int cpu = NativeThreadInfo.currentCpuSafe();
-                long gPtr = 0L;
+                long gPtr = state.contextId();
                 if (!s.record(method.addr, method.id, commId, tid, cpu, ts, gPtr, 0)) {
                     return Context.SKIPPED;
                 }
                 state.callDepth = depth + 1;
-                return new Context(state, s, method, commId, tid, cpu, depth, false);
+                return new Context(state, s, method, gPtr, false);
             } finally {
                 state.runtimeDepth--;
             }
@@ -212,9 +215,11 @@ public final class TraceRuntime {
             state.runtimeDepth++;
             try {
                 long ts = NativeThreadInfo.currentTimeNanosSafe();
+                int tid = state.tid();
+                int commId = state.commId(s, tid);
                 int cpu = NativeThreadInfo.currentCpuSafe();
                 MethodMetadata method = context.method;
-                s.record(method.addr, method.id, context.commId, context.tid, cpu, ts, context.gPtr, 1);
+                s.record(method.addr, method.id, commId, tid, cpu, ts, context.gPtr, 1);
             } finally {
                 state.runtimeDepth--;
             }
@@ -260,15 +265,31 @@ public final class TraceRuntime {
         int runtimeDepth;
         int callDepth;
         private int cachedTid;
+        private final boolean virtualThread;
+        private final long contextId;
         private byte[] cachedComm;
         private SharedEventSink registeredSink;
+        private int registeredTid;
         private int registeredCommId = -1;
 
+        ThreadState() {
+            Thread thread = Thread.currentThread();
+            virtualThread = VirtualThreadSupport.isVirtual(thread);
+            contextId = virtualThread ? VirtualThreadSupport.contextId(thread) : 0L;
+        }
+
         int tid() {
+            if (virtualThread) {
+                return NativeThreadInfo.currentTidSafe();
+            }
             if (cachedTid == 0) {
                 cachedTid = NativeThreadInfo.currentTidSafe();
             }
             return cachedTid;
+        }
+
+        long contextId() {
+            return contextId;
         }
 
         byte[] comm() {
@@ -279,41 +300,71 @@ public final class TraceRuntime {
         }
 
         int commId(SharedEventSink sink, int tid) {
-            if (registeredSink != sink) {
+            if (registeredSink != sink || registeredTid != tid) {
                 int id = sink.registerThread(tid, comm());
                 if (id < 0) {
                     return -1;
                 }
                 registeredCommId = id;
                 registeredSink = sink;
+                registeredTid = tid;
             }
             return registeredCommId;
         }
     }
 
+    private static final class VirtualThreadSupport {
+        // Native user-space pointers do not use the high half of the 64-bit address space.
+        // Marking Java virtual-thread IDs keeps them distinct from the Go g pointer.
+        private static final long CONTEXT_ID_FLAG = Long.MIN_VALUE;
+        private static final Method IS_VIRTUAL = findIsVirtual();
+
+        private VirtualThreadSupport() {
+        }
+
+        static boolean isSupported() {
+            return IS_VIRTUAL != null;
+        }
+
+        static boolean isVirtual(Thread thread) {
+            if (IS_VIRTUAL == null) {
+                return false;
+            }
+            try {
+                return Boolean.TRUE.equals(IS_VIRTUAL.invoke(thread));
+            } catch (ReflectiveOperationException | RuntimeException ignored) {
+                return false;
+            }
+        }
+
+        static long contextId(Thread thread) {
+            long id = thread.getId() & Long.MAX_VALUE;
+            return CONTEXT_ID_FLAG | (id == 0L ? 1L : id);
+        }
+
+        private static Method findIsVirtual() {
+            try {
+                return Thread.class.getMethod("isVirtual");
+            } catch (NoSuchMethodException | SecurityException ignored) {
+                return null;
+            }
+        }
+    }
+
     public static final class Context {
-        static final Context SKIPPED = new Context(null, null, null, -1, 0, -1, 0, true);
+        static final Context SKIPPED = new Context(null, null, null, 0L, true);
 
         private final ThreadState state;
         final SharedEventSink sink;
         private final MethodMetadata method;
-        final int commId;
         final long gPtr;
-        final int tid;
-        final int cpu;
-        final int depth;
         final boolean skipped;
 
-        private Context(ThreadState state, SharedEventSink sink, MethodMetadata method,
-                int commId, int tid, int cpu, int depth, boolean skipped) {
+        private Context(ThreadState state, SharedEventSink sink, MethodMetadata method, long gPtr, boolean skipped) {
             this.state = state;
             this.sink = sink;
             this.method = method;
-            this.commId = commId;
-            this.gPtr = 0L;
-            this.tid = tid;
-            this.cpu = cpu;
-            this.depth = depth;
+            this.gPtr = gPtr;
             this.skipped = skipped;
         }
     }
