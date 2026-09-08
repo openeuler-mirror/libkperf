@@ -44,6 +44,7 @@ namespace KUNPENG_SYM {
         unsigned long start;
         unsigned long end;
         unsigned long fileOffset;
+        unsigned long bias = 0;
         std::string moduleName;
         std::string mntPoint;
         bool isExecFile = false;
@@ -106,11 +107,14 @@ namespace KUNPENG_SYM {
         const void* Load(off_t offset, size_t size);
         int ElfGetBuildId(char** buildId);
         bool IsExecFile();
+        unsigned long GetLoadBias(off_t fileOffset);
     private:
         template<typename Ehdr, typename Phdr, typename Shdr>
         int ElfParser(char** buildId);
         template<typename Ehdr>
         bool CheckIsExecFile();
+        template<typename Ehdr, typename Phdr>
+        unsigned long GetLoadBiasImpl(off_t fileOffset);
         int CheckElfHeader();
         ElfHdr* elfHdr = nullptr;
         void* base;
