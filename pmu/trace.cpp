@@ -68,6 +68,9 @@ static std::unordered_map<int, KernelTraceSession> g_kernelTraceSessions;
 static std::unordered_map<UTraceData *, int> g_mergedTraceLens;
 static std::unordered_map<int, std::string> g_traceLogSessionIds;
 
+static constexpr unsigned K_VTHREAD_MOUNT_EVENT = 2;
+static constexpr unsigned K_VTHREAD_UNMOUNT_EVENT = 3;
+
 static JvmTraceSession *GetJvmTraceSession(int pd)
 {
     auto it = g_jvmTraceSessions.find(pd);
@@ -379,28 +382,106 @@ static bool IsInTraceWindow(const UTraceData &data, int64_t windowStartNs, int64
     return data.timestamp >= windowStartNs && data.timestamp <= windowEndNs;
 }
 
-static int CountTraceDataInWindow(const UTraceData *data, int len, int64_t windowStartNs, int64_t windowEndNs)
+static bool IsVirtualThreadTransition(const UTraceData &data)
+{
+    return data.isRet == K_VTHREAD_MOUNT_EVENT || data.isRet == K_VTHREAD_UNMOUNT_EVENT;
+}
+
+static bool ShouldMergeTraceData(const UTraceData &data, int64_t windowStartNs, int64_t windowEndNs)
+{
+    // A mount before the visible trace window establishes the carrier state for
+    // kernel/native records inside the window, so transition events are retained
+    // internally until context association is complete.
+    return IsVirtualThreadTransition(data) || IsInTraceWindow(data, windowStartNs, windowEndNs);
+}
+
+static int CountTraceDataForMerge(const UTraceData *data, int len,
+    int64_t windowStartNs, int64_t windowEndNs)
 {
     if (data == nullptr || len <= 0) {
         return 0;
     }
     return static_cast<int>(std::count_if(data, data + len,
         [windowStartNs, windowEndNs](const UTraceData &event) {
-            return IsInTraceWindow(event, windowStartNs, windowEndNs);
+            return ShouldMergeTraceData(event, windowStartNs, windowEndNs);
         }));
 }
 
-static UTraceData *MergeTraceData(UTraceData *nativeData, int nativeLen, UTraceData *javaData, int javaLen,
-    UTraceData *kernelData = nullptr, int kernelLen = 0, int64_t windowStartNs = 0, int64_t windowEndNs = 0)
+static void AssociateVirtualThreadContext(UTraceData *data, int len)
 {
+    std::unordered_map<int, uint64_t> mountedByTid;
+    for (int i = 0; i < len; ++i) {
+        UTraceData &event = data[i];
+        if (event.isRet == K_VTHREAD_MOUNT_EVENT) {
+            if (event.gPtr != 0) {
+                mountedByTid[event.tid] = event.gPtr;
+            }
+            continue;
+        }
+        if (event.isRet == K_VTHREAD_UNMOUNT_EVENT) {
+            auto mounted = mountedByTid.find(event.tid);
+            if (mounted != mountedByTid.end() && mounted->second == event.gPtr) {
+                mountedByTid.erase(mounted);
+            }
+            continue;
+        }
+        if (event.gPtr == 0) {
+            auto mounted = mountedByTid.find(event.tid);
+            if (mounted != mountedByTid.end()) {
+                event.gPtr = mounted->second;
+            }
+        }
+    }
+}
+
+static int RemoveVirtualThreadTransitions(UTraceData *data, int len)
+{
+    int visible = 0;
+    for (int i = 0; i < len; ++i) {
+        if (IsVirtualThreadTransition(data[i])) {
+            FreeTraceDataFields(data[i]);
+            continue;
+        }
+        if (visible != i) {
+            data[visible] = data[i];
+        }
+        visible++;
+    }
+    return visible;
+}
+
+static int FinalizeVirtualThreadContext(UTraceData *data, int len)
+{
+    if (data == nullptr || len <= 0) {
+        return 0;
+    }
+    AssociateVirtualThreadContext(data, len);
+    int visible = RemoveVirtualThreadTransitions(data, len);
+    auto merged = g_mergedTraceLens.find(data);
+    if (merged != g_mergedTraceLens.end()) {
+        merged->second = visible;
+    }
+    return visible;
+}
+
+static UTraceData *MergeTraceData(UTraceData *nativeData, int nativeLen, UTraceData *javaData, int javaLen,
+    UTraceData *kernelData = nullptr, int kernelLen = 0, int64_t windowStartNs = 0, int64_t windowEndNs = 0,
+    bool keepVirtualThreadTransitions = false, int *mergedLen = nullptr)
+{
+    if (mergedLen != nullptr) {
+        *mergedLen = 0;
+    }
     if ((nativeLen > 0 && nativeData == nullptr) || (javaLen > 0 && javaData == nullptr) ||
         (kernelLen > 0 && kernelData == nullptr)) {
         pcerr::New(LIBPERF_ERR_NULL_POINTER, "Trace data is null while trace length is positive");
+        if (mergedLen != nullptr) {
+            *mergedLen = -1;
+        }
         return nullptr;
     }
-    int nLen = CountTraceDataInWindow(nativeData, nativeLen, windowStartNs, windowEndNs);
-    int jLen = CountTraceDataInWindow(javaData, javaLen, windowStartNs, windowEndNs);
-    int kLen = CountTraceDataInWindow(kernelData, kernelLen, windowStartNs, windowEndNs);
+    int nLen = CountTraceDataForMerge(nativeData, nativeLen, windowStartNs, windowEndNs);
+    int jLen = CountTraceDataForMerge(javaData, javaLen, windowStartNs, windowEndNs);
+    int kLen = CountTraceDataForMerge(kernelData, kernelLen, windowStartNs, windowEndNs);
     int total = nLen + jLen + kLen;
     if (total <= 0) {
         return nullptr;
@@ -408,27 +489,39 @@ static UTraceData *MergeTraceData(UTraceData *nativeData, int nativeLen, UTraceD
     UTraceData *merged = static_cast<UTraceData *>(std::calloc(total, sizeof(UTraceData)));
     if (merged == nullptr) {
         pcerr::New(COMMON_ERR_NOMEM, "calloc merged UTraceData failed");
+        if (mergedLen != nullptr) {
+            *mergedLen = -1;
+        }
         return nullptr;
     }
 
     int idx = 0;
     for (int i = 0; i < nativeLen; ++i) {
-        if (IsInTraceWindow(nativeData[i], windowStartNs, windowEndNs)) {
+        if (ShouldMergeTraceData(nativeData[i], windowStartNs, windowEndNs)) {
             merged[idx++] = DeepCopyTraceData(nativeData[i]);
         }
     }
     for (int i = 0; i < javaLen; ++i) {
-        if (IsInTraceWindow(javaData[i], windowStartNs, windowEndNs)) {
+        if (ShouldMergeTraceData(javaData[i], windowStartNs, windowEndNs)) {
             merged[idx++] = DeepCopyTraceData(javaData[i]);
         }
     }
     for (int i = 0; i < kernelLen; ++i) {
-        if (IsInTraceWindow(kernelData[i], windowStartNs, windowEndNs)) {
+        if (ShouldMergeTraceData(kernelData[i], windowStartNs, windowEndNs)) {
             merged[idx++] = DeepCopyTraceData(kernelData[i]);
         }
     }
     SortTraceDataByTimestamp(merged, static_cast<size_t>(total));
-    g_mergedTraceLens[merged] = total;
+    AssociateVirtualThreadContext(merged, total);
+    int visible = keepVirtualThreadTransitions ? total : RemoveVirtualThreadTransitions(merged, total);
+    if (visible <= 0) {
+        std::free(merged);
+        return nullptr;
+    }
+    g_mergedTraceLens[merged] = visible;
+    if (mergedLen != nullptr) {
+        *mergedLen = visible;
+    }
     return merged;
 }
 
@@ -1008,21 +1101,22 @@ static int ReadUserTrace(int pd, struct UTraceData **traceData)
                 }
             }
         }
-        // merge native trace data and java trace data
-        int totalLen = (nativeLen > 0 ? nativeLen : 0) + (javaLen > 0 ? javaLen : 0);
-        UTraceData *merged = MergeTraceData(nativeData, nativeLen, javaData, javaLen);
+        bool keepTransitions = GetKernelTraceSession(pd) != nullptr;
+        int mergedLen = 0;
+        UTraceData *merged = MergeTraceData(nativeData, nativeLen, javaData, javaLen,
+            nullptr, 0, 0, 0, keepTransitions, &mergedLen);
         if (nativeData != nullptr) {
             TraceDataManager::GetInstance().FreeTraceData(nativeData);
         }
         if (javaData != nullptr) {
             JavaTraceManager::GetInstance().FreeData(javaData);
         }
-        if (merged == nullptr && totalLen > 0) {
+        if (mergedLen < 0) {
             return -1;
         }
         pcerr::New(SUCCESS);
         *traceData = merged;
-        return totalLen;
+        return mergedLen;
     }
 
     PmuData *pmuData = nullptr;
@@ -1172,6 +1266,11 @@ int UTraceRead(int pd, struct UTraceData **traceData)
         KernelTraceManager::GetInstance().Close(kernelPd);
         EraseKernelTraceSession(pd);
         WarnOptionalKernelTraceFailure("read", kernelErr, kernelErrMsg);
+        userLen = FinalizeVirtualThreadContext(userData, userLen);
+        if (userData != nullptr && userLen == 0) {
+            UTraceDataFree(userData);
+            userData = nullptr;
+        }
         *traceData = userData;
         return userLen;
     }
@@ -1180,13 +1279,9 @@ int UTraceRead(int pd, struct UTraceData **traceData)
     AppendKernelTraceData(kernelBlock, kernelData, kernelLen);
     int mergedKernelLen = static_cast<int>(kernelBlock.data.size());
     UTraceData *kernelTraceData = kernelBlock.data.empty() ? nullptr : kernelBlock.data.data();
-    int filteredUserLen = CountTraceDataInWindow(userData, userLen,
-        kernelSession->windowStartNs, kernelSession->windowEndNs);
-    int filteredKernelLen = CountTraceDataInWindow(kernelTraceData, mergedKernelLen,
-        kernelSession->windowStartNs, kernelSession->windowEndNs);
-    int totalLen = filteredUserLen + filteredKernelLen;
+    int mergedLen = 0;
     UTraceData *merged = MergeTraceData(userData, userLen, nullptr, 0, kernelTraceData, mergedKernelLen,
-        kernelSession->windowStartNs, kernelSession->windowEndNs);
+        kernelSession->windowStartNs, kernelSession->windowEndNs, false, &mergedLen);
 
     if (userData != nullptr) {
         UTraceDataFree(userData);
@@ -1194,12 +1289,12 @@ int UTraceRead(int pd, struct UTraceData **traceData)
     if (kernelData != nullptr) {
         KernelTraceManager::GetInstance().FreeData(kernelData);
     }
-    if (merged == nullptr && totalLen > 0) {
+    if (mergedLen < 0) {
         return -1;
     }
     pcerr::New(SUCCESS);
     *traceData = merged;
-    return totalLen;
+    return mergedLen;
 }
 
 void UTraceClose(int pd)

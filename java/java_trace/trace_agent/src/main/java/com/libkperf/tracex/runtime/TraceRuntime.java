@@ -26,6 +26,7 @@ public final class TraceRuntime {
     private static final int INITIAL_METHOD_CAPACITY = 256;
     private static final Map<String, Integer> METHOD_IDS = new HashMap<String, Integer>();
     private static volatile MethodMetadata[] methodTable = new MethodMetadata[INITIAL_METHOD_CAPACITY];
+    private static final int VTHREAD_CARRIER_METHOD_ID = registerMethod("[java-vthread]", "carrier");
 
     private static volatile boolean enabled;
     private static volatile SharedEventSink sink;
@@ -128,6 +129,43 @@ public final class TraceRuntime {
         enabled = value;
     }
 
+    public static void virtualThreadMount(Thread virtualThread) {
+        recordVirtualThreadTransition(virtualThread, SharedEventSink.EVENT_VTHREAD_MOUNT);
+    }
+
+    public static void virtualThreadUnmount(Thread virtualThread) {
+        recordVirtualThreadTransition(virtualThread, SharedEventSink.EVENT_VTHREAD_UNMOUNT);
+    }
+
+    private static void recordVirtualThreadTransition(Thread virtualThread, int eventType) {
+        try {
+            if (!enabled || virtualThread == null || Thread.currentThread() != virtualThread) {
+                return;
+            }
+            ThreadState state = THREAD_STATE.get();
+            if (!state.virtualThread || state.runtimeDepth > 0) {
+                return;
+            }
+            SharedEventSink s = sink;
+            if (s == null) {
+                return;
+            }
+            state.runtimeDepth++;
+            try {
+                int tid = NativeThreadInfo.currentTidSafe();
+                boolean recorded = recordVirtualThreadTransition(state, s, tid, eventType);
+                state.updateMountState(s, tid, eventType, recorded);
+            } finally {
+                state.runtimeDepth--;
+            }
+        } catch (ThreadDeath t) {
+            throw t;
+        } catch (VirtualMachineError e) {
+            throw e;
+        } catch (Throwable ignored) {
+        }
+    }
+
     public static Context enter(String classNameInternal, String methodName, String descriptor) {
         try {
             String module = classNameInternal.replace('/', '.');
@@ -176,12 +214,16 @@ public final class TraceRuntime {
             state.runtimeDepth++;
             try {
                 int depth = state.callDepth;
-                long ts = NativeThreadInfo.currentTimeNanosSafe();
                 int tid = state.tid();
                 int commId = state.commId(s, tid);
+                if (state.needsMountEvent(s, tid)) {
+                    state.updateMountState(s, tid, SharedEventSink.EVENT_VTHREAD_MOUNT,
+                            recordVirtualThreadTransition(state, s, tid, SharedEventSink.EVENT_VTHREAD_MOUNT));
+                }
+                long ts = NativeThreadInfo.currentTimeNanosSafe();
                 int cpu = NativeThreadInfo.currentCpuSafe();
                 long gPtr = state.contextId();
-                if (!s.record(method.addr, method.id, commId, tid, cpu, ts, gPtr, 0)) {
+                if (!s.record(method.addr, method.id, commId, tid, cpu, ts, gPtr, SharedEventSink.EVENT_METHOD_ENTER)) {
                     return Context.SKIPPED;
                 }
                 state.callDepth = depth + 1;
@@ -219,7 +261,8 @@ public final class TraceRuntime {
                 int commId = state.commId(s, tid);
                 int cpu = NativeThreadInfo.currentCpuSafe();
                 MethodMetadata method = context.method;
-                s.record(method.addr, method.id, commId, tid, cpu, ts, context.gPtr, 1);
+                s.record(method.addr, method.id, commId, tid, cpu, ts, context.gPtr,
+                        SharedEventSink.EVENT_METHOD_EXIT);
             } finally {
                 state.runtimeDepth--;
             }
@@ -229,6 +272,18 @@ public final class TraceRuntime {
             throw e;
         } catch (Throwable ignored) {
         }
+    }
+
+    private static boolean recordVirtualThreadTransition(ThreadState state, SharedEventSink s,
+            int tid, int eventType) {
+        MethodMetadata method = methodTable[VTHREAD_CARRIER_METHOD_ID];
+        if (method == null) {
+            return false;
+        }
+        long timestamp = NativeThreadInfo.currentTimeNanosSafe();
+        int commId = state.commId(s, tid);
+        int cpu = NativeThreadInfo.currentCpuSafe();
+        return s.record(method.addr, method.id, commId, tid, cpu, timestamp, state.contextId(), eventType);
     }
 
     private static String currentThreadName() {
@@ -270,11 +325,15 @@ public final class TraceRuntime {
         private byte[] cachedComm;
         private SharedEventSink registeredSink;
         private int registeredTid;
+        private SharedEventSink mountedSink;
+        private int mountedTid;
         private int registeredCommId = -1;
 
         ThreadState() {
             Thread thread = Thread.currentThread();
             virtualThread = VirtualThreadSupport.isVirtual(thread);
+            // platform thread: 0
+            // virtual thread: high-bit tagged + Java thread ID
             contextId = virtualThread ? VirtualThreadSupport.contextId(thread) : 0L;
         }
 
@@ -290,6 +349,24 @@ public final class TraceRuntime {
 
         long contextId() {
             return contextId;
+        }
+
+        boolean needsMountEvent(SharedEventSink sink, int tid) {
+            return virtualThread && (mountedSink != sink || mountedTid != tid);
+        }
+
+        void updateMountState(SharedEventSink sink, int tid, int eventType, boolean recorded) {
+            if (eventType == SharedEventSink.EVENT_VTHREAD_MOUNT) {
+                if (recorded) {
+                    mountedSink = sink;
+                    mountedTid = tid;
+                }
+                return;
+            }
+            if (eventType == SharedEventSink.EVENT_VTHREAD_UNMOUNT) {
+                mountedSink = null;
+                mountedTid = 0;
+            }
         }
 
         byte[] comm() {

@@ -34,6 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class TraceClassFileTransformer implements ClassFileTransformer {
     public static final String TRACE_RUNTIME_OWNER = "com/libkperf/tracex/runtime/TraceRuntime";
     private static final String TRACE_RUNTIME_PACKAGE = "com/libkperf/tracex/runtime/";
+    private static final String VIRTUAL_THREAD_CLASS = "java/lang/VirtualThread";
     private static final int RESTORE_BATCH_SIZE = 64;
     private static final int LOGGED_METHOD_LIMIT = 16;
 
@@ -66,7 +67,8 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
     }
 
     public boolean shouldTransformInternalName(String className) {
-        return !isStructuralExcluded(className) && config.shouldTransformClass(className);
+        return VIRTUAL_THREAD_CLASS.equals(className)
+                || (!isStructuralExcluded(className) && config.shouldTransformClass(className));
     }
 
     @Override
@@ -92,12 +94,42 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
             }
 
             ClassReader cr = new ClassReader(classfileBuffer);
+            int instrumentedMethodCount;
+            String instrumentedMethods;
+            VirtualThreadClassVisitor.HookMode virtualThreadHookMode = VirtualThreadClassVisitor.HookMode.NONE;
+            if (VIRTUAL_THREAD_CLASS.equals(className)) {
+                // Pass 1: choose exactly one hook family before emitting any bytecode.
+                virtualThreadHookMode = VirtualThreadClassVisitor.detectHookMode(cr);
+                if (virtualThreadHookMode == VirtualThreadClassVisitor.HookMode.NONE) {
+                    TraceLog.warn("[trace-java-agent] virtual-thread carrier hooks unavailable"
+                            + ", mount/unmount and runContinuation not found", null);
+                    return null;
+                }
+            }
+
             ClassWriter cw = new SafeClassWriter(cr, ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS, loader);
-            TraceClassVisitor cv = new TraceClassVisitor(cw, config, className);
-            cr.accept(cv, ClassReader.EXPAND_FRAMES);
-            if (cv.instrumentedMethodCount() == 0) {
-                TraceLog.info("[trace-java-agent] candidate class has no matched traceable methods: class=" + className.replace('/', '.'));
-                return null;
+            if (VIRTUAL_THREAD_CLASS.equals(className)) {
+                // Pass 2: instrument only the hook family selected by the structure scan.
+                VirtualThreadClassVisitor cv = new VirtualThreadClassVisitor(cw, virtualThreadHookMode);
+                cr.accept(cv, ClassReader.EXPAND_FRAMES);
+                int expectedMethods = virtualThreadHookMode == VirtualThreadClassVisitor.HookMode.MOUNT_UNMOUNT ? 2 : 1;
+                if (cv.instrumentedMethodCount() != expectedMethods) {
+                    TraceLog.warn("[trace-java-agent] virtual-thread carrier hooks unavailable"
+                            + ", mode=" + virtualThreadHookMode
+                            + ", expectedMethods=" + expectedMethods
+                            + ", actualMethods=" + cv.instrumentedMethodCount(), null);
+                    return null;
+                }
+                instrumentedMethodCount = cv.instrumentedMethodCount();
+                instrumentedMethods = virtualThreadHookMode.toString();
+            } else {
+                TraceClassVisitor cv = new TraceClassVisitor(cw, config, className);
+                cr.accept(cv, ClassReader.EXPAND_FRAMES);
+                if (cv.instrumentedMethodCount() == 0) {
+                    return null;
+                }
+                instrumentedMethodCount = cv.instrumentedMethodCount();
+                instrumentedMethods = formatInstrumentedMethods(cv.instrumentedMethods());
             }
             byte[] transformed = cw.toByteArray();
             if (!INSTRUMENTED.add(key)) {
@@ -107,8 +139,10 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
                 PENDING.add(key);
             }
             TraceLog.info("[trace-java-agent] instrumented class=" + className.replace('/', '.')
-                    + ", methodCount=" + cv.instrumentedMethodCount()
-                    + ", methods=" + formatInstrumentedMethods(cv.instrumentedMethods()));
+                    + ", methodCount=" + instrumentedMethodCount + ", methods=" + instrumentedMethods);
+            if (VIRTUAL_THREAD_CLASS.equals(className)) {
+                TraceLog.info("[trace-java-agent] virtual-thread carrier hooks transformed, mode=" + virtualThreadHookMode);
+            }
             return transformed;
         } catch (Throwable t) {
             try {

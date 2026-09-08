@@ -84,6 +84,11 @@ final class SharedEventSink implements AutoCloseable {
     static final int SLOT_GPTR = 40;
     static final int SLOT_IS_RET = 48;
 
+    static final int EVENT_METHOD_ENTER = 0;
+    static final int EVENT_METHOD_EXIT = 1;
+    static final int EVENT_VTHREAD_MOUNT = 2;
+    static final int EVENT_VTHREAD_UNMOUNT = 3;
+
     private static final int DEFAULT_SLOT_COUNT = 2097152;
     private static final int MAX_SLOT_COUNT = 67108864;
     private static final int SLOTS_PER_SEGMENT = 2097152;
@@ -103,8 +108,8 @@ final class SharedEventSink implements AutoCloseable {
     private final long eventOffset;
     private final AtomicInteger nextThreadId = new AtomicInteger(0);
     private final AtomicInteger threadCount = new AtomicInteger(0);
-    private final Map<ThreadMetadataKey, Integer> threadIds =
-            new HashMap<ThreadMetadataKey, Integer>();
+    // thread meta data --> thread ID in Shared Memory
+    private final Map<ThreadMetadataKey, Integer> threadIds = new HashMap<ThreadMetadataKey, Integer>();
     private final AtomicLong nextSequence = new AtomicLong(1L);
     private final AtomicLong publishedSequence = new AtomicLong(0L);
     private final AtomicLong droppedEvents = new AtomicLong(0L);
