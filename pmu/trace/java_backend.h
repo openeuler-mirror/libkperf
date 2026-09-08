@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 
 struct JavaBackendTarget {
     std::string filterConfigPath;
@@ -40,6 +41,8 @@ struct JavaBackendImpl {
     size_t shmSize{0};
     void *mapped{nullptr};
     uint64_t readSeq{0};
+    // java records contain the tid visible in the target's pid namespace, translate it to the host TID
+    std::unordered_map<int, int> hostTidByNamespaceTid;
     bool runtimeStopped = false;
     bool runtimeRestored = false;
     bool runtimePrepared = false;

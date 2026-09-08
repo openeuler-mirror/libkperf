@@ -24,6 +24,10 @@
 #include <cstring>
 #include <cstdint>
 #include <atomic>
+#include <climits>
+#include <dirent.h>
+#include <fstream>
+#include <sstream>
 #include <fcntl.h>
 #include <signal.h>
 #include <string>
@@ -116,6 +120,68 @@ static std::string ReadFixedString(const uint8_t *base, size_t offset, size_t ca
         ++n;
     }
     return std::string(p, p + n);
+}
+
+static bool ParsePositiveTid(const char *text, int *tid)
+{
+    if (text == nullptr || tid == nullptr || *text == '\0') {
+        return false;
+    }
+    char *end = nullptr;
+    errno = 0;
+    long value = std::strtol(text, &end, 10);
+    if (errno != 0 || end == text || *end != '\0' || value <= 0 || value > INT_MAX) {
+        return false;
+    }
+    *tid = static_cast<int>(value);
+    return true;
+}
+
+static bool ReadInnermostNamespaceTid(const std::string &statusPath, int *namespaceTid)
+{
+    std::ifstream status(statusPath);
+    std::string line;
+    while (std::getline(status, line)) {
+        if (line.compare(0, 6, "NSpid:") != 0) {
+            continue;
+        }
+        std::istringstream values(line.substr(6));
+        int value = 0;
+        bool found = false;
+        while (values >> value) {
+            if (value > 0) {
+                *namespaceTid = value;
+                found = true;
+            }
+        }
+        return found;
+    }
+    return false;
+}
+
+static void RefreshHostTidMap(JavaBackendImpl *impl)
+{
+    if (impl == nullptr || impl->pid <= 0) {
+        return;
+    }
+    const std::string taskPath = "/proc/" + std::to_string(impl->pid) + "/task";
+    DIR *taskDir = opendir(taskPath.c_str());
+    if (taskDir == nullptr) {
+        return;
+    }
+    struct dirent *entry = nullptr;
+    while ((entry = readdir(taskDir)) != nullptr) {
+        int hostTid = 0;
+        if (!ParsePositiveTid(entry->d_name, &hostTid)) {
+            continue;
+        }
+        int namespaceTid = hostTid;
+        if (!ReadInnermostNamespaceTid(taskPath + "/" + entry->d_name + "/status", &namespaceTid)) {
+            continue;
+        }
+        impl->hostTidByNamespaceTid[namespaceTid] = hostTid;
+    }
+    closedir(taskDir);
 }
 
 static void FreeJavaTraceBlockRaw(uint8_t *raw, UTraceData *block, size_t count)
@@ -392,6 +458,7 @@ int JavaBackendPrepare(JavaBackendImpl *impl)
         }
         return ret;
     }
+    RefreshHostTidMap(impl);
     impl->runtimePrepared = true;
     return 0;
 }
@@ -402,6 +469,7 @@ int JavaBackendEnable(JavaBackendImpl *impl)
         return -1;
     }
     auto *mem = static_cast<uint8_t *>(impl->mapped);
+    RefreshHostTidMap(impl);
     StoreAtRelease<uint32_t>(mem, K_HEADER_ACTIVE, 1);
     return 0;
 }
@@ -411,6 +479,7 @@ int JavaBackendDisable(JavaBackendImpl *impl)
     if (!impl || !impl->mapped) {
         return -1;
     }
+    RefreshHostTidMap(impl);
     DeactivateSharedMemory(impl);
     return 0;
 }
@@ -427,6 +496,7 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
         return -2;
     }
 
+    RefreshHostTidMap(impl);
     const uint8_t *mem = static_cast<const uint8_t *>(impl->mapped);
     if (LoadAtAcquire<uint64_t>(mem, K_HEADER_MAGIC) != K_MAGIC) {
         return -3;
@@ -494,7 +564,8 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
             continue;
         }
         block[outIdx].addr = static_cast<unsigned long>(LoadAt<uint64_t>(slot, K_SLOT_ADDR));
-        block[outIdx].tid = LoadAt<int32_t>(slot, K_SLOT_TID);
+        const int32_t namespaceTid = LoadAt<int32_t>(slot, K_SLOT_TID);
+        block[outIdx].tid = namespaceTid;
         block[outIdx].cpu = LoadAt<int32_t>(slot, K_SLOT_CPU);
         block[outIdx].timestamp = LoadAt<int64_t>(slot, K_SLOT_TIMESTAMP);
         block[outIdx].gPtr = LoadAt<uint64_t>(slot, K_SLOT_GPTR);
@@ -510,6 +581,12 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
         }
         if (mismatched) {
             ++metadataMismatch;
+        }
+        auto hostTid = impl->hostTidByNamespaceTid.find(namespaceTid);
+        if (hostTid != impl->hostTidByNamespaceTid.end()) {
+            block[outIdx].tid = hostTid->second;
+        } else {
+            block[outIdx].tid = -1;
         }
         ++outIdx;
     }

@@ -32,7 +32,7 @@ public final class NativeThreadInfo {
         loadTried = true;
 
         if (absolutePath == null || absolutePath.isEmpty()) {
-            TraceLog.info("[trace-java-runtime] native lib path is empty, fallback to Java thread id/time");
+            TraceLog.info("[trace-java-runtime] native lib path is empty, native TID unavailable");
             return;
         }
 
@@ -48,13 +48,13 @@ public final class NativeThreadInfo {
 
     public static int currentTidSafe() {
         if (!loaded) {
-            return (int) Thread.currentThread().getId();
+            return -1;
         }
 
         try {
             return currentTid0();
         } catch (RuntimeException | LinkageError t) {
-            return (int) Thread.currentThread().getId();
+            return -1;
         }
     }
 
