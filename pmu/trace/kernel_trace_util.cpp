@@ -362,6 +362,120 @@ static bool SavePerCpuBufferSizes(const std::string &traceRoot,
     return ok;
 }
 
+static bool SaveEnabledTraceEvents(const std::string &traceRoot,
+    KernelTraceManager::SavedTraceFsState &saved, std::string *error)
+{
+    const std::string eventsPath = traceRoot + "/events";
+    std::string enable;
+    if (!ReadOptionalTraceFile(eventsPath + "/enable", enable, error)) {
+        return false;
+    }
+    saved.eventsEnable = Trim(enable);
+    saved.enabledEventPaths.clear();
+    if (saved.eventsEnable.empty() || saved.eventsEnable == "0" || saved.eventsEnable == "1") {
+        return true;
+    }
+    if (saved.eventsEnable != "X") {
+        if (error != nullptr) {
+            *error = "Unexpected global trace event state: " + saved.eventsEnable;
+        }
+        return false;
+    }
+
+    DIR *systems = opendir(eventsPath.c_str());
+    if (systems == nullptr) {
+        if (error != nullptr) {
+            *error = "Cannot open " + eventsPath + " while saving enabled trace events: " +
+                std::strerror(errno);
+        }
+        return false;
+    }
+
+    bool ok = true;
+    struct dirent *systemEntry = nullptr;
+    while ((systemEntry = readdir(systems)) != nullptr && ok) {
+        if (systemEntry->d_name[0] == '.') {
+            continue;
+        }
+        std::string systemName = systemEntry->d_name;
+        std::string systemPath = eventsPath + "/" + systemName;
+        DIR *events = opendir(systemPath.c_str());
+        if (events == nullptr) {
+            continue;
+        }
+        struct dirent *eventEntry = nullptr;
+        while ((eventEntry = readdir(events)) != nullptr) {
+            if (eventEntry->d_name[0] == '.') {
+                continue;
+            }
+            std::string relativePath = systemName + "/" + eventEntry->d_name + "/enable";
+            std::string eventEnablePath = eventsPath + "/" + relativePath;
+            if (!IsRegularOrVirtualFile(eventEnablePath)) {
+                continue;
+            }
+            std::string eventEnable;
+            if (!ReadTextFile(eventEnablePath, eventEnable)) {
+                if (error != nullptr) {
+                    *error = "Cannot read enabled trace event state from " + eventEnablePath;
+                }
+                ok = false;
+                break;
+            }
+            if (Trim(eventEnable) == "1") {
+                saved.enabledEventPaths.push_back(std::move(relativePath));
+            }
+        }
+        closedir(events);
+    }
+    closedir(systems);
+    if (!ok) {
+        saved.enabledEventPaths.clear();
+    } else {
+        std::sort(saved.enabledEventPaths.begin(), saved.enabledEventPaths.end());
+    }
+    if (ok && saved.enabledEventPaths.empty()) {
+        if (error != nullptr) {
+            *error = "Global trace event state is partial, but no enabled events were found";
+        }
+        ok = false;
+    }
+    return ok;
+}
+
+static bool DisableTraceEvents(const KernelTraceManager::Session &session, std::string *error)
+{
+    if (session.saved.eventsEnable.empty()) {
+        return true;
+    }
+    return WriteTraceFile(session.traceFsPath + "/events/enable", "0\n", error);
+}
+
+static bool RestoreEnabledTraceEvents(const KernelTraceManager::Session &session, std::string *error)
+{
+    if (session.saved.eventsEnable.empty() || session.saved.eventsEnable == "0") {
+        return true;
+    }
+    const std::string eventsPath = session.traceFsPath + "/events";
+    if (session.saved.eventsEnable == "1") {
+        return WriteTraceFile(eventsPath + "/enable", "1\n", error);
+    }
+    bool ok = true;
+    std::string firstError;
+    for (const std::string &relativePath : session.saved.enabledEventPaths) {
+        std::string eventError;
+        if (!WriteTraceFile(eventsPath + "/" + relativePath, "1\n", &eventError)) {
+            if (ok) {
+                firstError = eventError;
+            }
+            ok = false;
+        }
+    }
+    if (!ok && error != nullptr) {
+        *error = firstError;
+    }
+    return ok;
+}
+
 static bool TraceBufferIsEmpty(const std::string &tracePath, std::string *detail = nullptr)
 {
     // Prefer per-CPU statistics. Unlike the human-readable trace header, the
@@ -524,16 +638,12 @@ bool AcquireGlobalTraceFs(KernelTraceManager::Session &session, std::string *glo
         !ReadOptionalTraceFile(root + "/tracing_cpumask", session.saved.tracingCpuMask, &optionalError)) {
         return fail(optionalError);
     }
-    std::string enabledEvents;
-    if (!ReadOptionalTraceFile(root + "/events/enable", enabledEvents, &optionalError)) {
-        return fail(optionalError);
-    }
-    if (!enabledEvents.empty() && Trim(enabledEvents) != "0") {
-        return fail("Global tracefs has enabled trace events; disable them before raw kernel tracing");
-    }
     if (tracingOn != "0") {
         return fail("Global tracefs is actively tracing: current_tracer=" + currentTracer +
             ", tracing_on=" + tracingOn + "; stop the existing tracer before starting kernel UTrace");
+    }
+    if (!SaveEnabledTraceEvents(root, session.saved, &optionalError)) {
+        return fail(optionalError);
     }
     if (currentTracer != "nop" && currentTracer != "function_graph") {
         return fail("Global tracefs has an incompatible paused tracer: current_tracer=" +
@@ -964,6 +1074,7 @@ bool ConfigureGlobalTraceFs(KernelTraceManager::Session &session,
         return false;
     }
     if (!WriteTraceFile(session.traceFsPath + "/tracing_on", "0\n", error) ||
+        !DisableTraceEvents(session, error) ||
         !WriteTraceFile(session.traceFsPath + "/current_tracer", "nop\n", error) ||
         !ClearTraceBuffer(session.traceFsPath + "/trace", error) ||
         !WriteTraceFile(session.traceFsPath + "/trace_clock", "mono\n", error) ||
@@ -1002,6 +1113,9 @@ void ResetGlobalTraceFs(KernelTraceManager::Session &session)
     }
     std::string ignored;
     WriteTraceFile(session.traceFsPath + "/tracing_on", "0\n", &ignored);
+    if (!DisableTraceEvents(session, &ignored)) {
+        TraceLog("[trace-kernel] warning: failed to disable trace events before restore: " + ignored + "\n");
+    }
     WriteTraceFile(session.traceFsPath + "/current_tracer", "nop\n", &ignored);
     bool traceCleared = ClearTraceBuffer(session.traceFsPath + "/trace", &ignored);
     if (!traceCleared || !TraceBufferIsEmpty(session.traceFsPath + "/trace")) {
@@ -1072,6 +1186,9 @@ void ResetGlobalTraceFs(KernelTraceManager::Session &session)
     if (!session.saved.tracer.empty() &&
         !WriteTraceFile(session.traceFsPath + "/current_tracer", session.saved.tracer + "\n", &ignored)) {
         TraceLog("[trace-kernel] warning: failed to restore current tracer: " + ignored + "\n");
+    }
+    if (!RestoreEnabledTraceEvents(session, &ignored)) {
+        TraceLog("[trace-kernel] warning: failed to restore enabled trace events: " + ignored + "\n");
     }
     bool finalBufferEmpty = TraceBufferIsEmpty(session.traceFsPath + "/trace");
     if (!finalBufferEmpty) {

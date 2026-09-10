@@ -26,11 +26,8 @@ import java.lang.instrument.IllegalClassFormatException;
 import java.lang.instrument.Instrumentation;
 import java.security.ProtectionDomain;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -41,9 +38,6 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
 
     // prevent the same class from being instrumented repeatedly
     private static final Set<ClassKey> INSTRUMENTED = ConcurrentHashMap.newKeySet();
-
-    // save the original class bytecode for subsequent restoration
-    private static final Map<ClassKey, byte[]> ORIGINAL = new ConcurrentHashMap<ClassKey, byte[]>();
 
     // retransforms awaiting confirmation from Instrumentation.retransformClasses
     private static final Set<ClassKey> PENDING = ConcurrentHashMap.newKeySet();
@@ -104,11 +98,10 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
                 return null;
             }
             byte[] transformed = cw.toByteArray();
-            ORIGINAL.putIfAbsent(key, Arrays.copyOf(classfileBuffer, classfileBuffer.length));
             if (!INSTRUMENTED.add(key)) {
                 return null;
             }
-            if (classBeingRedefined == null) {
+            if (classBeingRedefined != null) {
                 PENDING.add(key);
             }
             return transformed;
@@ -154,7 +147,6 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
                 continue;
             }
             INSTRUMENTED.remove(key);
-            ORIGINAL.remove(key);
         }
     }
 
@@ -168,45 +160,12 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
         }
 
         if (INSTRUMENTED.isEmpty()) {
-            ORIGINAL.clear();
             PENDING.clear();
             return;
         }
 
-        final Map<ClassKey, byte[]> restoreBytes = new HashMap<ClassKey, byte[]>(ORIGINAL);
         final Set<ClassKey> instrumentedSnapshot = ConcurrentHashMap.newKeySet();
         instrumentedSnapshot.addAll(INSTRUMENTED);
-
-        ClassFileTransformer restoreTransformer = new ClassFileTransformer() {
-            @Override
-            public byte[] transform(ClassLoader loader,
-                                    String className,
-                                    Class<?> classBeingRedefined,
-                                    ProtectionDomain protectionDomain,
-                                    byte[] classfileBuffer) {
-                try {
-                    if (className == null) {
-                        return null;
-                    }
-
-                    ClassKey key = new ClassKey(loader, className);
-                    byte[] original = restoreBytes.get(key);
-                    if (original != null) {
-                        return original;
-                    }
-
-                    return null;
-                } catch (Throwable t) {
-                    try {
-                        TraceLog.warn("[trace-java-agent] restore transform failed for " + className + ": " + t, t);
-                    } catch (Throwable ignored) {
-                    }
-                    return null;
-                }
-            }
-        };
-
-        inst.addTransformer(restoreTransformer, true);
 
         RestoreResult result = new RestoreResult();
         try {
@@ -225,17 +184,6 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
                     if (!instrumentedSnapshot.contains(key)) {
                         continue;
                     }
-                    if (!restoreBytes.containsKey(key)) {
-                        byte[] fromClasspath = Util.readClassBytes(clazz.getClassLoader(), internalName);
-                        if (fromClasspath != null) {
-                            restoreBytes.put(key, fromClasspath);
-                        }
-                    }
-                    if (!restoreBytes.containsKey(key)) {
-                        result.failed++;
-                        TraceLog.info("[trace-java-agent] restore skip no original bytes: " + Util.safeClassName(clazz));
-                        continue;
-                    }
                     restoreCandidates.add(clazz);
                 } catch (Throwable t) {
                     result.failed++;
@@ -250,14 +198,9 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
             result.failed++;
             TraceLog.warn("[trace-java-agent] restoreAll outer warning: " + t, t);
         } finally {
-            try {
-                inst.removeTransformer(restoreTransformer);
-            } catch (Throwable ignored) {
-            }
             if (result.failed == 0) {
                 INSTRUMENTED.clear();
                 PENDING.clear();
-                ORIGINAL.clear();
             }
         }
     }
@@ -291,7 +234,6 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
             ClassKey key = new ClassKey(clazz.getClassLoader(), Util.internalName(clazz));
             INSTRUMENTED.remove(key);
             PENDING.remove(key);
-            ORIGINAL.remove(key);
         }
         result.ok += classes.size();
     }
