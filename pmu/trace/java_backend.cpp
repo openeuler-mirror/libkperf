@@ -292,7 +292,6 @@ static int JavaBackendRunAction(JavaBackendImpl *impl, const char *action)
     }
 
     int ret = RunCommand(cmd);
-    JavaTraceFlushTargetLog(*impl);
     if (ret != 0) {
         DeactivateSharedMemory(impl);
         JavaTraceLog(MakeLogMessage("[trace-java] action=", action, " failed, ret=", ret, ", cmd=", cmd, "\n"));
@@ -450,7 +449,6 @@ int JavaBackendPrepare(JavaBackendImpl *impl)
     impl->runtimeStopped = false;
     impl->runtimeRestored = false;
     int ret = RunCommand(cmd);
-    JavaTraceFlushTargetLog(*impl);
     if (ret != 0) {
         DeactivateSharedMemory(impl);
         if (JavaBackendRestoreRuntime(impl) != 0) {
