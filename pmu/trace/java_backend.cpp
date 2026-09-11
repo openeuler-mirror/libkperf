@@ -478,6 +478,14 @@ int JavaBackendDisable(JavaBackendImpl *impl)
         return -1;
     }
     RefreshHostTidMap(impl);
+    const uint8_t *mem = static_cast<const uint8_t *>(impl->mapped);
+    JavaTraceLog(MakeLogMessage("[trace-java] disable snapshot: activeBefore=",
+                                LoadAtAcquire<uint32_t>(mem, K_HEADER_ACTIVE),
+                                ", readSeq=", impl->readSeq,
+                                ", writeSeq=", LoadAtAcquire<uint64_t>(mem, K_HEADER_WRITE_SEQ),
+                                ", methodCount=", LoadAtAcquire<uint32_t>(mem, K_HEADER_METHOD_COUNT),
+                                ", threadCount=", LoadAtAcquire<uint32_t>(mem, K_HEADER_THREAD_COUNT),
+                                ", dropped=", LoadAtAcquire<uint64_t>(mem, K_HEADER_DROPPED), "\n"));
     DeactivateSharedMemory(impl);
     return 0;
 }
@@ -527,6 +535,19 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
     const uint64_t prevReadSeq = impl->readSeq;
     // no new readSeq index to read
     if (writeSeq <= impl->readSeq) {
+        if (!impl->hasLoggedEmptyRead || impl->lastEmptyReadSeq != writeSeq) {
+            JavaTraceLog(MakeLogMessage(
+                "[trace-java] JavaBackendRead no new events: active=",
+                LoadAtAcquire<uint32_t>(mem, K_HEADER_ACTIVE),
+                ", readSeq=", impl->readSeq,
+                ", writeSeq=", writeSeq,
+                ", methodCount=", methodCount,
+                ", threadCount=", threadCount,
+                ", dropped=", dropped,
+                ", UTraceDataCount=0\n"));
+            impl->lastEmptyReadSeq = writeSeq;
+            impl->hasLoggedEmptyRead = true;
+        }
         return 0;
     }
 
@@ -591,6 +612,7 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
 
     // advance readSeq to the current writeSeq. Missed or overwritten records will not be attempted.
     impl->readSeq = writeSeq;
+    impl->hasLoggedEmptyRead = false;
     JavaTraceLog(MakeLogMessage("[trace-java] JavaBackendRead summary: prevReadSeq=", prevReadSeq,
                                 ", writeSeq=", writeSeq,
                                 ", startSeq=", startSeq,

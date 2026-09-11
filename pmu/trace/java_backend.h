@@ -41,6 +41,9 @@ struct JavaBackendImpl {
     size_t shmSize{0};
     void *mapped{nullptr};
     uint64_t readSeq{0};
+    // Avoid repeating the same empty-read diagnostic when UTraceRead is polled.
+    uint64_t lastEmptyReadSeq{0};
+    bool hasLoggedEmptyRead = false;
     // java records contain the tid visible in the target's pid namespace, translate it to the host TID
     std::unordered_map<int, int> hostTidByNamespaceTid;
     bool runtimeStopped = false;
