@@ -210,22 +210,6 @@ function build_java_trace() {
   pushd "${java_trace_dir}" >/dev/null || return 1
   local build_ok=1
 
-  # try gradle
-  echo "try to build java-trace with Gradle"
-  local gradle_cmd="$(command -v gradle 2>/dev/null)"
-  if [ -n "${gradle_cmd}" ]; then
-    echo "using Gradle: ${gradle_cmd}"
-    if "${gradle_cmd}" clean build -PlibkperfJavaOutDir="${trace_java_lib_dir}"; then
-      build_ok=0
-    else
-      build_ok=$?
-      echo "Gradle build failed, exit code: ${build_ok}"
-    fi
-  else
-    echo "Gradle not found, skip Gradle build"
-    build_ok=1
-  fi
-
   # try maven
   if [ ${build_ok} -ne 0 ]; then
     echo "try to build java-trace with Maven"
@@ -244,9 +228,25 @@ function build_java_trace() {
     fi
   fi
 
+  # try gradle
+  echo "try to build java-trace with Gradle"
+  local gradle_cmd="$(command -v gradle 2>/dev/null)"
+  if [ -n "${gradle_cmd}" ]; then
+    echo "using Gradle: ${gradle_cmd}"
+    if "${gradle_cmd}" clean build -PlibkperfJavaOutDir="${trace_java_lib_dir}"; then
+      build_ok=0
+    else
+      build_ok=$?
+      echo "Gradle build failed, exit code: ${build_ok}"
+    fi
+  else
+    echo "Gradle not found, skip Gradle build"
+    build_ok=1
+  fi
+
   popd >/dev/null || return 1
   if [ ${build_ok} -ne 0 ]; then
-    echo "ERROR: java-trace build failed with both Gradle and Maven" >&2
+    echo "ERROR: java-trace build failed with both Maven and Gradle" >&2
     return 1
   fi
 
