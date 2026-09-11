@@ -211,37 +211,40 @@ function build_java_trace() {
   local build_ok=1
 
   # try maven
-  if [ ${build_ok} -ne 0 ]; then
-    echo "try to build java-trace with Maven"
-    local maven_cmd="$(command -v mvn 2>/dev/null)"
-    if [ -n "${maven_cmd}" ]; then
-      echo "using Maven: ${maven_cmd}"
-      if "${maven_cmd}" clean package -Dlibkperf.java.out.dir="${trace_java_lib_dir}"; then
-        build_ok=0
-      else
-        build_ok=$?
-        echo "Maven build failed, exit code: ${build_ok}"
-      fi
-    else
-      echo "Maven not found, skip Maven build"
-      build_ok=1
-    fi
-  fi
-
-  # try gradle
-  echo "try to build java-trace with Gradle"
-  local gradle_cmd="$(command -v gradle 2>/dev/null)"
-  if [ -n "${gradle_cmd}" ]; then
-    echo "using Gradle: ${gradle_cmd}"
-    if "${gradle_cmd}" clean build -PlibkperfJavaOutDir="${trace_java_lib_dir}"; then
+  echo "try to build java-trace with Maven"
+  local maven_cmd="$(command -v mvn 2>/dev/null)"
+  if [ -n "${maven_cmd}" ]; then
+    echo "using Maven: ${maven_cmd}"
+    if "${maven_cmd}" clean package \
+        -Dlibkperf.java.out.dir="${trace_java_lib_dir}"; then
       build_ok=0
     else
       build_ok=$?
-      echo "Gradle build failed, exit code: ${build_ok}"
+      echo "Maven build failed, exit code: ${build_ok}"
     fi
   else
-    echo "Gradle not found, skip Gradle build"
+    echo "Maven not found, skip Maven build"
     build_ok=1
+  fi
+
+  # try gradle only if maven failed
+  if [ ${build_ok} -ne 0 ]; then
+    echo "try to build java-trace with Gradle"
+    local gradle_cmd="$(command -v gradle 2>/dev/null)"
+
+    if [ -n "${gradle_cmd}" ]; then
+      echo "using Gradle: ${gradle_cmd}"
+      if "${gradle_cmd}" clean build \
+          -PlibkperfJavaOutDir="${trace_java_lib_dir}"; then
+        build_ok=0
+      else
+        build_ok=$?
+        echo "Gradle build failed, exit code: ${build_ok}"
+      fi
+    else
+      echo "Gradle not found, skip Gradle build"
+      build_ok=1
+    fi
   fi
 
   popd >/dev/null || return 1
