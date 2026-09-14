@@ -15,6 +15,20 @@
     <module>trace_agent</module>
   </modules>
 
+  <repositories>
+    <repository>
+      <id>huawei-central</id>
+      <url>https://cmc.centralrepo.rnd.huawei.com/artifactory/maven-central-repo</url>
+    </repository>
+  </repositories>
+
+  <pluginRepositories>
+    <pluginRepository>
+      <id>huawei-central</id>
+      <url>https://cmc.centralrepo.rnd.huawei.com/artifactory/maven-central-repo</url>
+    </pluginRepository>
+  </pluginRepositories>
+
   <properties>
       <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
       <jdk.version>1.8</jdk.version>
