@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 2.8.6)
+cmake_minimum_required (VERSION 3.5)
 project (java_agent)
 
 set(OUTDIR ${PROJECT_BINARY_DIR}/out)
