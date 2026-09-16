@@ -160,7 +160,7 @@ function build_symbolizer()
     cd $PROJECT_DIR/llvm-symbolizer
     mkdir build
     cd build
-    cmake -DCMKAE_BUILD_TYPE=Release -DLLVM_TARGETS_TO_BUILD="${ARCH_TARGET}" ..
+    cmake -DCMAKE_BUILD_TYPE=Release -DLLVM_TARGETS_TO_BUILD="${ARCH_TARGET}" ..
     make -j ${cpu_core_num}
 }
 
