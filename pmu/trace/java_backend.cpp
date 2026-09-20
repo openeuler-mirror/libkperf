@@ -386,7 +386,8 @@ static int PrepareJavaBackendOpen(JavaBackendImpl *impl, int pid, const char *in
 
 static int OpenJavaTraceStorage(JavaBackendImpl *impl)
 {
-    impl->shmFd = open(impl->shmPath.c_str(), O_CREAT | O_RDWR | O_TRUNC, K_TRACE_FILE_MODE);
+    impl->shmFd = open(impl->shmPath.c_str(), O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC | O_NOFOLLOW,
+                       K_TRACE_FILE_MODE);
     if (impl->shmFd < 0) {
         int error = errno;
         JavaTraceLog(MakeLogMessage("[trace-java] open tmp trace file failed: ", impl->shmPath,
@@ -399,6 +400,11 @@ static int OpenJavaTraceStorage(JavaBackendImpl *impl)
         int error = errno;
         JavaTraceLog(MakeLogMessage("[trace-java] ftruncate trace file failed: ", impl->shmPath,
                                     ", errno=", error, "(", std::strerror(error), ")\n"));
+        CleanupFailedStorage(impl, true);
+        return -1;
+    }
+
+    if (!JavaTraceSetTargetFileAccess(*impl, impl->shmFd, impl->shmPath)) {
         CleanupFailedStorage(impl, true);
         return -1;
     }

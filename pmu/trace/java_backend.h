@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <sys/types.h>
 #include <unordered_map>
 
 struct JavaBackendTarget {
@@ -27,6 +28,9 @@ struct JavaBackendTarget {
     std::string assetDirHost;
     std::string shmPath;
     std::string logPath;
+    uid_t fsUid{};
+    gid_t fsGid{};
+    bool credentialsValid{false};
 };
 
 struct JavaBackendImpl {

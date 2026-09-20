@@ -35,6 +35,7 @@
 #include <exception>
 #include <fcntl.h>
 #include <fstream>
+#include <limits>
 #include <limits.h>
 #include <regex>
 #include <sys/stat.h>
@@ -111,6 +112,86 @@ static bool EnsureDir(const std::string &path)
         return true;
     }
     return errno == EEXIST && stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+static bool ParseFilesystemId(const std::string &line, const char *key, unsigned long *id)
+{
+    if (id == nullptr) {
+        return false;
+    }
+    const size_t keyLen = std::strlen(key);
+    if (line.compare(0, keyLen, key) != 0) {
+        return false;
+    }
+
+    unsigned long realId = 0;
+    unsigned long effectiveId = 0;
+    unsigned long savedId = 0;
+    unsigned long filesystemId = 0;
+    std::istringstream values(line.substr(keyLen));
+    if (!(values >> realId >> effectiveId >> savedId >> filesystemId)) {
+        return false;
+    }
+    *id = filesystemId;
+    return true;
+}
+
+static bool LoadTargetCredentials(JavaBackendImpl &impl)
+{
+    impl.target.credentialsValid = false;
+    const std::string statusPath = "/proc/" + std::to_string(impl.pid) + "/status";
+    std::ifstream status(statusPath);
+    if (!status.is_open()) {
+        JavaTraceLog(MakeLogMessage("[trace-java] open target status failed: ", statusPath, "\n"));
+        return false;
+    }
+
+    bool foundUid = false;
+    bool foundGid = false;
+    unsigned long uid = 0;
+    unsigned long gid = 0;
+    std::string line;
+    while (std::getline(status, line)) {
+        if (line.compare(0, 4, "Uid:") == 0) {
+            foundUid = ParseFilesystemId(line, "Uid:", &uid);
+        } else if (line.compare(0, 4, "Gid:") == 0) {
+            foundGid = ParseFilesystemId(line, "Gid:", &gid);
+        }
+    }
+    if (!foundUid || !foundGid || uid > std::numeric_limits<uid_t>::max() ||
+        gid > std::numeric_limits<gid_t>::max()) {
+        JavaTraceLog(MakeLogMessage("[trace-java] read target credentials failed: ", statusPath, "\n"));
+        return false;
+    }
+
+    impl.target.fsUid = static_cast<uid_t>(uid);
+    impl.target.fsGid = static_cast<gid_t>(gid);
+    impl.target.credentialsValid = true;
+    return true;
+}
+
+static bool SetTargetDirectoryAccess(const JavaBackendImpl &impl, const std::string &path)
+{
+    if (!impl.target.credentialsValid) {
+        return false;
+    }
+    struct stat info {};
+    if (stat(path.c_str(), &info) != 0) {
+        JavaTraceLog(MakeLogMessage("[trace-java] stat target directory failed: ", path,
+                                    ", errno=", errno, "(", std::strerror(errno), ")\n"));
+        return false;
+    }
+    if (info.st_uid != impl.target.fsUid && chown(path.c_str(), impl.target.fsUid, impl.target.fsGid) != 0) {
+        JavaTraceLog(MakeLogMessage("[trace-java] chown target directory failed: ", path,
+                                    ", errno=", errno, "(", std::strerror(errno), ")\n"));
+        return false;
+    }
+    if (chmod(path.c_str(), K_PRIVATE_DIR_MODE) != 0) {
+        JavaTraceLog(MakeLogMessage("[trace-java] chmod target directory failed: ", path,
+                                    ", errno=", errno, "(", std::strerror(errno), ")\n"));
+        return false;
+    }
+    return true;
 }
 
 static bool CopyFile(const std::string &src, const std::string &dst)
@@ -271,16 +352,14 @@ static std::string WriteIncludeFile(const JavaBackendImpl &impl)
     }
 
     std::string path = impl.shmPath + ".includes";
-    int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW,
+    int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
                   K_PRIVATE_FILE_MODE);
     if (fd < 0) {
         JavaTraceLog(MakeLogMessage("[trace-java] open include file failed: ", path,
                                     ", errno=", errno, "(", std::strerror(errno), ")\n"));
         return "";
     }
-    if (fchmod(fd, K_PRIVATE_FILE_MODE) != 0) {
-        JavaTraceLog(MakeLogMessage("[trace-java] chmod include file failed: ", path,
-                                    ", errno=", errno, "(", std::strerror(errno), ")\n"));
+    if (!JavaTraceSetTargetFileAccess(impl, fd, path)) {
         (void)close(fd);
         std::remove(path.c_str());
         return "";
@@ -493,6 +572,31 @@ void JavaTraceLog(const std::string &message)
     TraceLog(message);
 }
 
+bool JavaTraceSetTargetFileAccess(const JavaBackendImpl &impl, int fd, const std::string &path)
+{
+    if (fd < 0 || !impl.target.credentialsValid) {
+        JavaTraceLog(MakeLogMessage("[trace-java] target credentials unavailable for file: ", path, "\n"));
+        return false;
+    }
+    struct stat info {};
+    if (fstat(fd, &info) != 0) {
+        JavaTraceLog(MakeLogMessage("[trace-java] stat target file failed: ", path,
+                                    ", errno=", errno, "(", std::strerror(errno), ")\n"));
+        return false;
+    }
+    if (info.st_uid != impl.target.fsUid && fchown(fd, impl.target.fsUid, impl.target.fsGid) != 0) {
+        JavaTraceLog(MakeLogMessage("[trace-java] chown target file failed: ", path,
+                                    ", errno=", errno, "(", std::strerror(errno), ")\n"));
+        return false;
+    }
+    if (fchmod(fd, K_PRIVATE_FILE_MODE) != 0) {
+        JavaTraceLog(MakeLogMessage("[trace-java] chmod target file failed: ", path,
+                                    ", errno=", errno, "(", std::strerror(errno), ")\n"));
+        return false;
+    }
+    return true;
+}
+
 static bool IsDifferentRoot(int pid)
 {
     struct stat selfRoot {};
@@ -530,6 +634,26 @@ static bool CopyToTargetDir(const std::string &src, const std::string &targetDir
         *targetPath = JoinPath("/tmp/" + BaseName(targetDirHost), base);
     }
     return true;
+}
+
+static bool SetTargetAssetAccess(const JavaBackendImpl &impl, const std::string &path)
+{
+    if (path.empty()) {
+        return true;
+    }
+    int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (fd < 0) {
+        JavaTraceLog(MakeLogMessage("[trace-java] open target asset failed: ", path,
+                                    ", errno=", errno, "(", std::strerror(errno), ")\n"));
+        return false;
+    }
+    bool success = JavaTraceSetTargetFileAccess(impl, fd, path);
+    if (close(fd) != 0) {
+        JavaTraceLog(MakeLogMessage("[trace-java] close target asset failed: ", path,
+                                    ", errno=", errno, "(", std::strerror(errno), ")\n"));
+        return false;
+    }
+    return success;
 }
 
 
@@ -573,14 +697,17 @@ static void InitTargetPaths(JavaBackendImpl &impl, const std::string &agentJar, 
 static bool CopyTargetAssets(JavaBackendImpl &impl, const std::string &targetDirHost,
                              const std::string &agentJar, const std::string &nativeLib)
 {
-    std::string ignored;
-    if (!CopyToTargetDir(agentJar, targetDirHost, &ignored,
-                         &impl.target.agentJarPath)) {
+    std::string targetHostPath;
+    if (!CopyToTargetDir(agentJar, targetDirHost, &targetHostPath,
+                         &impl.target.agentJarPath) ||
+        !SetTargetAssetAccess(impl, targetHostPath)) {
         return false;
     }
-    if (!nativeLib.empty() &&
-        !CopyToTargetDir(nativeLib, targetDirHost, &ignored, &impl.target.nativeLibPath)) {
-        return false;
+    if (!nativeLib.empty()) {
+        if (!CopyToTargetDir(nativeLib, targetDirHost, &targetHostPath, &impl.target.nativeLibPath) ||
+            !SetTargetAssetAccess(impl, targetHostPath)) {
+            return false;
+        }
     }
     if (!impl.filterConfigPath.empty()) {
         const std::string configName = BaseName(impl.filterConfigPath);
@@ -588,6 +715,9 @@ static bool CopyTargetAssets(JavaBackendImpl &impl, const std::string &targetDir
         if (!WriteJavaOnlyFilterConfig(impl.filterConfigPath, targetConfigHost)) {
             JavaTraceLog(MakeLogMessage("[trace-java] create target Java filter config failed: ",
                                         impl.filterConfigPath, " -> ", targetConfigHost, "\n"));
+            return false;
+        }
+        if (!SetTargetAssetAccess(impl, targetConfigHost)) {
             return false;
         }
         impl.target.filterConfigPath = JoinPath("/tmp/" + BaseName(targetDirHost), configName);
@@ -613,6 +743,10 @@ static bool PrepareCrossRootTargetFiles(JavaBackendImpl &impl, const std::string
         JavaTraceCleanupTargetAssets(&impl);
         return false;
     }
+    if (!SetTargetDirectoryAccess(impl, targetDirHost)) {
+        JavaTraceCleanupTargetAssets(&impl);
+        return false;
+    }
 
     impl.shmPath = JoinPath(targetDirHost, fileName);
     impl.target.shmPath = JoinPath(targetDir, fileName);
@@ -625,6 +759,9 @@ static bool PrepareCrossRootTargetFiles(JavaBackendImpl &impl, const std::string
 
 bool JavaTracePrepareTargetFiles(JavaBackendImpl &impl)
 {
+    if (!LoadTargetCredentials(impl)) {
+        return false;
+    }
     std::string cliJar = CliJarPath();
     std::string agentJar = AgentJarPath();
     std::string nativeLib = NativeLibPath();
