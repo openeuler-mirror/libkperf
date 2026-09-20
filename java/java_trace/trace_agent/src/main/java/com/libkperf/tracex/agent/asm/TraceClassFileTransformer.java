@@ -35,6 +35,7 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
     public static final String TRACE_RUNTIME_OWNER = "com/libkperf/tracex/runtime/TraceRuntime";
     private static final String TRACE_RUNTIME_PACKAGE = "com/libkperf/tracex/runtime/";
     private static final int RESTORE_BATCH_SIZE = 64;
+    private static final int LOGGED_METHOD_LIMIT = 16;
 
     // prevent the same class from being instrumented repeatedly
     private static final Set<ClassKey> INSTRUMENTED = ConcurrentHashMap.newKeySet();
@@ -95,6 +96,7 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
             TraceClassVisitor cv = new TraceClassVisitor(cw, config, className);
             cr.accept(cv, ClassReader.EXPAND_FRAMES);
             if (cv.instrumentedMethodCount() == 0) {
+                TraceLog.info("[trace-java-agent] candidate class has no matched traceable methods: class=" + className.replace('/', '.'));
                 return null;
             }
             byte[] transformed = cw.toByteArray();
@@ -104,6 +106,9 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
             if (classBeingRedefined != null) {
                 PENDING.add(key);
             }
+            TraceLog.info("[trace-java-agent] instrumented class=" + className.replace('/', '.')
+                    + ", methodCount=" + cv.instrumentedMethodCount()
+                    + ", methods=" + formatInstrumentedMethods(cv.instrumentedMethods()));
             return transformed;
         } catch (Throwable t) {
             try {
@@ -119,6 +124,22 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
                 }
             }
         }
+    }
+
+    private static String formatInstrumentedMethods(List<MethodId> methods) {
+        StringBuilder out = new StringBuilder("[");
+        int displayed = Math.min(methods.size(), LOGGED_METHOD_LIMIT);
+        for (int i = 0; i < displayed; i++) {
+            if (i > 0) {
+                out.append(", ");
+            }
+            MethodId method = methods.get(i);
+            out.append(method.name).append(method.desc);
+        }
+        if (methods.size() > displayed) {
+            out.append(", ... (").append(methods.size()).append(" total)");
+        }
+        return out.append(']').toString();
     }
 
     public static void confirmInstrumentation(Iterable<Class<?>> classes) {

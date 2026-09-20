@@ -132,7 +132,7 @@ namespace {
 
     static StackAsm* FirstLineMatch(const std::string& line)
     {
-        if (line[line.size() - TO_TAIL_LEN] == ':') {
+        if (line.size() >= TO_TAIL_LEN && line[line.size() - TO_TAIL_LEN] == ':') {
             struct StackAsm* stackAsm = CreateNode<struct StackAsm>();
             stackAsm->funcName = InitChar(MAX_LINE_LENGTH);
             stackAsm->asmCode = nullptr;
