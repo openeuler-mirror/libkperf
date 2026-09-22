@@ -70,6 +70,8 @@ static std::unordered_map<int, std::string> g_traceLogSessionIds;
 
 static constexpr unsigned K_VTHREAD_MOUNT_EVENT = 2;
 static constexpr unsigned K_VTHREAD_UNMOUNT_EVENT = 3;
+static constexpr unsigned K_VTHREAD_MOUNT_DEGRADED_EVENT = 4;
+static constexpr unsigned K_VTHREAD_UNMOUNT_DEGRADED_EVENT = 5;
 
 static JvmTraceSession *GetJvmTraceSession(int pd)
 {
@@ -384,7 +386,10 @@ static bool IsInTraceWindow(const UTraceData &data, int64_t windowStartNs, int64
 
 static bool IsVirtualThreadTransition(const UTraceData &data)
 {
-    return data.isRet == K_VTHREAD_MOUNT_EVENT || data.isRet == K_VTHREAD_UNMOUNT_EVENT;
+    return data.isRet == K_VTHREAD_MOUNT_EVENT
+        || data.isRet == K_VTHREAD_UNMOUNT_EVENT
+        || data.isRet == K_VTHREAD_MOUNT_DEGRADED_EVENT
+        || data.isRet == K_VTHREAD_UNMOUNT_DEGRADED_EVENT;
 }
 
 static bool ShouldMergeTraceData(const UTraceData &data, int64_t windowStartNs, int64_t windowEndNs)
@@ -412,13 +417,15 @@ static void AssociateVirtualThreadContext(UTraceData *data, int len)
     std::unordered_map<int, uint64_t> mountedByTid;
     for (int i = 0; i < len; ++i) {
         UTraceData &event = data[i];
-        if (event.isRet == K_VTHREAD_MOUNT_EVENT) {
+        if (event.isRet == K_VTHREAD_MOUNT_EVENT
+            || event.isRet == K_VTHREAD_MOUNT_DEGRADED_EVENT) {
             if (event.gPtr != 0) {
                 mountedByTid[event.tid] = event.gPtr;
             }
             continue;
         }
-        if (event.isRet == K_VTHREAD_UNMOUNT_EVENT) {
+        if (event.isRet == K_VTHREAD_UNMOUNT_EVENT
+            || event.isRet == K_VTHREAD_UNMOUNT_DEGRADED_EVENT) {
             auto mounted = mountedByTid.find(event.tid);
             if (mounted != mountedByTid.end() && mounted->second == event.gPtr) {
                 mountedByTid.erase(mounted);

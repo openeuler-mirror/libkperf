@@ -48,6 +48,7 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
     private static final ThreadLocal<Boolean> REENTRANT = new ThreadLocal<Boolean>();
 
     private final TraceConfig config;
+    private volatile boolean virtualThreadCarrierHooksEmitted;
 
     public TraceClassFileTransformer(TraceConfig config) {
         this.config = config;
@@ -96,32 +97,33 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
             ClassReader cr = new ClassReader(classfileBuffer);
             int instrumentedMethodCount;
             String instrumentedMethods;
-            VirtualThreadClassVisitor.HookMode virtualThreadHookMode = VirtualThreadClassVisitor.HookMode.NONE;
             if (VIRTUAL_THREAD_CLASS.equals(className)) {
-                // Pass 1: choose exactly one hook family before emitting any bytecode.
-                virtualThreadHookMode = VirtualThreadClassVisitor.detectHookMode(cr);
-                if (virtualThreadHookMode == VirtualThreadClassVisitor.HookMode.NONE) {
+                // Pass 1: verify that runContinuation contains both carrier-side call sites.
+                if (!VirtualThreadClassVisitor.supportsCarrierCallSites(cr)) {
                     TraceLog.warn("[trace-java-agent] virtual-thread carrier hooks unavailable"
-                            + ", mount/unmount and runContinuation not found", null);
+                            + ", runContinuation mount/unmount call sites not found", null);
                     return null;
                 }
             }
 
             ClassWriter cw = new SafeClassWriter(cr, ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS, loader);
             if (VIRTUAL_THREAD_CLASS.equals(className)) {
-                // Pass 2: instrument only the hook family selected by the structure scan.
-                VirtualThreadClassVisitor cv = new VirtualThreadClassVisitor(cw, virtualThreadHookMode);
+                // Pass 2: instrument the verified call sites, never mount/unmount method bodies.
+                VirtualThreadClassVisitor cv = new VirtualThreadClassVisitor(cw);
                 cr.accept(cv, ClassReader.EXPAND_FRAMES);
-                int expectedMethods = virtualThreadHookMode == VirtualThreadClassVisitor.HookMode.MOUNT_UNMOUNT ? 2 : 1;
-                if (cv.instrumentedMethodCount() != expectedMethods) {
+                if (cv.instrumentedMethodCount() != 1
+                        || cv.mountCallSiteCount() == 0
+                        || cv.unmountCallSiteCount() == 0) {
                     TraceLog.warn("[trace-java-agent] virtual-thread carrier hooks unavailable"
-                            + ", mode=" + virtualThreadHookMode
-                            + ", expectedMethods=" + expectedMethods
-                            + ", actualMethods=" + cv.instrumentedMethodCount(), null);
+                            + ", runContinuationMethods=" + cv.instrumentedMethodCount()
+                            + ", mountCallSites=" + cv.mountCallSiteCount()
+                            + ", unmountCallSites=" + cv.unmountCallSiteCount(), null);
                     return null;
                 }
                 instrumentedMethodCount = cv.instrumentedMethodCount();
-                instrumentedMethods = virtualThreadHookMode.toString();
+                instrumentedMethods = "CARRIER_CALL_SITES"
+                        + "(mount=" + cv.mountCallSiteCount()
+                        + ", unmount=" + cv.unmountCallSiteCount() + ")";
             } else {
                 TraceClassVisitor cv = new TraceClassVisitor(cw, config, className);
                 cr.accept(cv, ClassReader.EXPAND_FRAMES);
@@ -138,10 +140,13 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
             if (classBeingRedefined != null) {
                 PENDING.add(key);
             }
+            if (VIRTUAL_THREAD_CLASS.equals(className)) {
+                virtualThreadCarrierHooksEmitted = true;
+            }
             TraceLog.info("[trace-java-agent] instrumented class=" + className.replace('/', '.')
                     + ", methodCount=" + instrumentedMethodCount + ", methods=" + instrumentedMethods);
             if (VIRTUAL_THREAD_CLASS.equals(className)) {
-                TraceLog.info("[trace-java-agent] virtual-thread carrier hooks transformed, mode=" + virtualThreadHookMode);
+                TraceLog.info("[trace-java-agent] virtual-thread carrier call-site hooks transformed");
             }
             return transformed;
         } catch (Throwable t) {
@@ -158,6 +163,10 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
                 }
             }
         }
+    }
+
+    public boolean hasVirtualThreadCarrierHooks() {
+        return virtualThreadCarrierHooksEmitted;
     }
 
     private static String formatInstrumentedMethods(List<MethodId> methods) {

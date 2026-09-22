@@ -39,7 +39,7 @@
 
 namespace {
 static constexpr uint64_t K_MAGIC = 0x5554524356415731ULL; // UTRCVAW1
-static constexpr uint32_t K_VERSION = 2;
+static constexpr uint32_t K_VERSION = 3;
 static constexpr size_t K_HEADER_SIZE = 128;
 static constexpr size_t K_HEADER_MAGIC = 0;
 static constexpr size_t K_HEADER_VERSION = 8;
@@ -66,11 +66,11 @@ static constexpr size_t K_METHOD_FUNC = 176;
 static constexpr size_t K_METHOD_FUNC_LEN = 256;
 
 static constexpr uint32_t K_THREAD_CAPACITY = 65536;
-static constexpr size_t K_THREAD_ENTRY_SIZE = 48;
+static constexpr size_t K_THREAD_ENTRY_SIZE = 80;
 static constexpr size_t K_THREAD_SEQ = 0;
 static constexpr size_t K_THREAD_TID = 4;
 static constexpr size_t K_THREAD_COMM = 8;
-static constexpr size_t K_THREAD_COMM_LEN = 32;
+static constexpr size_t K_THREAD_COMM_LEN = 64;
 
 static constexpr size_t K_SLOT_SIZE = 64;
 static constexpr size_t K_SLOT_SEQ = 0;

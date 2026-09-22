@@ -37,9 +37,10 @@ import java.util.concurrent.atomic.AtomicLong;
 
 final class SharedEventSink implements AutoCloseable {
 
-    // Shared memory ABI v2. Strings live in dictionaries and compact event slots contain ids
+    // Shared memory ABI v3. Strings live in dictionaries and compact event slots contain ids.
+    // v3 enlarges thread comm from 32 to 64 bytes.
     static final long MAGIC = 0x5554524356415731L; // UTRCVAW1
-    static final int VERSION = 2;
+    static final int VERSION = 3;
 
     static final int HEADER_SIZE = 128;
     static final int HEADER_MAGIC = 0;
@@ -67,11 +68,11 @@ final class SharedEventSink implements AutoCloseable {
     static final int METHOD_FUNC_LEN = 256;
 
     static final int THREAD_CAPACITY = 65536;
-    static final int THREAD_ENTRY_SIZE = 48;
+    static final int THREAD_ENTRY_SIZE = 80;
     static final int THREAD_SEQ = 0;
     static final int THREAD_TID = 4;
     static final int THREAD_COMM = 8;
-    static final int THREAD_COMM_LEN = 32;
+    static final int THREAD_COMM_LEN = 64;
 
     static final int SLOT_SIZE = 64;
     static final int SLOT_SEQ = 0;
@@ -88,6 +89,9 @@ final class SharedEventSink implements AutoCloseable {
     static final int EVENT_METHOD_EXIT = 1;
     static final int EVENT_VTHREAD_MOUNT = 2;
     static final int EVENT_VTHREAD_UNMOUNT = 3;
+    // Fallback inference when carrier call-site hooks cannot be installed.
+    static final int EVENT_VTHREAD_MOUNT_DEGRADED = 4;
+    static final int EVENT_VTHREAD_UNMOUNT_DEGRADED = 5;
 
     private static final int DEFAULT_SLOT_COUNT = 2097152;
     private static final int MAX_SLOT_COUNT = 67108864;
@@ -110,6 +114,9 @@ final class SharedEventSink implements AutoCloseable {
     private final AtomicInteger threadCount = new AtomicInteger(0);
     // thread meta data --> thread ID in Shared Memory
     private final Map<ThreadMetadataKey, Integer> threadIds = new HashMap<ThreadMetadataKey, Integer>();
+    // A virtual thread may migrate between carriers. Keep one metadata id per carrier TID
+    // instead of creating a (carrier TID, virtual-thread name) entry for every migration.
+    private final Map<Integer, Integer> carrierThreadIds = new HashMap<Integer, Integer>();
     private final AtomicLong nextSequence = new AtomicLong(1L);
     private final AtomicLong publishedSequence = new AtomicLong(0L);
     private final AtomicLong droppedEvents = new AtomicLong(0L);
@@ -146,6 +153,13 @@ final class SharedEventSink implements AutoCloseable {
             ThreadMetadataKey that = (ThreadMetadataKey) other;
             return tid == that.tid && Arrays.equals(comm, that.comm);
         }
+    }
+
+    static void preloadHelpers() {
+        // Force resolution/initialization outside a HotSpot VTMS transition.
+        new ThreadMetadataKey(0, EMPTY_BYTES).hashCode();
+        MemoryFence.acquireFence();
+        MemoryFence.releaseFence();
     }
 
     SharedEventSink(String shmPath, int slotCount) throws IOException {
@@ -246,6 +260,18 @@ final class SharedEventSink implements AutoCloseable {
         } finally {
             writerState.decrementAndGet();
         }
+    }
+
+    synchronized int registerCarrierThread(int tid, byte[] comm) {
+        Integer existing = carrierThreadIds.get(Integer.valueOf(tid));
+        if (existing != null) {
+            return existing.intValue();
+        }
+        int id = registerThread(tid, comm);
+        if (id >= 0) {
+            carrierThreadIds.put(Integer.valueOf(tid), Integer.valueOf(id));
+        }
+        return id;
     }
 
     private void publishThreadCount(int value) {

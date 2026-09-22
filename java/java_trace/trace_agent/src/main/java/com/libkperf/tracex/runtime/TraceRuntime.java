@@ -24,12 +24,15 @@ import java.util.Map;
 public final class TraceRuntime {
 
     private static final int INITIAL_METHOD_CAPACITY = 256;
+    private static final byte[] UNKNOWN_CARRIER_COMM = SharedEventSink.utf8("carrier");
     private static final Map<String, Integer> METHOD_IDS = new HashMap<String, Integer>();
     private static volatile MethodMetadata[] methodTable = new MethodMetadata[INITIAL_METHOD_CAPACITY];
     private static final int VTHREAD_CARRIER_METHOD_ID = registerMethod("[java-vthread]", "carrier");
 
     private static volatile boolean enabled;
     private static volatile SharedEventSink sink;
+    private static volatile boolean virtualThreadCarrierHooksEnabled;
+    private static volatile boolean virtualThreadFallbackLogged;
 
     private static final ThreadLocal<ThreadState> THREAD_STATE = new ThreadLocal<ThreadState>() {
         @Override
@@ -75,6 +78,8 @@ public final class TraceRuntime {
 
     public static synchronized void reconfigure(String shmPath, int slotCount) throws Exception {
         enabled = false;
+        virtualThreadCarrierHooksEnabled = false;
+        virtualThreadFallbackLogged = false;
 
         SharedEventSink old = sink;
         sink = null;
@@ -110,6 +115,7 @@ public final class TraceRuntime {
 
     public static synchronized void stop() {
         enabled = false;
+        virtualThreadCarrierHooksEnabled = false;
 
         SharedEventSink old = sink;
         sink = null;
@@ -129,35 +135,64 @@ public final class TraceRuntime {
         enabled = value;
     }
 
-    public static void virtualThreadMount(Thread virtualThread) {
-        recordVirtualThreadTransition(virtualThread, SharedEventSink.EVENT_VTHREAD_MOUNT);
+    /**
+     * Resolves callback dependencies before java/lang/VirtualThread is retransformed.
+     * This must run while the agent transformer is not installed.
+     */
+    public static void preloadVirtualThreadHelpers() {
+        VirtualThreadSupport.isSupported();
+        SharedEventSink.preloadHelpers();
+        MethodMetadata ignored = methodTable[VTHREAD_CARRIER_METHOD_ID];
+        if (ignored != null) {
+            ignored.module.hashCode();
+        }
     }
 
-    public static void virtualThreadUnmount(Thread virtualThread) {
-        recordVirtualThreadTransition(virtualThread, SharedEventSink.EVENT_VTHREAD_UNMOUNT);
+    public static void configureVirtualThreadCarrierHooks(boolean installed) {
+        virtualThreadCarrierHooksEnabled = installed;
+        if (installed) {
+            TraceLog.info("[trace-java-runtime] virtual-thread carrier call-site hooks enabled");
+            return;
+        }
+        if (VirtualThreadSupport.isSupported() && !virtualThreadFallbackLogged) {
+            virtualThreadFallbackLogged = true;
+            TraceLog.warn("[trace-java-runtime] virtual-thread carrier hooks unavailable"
+                    + ", using degraded METHOD_ENTER mount inference", null);
+        }
     }
 
-    private static void recordVirtualThreadTransition(Thread virtualThread, int eventType) {
+    public static void virtualThreadBeforeMount(Thread virtualThread) {
+        recordCarrierVirtualThreadTransition(virtualThread, SharedEventSink.EVENT_VTHREAD_MOUNT);
+    }
+
+    public static void virtualThreadAfterUnmount(Thread virtualThread) {
+        recordCarrierVirtualThreadTransition(virtualThread, SharedEventSink.EVENT_VTHREAD_UNMOUNT);
+    }
+
+    private static void recordCarrierVirtualThreadTransition(Thread virtualThread, int eventType) {
         try {
-            if (!enabled || virtualThread == null || Thread.currentThread() != virtualThread) {
-                return;
-            }
-            ThreadState state = THREAD_STATE.get();
-            if (!state.virtualThread || state.runtimeDepth > 0) {
+            if (!enabled || virtualThread == null) {
                 return;
             }
             SharedEventSink s = sink;
             if (s == null) {
                 return;
             }
-            state.runtimeDepth++;
-            try {
-                int tid = NativeThreadInfo.currentTidSafe();
-                boolean recorded = recordVirtualThreadTransition(state, s, tid, eventType);
-                state.updateMountState(s, tid, eventType, recorded);
-            } finally {
-                state.runtimeDepth--;
+            // A callback can only be reached from successfully transformed call-site bytecode.
+            virtualThreadCarrierHooksEnabled = true;
+            MethodMetadata method = methodTable[VTHREAD_CARRIER_METHOD_ID];
+            if (method == null) {
+                return;
             }
+            int tid = NativeThreadInfo.currentTidSafe();
+            // Before mount and after unmount Thread.currentThread() is the carrier.
+            // The virtual-thread identity is carried separately in contextId/gPtr.
+            byte[] comm = SharedEventSink.utf8(currentThreadName());
+            int commId = s.registerCarrierThread(tid, comm);
+            long timestamp = NativeThreadInfo.currentTimeNanosSafe();
+            int cpu = NativeThreadInfo.currentCpuSafe();
+            long contextId = VirtualThreadSupport.contextId(virtualThread);
+            s.record(method.addr, method.id, commId, tid, cpu, timestamp, contextId, eventType);
         } catch (ThreadDeath t) {
             throw t;
         } catch (VirtualMachineError e) {
@@ -216,9 +251,10 @@ public final class TraceRuntime {
                 int depth = state.callDepth;
                 int tid = state.tid();
                 int commId = state.commId(s, tid);
-                if (state.needsMountEvent(s, tid)) {
-                    state.updateMountState(s, tid, SharedEventSink.EVENT_VTHREAD_MOUNT,
-                            recordVirtualThreadTransition(state, s, tid, SharedEventSink.EVENT_VTHREAD_MOUNT));
+                if (!virtualThreadCarrierHooksEnabled && state.needsMountEvent(s, tid)) {
+                    state.updateMountState(s, tid, SharedEventSink.EVENT_VTHREAD_MOUNT_DEGRADED,
+                            recordVirtualThreadTransition(state, s, tid,
+                                    SharedEventSink.EVENT_VTHREAD_MOUNT_DEGRADED));
                 }
                 long ts = NativeThreadInfo.currentTimeNanosSafe();
                 int cpu = NativeThreadInfo.currentCpuSafe();
@@ -348,7 +384,9 @@ public final class TraceRuntime {
         }
 
         long contextId() {
-            return contextId;
+            return virtualThread && !virtualThreadCarrierHooksEnabled
+                    ? VirtualThreadSupport.markDegraded(contextId)
+                    : contextId;
         }
 
         boolean needsMountEvent(SharedEventSink sink, int tid) {
@@ -356,7 +394,8 @@ public final class TraceRuntime {
         }
 
         void updateMountState(SharedEventSink sink, int tid, int eventType, boolean recorded) {
-            if (eventType == SharedEventSink.EVENT_VTHREAD_MOUNT) {
+            if (eventType == SharedEventSink.EVENT_VTHREAD_MOUNT
+                    || eventType == SharedEventSink.EVENT_VTHREAD_MOUNT_DEGRADED) {
                 if (recorded) {
                     mountedSink = sink;
                     mountedTid = tid;
@@ -378,7 +417,9 @@ public final class TraceRuntime {
 
         int commId(SharedEventSink sink, int tid) {
             if (registeredSink != sink || registeredTid != tid) {
-                int id = sink.registerThread(tid, comm());
+                int id = virtualThread
+                        ? sink.registerCarrierThread(tid, UNKNOWN_CARRIER_COMM)
+                        : sink.registerThread(tid, comm());
                 if (id < 0) {
                     return -1;
                 }
@@ -394,6 +435,7 @@ public final class TraceRuntime {
         // Native user-space pointers do not use the high half of the 64-bit address space.
         // Marking Java virtual-thread IDs keeps them distinct from the Go g pointer.
         private static final long CONTEXT_ID_FLAG = Long.MIN_VALUE;
+        private static final long CONTEXT_DEGRADED_FLAG = 1L << 62;
         private static final Method IS_VIRTUAL = findIsVirtual();
 
         private VirtualThreadSupport() {
@@ -417,6 +459,10 @@ public final class TraceRuntime {
         static long contextId(Thread thread) {
             long id = thread.getId() & Long.MAX_VALUE;
             return CONTEXT_ID_FLAG | (id == 0L ? 1L : id);
+        }
+
+        static long markDegraded(long contextId) {
+            return contextId | CONTEXT_DEGRADED_FLAG;
         }
 
         private static Method findIsVirtual() {

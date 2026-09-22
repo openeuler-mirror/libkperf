@@ -232,18 +232,20 @@ public final class TraceAgent {
         }
     }
 
-    private static void retransformSafely(Instrumentation inst, List<Class<?>> candidates) {
+    private static boolean retransformSafely(Instrumentation inst, List<Class<?>> candidates) {
         if (candidates == null || candidates.isEmpty()) {
-            return;
+            return false;
         }
         int ok = 0;
         int failed = 0;
+        boolean virtualThreadRetransformed = false;
         for (int from = 0; from < candidates.size(); from += RETRANSFORM_BATCH_SIZE) {
             int to = Math.min(from + RETRANSFORM_BATCH_SIZE, candidates.size());
             List<Class<?>> batch = candidates.subList(from, to);
             try {
                 inst.retransformClasses(batch.toArray(new Class<?>[0]));
                 TraceClassFileTransformer.confirmInstrumentation(batch);
+                virtualThreadRetransformed |= containsVirtualThread(batch);
                 ok += batch.size();
             } catch (Throwable batchError) {
                 TraceClassFileTransformer.rollbackInstrumentation(batch);
@@ -254,6 +256,7 @@ public final class TraceAgent {
                         inst.retransformClasses(c);
                         TraceClassFileTransformer.confirmInstrumentation(
                                 Collections.singletonList(c));
+                        virtualThreadRetransformed |= isVirtualThread(c);
                         ok++;
                     } catch (Throwable oneError) {
                         TraceClassFileTransformer.rollbackInstrumentation(
@@ -265,6 +268,20 @@ public final class TraceAgent {
                 }
             }
         }
+        return virtualThreadRetransformed;
+    }
+
+    private static boolean containsVirtualThread(List<Class<?>> classes) {
+        for (Class<?> clazz : classes) {
+            if (isVirtualThread(clazz)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isVirtualThread(Class<?> clazz) {
+        return clazz != null && "java.lang.VirtualThread".equals(clazz.getName());
     }
 
     private static synchronized void start(TraceConfig config, Instrumentation inst) throws Exception {
@@ -285,7 +302,8 @@ public final class TraceAgent {
 
         NativeThreadInfo.load(config.nativeLibPath);
         TraceRuntime.reconfigure(config.shmPath, config.slotCount);
-        TraceRuntime.setEnabled(true);
+        TraceRuntime.setEnabled(false);
+        TraceRuntime.preloadVirtualThreadHelpers();
 
         TraceClassFileTransformer transformer = new TraceClassFileTransformer(config);
         if (config.contextDepth > 0) {
@@ -306,9 +324,10 @@ public final class TraceAgent {
             + ", requiredIncludeRules=" + config.requiredIncludeRules.size()
             + ", configIncludeRules=" + config.includeRules.size()
             + ", excludeRules=" + config.excludeRules.size());
-        if (!candidates.isEmpty()) {
-            retransformSafely(inst, candidates);
-        }
+        boolean virtualThreadRetransformed = retransformSafely(inst, candidates);
+        TraceRuntime.configureVirtualThreadCarrierHooks(
+                virtualThreadRetransformed && transformer.hasVirtualThreadCarrierHooks());
+        TraceRuntime.setEnabled(true);
         TraceLog.info("[trace-java] filter: " + config.filterRuleStatus());
     }
 

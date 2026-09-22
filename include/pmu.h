@@ -822,9 +822,11 @@ struct UTraceData {
     int tid;
     int cpu;
     int64_t timestamp;
-    uint64_t gPtr; /* GO g pointer or a high-bit tagged Java virtual-thread ID */
+    uint64_t gPtr; /* GO g pointer or high-bit tagged Java VT ID; bit 62 marks degraded inference */
     const char* module;
     const char* func;
+    /* 0: enter, 1: return, 2/3: precise VT mount/unmount,
+       4/5: degraded VT mount/unmount inference */
     unsigned isRet;
 };
 
