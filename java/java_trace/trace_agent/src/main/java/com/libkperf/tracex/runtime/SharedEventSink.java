@@ -37,10 +37,9 @@ import java.util.concurrent.atomic.AtomicLong;
 
 final class SharedEventSink implements AutoCloseable {
 
-    // Shared memory ABI v3. Strings live in dictionaries and compact event slots contain ids.
-    // v3 enlarges thread comm from 32 to 64 bytes.
+    // Shared memory ABI v2. Strings live in dictionaries and compact event slots contain ids
     static final long MAGIC = 0x5554524356415731L; // UTRCVAW1
-    static final int VERSION = 3;
+    static final int VERSION = 2;
 
     static final int HEADER_SIZE = 128;
     static final int HEADER_MAGIC = 0;
@@ -68,11 +67,11 @@ final class SharedEventSink implements AutoCloseable {
     static final int METHOD_FUNC_LEN = 256;
 
     static final int THREAD_CAPACITY = 65536;
-    static final int THREAD_ENTRY_SIZE = 80;
+    static final int THREAD_ENTRY_SIZE = 48;
     static final int THREAD_SEQ = 0;
     static final int THREAD_TID = 4;
     static final int THREAD_COMM = 8;
-    static final int THREAD_COMM_LEN = 64;
+    static final int THREAD_COMM_LEN = 32;
 
     static final int SLOT_SIZE = 64;
     static final int SLOT_SEQ = 0;
