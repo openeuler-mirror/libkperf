@@ -177,10 +177,6 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    static inline bool IsNotInitFatalErr(int err) {
-        return err == LIBPERF_ERR_OPEN_INVALID_FILE;
-    }
-
     int PmuList::InitScanEvtLists(const int pd, std::vector<std::shared_ptr<EvtList>> &evtLists, EvtInitCtx &ctx)
     {
         for (auto &evtList : evtLists) {
@@ -189,9 +185,6 @@ namespace KUNPENG_PMU {
             if (gid == -1) {
                 int err = EvtInit(false, nullptr, pd, evtList);
                 if (err != SUCCESS) {
-                    if (!IsNotInitFatalErr(err)) {
-                        return err;
-                    }
                     ctx.lastErr = err;
                     ctx.removeEvt.insert(evtList.get());
                     continue;
@@ -205,9 +198,6 @@ namespace KUNPENG_PMU {
             if (ctx.eventGroupInfoMap.find(gid) == ctx.eventGroupInfoMap.end()) {
                 int err = EvtInit(true, nullptr, pd, evtList);
                 if (err != SUCCESS) {
-                    if (!IsNotInitFatalErr(err)) {
-                        return err;
-                    }
                     ctx.lastErr = err;
                     ctx.removeEvt.insert(evtList.get());
                     ctx.groupLeaderOk[gid] = false;
@@ -270,9 +260,6 @@ namespace KUNPENG_PMU {
                     }
                 }
                 if (err != SUCCESS) {
-                    if (!IsNotInitFatalErr(err)) {
-                        return err;
-                    }
                     ctx.lastErr = err;
                     ctx.removeEvt.insert(child.get());
                     continue;
