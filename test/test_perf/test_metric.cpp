@@ -15,6 +15,7 @@
 #include "test_common.h"
 #include "common.h"
 #include "cpu_map.h"
+#include "pmu_metric.h"
 #include <cstring>
 #include <dirent.h>
 
@@ -88,6 +89,32 @@ TEST_F(TestMetric, GetMetricRejectsInvalidPcieBdfFormat)
     ASSERT_NE(strlen(Perror()), 0);
 }
 
+TEST_F(TestMetric, ConvertPciePortBdfToBitmap)
+{
+    struct PortBitmapCase {
+        const char* bdf;
+        uint16_t bitmap;
+    };
+    const PortBitmapCase cases[] = {
+        {"00:00.0", 0x0001},
+        {"00:01.0", 0x0004},
+        {"00:02.0", 0x0010},
+        {"00:04.0", 0x0100},
+    };
+
+    for (const auto& testCase : cases) {
+        uint16_t bitmap = 0;
+        EXPECT_EQ(KUNPENG_PMU::ConvertPciePortBdfToBitmap(testCase.bdf, bitmap), SUCCESS);
+        EXPECT_EQ(bitmap, testCase.bitmap);
+    }
+}
+
+TEST_F(TestMetric, ConvertPciePortRejectsInvalidBdf)
+{
+    uint16_t bitmap = 0;
+    EXPECT_EQ(KUNPENG_PMU::ConvertPciePortBdfToBitmap("00:20.0", bitmap), LIBPERF_ERR_INVALID_BDF_VALUE);
+}
+
 TEST_F(TestMetric, RejectUnmatchedMetricData)
 {
     CHIP_TYPE chipType = GetCpuType();
@@ -118,6 +145,18 @@ TEST_F(TestMetric, GetPcieBdfList)
     }
     ASSERT_EQ(Perrorno(), SUCCESS);
 }
+
+TEST_F(TestMetric, GetPciePortList)
+{
+    unsigned portLen = 0;
+    const char** portList = PmuDeviceBdfList(PMU_BDF_TYPE_PORT, &portLen);
+    if (portList == nullptr || portLen == 0) {
+        GTEST_SKIP() << "No pcie Root Port";
+    }
+    ASSERT_EQ(Perrorno(), SUCCESS);
+    ASSERT_GT(portLen, 0);
+}
+
 
 TEST_F(TestMetric, GetSmmuBdfList)
 {
@@ -310,6 +349,40 @@ TEST_F(TestMetric, GetMetricPcieBandwidth)
     }
 }
 
+TEST_F(TestMetric, GetMetricPcieBandwidthByPortList)
+{
+    CHIP_TYPE chipType = GetCpuType();
+    if (chipType != HIPB) {
+        GTEST_SKIP() << "Unsupported chip";
+    }
+    unsigned portLen = 0;
+    const char** portList = PmuDeviceBdfList(PMU_BDF_TYPE_PORT, &portLen);
+    if (portList == nullptr || portLen == 0) {
+        GTEST_SKIP() << "No pcie Root Port";
+    }
+
+    std::string ports = std::string(portList[0]) + "," + portList[0];
+    PmuDeviceAttr devAttr{};
+    devAttr.metric = PMU_PCIE_RX_MRD_BW;
+    devAttr.port = strdup(ports.c_str());
+
+    pd = PmuDeviceOpen(&devAttr, 1);
+    ASSERT_NE(pd, -1);
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+    int oriLen = PmuRead(pd, &oriData);
+    ASSERT_NE(oriLen, -1);
+
+    auto len = PmuGetDevMetric(oriData, oriLen, &devAttr, 1, &devData);
+    ASSERT_EQ(len, 1);
+    ASSERT_EQ(devData[0].metric, PMU_PCIE_RX_MRD_BW);
+    ASSERT_EQ(devData[0].mode, PMU_METRIC_PORT);
+    ASSERT_STREQ(devData[0].port, ports.c_str());
+    free(devAttr.port);
+}
+
+
 TEST_F(TestMetric, GetMetricSmmuTransaction)
 {
     const char** bdfList = nullptr;
@@ -371,16 +444,18 @@ TEST_F(TestMetric, GetMetricPcieLatency)
     if (chipType != HIPB) {
         GTEST_SKIP() << "Unsupported chip";
     }
-    const char** bdfList = nullptr;
-    unsigned bdfLen = 0;
-    bdfList = PmuDeviceBdfList(PMU_BDF_TYPE_PCIE, &bdfLen);
-    PmuDeviceAttr devAttr[bdfLen] = {};
-    for (int i = 0; i < bdfLen; ++i) {
+    unsigned portLen = 0;
+    const char** portList = PmuDeviceBdfList(PMU_BDF_TYPE_PORT, &portLen);
+    if (portList == nullptr || portLen == 0) {
+        GTEST_SKIP() << "No pcie Root Port";
+    }
+    PmuDeviceAttr devAttr[portLen] = {};
+    for (int i = 0; i < portLen; ++i) {
         devAttr[i].metric = PMU_PCIE_RX_MRD_LAT;
-        devAttr[i].port = strdup(bdfList[i]);
+        devAttr[i].port = strdup(portList[i]);
     }
 
-    pd = PmuDeviceOpen(devAttr, bdfLen);
+    pd = PmuDeviceOpen(devAttr, portLen);
     ASSERT_NE(pd, -1);
     PmuEnable(pd);
     sleep(1);
@@ -388,12 +463,12 @@ TEST_F(TestMetric, GetMetricPcieLatency)
     int oriLen = PmuRead(pd, &oriData);
     ASSERT_NE(oriLen, -1);
 
-    auto len = PmuGetDevMetric(oriData, oriLen, devAttr, bdfLen, &devData);
-    ASSERT_EQ(len, bdfLen);
+    auto len = PmuGetDevMetric(oriData, oriLen, devAttr, portLen, &devData);
+    ASSERT_EQ(len, portLen);
     ASSERT_EQ(devData[0].metric, PMU_PCIE_RX_MRD_LAT);
-    ASSERT_EQ(devData[0].mode, PMU_METRIC_BDF);
-    ASSERT_TRUE(strcmp(devData[0].port, bdfList[0]) == 0);
-    for (int i = 0; i < bdfLen; ++i) {
+    ASSERT_EQ(devData[0].mode, PMU_METRIC_PORT);
+    ASSERT_TRUE(strcmp(devData[0].port, portList[0]) == 0);
+    for (int i = 0; i < portLen; ++i) {
         free(devAttr[i].port);
     }
 }

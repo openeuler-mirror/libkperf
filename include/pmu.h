@@ -556,14 +556,15 @@ struct PmuDeviceAttr {
     // Used for PMU_PCIE_XXX_BW and PMU_SMMU_XXX to collect a specifi pcie device.
     // The string of bdf is something like '7a:01.0'.
     char *bdf;
-    // Used for PMU_PCIE_XXX_LAT to collect latency data.
-    // Only one port supported.
+    // Used for PMU_PCIE_XXX_BW/LAT. Multiple ports can be specified as a comma-separated list: "20:00.0,20:04.0".
+    // For PCIe metrics, port takes precedence when both bdf and port are set.
     char *port;
 };
 
 enum PmuBdfType {
-    PMU_BDF_TYPE_PCIE,  // pcie collect metric.
-    PMU_BDF_TYPE_SMMU   // smmu collect metric.
+    PMU_BDF_TYPE_PCIE,       // PCIe Endpoint BDF.
+    PMU_BDF_TYPE_SMMU,       // SMMU device BDF.
+    PMU_BDF_TYPE_PORT        // PCIe Root Port BDF.
 };
 
 enum PmuMetricMode {
@@ -572,12 +573,15 @@ enum PmuMetricMode {
     PMU_METRIC_NUMA,
     PMU_METRIC_CLUSTER,
     PMU_METRIC_BDF,
-    PMU_METRIC_CHANNEL
+    PMU_METRIC_CHANNEL,
+    PMU_METRIC_PORT
 };
 
 /**
  * @brief
- * Query all available bdf list from system.
+ * Query all available device BDFs from system. PMU_BDF_TYPE_PCIE returns
+ * endpoint BDFs, PMU_BDF_TYPE_PORT returns PCIe Root Port BDFs, and
+ * PMU_BDF_TYPE_SMMU returns SMMU BDFs.
  * @param bdfType type of bdf chosen by user
  * @param numBdf length of bdf list
  * @return bdf list

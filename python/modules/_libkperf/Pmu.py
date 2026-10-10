@@ -612,7 +612,10 @@ class PmuDeviceAttr(object):
     def __init__(self,
                  metric=0,
                  bdf=None,
-                 port=None):
+                 port=None,
+                 ports=None):
+        if ports is not None:
+            port = ",".join(ports)
         self.__c_pmu_device_attr = CtypesPmuDeviceAttr(
             metric=metric,
             bdf=bdf,
@@ -656,6 +659,17 @@ class PmuDeviceAttr(object):
             self.c_pmu_device_attr.port = ctypes.c_char_p(port.encode(UTF_8))
         else:
             self.c_pmu_device_attr.port = None
+
+    @property
+    def ports(self):
+        if not self.port:
+            return []
+        return self.port.split(",")
+
+    @ports.setter
+    def ports(self, ports):
+        self.port = ",".join(ports) if ports is not None else None
+
 
     @classmethod
     def from_c_pmu_device_attr(cls, c_pmu_device_attr):
@@ -733,7 +747,7 @@ class CtypesPmuDeviceData(ctypes.Structure):
 
     @property
     def port(self):
-        if self.mode == 4 and self._union.port:  # PMU_METRIC_BDF
+        if self.mode == 6 and self._union.port:  # PMU_METRIC_PORT
             return self._union.port.decode(UTF_8)
         return ""
 
@@ -809,7 +823,7 @@ class ImplPmuDeviceData:
 
     @property
     def port(self):
-        if self.mode == 4 and self.c_pmu_device_data._union.port:  # PMU_METRIC_BDF
+        if self.mode == 6 and self.c_pmu_device_data._union.port:  # PMU_METRIC_PORT
             return self.c_pmu_device_data._union.port.decode(UTF_8)
         return ""
 
@@ -2056,7 +2070,7 @@ def PmuDeviceBdfList(bdf_type):
     const char** PmuDeviceBdfList(enum PmuBdfType bdfType, unsigned *numBdf);
     """
     c_PmuDeviceBdfList = kperf_so.PmuDeviceBdfList
-    c_PmuDeviceBdfList.argtypes = [ctypes.c_int]
+    c_PmuDeviceBdfList.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_uint)]
     c_PmuDeviceBdfList.restype = ctypes.POINTER(ctypes.c_char_p)
 
     c_bdf_type = ctypes.c_int(bdf_type)
@@ -2065,7 +2079,6 @@ def PmuDeviceBdfList(bdf_type):
     c_bdf_list = c_PmuDeviceBdfList(c_bdf_type, ctypes.byref(c_num_bdf))
 
     return [c_bdf_list[i].decode(UTF_8) for i in range(c_num_bdf.value)]
-
 
 def PmuDeviceOpen(device_attr):
     """

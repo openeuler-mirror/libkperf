@@ -29,6 +29,7 @@
 #include <mutex>
 #include <iomanip>
 #include <stdexcept>
+#include <utility>
 #include <sys/stat.h>
 #include <limits.h>
 #include "common.h"
@@ -36,6 +37,7 @@
 #include "cpu_map.h"
 #include "symbol.h"
 #include "pmu.h"
+#include "pmu_metric.h"
 #include "pcerrc.h"
 #include "pcerr.h"
 
@@ -55,8 +57,14 @@ static vector<const char*> supportedDevicePrefixes = {"hisi", "smmuv3", "hns3", 
 static vector<string> uncoreRawDeviceList;
 // valid watch pcie bdf list
 static vector<const char*> pcieBdfList;
+// valid PCIe Root Port BDF list
+static vector<const char*> pciePortList;
 // key: valid bdf value:hisi_pcieX_coreX eg: 01:02.0 <-> hisi_pcie0_core0
 static unordered_map<string, string> bdfToPcieMap;
+// key: endpoint BDF, value: its upstream Root Port BDF
+static unordered_map<string, string> bdfToRootPortMap;
+// key: Root Port BDF, value: hisi_pcieX_coreX
+static unordered_map<string, string> rootPortToPcieMap;
 // valid watch smmu bdf list
 static vector<const char*> smmuBdfList;
 // key: valid smmu bdf value:smmuv3_pmcg_<phys_addr_page> eg: 04:00:0 <-> smmuv3_pmcg_148020
@@ -107,6 +115,16 @@ namespace KUNPENG_PMU {
     static bool IsBdfMetric(PmuDeviceMetric metric)
     {
         return perpcieMetric.find(metric) != perpcieMetric.end();
+    }
+
+    static bool IsPcieMetric(PmuDeviceMetric metric)
+    {
+        return metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_BW && metric <= PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT;
+    }
+
+    static bool UsesPciePort(const PmuDeviceAttr& attr)
+    {
+        return IsPcieMetric(attr.metric) && attr.port != nullptr && attr.port[0] != '\0';
     }
 
     static std::string GetMetricString(PmuDeviceMetric metric)
@@ -505,6 +523,22 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
+    int ConvertPciePortBdfToBitmap(const string& portStr, uint16_t& portBitmap)
+    {
+        uint16_t bdfValue = 0;
+        int ret = ConvertBdfStringToValue(portStr, bdfValue);
+        if (ret != SUCCESS) {
+            return ret;
+        }
+
+        // The PCIe PMU port filter is a 16-bit bitmap. Each Root Port device
+        // occupies every other bit in its group of eight PCI device numbers.
+        unsigned int deviceId = (bdfValue >> 3U) & 0x1FU;
+        unsigned int bitIndex = (deviceId & 0x7U) * 2U;
+        portBitmap = static_cast<uint16_t>(1U << bitIndex);
+        return SUCCESS;
+    }
+
     // convert smmu name to smmu pmu key. example: smmu3.0x0000000100100000 -> 100120
     static int ConvertSmmuToDeviceAddress(const string& smmuDeviceName, string& smmuPmuKey)
     {
@@ -642,6 +676,11 @@ namespace KUNPENG_PMU {
         string parentName;
     };
 
+    struct PcieTopology {
+        vector<string> rootPorts;
+        vector<pair<string, string>> endpoints;
+    };
+
     static int EncodeBdf(unsigned int bus, unsigned int dev, unsigned int func)
     {
         return (bus << 8) | (dev << 3) | func;
@@ -715,17 +754,23 @@ namespace KUNPENG_PMU {
         }
     }
 
-    vector<string> collectAllBdfs(const std::tuple<std::string, int, int>& pciePmu, const unordered_map<string, DevNode>& nodes)
+    static bool IsPcieBridge(const DevNode& dev)
     {
-        vector<string> res;
-        // collecy all root point bdfs of the current core
-        unordered_set<unsigned int> coreRpBdfs;
+        unsigned int base = (dev.classCode >> 16) & 0xFF;
+        unsigned int sub = (dev.classCode >> 8) & 0xFF;
+        return base == 0x06 && sub == 0x04;
+    }
+
+    static PcieTopology CollectPcieTopology(const std::tuple<std::string, int, int>& pciePmu,
+                                            const unordered_map<string, DevNode>& nodes)
+    {
+        PcieTopology topology;
+        // collect all Root Ports managed by the current PCIe PMU.
+        unordered_map<unsigned int, string> coreRootPorts;
         for (const auto& kv : nodes) {
             const DevNode& dev = kv.second;
             // eg. /sys/devices/pci0000:20/0000:20:14.0/class 0x060400, is bridge
-            unsigned int base = (dev.classCode >> 16) & 0xFF;
-            unsigned int sub = (dev.classCode >> 8) & 0xFF;
-            if (!(base == 0x06 && sub == 0x04)) {  // not bridge
+            if (!IsPcieBridge(dev)) {
                 continue;
             }
             auto coreBus = std::stoul(std::get<0>(pciePmu), nullptr, 16);
@@ -734,34 +779,38 @@ namespace KUNPENG_PMU {
             }
             unsigned int bdf = EncodeBdf(dev.bus, dev.device, dev.function);
             if (std::get<1>(pciePmu) == -1) {
-                coreRpBdfs.insert(bdf);
+                coreRootPorts[bdf] = BdfToString(dev.bus, dev.device, dev.function);
             } else if (bdf >= std::get<1>(pciePmu) && bdf <= std::get<2>(pciePmu)) {
-                coreRpBdfs.insert(bdf);
+                coreRootPorts[bdf] = BdfToString(dev.bus, dev.device, dev.function);
             }
         }
 
-        // check whether the upstream RP of the EP in the coreRpBdfs
+        for (const auto& rootPort : coreRootPorts) {
+            topology.rootPorts.push_back(rootPort.second);
+        }
+        std::sort(topology.rootPorts.begin(), topology.rootPorts.end());
+
         for (const auto& kv : nodes) {
             const DevNode& dev = kv.second;
-            unsigned int base = (dev.classCode >> 16) & 0xFF;
-            unsigned int sub = (dev.classCode >> 8) & 0xFF;
-            if (base == 0x06 && sub == 0x04){  // is bridge
+            if (IsPcieBridge(dev)) {
                 continue;
             }
+            const string endpoint = BdfToString(dev.bus, dev.device, dev.function);
             const DevNode* cur = &dev;
             bool found = false;
+            string rootPortStr;
             while (!cur->parentName.empty()) {
                 auto it = nodes.find(cur->parentName);
                 if (it == nodes.end()) {
                     break;
                 }
                 const DevNode* parent = &it->second;
-                unsigned int pBase = (parent->classCode >> 16) & 0xFF;
-                unsigned int pSub = (parent->classCode >> 8) & 0xFF;
-                if (pBase == 0x06 && pSub == 0x04) {  // find upstream RP
+                if (IsPcieBridge(*parent)) {
                     unsigned int rp_bdf = EncodeBdf(parent->bus, parent->device, parent->function);
-                    if (coreRpBdfs.count(rp_bdf)) {
+                    auto rootPort = coreRootPorts.find(rp_bdf);
+                    if (rootPort != coreRootPorts.end()) {
                         found = true;
+                        rootPortStr = rootPort->second;
                         break;
                     }
                 }
@@ -770,12 +819,12 @@ namespace KUNPENG_PMU {
             if (!found) {
                 continue;
             }
-            auto epStr = BdfToString(dev.bus, dev.device, dev.function);
-            res.push_back(epStr);
+            topology.endpoints.emplace_back(endpoint, rootPortStr);
         }
-        std::sort(res.begin(), res.end());
-        res.erase(std::unique(res.begin(), res.end()), res.end());
-        return res;
+        std::sort(topology.endpoints.begin(), topology.endpoints.end());
+        topology.endpoints.erase(std::unique(topology.endpoints.begin(), topology.endpoints.end()),
+                                 topology.endpoints.end());
+        return topology;
     }
 
     static const char** PmuDevicePcieBdfList(unsigned *numBdf)
@@ -806,19 +855,65 @@ namespace KUNPENG_PMU {
             ScanAllBdfs(SYS_DEVICES + "/" + e, "", nodes);
         }
 
+        vector<pair<string, PcieTopology>> pcieTopologies;
         for (const auto& pciePmu : pciePmuToBdfRang) {
-            auto eps = collectAllBdfs(pciePmu.second, nodes);
-            for (auto bdf : eps) {
+            auto topology = CollectPcieTopology(pciePmu.second, nodes);
+            for (const auto& rootPort : topology.rootPorts) {
+                rootPortToPcieMap[rootPort] = pciePmu.first;
+            }
+            pcieTopologies.emplace_back(pciePmu.first, std::move(topology));
+        }
+
+        unordered_set<string> addedEndpoints;
+        for (const auto& pcieTopology : pcieTopologies) {
+            const string& pciePmuName = pcieTopology.first;
+            for (const auto& endpoint : pcieTopology.second.endpoints) {
+                const string& bdf = endpoint.first;
+                const string& rootPort = endpoint.second;
+                if (rootPortToPcieMap.count(bdf) != 0 || !addedEndpoints.insert(bdf).second) {
+                    continue;
+                }
                 char* bdfCopy = new char[bdf.size() + 1];
                 strcpy(bdfCopy, bdf.c_str());
                 pcieBdfList.emplace_back(bdfCopy);
-                bdfToPcieMap[bdf] = pciePmu.first;
+                bdfToPcieMap[bdf] = pciePmuName;
+                bdfToRootPortMap[bdf] = rootPort;
             }
         }
 
         *numBdf = pcieBdfList.size();
         New(SUCCESS);
         return pcieBdfList.data();
+    }
+
+    static const char** PmuDevicePciePortList(unsigned *numPort)
+    {
+        if (!pciePortList.empty()) {
+            *numPort = pciePortList.size();
+            New(SUCCESS);
+            return pciePortList.data();
+        }
+
+        unsigned numBdf = 0;
+        if (PmuDevicePcieBdfList(&numBdf) == nullptr && Perrorno() != SUCCESS) {
+            *numPort = 0;
+            return nullptr;
+        }
+
+        vector<string> ports;
+        for (const auto& item : rootPortToPcieMap) {
+            ports.push_back(item.first);
+        }
+        sort(ports.begin(), ports.end());
+        for (const auto& port : ports) {
+            char* portCopy = new char[port.size() + 1];
+            strcpy(portCopy, port.c_str());
+            pciePortList.emplace_back(portCopy);
+        }
+
+        *numPort = pciePortList.size();
+        New(SUCCESS);
+        return pciePortList.data();
     }
 
     // convert smmu name to smmu pmu device name: smmu3.0x<phys_addr> -> smmuv3_pmcg_<phys_addr_page>
@@ -906,6 +1001,70 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
+    static int ResolvePciePort(const string& port, string& pciePmuName, uint16_t& portBitmap)
+    {
+        // validate the caller-provided BDF before consulting the topology maps.
+        int ret = ConvertPciePortBdfToBitmap(port, portBitmap);
+        if (ret != SUCCESS) {
+            return ret;
+        }
+
+        string rootPort = port;
+        auto rootPortIt = rootPortToPcieMap.find(rootPort);
+        if (rootPortIt != rootPortToPcieMap.end()) {
+            pciePmuName = rootPortIt->second;
+        } else {
+            // keep accepting endpoint BDFs through port for backward compatibility.
+            auto endpointIt = bdfToRootPortMap.find(port);
+            auto pcieIt = bdfToPcieMap.find(port);
+            if (endpointIt == bdfToRootPortMap.end() || pcieIt == bdfToPcieMap.end()) {
+                New(LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT,
+                    "Port BDF '" + port + "' is not managed by any PCIe PMU device.");
+                return LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT;
+            }
+            rootPort = endpointIt->second;
+            pciePmuName = pcieIt->second;
+        }
+
+        ret = ConvertPciePortBdfToBitmap(rootPort, portBitmap);
+        if (ret != SUCCESS) {
+            return ret;
+        }
+        New(SUCCESS);
+        return SUCCESS;
+    }
+
+    static int ResolvePciePorts(const string& ports, string& pciePmuName, uint16_t& portBitmap)
+    {
+        vector<string> portList = SplitStringByDelimiter(ports, ',');
+        if (ports.empty() || ports.front() == ',' || ports.back() == ',' || ports.find(",,") != string::npos) {
+            New(LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT, "PCIe port list cannot be empty or contain empty entries.");
+            return LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT;
+        }
+
+        string selectedPmu;
+        portBitmap = 0;
+        for (const auto& port : portList) {
+            string currentPmu;
+            uint16_t singlePortBitmap = 0;
+            int ret = ResolvePciePort(port, currentPmu, singlePortBitmap);
+            if (ret != SUCCESS) {
+                return ret;
+            }
+            if (selectedPmu.empty()) {
+                selectedPmu = currentPmu;
+            } else if (selectedPmu != currentPmu) {
+                New(LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT,
+                    "All PCIe ports in one metric must belong to the same PCIe PMU device.");
+                return LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT;
+            }
+            portBitmap |= singlePortBitmap;
+        }
+        pciePmuName = selectedPmu;
+        New(SUCCESS);
+        return SUCCESS;
+    }
+
     static vector<string> GenerateEventStrings(std::unordered_map<string, vector<string>> classifiedDevices,
         PmuDeviceAttr& deviceAttr, const UncoreDeviceConfig& metricConfig)
     {
@@ -913,17 +1072,20 @@ namespace KUNPENG_PMU {
         if (IsBdfMetric(deviceAttr.metric)) {
             string bdf;
             string port;
+            bool usePort = UsesPciePort(deviceAttr);
+            string filterParameter = usePort ? "port=" : metricConfig.bdfParameter;
             for (const auto& evt : metricConfig.events) {
                 string device = "";
-                if (metricConfig.bdfParameter == "bdf=") {
+                uint16_t portBitmap = 0;
+                if (filterParameter == "bdf=") {
                     bdf = deviceAttr.bdf;
                     int err = FindPcieDeviceByBdf(bdf, device);
                     if (err != SUCCESS) {
                         return {};
                     }
-                } else if (metricConfig.bdfParameter == "port=") {
+                } else if (filterParameter == "port=") {
                     port = deviceAttr.port;
-                    int err = FindPcieDeviceByBdf(port, device);
+                    int err = ResolvePciePorts(port, device, portBitmap);
                     if (err != SUCCESS) {
                         return {};
                     }
@@ -938,16 +1100,20 @@ namespace KUNPENG_PMU {
                 if (!metricConfig.extraConfig.empty()) {
                     eventString += "," + metricConfig.extraConfig;
                 }
-                if (!metricConfig.bdfParameter.empty()) {
+                if (!filterParameter.empty()) {
                     stringstream paramValue;
-                    uint16_t userBdf = 0;
-                    if (deviceAttr.metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT && deviceAttr.metric <= PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT) {
-                        ConvertBdfStringToValue(port, userBdf);
+                    uint16_t userValue = 0;
+                    int err = SUCCESS;
+                    if (usePort) {
+                        userValue = portBitmap;
                     } else {
-                        ConvertBdfStringToValue(bdf, userBdf);
+                        err = ConvertBdfStringToValue(bdf, userValue);
                     }
-                    paramValue << "0x" << hex << userBdf;
-                    eventString += "," + metricConfig.bdfParameter + paramValue.str();
+                    if (err != SUCCESS) {
+                        return {};
+                    }
+                    paramValue << "0x" << hex << userValue;
+                    eventString += "," + filterParameter + paramValue.str();
                 }
                 eventString += "/";
                 eventList.push_back(eventString);
@@ -1027,6 +1193,17 @@ namespace KUNPENG_PMU {
         return LIBPERF_ERR_NOT_SUPPORT_PCIE_BDF;
     }
 
+    static int CheckPciePorts(const char* ports)
+    {
+        unsigned numBdf = 0;
+        if (PmuDeviceBdfList(PmuBdfType::PMU_BDF_TYPE_PCIE, &numBdf) == nullptr && Perrorno() != SUCCESS) {
+            return Perrorno();
+        }
+        uint16_t portBitmap = 0;
+        string pciePmuName;
+        return ResolvePciePorts(ports, pciePmuName, portBitmap);
+    }
+
     static int CheckSmmuBdf(const char* bdf)
     {
         uint16_t bdfValue = 0;
@@ -1051,28 +1228,22 @@ namespace KUNPENG_PMU {
 
     static int CheckBdf(struct PmuDeviceAttr& deviceAttr)
     {
-        if (deviceAttr.metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_BW && deviceAttr.metric <= PmuDeviceMetric::PMU_PCIE_TX_MWR_BW) {
-            if (deviceAttr.bdf == nullptr) {
-                New(LIBPERF_ERR_INVALID_PMU_DEVICES_BDF, "When collecting pcie bandwidth, bdf value can not be nullptr!");
-                return LIBPERF_ERR_INVALID_PMU_DEVICES_BDF;
-            }
-            int err = CheckPcieBdf(deviceAttr.bdf);
-            if (err != SUCCESS) {
-                return err;
-            }
-        }
-        if (deviceAttr.metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT && deviceAttr.metric <= PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT) {
-            if (deviceAttr.port == nullptr) {
-                New(LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT, "When collect pcie latency, the port can not be nullptr!");
+        if (IsPcieMetric(deviceAttr.metric)) {
+            int err = SUCCESS;
+            if (UsesPciePort(deviceAttr)) {
+                err = CheckPciePorts(deviceAttr.port);
+            } else if (deviceAttr.metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT) {
+                New(LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT, "When collecting pcie latency, port list can not be empty!");
                 return LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT;
-            }
-            int err = CheckPcieBdf(deviceAttr.port);
-            if (err != SUCCESS) {
-                if (err == LIBPERF_ERR_NOT_SUPPORT_PCIE_BDF) {
-                    New(LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT, "Port BDF '" + string(deviceAttr.port) +
-                        "' is not managed by a PCIe PMU device. Use PmuDeviceBdfList to query the ports supported on this system.");
-                    return LIBPERF_ERR_NOT_SUPPORT_PCIE_PORT;
+            } else {
+                if (deviceAttr.bdf == nullptr || deviceAttr.bdf[0] == '\0') {
+                    New(LIBPERF_ERR_INVALID_PMU_DEVICES_BDF,
+                        "When collecting pcie bandwidth, either bdf or port list must be specified!");
+                    return LIBPERF_ERR_INVALID_PMU_DEVICES_BDF;
                 }
+                err = CheckPcieBdf(deviceAttr.bdf);
+            }
+            if (err != SUCCESS) {
                 return err;
             }
         }
@@ -1121,8 +1292,7 @@ namespace KUNPENG_PMU {
         for (int i = 0; i < len; ++i) {
             std::string key = "";
             if (IsBdfMetric(attr[i].metric)) {
-                if (attr[i].metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT &&
-                    attr[i].metric <= PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT) {
+                if (UsesPciePort(attr[i])) {
                     key = std::to_string(attr[i].metric) + "_" + attr[i].port;
                 } else {
                     key = std::to_string(attr[i].metric) + "_" + attr[i].bdf;
@@ -1143,6 +1313,7 @@ namespace KUNPENG_PMU {
         enum PmuDeviceMetric metric;
         const char *evtName;
         uint64_t count;
+        bool usesPort = false;
         union {
             unsigned coreId;
             unsigned numaId;
@@ -1526,7 +1697,7 @@ namespace KUNPENG_PMU {
                 continue;
             }
             auto evtConfig = ExtractEvtStr("config", evtName);
-            if (metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT && metric <= PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT) {
+            if (data.usesPort) {
                 devDataByBdf[data.port][evtConfig] = data;
             } else {
                 devDataByBdf[data.bdf][evtConfig] = data;
@@ -1554,8 +1725,8 @@ namespace KUNPENG_PMU {
             PmuDeviceData outData;
             outData.metric = metric;
             outData.count = value;
-            outData.mode = GetMetricMode(metric);
-            if (metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT && metric <= PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT) {
+            outData.mode = findLenData->second.usesPort ? PMU_METRIC_PORT : PMU_METRIC_BDF;
+            if (findLenData->second.usesPort) {
                 outData.port = findLenData->second.port;
             } else {
                 outData.bdf = findLenData->second.bdf;
@@ -1636,29 +1807,27 @@ namespace KUNPENG_PMU {
 
         // For pcie events, check if event is related with specifi bdf.
         if (IsBdfMetric(devAttr.metric)) {
-            auto bdfStr = ExtractEvtStr("bdf", evtName);
-            if (bdfStr.empty()) {
-                bdfStr = ExtractEvtStr("port", evtName);
-            }
-            if (bdfStr.empty()) {
-                bdfStr = ExtractEvtStr("filter_stream_id", evtName);
-            }
-            if (bdfStr.empty()) {
+            bool usesPort = UsesPciePort(devAttr);
+            string filterName = usesPort ? "port" :
+                (devAttr.metric == PmuDeviceMetric::PMU_SMMU_TRAN ? "filter_stream_id" : "bdf");
+            auto filterValue = ExtractEvtStr(filterName, evtName);
+            if (filterValue.empty()) {
                 return false;
             }
-            uint16_t expectBdf;
+            uint16_t expectValue = 0;
             int ret;
-            if (devAttr.metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT && devAttr.metric <= PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT) {
-                ret = ConvertBdfStringToValue(devAttr.port, expectBdf);
+            if (usesPort) {
+                string pciePmuName;
+                ret = ResolvePciePorts(devAttr.port, pciePmuName, expectValue);
             } else {
-                ret = ConvertBdfStringToValue(devAttr.bdf, expectBdf);
+                ret = ConvertBdfStringToValue(devAttr.bdf, expectValue);
             }
             if (ret != SUCCESS) {
                 return false;
             }
-            stringstream bdfValue;
-            bdfValue << "0x" << hex << expectBdf;
-            if (bdfStr != bdfValue.str()) {
+            stringstream expectedValue;
+            expectedValue << "0x" << hex << expectValue;
+            if (filterValue != expectedValue.str()) {
                 return false;
             }
         }
@@ -1725,7 +1894,8 @@ namespace KUNPENG_PMU {
                 devData.socketId = pmuData[i].cpuTopo->socketId;
             }
             if (IsBdfMetric(devAttr.metric)) {
-                if (devAttr.metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT && devAttr.metric <= PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT) {
+                devData.usesPort = UsesPciePort(devAttr);
+                if (devData.usesPort) {
                     devData.port = devAttr.port;
                 } else {
                     devData.bdf = devAttr.bdf;
@@ -1735,8 +1905,7 @@ namespace KUNPENG_PMU {
         }
         if (devDataList.empty()) {
             string target;
-            if (devAttr.metric >= PmuDeviceMetric::PMU_PCIE_RX_MRD_LAT && devAttr.metric <= PmuDeviceMetric::PMU_PCIE_TX_MRD_LAT
-                && devAttr.port != nullptr) {
+            if (UsesPciePort(devAttr)) {
                 target = " for port '" + string(devAttr.port) + "'";
             } else if (IsBdfMetric(devAttr.metric) && devAttr.bdf != nullptr) {
                 target = " for BDF '" + string(devAttr.bdf) + "'";
@@ -1773,6 +1942,16 @@ const char** PmuDeviceBdfList(enum PmuBdfType bdfType, unsigned *numBdf)
             return PmuDevicePcieBdfList(numBdf);
         }
 
+        if (bdfType == PmuBdfType::PMU_BDF_TYPE_PORT) {
+            err = CheckDeviceMetricEnum(PmuDeviceMetric::PMU_PCIE_RX_MRD_BW);
+            if (err != SUCCESS) {
+                *numBdf = 0;
+                New(err, "For this platform not support pcie metric counting!");
+                return nullptr;
+            }
+            return PmuDevicePciePortList(numBdf);
+        }
+
         if (bdfType == PmuBdfType::PMU_BDF_TYPE_SMMU) {
             err = CheckDeviceMetricEnum(PmuDeviceMetric::PMU_SMMU_TRAN);
             if (err != SUCCESS) {
@@ -1807,7 +1986,12 @@ void PmuDeviceBdfListFree()
 {
     lock_guard<mutex> lg(pmuBdfListMtx);
     PmuBdfListFreeSingle(pcieBdfList);
+    PmuBdfListFreeSingle(pciePortList);
     PmuBdfListFreeSingle(smmuBdfList);
+    bdfToPcieMap.clear();
+    bdfToRootPortMap.clear();
+    rootPortToPcieMap.clear();
+    bdfToSmmuPmuMap.clear();
     New(SUCCESS);
 }
 

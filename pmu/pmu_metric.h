@@ -16,6 +16,15 @@
  #ifndef PMU_METRIC_H
  #define PMU_METRIC_H
 
+ #include <cstdint>
+ #include <string>
+
+ namespace KUNPENG_PMU {
+ // Convert a Root Port BDF to the 16-bit bitmap expected by the PCIe PMU
+ // "port" filter.
+ int ConvertPciePortBdfToBitmap(const std::string& portStr, uint16_t& portBitmap);
+ }
+
  // free Bdf List for PmuClose interface
  void PmuDeviceBdfListFree();
 

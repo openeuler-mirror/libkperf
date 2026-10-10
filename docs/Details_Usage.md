@@ -1536,6 +1536,14 @@ L3 latency(3): 198.4 ns
 ### 采集PCIE带宽
 libkperf提供了采集PCIE带宽的能力，采集tx和rx方向的读写带宽，用于监控外部设备（nvme、gpu等）的带宽。
 并不是所有的PCIE设备都可以被采集带宽，鲲鹏的pmu设备只覆盖了一部分PCIE设备，可以通过PmuDeviceBdfList来获取当前环境可采集的PCIE设备或Root port。
+
+#### Endpoint BDF、Root Port 与端口位图
+
+`PmuDeviceBdfList` 接口返回类型：
+- `PMU_BDF_TYPE_PCIE`：返回 PCIE Endpoint BDF，与 `PmuDeviceAttr.bdf` 配合使用。
+- `PMU_BDF_TYPE_PORT`：返回 PCIE Root Port BDF，与 `PmuDeviceAttr.port` 配合使用。
+- `PMU_BDF_TYPE_SMMU`：返回 SMMU BDF。
+
 调用方式片段（完整程序见下方）：
 ```text
     enum PmuBdfType bdfType = PMU_BDF_TYPE_PCIE;
@@ -1545,6 +1553,23 @@ libkperf提供了采集PCIE带宽的能力，采集tx和rx方向的读写带宽�
         std::cout << bdfList[i] << std::endl;
     }
 ```
+
+PCIE带宽支持按Endpoint或Root Port过滤。仅设置`bdf`时使用Endpoint过滤；
+设置`port`时使用Root Port过滤，并且`port`的优先级高于`bdf`。
+Endpoint结果使用`PMU_METRIC_BDF`，Root Port结果使用`PMU_METRIC_PORT`。
+
+`port`支持使用逗号分隔的列表，例如`"20:00.0,20:04.0"`。同一列表中的所有 Root Port
+必须属于同一个PCIE PMU，因为一个硬件端口过滤器只属于一个PMU。
+多个Root Port的使用示例（所选端口必须属于同一个 PMU）：
+```c++
+unsigned portLen = 0;
+const char **ports = PmuDeviceBdfList(PMU_BDF_TYPE_PORT, &portLen);
+std::string portList = std::string(ports[0]) + "," + ports[1];
+PmuDeviceAttr attr{};
+attr.metric = PMU_PCIE_RX_MRD_BW;
+attr.port = const_cast<char *>(portList.c_str());
+```
+Python 使用 `ports=[...]`，Go 使用 `Ports: []string{...}`。
 
 参考代码：
 ```c++
@@ -1690,7 +1715,7 @@ pcie bw(16:04.0): 124122412 Bytes/us
 
 ### 采集PCIE延时
 libkperf提供了采集PCIE延时的能力，采集rx方向的读写延时和tx方向上的读延时，需要指定port参数。
-并不是所有的PCIE设备都可以被采集带宽，鲲鹏的pmu设备只覆盖了一部分PCIE设备，可以通过PmuDeviceBdfList来获取当前环境可采集的PCIE设备或Root port。
+并不是所有的PCIE设备都可以被采集带宽，鲲鹏的pmu设备只覆盖了一部分PCIE设备，可通过`PmuDeviceBdfList(PMU_BDF_TYPE_PORT, &portLen)`查询支持采集的Root Port。
 
 参考代码：
 ```c++
@@ -1705,7 +1730,7 @@ libkperf提供了采集PCIE延时的能力，采集rx方向的读写延时和tx�
 int main()
 {
     unsigned portLen = 0;
-    const char **portList = PmuDeviceBdfList(PMU_BDF_TYPE_PCIE, &portLen);
+    const char **portList = PmuDeviceBdfList(PMU_BDF_TYPE_PORT, &portLen);
     if (portList == nullptr || portLen == 0) {
         std::fprintf(stderr, "No collectable PCIe port (%d): %s\n", Perrorno(), Perror());
         return 1;
@@ -1755,7 +1780,7 @@ int main()
 import kperf
 import time
 
-port_list = list(kperf.device_bdf_list(kperf.PmuBdfType.PMU_BDF_TYPE_PCIE))
+port_list = list(kperf.device_bdf_list(kperf.PmuBdfType.PMU_BDF_TYPE_PORT))
 if not port_list:
     print(f"No collectable PCIe port ({kperf.errorno()}): {kperf.error()}")
     exit(1)
@@ -1797,7 +1822,7 @@ import (
 )
 
 func main() {
-    portList, err := kperf.PmuDeviceBdfList(kperf.PMU_BDF_TYPE_PCIE)
+    portList, err := kperf.PmuDeviceBdfList(kperf.PMU_BDF_TYPE_PORT)
     if err != nil || len(portList) == 0 {
         fmt.Printf("No collectable PCIe port: %v\n", err)
         return
