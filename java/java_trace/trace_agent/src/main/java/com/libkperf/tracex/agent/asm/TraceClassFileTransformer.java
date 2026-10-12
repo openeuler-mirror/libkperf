@@ -44,9 +44,6 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
     // retransforms awaiting confirmation from Instrumentation.retransformClasses
     private static final Set<ClassKey> PENDING = ConcurrentHashMap.newKeySet();
 
-    // prevent transformer re-entry
-    private static final ThreadLocal<Boolean> REENTRANT = new ThreadLocal<Boolean>();
-
     private final TraceConfig config;
     private volatile boolean virtualThreadCarrierHooksEmitted;
 
@@ -75,17 +72,10 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
     @Override
     public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined,
                             ProtectionDomain protectionDomain, byte[] classfileBuffer) throws IllegalClassFormatException {
-        boolean reentrantSet = false;
         try {
             if (className == null || classfileBuffer == null) {
                 return null;
             }
-            if (Boolean.TRUE.equals(REENTRANT.get())) {
-                return null;
-            }
-            REENTRANT.set(Boolean.TRUE);
-            reentrantSet = true;
-
             if (!shouldTransformInternalName(className)) {
                 return null;
             }
@@ -155,13 +145,6 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
             } catch (Throwable ignored) {
             }
             return null;
-        } finally {
-            if (reentrantSet) {
-                try {
-                    REENTRANT.remove();
-                } catch (Throwable ignored) {
-                }
-            }
         }
     }
 
