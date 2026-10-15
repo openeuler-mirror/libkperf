@@ -14,8 +14,6 @@
  ******************************************************************************/
 package com.libkperf.tracex.runtime;
 
-import com.libkperf.tracex.agent.TraceLog;
-
 public final class NativeThreadInfo {
 
     private static volatile boolean loaded = false;

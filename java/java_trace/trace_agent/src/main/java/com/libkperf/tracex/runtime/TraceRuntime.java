@@ -14,8 +14,6 @@
  ******************************************************************************/
 package com.libkperf.tracex.runtime;
 
-import com.libkperf.tracex.agent.TraceLog;
-
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -165,7 +163,7 @@ public final class TraceRuntime {
         recordCarrierVirtualThreadTransition(virtualThread, SharedEventSink.EVENT_VTHREAD_MOUNT);
     }
 
-    public static void virtualThreadAfterUnmount(Thread virtualThread) {
+    public static void virtualThreadBeforeUnmount(Thread virtualThread) {
         recordCarrierVirtualThreadTransition(virtualThread, SharedEventSink.EVENT_VTHREAD_UNMOUNT);
     }
 
@@ -185,7 +183,7 @@ public final class TraceRuntime {
                 return;
             }
             int tid = NativeThreadInfo.currentTidSafe();
-            // Before mount and after unmount Thread.currentThread() is the carrier.
+            // Before mount and before unmount Thread.currentThread() is the carrier.
             // The virtual-thread identity is carried separately in contextId/gPtr.
             byte[] comm = SharedEventSink.utf8(currentThreadName());
             int commId = s.registerCarrierThread(tid, comm);

@@ -14,10 +14,9 @@
  ******************************************************************************/
 package com.libkperf.tracex.agent.asm;
 
-import com.libkperf.tracex.agent.MethodId;
 import com.libkperf.tracex.agent.TraceConfig;
-import com.libkperf.tracex.agent.TraceLog;
 import com.libkperf.tracex.agent.Util;
+import com.libkperf.tracex.runtime.TraceLog;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 
@@ -35,14 +34,17 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
     public static final String TRACE_RUNTIME_OWNER = "com/libkperf/tracex/runtime/TraceRuntime";
     private static final String TRACE_RUNTIME_PACKAGE = "com/libkperf/tracex/runtime/";
     private static final String VIRTUAL_THREAD_CLASS = "java/lang/VirtualThread";
+    // Dynamic attach invokes agentmain through these reflection classes. If
+    // they are retransformed, a later stop/restore attach can execute tracing
+    // callbacks while the runtime is being disabled and fail before agentmain
+    // is entered. Keep the control path permanently unmodified.
+    private static final String REFLECT_METHOD_CLASS = "java/lang/reflect/Method";
+    private static final String DIRECT_METHOD_HANDLE_ACCESSOR_CLASS =
+            "jdk/internal/reflect/DirectMethodHandleAccessor";
     private static final int RESTORE_BATCH_SIZE = 64;
-    private static final int LOGGED_METHOD_LIMIT = 16;
 
-    // prevent the same class from being instrumented repeatedly
+    // Classes whose current definitions contain tracing instrumentation.
     private static final Set<ClassKey> INSTRUMENTED = ConcurrentHashMap.newKeySet();
-
-    // retransforms awaiting confirmation from Instrumentation.retransformClasses
-    private static final Set<ClassKey> PENDING = ConcurrentHashMap.newKeySet();
 
     private final TraceConfig config;
     private volatile boolean virtualThreadCarrierHooksEmitted;
@@ -56,6 +58,10 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
             return true;
         }
         if (className.startsWith(TRACE_RUNTIME_PACKAGE)) {
+            return true;
+        }
+        if (REFLECT_METHOD_CLASS.equals(className)
+                || DIRECT_METHOD_HANDLE_ACCESSOR_CLASS.equals(className)) {
             return true;
         }
         if (className.endsWith("package-info") || className.indexOf("$$Lambda$") >= 0) {
@@ -80,16 +86,12 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
                 return null;
             }
             ClassKey key = new ClassKey(loader, className);
-            if (INSTRUMENTED.contains(key)) {
-                return null;
-            }
 
             ClassReader cr = new ClassReader(classfileBuffer);
             int instrumentedMethodCount;
-            String instrumentedMethods;
             if (VIRTUAL_THREAD_CLASS.equals(className)) {
                 // Pass 1: verify that runContinuation contains both carrier-side call sites.
-                if (!VirtualThreadClassVisitor.supportsCarrierCallSites(cr)) {
+                if (!TraceMethodVisitor.supportsVirtualThreadCarrierCallSites(cr)) {
                     TraceLog.warn("[trace-java-agent] virtual-thread carrier hooks unavailable"
                             + ", runContinuation mount/unmount call sites not found", null);
                     return null;
@@ -99,21 +101,16 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
             ClassWriter cw = new SafeClassWriter(cr, ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS, loader);
             if (VIRTUAL_THREAD_CLASS.equals(className)) {
                 // Pass 2: instrument the verified call sites, never mount/unmount method bodies.
-                VirtualThreadClassVisitor cv = new VirtualThreadClassVisitor(cw);
-                cr.accept(cv, ClassReader.EXPAND_FRAMES);
-                if (cv.instrumentedMethodCount() != 1
-                        || cv.mountCallSiteCount() == 0
-                        || cv.unmountCallSiteCount() == 0) {
+                TraceMethodVisitor.VirtualThreadInstrumentation vt =
+                        TraceMethodVisitor.instrumentVirtualThread(cr, cw);
+                if (vt.instrumentedMethodCount() != 1 || vt.mountCallSiteCount() == 0 || vt.unmountCallSiteCount() == 0) {
                     TraceLog.warn("[trace-java-agent] virtual-thread carrier hooks unavailable"
-                            + ", runContinuationMethods=" + cv.instrumentedMethodCount()
-                            + ", mountCallSites=" + cv.mountCallSiteCount()
-                            + ", unmountCallSites=" + cv.unmountCallSiteCount(), null);
+                            + ", runContinuationMethods=" + vt.instrumentedMethodCount()
+                            + ", mountCallSites=" + vt.mountCallSiteCount()
+                            + ", unmountCallSites=" + vt.unmountCallSiteCount(), null);
                     return null;
                 }
-                instrumentedMethodCount = cv.instrumentedMethodCount();
-                instrumentedMethods = "CARRIER_CALL_SITES"
-                        + "(mount=" + cv.mountCallSiteCount()
-                        + ", unmount=" + cv.unmountCallSiteCount() + ")";
+                instrumentedMethodCount = vt.instrumentedMethodCount();
             } else {
                 TraceClassVisitor cv = new TraceClassVisitor(cw, config, className);
                 cr.accept(cv, ClassReader.EXPAND_FRAMES);
@@ -121,29 +118,17 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
                     return null;
                 }
                 instrumentedMethodCount = cv.instrumentedMethodCount();
-                instrumentedMethods = formatInstrumentedMethods(cv.instrumentedMethods());
             }
             byte[] transformed = cw.toByteArray();
-            if (!INSTRUMENTED.add(key)) {
-                return null;
-            }
-            if (classBeingRedefined != null) {
-                PENDING.add(key);
-            }
+            INSTRUMENTED.add(key);
             if (VIRTUAL_THREAD_CLASS.equals(className)) {
                 virtualThreadCarrierHooksEmitted = true;
             }
             TraceLog.info("[trace-java-agent] instrumented class=" + className.replace('/', '.')
-                    + ", methodCount=" + instrumentedMethodCount + ", methods=" + instrumentedMethods);
-            if (VIRTUAL_THREAD_CLASS.equals(className)) {
-                TraceLog.info("[trace-java-agent] virtual-thread carrier call-site hooks transformed");
-            }
+                    + ", methodCount=" + instrumentedMethodCount);
             return transformed;
         } catch (Throwable t) {
-            try {
-                TraceLog.warn("[trace-java-agent] transform failed for " + className + ": " + t, t);
-            } catch (Throwable ignored) {
-            }
+            TraceLog.warn("[trace-java-agent] transform failed for " + className + ": " + t, t);
             return null;
         }
     }
@@ -152,23 +137,7 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
         return virtualThreadCarrierHooksEmitted;
     }
 
-    private static String formatInstrumentedMethods(List<MethodId> methods) {
-        StringBuilder out = new StringBuilder("[");
-        int displayed = Math.min(methods.size(), LOGGED_METHOD_LIMIT);
-        for (int i = 0; i < displayed; i++) {
-            if (i > 0) {
-                out.append(", ");
-            }
-            MethodId method = methods.get(i);
-            out.append(method.name).append(method.desc);
-        }
-        if (methods.size() > displayed) {
-            out.append(", ... (").append(methods.size()).append(" total)");
-        }
-        return out.append(']').toString();
-    }
-
-    public static void confirmInstrumentation(Iterable<Class<?>> classes) {
+    public void discardFailedRetransformations(Iterable<Class<?>> classes) {
         if (classes == null) {
             return;
         }
@@ -177,23 +146,10 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
                 continue;
             }
             ClassKey key = new ClassKey(clazz.getClassLoader(), Util.internalName(clazz));
-            PENDING.remove(key);
-        }
-    }
-
-    public static void rollbackInstrumentation(Iterable<Class<?>> classes) {
-        if (classes == null) {
-            return;
-        }
-        for (Class<?> clazz : classes) {
-            if (clazz == null) {
-                continue;
-            }
-            ClassKey key = new ClassKey(clazz.getClassLoader(), Util.internalName(clazz));
-            if (!PENDING.remove(key)) {
-                continue;
-            }
             INSTRUMENTED.remove(key);
+            if (VIRTUAL_THREAD_CLASS.equals(key.name)) {
+                virtualThreadCarrierHooksEmitted = false;
+            }
         }
     }
 
@@ -207,7 +163,6 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
         }
 
         if (INSTRUMENTED.isEmpty()) {
-            PENDING.clear();
             return;
         }
 
@@ -223,12 +178,15 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
                     if (clazz == null) {
                         continue;
                     }
-                    if (!inst.isModifiableClass(clazz)) {
-                        continue;
-                    }
                     String internalName = Util.internalName(clazz);
                     key = new ClassKey(clazz.getClassLoader(), internalName);
                     if (!instrumentedSnapshot.contains(key)) {
+                        continue;
+                    }
+                    if (!inst.isModifiableClass(clazz)) {
+                        result.failed++;
+                        TraceLog.warn("[trace-java-agent] restore skip unmodifiable class: "
+                                + Util.safeClassName(clazz), null);
                         continue;
                     }
                     restoreCandidates.add(clazz);
@@ -247,7 +205,6 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
         } finally {
             if (result.failed == 0) {
                 INSTRUMENTED.clear();
-                PENDING.clear();
             }
         }
     }
@@ -280,7 +237,6 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
         for (Class<?> clazz : classes) {
             ClassKey key = new ClassKey(clazz.getClassLoader(), Util.internalName(clazz));
             INSTRUMENTED.remove(key);
-            PENDING.remove(key);
         }
         result.ok += classes.size();
     }
