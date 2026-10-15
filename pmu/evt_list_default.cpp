@@ -214,6 +214,13 @@ int KUNPENG_PMU::EvtListDefault::Read(EventData &eventData)
 
     std::unique_lock<std::mutex> lg(mutex);
 
+    if (GetIsInitErr()) {
+        if (this->pmuEvt->collectType == COUNTING) {
+            this->ForgePmuData(eventData);
+        }
+        return SUCCESS;
+    }
+
     for (auto rowList : this->xyCounterArray) {
         for (auto evt : rowList) {
             int err = evt->BeginRead();
@@ -272,6 +279,21 @@ int KUNPENG_PMU::EvtListDefault::Read(EventData &eventData)
     }
 
     return SUCCESS;
+}
+
+/**
+ * @brief forge pmudata for counting, which not supported.
+ * countPercent=-2 not supported
+ * countPercent=-1，not counted
+ */
+void KUNPENG_PMU::EvtListDefault::ForgePmuData(KUNPENG_PMU::EventData &eventData) const 
+{
+    eventData.data.emplace_back(PmuData{0});
+    auto& current = eventData.data.back();
+    current.count = 0;
+    current.countPercent = -2;
+    current.groupId = -1;
+    current.evt = pmuEvt->name.c_str();
 }
 
 int KUNPENG_PMU::EvtListDefault::Pause()

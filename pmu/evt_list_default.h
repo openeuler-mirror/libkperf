@@ -54,6 +54,7 @@ private:
     void FillFields(size_t start, size_t end, CpuTopology* cpuTopo, ProcTopology* procTopo, std::vector<PmuData>& pmuData);
     void AdaptErrInfo(int err, PerfEvtPtr perfEvt);
     std::shared_ptr<PerfEvt> MapPmuAttr(int cpu, int pid, PmuEvt* pmuEvent);
+    void ForgePmuData(EventData &eventData) const;
     // Fixme: decouple group event with normal event, use different classes to implement Read and Init.
     std::unique_ptr<EventGroupInfo> groupInfo = nullptr;
 };
