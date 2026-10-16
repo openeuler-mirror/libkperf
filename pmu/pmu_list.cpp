@@ -44,6 +44,7 @@ namespace KUNPENG_PMU {
     std::mutex PmuList::dataListMtx;
     std::mutex PmuList::dataParentMtx;
     std::mutex PmuList::analysisStatusMtx;
+    std::mutex PmuList::dummyListMtx;
 
     int PmuList::CheckRlimit(const unsigned pd, const unsigned fdNum)
     {
@@ -164,6 +165,8 @@ namespace KUNPENG_PMU {
     {
         auto err = evtList->Init(groupEnable, evtLeader);
         if (err != SUCCESS) {
+            evtList->SetInitErrMsg(Perror());
+            evtList->SetIsInitErr(true);
             (void)evtList->Close();
             return err;
         }
@@ -186,7 +189,7 @@ namespace KUNPENG_PMU {
                 int err = EvtInit(false, nullptr, pd, evtList);
                 if (err != SUCCESS) {
                     ctx.lastErr = err;
-                    ctx.removeEvt.insert(evtList.get());
+                    ctx.removeEvt.insert(evtList);
                     continue;
                 } else {
                     ctx.oneEvtInitOk = true;
@@ -199,7 +202,7 @@ namespace KUNPENG_PMU {
                 int err = EvtInit(true, nullptr, pd, evtList);
                 if (err != SUCCESS) {
                     ctx.lastErr = err;
-                    ctx.removeEvt.insert(evtList.get());
+                    ctx.removeEvt.insert(evtList);
                     ctx.groupLeaderOk[gid] = false;
                     ctx.eventGroupInfoMap[gid].uncoreState = static_cast<UncoreState>(UncoreState::InitState);
                     continue;
@@ -261,7 +264,7 @@ namespace KUNPENG_PMU {
                 }
                 if (err != SUCCESS) {
                     ctx.lastErr = err;
-                    ctx.removeEvt.insert(child.get());
+                    ctx.removeEvt.insert(child);
                     continue;
                 } else {
                     ctx.oneEvtInitOk = true;
@@ -272,22 +275,33 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    static inline std::string GetRemoveEvtNames(const std::unordered_set<const EvtList*>& removeEvt)
+    /**
+     * Constructing an alarm for invalid events.
+     */
+    static inline std::string ConstructWarnForInvliadEvent(const std::unordered_set<std::shared_ptr<EvtList>>& removeEvt)
     {
-        std::vector<std::string> names;
-        names.reserve(removeEvt.size());
-        for (auto p : removeEvt) {
+        std::string tips;
+        std::string out;
+        for (auto& p : removeEvt) {
             if (!p) {
                 continue;
             }
-            names.emplace_back(p->GetPmuEvtName());
-        }
-        std::string out;
-        for (size_t i = 0; i < names.size(); ++i) {
-            if (i) {
-                out += ",";
+            std::string evtName = std::string{p->GetPmuEvtName()};
+            out += evtName + ",";
+            if (!p->GetInitErrMsg().empty()) {
+                std::string tip = "Failure to open event '" + evtName + "' on PMU because of " + p->GetInitErrMsg() + ";";
+                tips += tip;
             }
-            out += names[i];
+        }
+
+        if (!out.empty()) {
+            out.pop_back();
+        }
+
+        if (!tips.empty()) {
+            tips.pop_back();
+            out += ";";
+            out += tips;
         }
         return out;
     }
@@ -305,13 +319,7 @@ namespace KUNPENG_PMU {
         if (err != SUCCESS) {
             return err;
         }
-        const std::string removedNames = GetRemoveEvtNames(ctx.removeEvt);
-        // remove invalid event
-        if (!ctx.removeEvt.empty()) {
-            evtLists.erase(std::remove_if(evtLists.begin(), evtLists.end(), [&](const std::shared_ptr<EvtList> &p) {
-                 return (!p) || (ctx.removeEvt.find(p.get()) != ctx.removeEvt.end());}), evtLists.end());
-        }
-
+        const std::string warnMsg = ConstructWarnForInvliadEvent(ctx.removeEvt);
         // add to dataEvtGroupList: leader ok and at least one child group init successfully
         std::unordered_map<int, struct EventGroupInfo> processedGroupInfoMap;
         for (auto &kv : ctx.eventGroupInfoMap) {
@@ -328,7 +336,7 @@ namespace KUNPENG_PMU {
                     if (!sp) {
                         continue;
                     }
-                    if (ctx.removeEvt.count(sp.get())) {
+                    if (ctx.removeEvt.count(sp)) {
                         continue;
                     }
                     newInfo.evtGroupChildList.push_back(evt);
@@ -349,7 +357,7 @@ namespace KUNPENG_PMU {
             return ctx.lastErr;
         }
         if (ctx.lastErr != SUCCESS) {
-            SetWarn(ctx.lastErr, "Initialization failed: " + removedNames);
+            SetWarn(ctx.lastErr, "Initialization failed: " + warnMsg);
         }
         return SUCCESS;
     }
@@ -1317,7 +1325,7 @@ namespace KUNPENG_PMU {
 
     void PmuList::EraseDummyEvent(const unsigned pd)
     {
-        lock_guard<mutex> lg(pmuListMtx);
+        lock_guard<mutex> lg(dummyListMtx);
         if (dummyList.find(pd) != dummyList.end()) {
             DummyEvent* pEvent = dummyList.at(pd);
             dummyList.erase(pd);

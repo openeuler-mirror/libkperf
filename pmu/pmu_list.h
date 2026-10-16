@@ -48,7 +48,7 @@ struct EvtInitCtx {
     bool oneEvtInitOk = false;
     int lastErr = SUCCESS;
     std::unordered_map<int, struct EventGroupInfo> eventGroupInfoMap;
-    std::unordered_set<const EvtList*> removeEvt;
+    std::unordered_set<std::shared_ptr<EvtList>> removeEvt;
     std::unordered_map<int, bool> groupLeaderOk;  // if the leader in group init successfully
     std::unordered_map<int, bool> groupHasGroupedChild;  // if the group has at least one child init successfully
 };
@@ -164,6 +164,8 @@ private:
     static std::mutex dataEvtGroupListMtx;
     static std::mutex dataParentMtx;
     static std::mutex analysisStatusMtx;
+    static std::mutex dummyListMtx;
+    
     std::unordered_map<unsigned, std::vector<std::shared_ptr<EvtList>>> pmuList;
     // Key: pd
     // Value: PmuData List.
