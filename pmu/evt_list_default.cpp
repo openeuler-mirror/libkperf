@@ -294,6 +294,11 @@ void KUNPENG_PMU::EvtListDefault::ForgePmuData(KUNPENG_PMU::EventData &eventData
     current.countPercent = -2;
     current.groupId = -1;
     current.evt = pmuEvt->name.c_str();
+    current.comm = "system";
+    current.cgroupName = "";
+    current.tid = -1;
+    current.pid = -1;
+    current.cpu = -1;
 }
 
 int KUNPENG_PMU::EvtListDefault::Pause()
