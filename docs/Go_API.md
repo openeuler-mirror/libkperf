@@ -96,6 +96,7 @@ func PmuOpen(collectType C.enum_PmuTaskType, attr PmuAttr) (int, error)
     per thread的模式，每个线程会单独开一个perf_event_open，开启时cpu设置为-1，去监测对应事件，但是该模式不会监测新开子进程的该事件，并且只支持sampling采样
 
 * 返回值是int,error, 如果error不等于nil，则返回的int值为对应采集任务ID
+  > **注意：** 在SAMPLING和COUNTING模式下输入多个事件时，如果其中部分事件异常（如不支持、打开失败等），libkperf会跳过异常事件并继续初始化剩余事件，此时仍会返回fd > 0且error为nil。异常事件可通过GetWarnMsg()接口（C库接口）查看告警信息；COUNTING模式下还可通过PmuData.CountPercent字段判断各事件是否被成功采集（详见下文CountPercent取值说明）。
 
 ```go
 import "libkperf/kperf"
@@ -149,7 +150,11 @@ func PmuRead(fd int) (PmuDataVo, error)
   * Comm string	运行指令名称
   * Period uint64 采样间隔
   * Count uint64	计数
-  * CountPercent float64  计数比值，使能时间/运行时间
+  * CountPercent float64  计数比值，使能时间/运行时间。仅在COUNTING模式下有效，取值含义如下：
+    * (0,1): partially counted，事件部分时间被采集。当采集的事件数超过可用硬件计数器数目时，内核会对事件进行多路复用（multiplexing），使事件轮流占用计数器。countPercent为事件实际运行时间与使能时间的比值，越接近1表示采集越充分，越接近0表示采集越不充分
+    * 1: counted，事件被正常采集，实际运行时间等于使能时间
+    * -1: not counted，事件未被采集，如事件分组中事件数超过硬件计数器数目时，该组所有事件都不会被采集
+    * -2: not supported，事件在当前环境不被支持
   * CpuTopo CpuTopology
     * CoreId 系统核ID
     * NumaId numa ID
