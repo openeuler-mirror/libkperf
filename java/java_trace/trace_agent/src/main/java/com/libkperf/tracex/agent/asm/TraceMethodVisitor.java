@@ -157,10 +157,10 @@ public final class TraceMethodVisitor extends AdviceAdapter {
                 super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
                 return;
             }
-            super.visitInsn(DUP);
-            emitVirtualThreadTransition("virtualThreadBeforeUnmount");
-            virtualThreadInstrumentation.unmountCallSites++;
             super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+            super.visitVarInsn(ALOAD, 0);
+            emitVirtualThreadTransition("virtualThreadAfterUnmount");
+            virtualThreadInstrumentation.unmountCallSites++;
             return;
         }
         super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);

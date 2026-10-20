@@ -47,7 +47,6 @@ public final class TraceAgent {
 
     private static final int RETRANSFORM_BATCH_SIZE = 64;
     private static final String RUNTIME_ENTRY_PREFIX = "com/libkperf/tracex/runtime/";
-    private static final String AGENT_BUILD_MARKER = "attach-safe-v2";
 
     public static void premain(String agentArgs, Instrumentation inst) throws Exception {
         agentmain(agentArgs, inst);
@@ -62,7 +61,6 @@ public final class TraceAgent {
 
         installBootstrapRuntime(inst);
         TraceConfig config = TraceConfig.parse(agentArgs);
-        TraceLog.info("[trace-java-agent] build=" + AGENT_BUILD_MARKER + ", action=start");
         try {
             start(config, inst);
         } catch (Throwable t) {
@@ -92,7 +90,6 @@ public final class TraceAgent {
 
     private static void runControlAction(String action, Instrumentation inst) {
         try {
-            TraceLog.info("[trace-java-agent] build=" + AGENT_BUILD_MARKER + ", action=" + action);
             TraceRuntime.stop();
             if ("stop".equalsIgnoreCase(action)) {
                 removeActiveTransformer();
@@ -338,17 +335,19 @@ public final class TraceAgent {
                 + ", depth=" + config.contextDepth + ", max=" + config.contextMaxMethods);
         }
 
-        inst.addTransformer(transformer, true);
-        activeTransformer = transformer;
-        activeInstrumentation = inst;
-
         List<Class<?>> candidates = collectCandidates(inst, transformer);
         TraceLog.info("[trace-java-agent] retransform candidates=" + candidates.size()
             + ", requiredIncludeRules=" + config.requiredIncludeRules.size()
             + ", configIncludeRules=" + config.includeRules.size()
             + ", excludeRules=" + config.excludeRules.size());
+
+        inst.addTransformer(transformer, true);
+        activeTransformer = transformer;
+        activeInstrumentation = inst;
         retransformSafely(inst, candidates, transformer);
         TraceRuntime.configureVirtualThreadCarrierHooks(transformer.hasVirtualThreadCarrierHooks());
+        TraceLog.info("[trace-java-agent] instrumentation complete: carrierHooks="
+                + transformer.hasVirtualThreadCarrierHooks());
         TraceRuntime.setEnabled(true);
         TraceLog.info("[trace-java] filter: " + config.filterRuleStatus());
     }
