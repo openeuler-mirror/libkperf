@@ -108,6 +108,7 @@
 
 * 返回值 > 0   初始化成功
   返回值 = -1 初始化失败，可通过Perror()查看错误信息
+  > **注意：** 在SAMPLING和COUNTING模式下输入多个事件时，如果其中部分事件异常（如不支持、打开失败等），libkperf会跳过异常事件并继续初始化剩余事件，此时仍会返回fd > 0。异常事件可通过GetWarnMsg()接口查看告警信息；COUNTING模式下还可通过PmuData.countPercent字段判断各事件是否被成功采集（详见下文countPercent取值说明）。
 
 ### const char** PmuEventList(enum PmuEventType eventType, unsigned *numEvt);
 查找所有的事件列表
@@ -162,7 +163,11 @@
   * const char *comm: 执行指令名称
   * uint64_t period: 采样间隔
   * uint64_t count: 计数
-  * double countPercent: 计数比值，使能时间/运行时间
+  * double countPercent: 计数比值，使能时间/运行时间。仅在COUNTING模式下有效，取值含义如下：
+    * (0,1): partially counted，事件部分时间被采集。当采集的事件数超过可用硬件计数器数目时，内核会对事件进行多路复用（multiplexing），使事件轮流占用计数器。countPercent为事件实际运行时间与使能时间的比值，越接近1表示采集越充分，越接近0表示采集越不充分
+    * 1: counted，事件被正常采集，实际运行时间等于使能时间
+    * -1: not counted，事件未被采集，如事件分组中事件数超过硬件计数器数目时，该组所有事件都不会被采集
+    * -2: not supported，事件在当前环境不被支持
   * struct PmuDataExt ext: SPE特有数据
     * union
       * struct

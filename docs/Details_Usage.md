@@ -2905,3 +2905,129 @@ func init() {
     }
 }
 ```
+
+### countPercent字段说明
+PmuData中的countPercent字段表示事件实际采集时间与期望采集时间的比值，仅在COUNTING模式下有效。countPercent的取值含义如下：
+
+| 值  | 含义          | 说明 |
+|-----|---------------|------|
+| (0,1) | partially counted | 事件部分时间被采集。当采集的事件数超过可用硬件计数器数目时，内核会对事件进行多路复用（multiplexing），使事件轮流占用计数器。countPercent为事件实际运行时间与使能时间的比值，越接近1表示采集越充分，越接近0表示采集越不充分。 |
+| 1   | counted       | 事件被正常采集，实际运行时间等于使能时间 |
+| -1  | not counted   | 事件未被采集，如事件分组中事件数超过硬件计数器数目时，该组所有事件都不会被采集 |
+| -2  | not supported | 事件在当前环境不被支持 |
+
+以下示例在COUNTING模式下同时采集`cycles`和`hisi_sccl1_l3c1/retry_cpu/`两个事件，通过countPercent可以判断每个事件是否被成功采集：
+
+hisi_sccl1_l3c1/retry_cpu/, uncore事件不被supported，可以通过以下命令去构造，offline掉对应的cpu核
+```bash
+echo 0 > /sys/devices/system/cpu/cpu{i}/online
+```
+
+```c++
+// c++代码示例
+#include <cstdio>
+#include <unistd.h>
+
+#include "pcerrc.h"
+#include "pmu.h"
+
+int main()
+{
+    char cycles[] = "cycles";
+    char retryCpu[] = "hisi_sccl1_l3c1/retry_cpu/";
+    char *evtList[] = {cycles, retryCpu};
+    PmuAttr attr = {0};
+    attr.evtList = evtList;
+    attr.numEvt = 2;
+
+    int pd = PmuOpen(COUNTING, &attr);
+    if (pd == -1) {
+        std::fprintf(stderr, "PmuOpen failed: %s\n", Perror());
+        return 1;
+    }
+    PmuEnable(pd);
+    sleep(1);
+    PmuDisable(pd);
+
+    PmuData *data = nullptr;
+    int len = PmuRead(pd, &data);
+    if (len < 0) {
+        std::fprintf(stderr, "PmuRead failed: %s\n", Perror());
+        PmuClose(pd);
+        return 1;
+    }
+    for (int i = 0; i < len; ++i) {
+        std::printf("evt=%s, count=%llu, countPercent=%f\n", data[i].evt,
+                    static_cast<unsigned long long>(data[i].count),
+                    data[i].countPercent);
+    }
+
+    PmuDataFree(data);
+    PmuClose(pd);
+    return 0;
+}
+```
+
+```python
+# python代码示例
+import kperf
+import time
+
+evtList = ["cycles", "hisi_sccl1_l3c1/retry_cpu/"]
+pmu_attr = kperf.PmuAttr(evtList=evtList)
+pd = kperf.open(kperf.PmuTaskType.COUNTING, pmu_attr)
+if pd == -1:
+    print(f"PmuOpen failed ({kperf.errorno()}): {kperf.error()}")
+    exit(1)
+try:
+    kperf.enable(pd)
+    time.sleep(1)
+    kperf.disable(pd)
+    pmu_data = kperf.read(pd)
+    if len(pmu_data) == 0:
+        print(f"PmuRead returned no data ({kperf.errorno()}): {kperf.error()}")
+        exit(1)
+    for item in pmu_data.iter:
+        print(f"evt={item.evt} count={item.count} countPercent={item.countPercent}")
+finally:
+    kperf.close(pd)
+```
+
+```go
+// go代码示例
+package main
+
+import "libkperf/kperf"
+import "fmt"
+import "time"
+
+func main() {
+    evtList := []string{"cycles", "hisi_sccl1_l3c1/retry_cpu/"}
+    attr := kperf.PmuAttr{EvtList: evtList}
+    pd, err := kperf.PmuOpen(kperf.COUNT, attr)
+    if err != nil {
+        fmt.Printf("kperf pmuopen counting failed, expect err is nil, but is %v\n", err)
+        return
+    }
+    kperf.PmuEnable(pd)
+    time.Sleep(time.Second)
+    kperf.PmuDisable(pd)
+    dataVo, err := kperf.PmuRead(pd)
+    if err != nil {
+        fmt.Printf("kperf pmuread failed, expect err is nil, but is %v\n", err)
+        return
+    }
+    for _, o := range dataVo.GoData {
+        fmt.Printf("evt=%v count=%v countPercent=%v\n", o.Evt, o.Count, o.CountPercent)
+    }
+    kperf.PmuDataFree(dataVo)
+    kperf.PmuClose(pd)
+}
+```
+
+执行上述代码，输出的结果类似如下：
+```
+evt=cycles, count=1234567, countPercent=1.000000
+evt=hisi_sccl1_l3c1/retry_cpu/, count=0, countPercent=-2.000000
+```
+上面示例中，`cycles`事件被正常采集，countPercent为1；`hisi_sccl1_l3c1/retry_cpu/`事件在当前环境不被支持，countPercent为-2。
