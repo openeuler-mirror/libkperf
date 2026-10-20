@@ -16,9 +16,12 @@ package com.libkperf.tracex.agent.asm;
 
 import com.libkperf.tracex.runtime.TraceRuntime;
 
-import org.objectweb.asm.Label;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.Handle;
+import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.commons.AdviceAdapter;
 
@@ -50,6 +53,13 @@ public final class TraceMethodVisitor extends AdviceAdapter {
     private static final Type CONTEXT_TYPE = Type.getObjectType("com/libkperf/tracex/runtime/TraceRuntime$Context");
     private static final Type THROWABLE_TYPE = Type.getType(Throwable.class);
     private static final Type ERROR_TYPE = Type.getType(Error.class);
+    private static final String VIRTUAL_THREAD_OWNER = "java/lang/VirtualThread";
+    private static final String METHOD_DESCRIPTOR = "()V";
+    private static final String THREAD_DESCRIPTOR = "(Ljava/lang/Thread;)V";
+    private static final int VT_PHASE_NONE = 0;
+    private final boolean enableTrace;
+    private final int vtType;
+    private final VirtualThreadInstrumentation virtualThreadInstrumentation;
     private final String moduleName;
     private final String functionName;
     private final int methodId;
@@ -60,22 +70,38 @@ public final class TraceMethodVisitor extends AdviceAdapter {
     private boolean injectingProbe;
 
     public TraceMethodVisitor(int api, MethodVisitor mv, int access, String name, String descriptor, String owner) {
+        this(api, mv, access, name, descriptor, owner, true, VT_PHASE_NONE);
+    }
+
+    TraceMethodVisitor(int api, MethodVisitor mv, int access, String name, String descriptor,
+                       String owner, boolean enableTrace, int vtType) {
+        this(api, mv, access, name, descriptor, owner, enableTrace, vtType, null);
+    }
+
+    private TraceMethodVisitor(int api, MethodVisitor mv, int access, String name, String descriptor,
+                               String owner, boolean enableTrace, int vtType,
+                               VirtualThreadInstrumentation virtualThreadInstrumentation) {
         super(api, mv, access, name, descriptor);
+        this.enableTrace = enableTrace;
+        this.vtType = vtType;
+        this.virtualThreadInstrumentation = virtualThreadInstrumentation;
         this.moduleName = owner.replace('/', '.');
         this.functionName = name + descriptor;
-        this.methodId = TraceRuntime.registerMethod(moduleName, functionName);
+        this.methodId = enableTrace ? TraceRuntime.registerMethod(moduleName, functionName) : -1;
     }
 
     @Override
     protected void onMethodEnter() {
-        injectingProbe = true;
-        visitLdcInsn(methodId);
-        visitMethodInsn(INVOKESTATIC, TraceClassFileTransformer.TRACE_RUNTIME_OWNER, "enter",
-            "(I)Lcom/libkperf/tracex/runtime/TraceRuntime$Context;", false);
-        contextLocal = newLocal(CONTEXT_TYPE);
-        storeLocal(contextLocal);
-        injectingProbe = false;
-        beginTryRange();
+        if (enableTrace) {
+            injectingProbe = true;
+            visitLdcInsn(methodId);
+            visitMethodInsn(INVOKESTATIC, TraceClassFileTransformer.TRACE_RUNTIME_OWNER, "enter",
+                "(I)Lcom/libkperf/tracex/runtime/TraceRuntime$Context;", false);
+            contextLocal = newLocal(CONTEXT_TYPE);
+            storeLocal(contextLocal);
+            injectingProbe = false;
+            beginTryRange();
+        }
     }
 
     @Override
@@ -85,7 +111,7 @@ public final class TraceMethodVisitor extends AdviceAdapter {
     // exception handling
     @Override
     public void visitInsn(int opcode) {
-        if (isReturnOpcode(opcode)) {
+        if (enableTrace && isReturnOpcode(opcode)) {
             closeTryRange();
             emitExit();
             super.visitInsn(opcode);
@@ -123,6 +149,20 @@ public final class TraceMethodVisitor extends AdviceAdapter {
     @Override
     public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
         markProtectedCode();
+        if (virtualThreadInstrumentation != null && isTransitionCall(opcode, owner, name, descriptor)) {
+            if ("mount".equals(name)) {
+                super.visitInsn(DUP);
+                emitVirtualThreadTransition("virtualThreadBeforeMount");
+                virtualThreadInstrumentation.mountCallSites++;
+                super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+                return;
+            }
+            super.visitInsn(DUP);
+            emitVirtualThreadTransition("virtualThreadBeforeUnmount");
+            virtualThreadInstrumentation.unmountCallSites++;
+            super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+            return;
+        }
         super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
     }
 
@@ -171,26 +211,28 @@ public final class TraceMethodVisitor extends AdviceAdapter {
 
     @Override
     public void visitMaxs(int maxStack, int maxLocals) {
-        closeTryRange();
-        if (contextLocal >= 0 && !tryRanges.isEmpty()) {
-            Label handler = new Label();
-            for (TryRange range : tryRanges) {
-                visitTryCatchBlock(range.start, range.end, handler, null);
+        if (enableTrace) {
+            closeTryRange();
+            if (!tryRanges.isEmpty()) {
+                Label handler = new Label();
+                for (TryRange range : tryRanges) {
+                    visitTryCatchBlock(range.start, range.end, handler, null);
+                }
+                visitLabel(handler);
+                int throwableLocal = newLocal(THROWABLE_TYPE);
+                storeLocal(throwableLocal);
+                Label skipExit = new Label();
+                loadLocal(throwableLocal);
+                instanceOf(ERROR_TYPE);
+                ifZCmp(NE, skipExit);
+                emitExit();
+                visitLabel(skipExit);
+                loadLocal(throwableLocal);
+                // Preserve exception semantics, including JVM monitor release for ACC_SYNCHRONIZED methods.
+                injectingProbe = true;
+                super.visitInsn(ATHROW);
+                injectingProbe = false;
             }
-            visitLabel(handler);
-            int throwableLocal = newLocal(THROWABLE_TYPE);
-            storeLocal(throwableLocal);
-            Label skipExit = new Label();
-            loadLocal(throwableLocal);
-            instanceOf(ERROR_TYPE);
-            ifZCmp(NE, skipExit);
-            emitExit();
-            visitLabel(skipExit);
-            loadLocal(throwableLocal);
-            // Preserve exception semantics, including JVM monitor release for ACC_SYNCHRONIZED methods.
-            injectingProbe = true;
-            super.visitInsn(ATHROW);
-            injectingProbe = false;
         }
         super.visitMaxs(maxStack, maxLocals);
     }
@@ -220,6 +262,11 @@ public final class TraceMethodVisitor extends AdviceAdapter {
         }
     }
 
+    private void emitVirtualThreadTransition(String runtimeMethod) {
+        super.visitMethodInsn(INVOKESTATIC, TraceClassFileTransformer.TRACE_RUNTIME_OWNER,
+                runtimeMethod, THREAD_DESCRIPTOR, false);
+    }
+
     private void emitExit() {
         if (contextLocal < 0) {
             return;
@@ -231,9 +278,94 @@ public final class TraceMethodVisitor extends AdviceAdapter {
         injectingProbe = false;
     }
 
+    static VirtualThreadInstrumentation instrumentVirtualThread(ClassReader reader, ClassVisitor visitor) {
+        final VirtualThreadInstrumentation result = new VirtualThreadInstrumentation();
+        reader.accept(new ClassVisitor(Opcodes.ASM9, visitor) {
+            @Override
+            public MethodVisitor visitMethod(int access, String name, String descriptor,
+                                             String signature, String[] exceptions) {
+                MethodVisitor next = super.visitMethod(access, name, descriptor, signature, exceptions);
+                if (next == null || !isRunContinuation(access, name, descriptor)) {
+                    return next;
+                }
+                result.instrumentedMethods++;
+                return new TraceMethodVisitor(api, next, access, name, descriptor,
+                        VIRTUAL_THREAD_OWNER, false, VT_PHASE_NONE, result);
+            }
+        }, ClassReader.EXPAND_FRAMES);
+        return result;
+    }
+
+    static boolean supportsVirtualThreadCarrierCallSites(ClassReader reader) {
+        CallSiteDetector detector = new CallSiteDetector();
+        reader.accept(detector, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+        return detector.mountCallSites > 0 && detector.unmountCallSites > 0;
+    }
+
+    private static boolean isRunContinuation(int access, String name, String descriptor) {
+        return (access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE | Opcodes.ACC_STATIC)) == 0
+                && "runContinuation".equals(name) && METHOD_DESCRIPTOR.equals(descriptor);
+    }
+
+    private static boolean isTransitionCall(int opcode, String owner, String name, String descriptor) {
+        return opcode != Opcodes.INVOKESTATIC
+                && VIRTUAL_THREAD_OWNER.equals(owner)
+                && METHOD_DESCRIPTOR.equals(descriptor)
+                && ("mount".equals(name) || "unmount".equals(name));
+    }
+
     private static boolean isReturnOpcode(int opcode) {
         return opcode == RETURN || opcode == IRETURN || opcode == LRETURN || opcode == FRETURN
             || opcode == DRETURN || opcode == ARETURN;
+    }
+
+    private static final class CallSiteDetector extends ClassVisitor {
+        private int mountCallSites;
+        private int unmountCallSites;
+
+        CallSiteDetector() {
+            super(Opcodes.ASM9);
+        }
+
+        @Override
+        public MethodVisitor visitMethod(int access, String name, String descriptor,
+                                         String signature, String[] exceptions) {
+            if (!isRunContinuation(access, name, descriptor)) {
+                return null;
+            }
+            return new MethodVisitor(api) {
+                @Override
+                public void visitMethodInsn(int opcode, String owner, String methodName,
+                                            String methodDescriptor, boolean isInterface) {
+                    if (!isTransitionCall(opcode, owner, methodName, methodDescriptor)) {
+                        return;
+                    }
+                    if ("mount".equals(methodName)) {
+                        mountCallSites++;
+                    } else {
+                        unmountCallSites++;
+                    }
+                }
+            };
+        }
+    }
+
+    static final class VirtualThreadInstrumentation {
+        private int instrumentedMethods;
+        private int mountCallSites;
+        private int unmountCallSites;
+
+        int instrumentedMethodCount() {
+            return instrumentedMethods;
+        }
+
+        int mountCallSiteCount() {
+            return mountCallSites;
+        }
+
+        int unmountCallSiteCount() {
+            return unmountCallSites;
+        }
     }
 
     private static final class TryRange {

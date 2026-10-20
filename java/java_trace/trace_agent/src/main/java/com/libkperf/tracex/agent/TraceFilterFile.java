@@ -14,6 +14,8 @@
  ******************************************************************************/
 package com.libkperf.tracex.agent;
 
+import com.libkperf.tracex.runtime.TraceLog;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -38,16 +40,19 @@ public final class TraceFilterFile {
     public int contextDepth = -1;
     public int contextMaxMethods = -1;
     public boolean valid = false;
+    public String error = "";
 
     public static TraceFilterFile load(String path) {
         TraceFilterFile out = new TraceFilterFile();
         if (path == null || path.length() == 0) {
-            TraceLog.info("[trace-java-agent] filter config path is empty");
+            out.error = "filter config path is empty";
+            TraceLog.info("[trace-java-agent] " + out.error);
             return out;
         }
         File f = new File(path);
         if (!f.isFile()) {
-            TraceLog.info("[trace-java-agent] filter config not found: " + path);
+            out.error = "filter config not found: " + path;
+            TraceLog.info("[trace-java-agent] " + out.error);
             return out;
         }
 
@@ -126,7 +131,8 @@ public final class TraceFilterFile {
             }
         } catch (Exception e) {
             out.valid = false;
-            TraceLog.warn("[trace-java-agent] read filter config failed: " + path + ", " + e, e);
+            out.error = "read filter config failed: " + path + ", " + e;
+            TraceLog.warn("[trace-java-agent] " + out.error, e);
             return out;
         }
 
@@ -152,8 +158,9 @@ public final class TraceFilterFile {
 
     private static TraceFilterFile invalid(TraceFilterFile out, String path, int lineNo, String reason, String value) {
         out.valid = false;
-        TraceLog.info("[trace-java-agent] invalid trace filter config: " + path + ":" + lineNo
-                + ", " + reason + ": " + value);
+        out.error = "invalid trace filter config: " + path + ":" + lineNo
+                + ", " + reason + ": " + value;
+        TraceLog.info("[trace-java-agent] " + out.error);
         return out;
     }
 
@@ -173,7 +180,20 @@ public final class TraceFilterFile {
         if (value.indexOf('(') >= 0 || value.indexOf(')') >= 0) {
             return false;
         }
+        if (isDefaultPackageAllMethodsRule(value)) {
+            return true;
+        }
         return !looksLikeImplicitMethodRule(value, '.');
+    }
+
+    private static boolean isDefaultPackageAllMethodsRule(String value) {
+        int dot = value.indexOf('.');
+        if (dot <= 0 || dot != value.lastIndexOf('.')) {
+            return false;
+        }
+        String owner = value.substring(0, dot);
+        String method = value.substring(dot + 1);
+        return startsUpper(owner) && ("*".equals(method) || "**".equals(method));
     }
 
     private static boolean looksLikeImplicitMethodRule(String value, char sep) {

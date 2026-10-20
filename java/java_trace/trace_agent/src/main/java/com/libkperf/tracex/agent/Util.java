@@ -14,6 +14,8 @@
  ******************************************************************************/
 package com.libkperf.tracex.agent;
 
+import com.libkperf.tracex.runtime.TraceLog;
+
 import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
 import java.io.InputStream;

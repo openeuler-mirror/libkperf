@@ -14,6 +14,8 @@
  ******************************************************************************/
 package com.libkperf.tracex.agent;
 
+import com.libkperf.tracex.runtime.TraceLog;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -32,8 +34,8 @@ public final class TraceConfig {
     public final String action;
     public final String includeFile;
     public final String configFile;
-    public final String logFile;
     public final boolean valid;
+    public final String error;
     public final int contextDepth;
     public final int contextMaxMethods;
 
@@ -51,11 +53,11 @@ public final class TraceConfig {
         this.action = Util.get(args, "action", "start");
         this.includeFile = Util.get(args, "includeFile", "");
         this.configFile = Util.get(args, "configFile", "");
-        this.logFile = Util.get(args, "logFile", "");
-        TraceLog.init(this.logFile);
+        TraceLog.init(Util.get(args, "logFile", ""));
 
         TraceFilterFile filterFile = isControlAction() ? new TraceFilterFile() : TraceFilterFile.load(configFile);
         this.valid = isControlAction() || filterFile.valid;
+        this.error = filterFile.error;
         this.slotCount = clampSlotCount(filterFile.slotCount > 0 ? filterFile.slotCount : DEFAULT_SLOT_COUNT);
         this.contextMaxMethods = filterFile.contextMaxMethods >= 0 ? filterFile.contextMaxMethods : 128;
 

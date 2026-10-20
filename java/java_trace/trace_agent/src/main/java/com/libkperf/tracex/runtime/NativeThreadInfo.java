@@ -14,8 +14,6 @@
  ******************************************************************************/
 package com.libkperf.tracex.runtime;
 
-import com.libkperf.tracex.agent.TraceLog;
-
 public final class NativeThreadInfo {
 
     private static volatile boolean loaded = false;
@@ -56,6 +54,10 @@ public final class NativeThreadInfo {
         } catch (RuntimeException | LinkageError t) {
             return -1;
         }
+    }
+
+    public static boolean isNativeTidAvailable() {
+        return loaded;
     }
 
     public static int currentCpuSafe() {

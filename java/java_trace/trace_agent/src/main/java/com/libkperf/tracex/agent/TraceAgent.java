@@ -16,6 +16,7 @@ package com.libkperf.tracex.agent;
 
 import com.libkperf.tracex.agent.asm.TraceClassFileTransformer;
 import com.libkperf.tracex.runtime.NativeThreadInfo;
+import com.libkperf.tracex.runtime.TraceLog;
 import com.libkperf.tracex.runtime.TraceRuntime;
 
 import java.io.File;
@@ -43,41 +44,89 @@ public final class TraceAgent {
     private static volatile Instrumentation activeInstrumentation;
     private static volatile JarFile bootstrapRuntimeJar;
     private static volatile boolean bootstrapRuntimeReady;
-    private static volatile int bootstrapModuleReadEdges;
 
     private static final int RETRANSFORM_BATCH_SIZE = 64;
     private static final String RUNTIME_ENTRY_PREFIX = "com/libkperf/tracex/runtime/";
-    private static final String TRACE_LOG_ENTRY = "com/libkperf/tracex/agent/TraceLog.class";
+    private static final String AGENT_BUILD_MARKER = "attach-safe-v2";
 
     public static void premain(String agentArgs, Instrumentation inst) throws Exception {
         agentmain(agentArgs, inst);
     }
 
     public static void agentmain(String agentArgs, Instrumentation inst) throws Exception {
+        String requestedAction = requestedAction(agentArgs);
+        if ("stop".equalsIgnoreCase(requestedAction) || "restore".equalsIgnoreCase(requestedAction)) {
+            runControlAction(requestedAction, inst);
+            return;
+        }
+
         installBootstrapRuntime(inst);
         TraceConfig config = TraceConfig.parse(agentArgs);
-        if (config.isStopAction()) {
-            TraceRuntime.stop();
-            removeActiveTransformer();
-            return;
-        }
-        if (config.isRestoreAction()) {
-            TraceRuntime.stop();
-            removeActiveTransformer();
-            try {
-                TraceClassFileTransformer.restoreAll(inst);
-            } catch (Throwable t) {
-                TraceLog.warn("[trace-java-agent] restoreAll warning: " + t, t);
-            }
-            return;
-        }
+        TraceLog.info("[trace-java-agent] build=" + AGENT_BUILD_MARKER + ", action=start");
         try {
             start(config, inst);
         } catch (Throwable t) {
             TraceRuntime.stop();
-            removeActiveTransformer();
-            TraceLog.warn("[trace-java-agent] start failed, skip instrumentation: " + t, t);
+            try {
+                removeActiveTransformer();
+            } catch (Throwable removeError) {
+                t.addSuppressed(removeError);
+            }
+            TraceLog.warn("[trace-java-agent] start failed: " + t, t);
+            rethrow(t);
         }
+    }
+
+    private static String requestedAction(String agentArgs) {
+        if (agentArgs == null || agentArgs.length() == 0) {
+            return "start";
+        }
+        int separator = agentArgs.indexOf(';');
+        String first = separator < 0 ? agentArgs : agentArgs.substring(0, separator);
+        int equals = first.indexOf('=');
+        if (equals <= 0 || !"action".equalsIgnoreCase(first.substring(0, equals))) {
+            return "start";
+        }
+        return first.substring(equals + 1);
+    }
+
+    private static void runControlAction(String action, Instrumentation inst) {
+        try {
+            TraceLog.info("[trace-java-agent] build=" + AGENT_BUILD_MARKER + ", action=" + action);
+            TraceRuntime.stop();
+            if ("stop".equalsIgnoreCase(action)) {
+                removeActiveTransformer();
+                return;
+            }
+            if (removeActiveTransformer()) {
+                try {
+                    TraceClassFileTransformer.restoreAll(inst);
+                } catch (Throwable t) {
+                    TraceLog.warn("[trace-java-agent] restoreAll warning: " + t, t);
+                }
+            } else {
+                TraceLog.warn("[trace-java-agent] restore deferred: active transformer removal failed", null);
+            }
+        } catch (ThreadDeath t) {
+            throw t;
+        } catch (VirtualMachineError e) {
+            throw e;
+        } catch (Throwable t) {
+            try {
+                TraceLog.warn("[trace-java-agent] control action failed: " + t, t);
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    private static void rethrow(Throwable t) throws Exception {
+        if (t instanceof Exception) {
+            throw (Exception) t;
+        }
+        if (t instanceof Error) {
+            throw (Error) t;
+        }
+        throw new RuntimeException(t);
     }
 
     private static synchronized void installBootstrapRuntime(Instrumentation inst) throws Exception {
@@ -85,7 +134,7 @@ public final class TraceAgent {
             return;
         }
         if (bootstrapRuntimeJar != null) {
-            bootstrapModuleReadEdges = addBootstrapRuntimeReadEdges(inst);
+            addBootstrapRuntimeReadEdges(inst);
             bootstrapRuntimeReady = true;
             return;
         }
@@ -108,9 +157,7 @@ public final class TraceAgent {
             if (!runtimeJarFile.delete()) {
                 runtimeJarFile.deleteOnExit();
             }
-            verifyBootstrapClass("com.libkperf.tracex.agent.TraceLog");
-            verifyBootstrapClass("com.libkperf.tracex.runtime.TraceRuntime");
-            bootstrapModuleReadEdges = addBootstrapRuntimeReadEdges(inst);
+            addBootstrapRuntimeReadEdges(inst);
             bootstrapRuntimeReady = true;
         } catch (Throwable t) {
             if (!appended && runtimeJar != null) {
@@ -129,9 +176,7 @@ public final class TraceAgent {
     private static void ensureRuntimeNotLoadedByApplicationLoader(Instrumentation inst) {
         for (Class<?> clazz : inst.getAllLoadedClasses()) {
             String name = clazz.getName();
-            if ((name.startsWith("com.libkperf.tracex.runtime.")
-                    || name.equals("com.libkperf.tracex.agent.TraceLog"))
-                    && clazz.getClassLoader() != null) {
+            if (name.startsWith("com.libkperf.tracex.runtime.") && clazz.getClassLoader() != null) {
                 throw new IllegalStateException("trace runtime already loaded outside bootstrap: " + name);
             }
         }
@@ -140,7 +185,6 @@ public final class TraceAgent {
     private static File createBootstrapRuntimeJar(File agentJarFile) throws Exception {
         File runtimeJarFile = File.createTempFile("libkperf-trace-runtime-", ".jar");
         boolean hasRuntime = false;
-        boolean hasTraceLog = false;
         try (JarFile agentJar = new JarFile(agentJarFile, false);
              JarOutputStream out = new JarOutputStream(new FileOutputStream(runtimeJarFile))) {
             Enumeration<JarEntry> entries = agentJar.entries();
@@ -149,7 +193,7 @@ public final class TraceAgent {
                 JarEntry entry = entries.nextElement();
                 String name = entry.getName();
                 if (entry.isDirectory()
-                        || (!name.startsWith(RUNTIME_ENTRY_PREFIX) && !name.equals(TRACE_LOG_ENTRY))
+                        || !name.startsWith(RUNTIME_ENTRY_PREFIX)
                         || !name.endsWith(".class")) {
                     continue;
                 }
@@ -162,7 +206,6 @@ public final class TraceAgent {
                 }
                 out.closeEntry();
                 hasRuntime |= name.equals("com/libkperf/tracex/runtime/TraceRuntime.class");
-                hasTraceLog |= name.equals(TRACE_LOG_ENTRY);
             }
         } catch (Throwable t) {
             if (!runtimeJarFile.delete()) {
@@ -170,7 +213,7 @@ public final class TraceAgent {
             }
             throw t;
         }
-        if (!hasRuntime || !hasTraceLog) {
+        if (!hasRuntime) {
             if (!runtimeJarFile.delete()) {
                 runtimeJarFile.deleteOnExit();
             }
@@ -179,19 +222,12 @@ public final class TraceAgent {
         return runtimeJarFile;
     }
 
-    private static void verifyBootstrapClass(String className) throws ClassNotFoundException {
-        Class<?> clazz = Class.forName(className, true, null);
-        if (clazz.getClassLoader() != null) {
-            throw new IllegalStateException("class is not loaded by bootstrap: " + className);
-        }
-    }
-
-    private static int addBootstrapRuntimeReadEdges(Instrumentation inst) throws Exception {
+    private static void addBootstrapRuntimeReadEdges(Instrumentation inst) throws Exception {
         Class<?> moduleClass;
         try {
             moduleClass = Class.forName("java.lang.Module");
         } catch (ClassNotFoundException ignored) {
-            return 0;
+            return;
         }
 
         Method getModule = Class.class.getMethod("getModule");
@@ -203,7 +239,6 @@ public final class TraceAgent {
         Object runtimeModule = getModule.invoke(Class.forName(
                 "com.libkperf.tracex.runtime.TraceRuntime", false, null));
         Set<Object> visited = Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>());
-        int added = 0;
         for (Class<?> clazz : inst.getAllLoadedClasses()) {
             Object module = getModule.invoke(clazz);
             if (!visited.add(module)
@@ -215,52 +250,55 @@ public final class TraceAgent {
             redefineModule.invoke(inst, module, Collections.singleton(runtimeModule),
                     Collections.emptyMap(), Collections.emptyMap(),
                     Collections.emptySet(), Collections.emptyMap());
-            added++;
         }
-        return added;
     }
 
-    private static synchronized void removeActiveTransformer() {
+    private static synchronized boolean removeActiveTransformer() {
         TraceClassFileTransformer t = activeTransformer;
         Instrumentation inst = activeInstrumentation;
-        if (t != null && inst != null) {
-            try {
-                inst.removeTransformer(t);
-            } catch (Throwable ignored) {}
+        if (t == null && inst == null) {
+            return true;
+        }
+        if (t == null || inst == null) {
+            TraceLog.warn("[trace-java-agent] inconsistent active transformer state", null);
             activeTransformer = null;
             activeInstrumentation = null;
+            return false;
         }
+        try {
+            boolean removed = inst.removeTransformer(t);
+            if (!removed) {
+                TraceLog.warn("[trace-java-agent] active transformer was already absent", null);
+            }
+        } catch (Throwable error) {
+            TraceLog.warn("[trace-java-agent] failed to remove active transformer: " + error, error);
+            return false;
+        }
+        activeTransformer = null;
+        activeInstrumentation = null;
+        return true;
     }
 
-    private static void retransformSafely(Instrumentation inst, List<Class<?>> candidates) {
+    private static void retransformSafely(Instrumentation inst, List<Class<?>> candidates,
+                                          TraceClassFileTransformer transformer) {
         if (candidates == null || candidates.isEmpty()) {
             return;
         }
-        int ok = 0;
-        int failed = 0;
         for (int from = 0; from < candidates.size(); from += RETRANSFORM_BATCH_SIZE) {
             int to = Math.min(from + RETRANSFORM_BATCH_SIZE, candidates.size());
             List<Class<?>> batch = candidates.subList(from, to);
             try {
                 inst.retransformClasses(batch.toArray(new Class<?>[0]));
-                TraceClassFileTransformer.confirmInstrumentation(batch);
-                ok += batch.size();
             } catch (Throwable batchError) {
-                TraceClassFileTransformer.rollbackInstrumentation(batch);
+                transformer.discardFailedRetransformations(batch);
                 TraceLog.warn("[trace-java-agent] retransform batch failed, fallback to one-by-one"
                         + ", from=" + from + ", to=" + to + ", error=" + batchError, batchError);
                 for (Class<?> c : batch) {
                     try {
                         inst.retransformClasses(c);
-                        TraceClassFileTransformer.confirmInstrumentation(
-                                Collections.singletonList(c));
-                        ok++;
                     } catch (Throwable oneError) {
-                        TraceClassFileTransformer.rollbackInstrumentation(
-                                Collections.singletonList(c));
-                        failed++;
-                        TraceLog.warn("[trace-java-agent] skip bad class: " + Util.safeClassName(c)
-                                + ", error=" + oneError, oneError);
+                        transformer.discardFailedRetransformations(Collections.singletonList(c));
+                        TraceLog.warn("[trace-java-agent] skip bad class: " + Util.safeClassName(c) + ", error=" + oneError, oneError);
                     }
                 }
             }
@@ -269,15 +307,17 @@ public final class TraceAgent {
 
     private static synchronized void start(TraceConfig config, Instrumentation inst) throws Exception {
         if (!config.valid) {
-            TraceLog.info("[trace-java-agent] invalid trace filter config, skip instrumentation");
-            return;
+            throw new IllegalArgumentException(config.error.length() == 0
+                    ? "invalid trace filter config" : config.error);
         }
         if (!inst.isRetransformClassesSupported()) {
             throw new IllegalStateException("JVM does not support class retransformation");
         }
 
         TraceRuntime.setEnabled(false);
-        removeActiveTransformer();
+        if (!removeActiveTransformer()) {
+            throw new IllegalStateException("failed to remove previous trace transformer");
+        }
         TraceClassFileTransformer.restoreAll(inst);
         if (TraceClassFileTransformer.hasInstrumentedClasses()) {
             throw new IllegalStateException("previous instrumentation could not be fully restored");
@@ -285,7 +325,8 @@ public final class TraceAgent {
 
         NativeThreadInfo.load(config.nativeLibPath);
         TraceRuntime.reconfigure(config.shmPath, config.slotCount);
-        TraceRuntime.setEnabled(true);
+        TraceRuntime.setEnabled(false);
+        TraceRuntime.preloadVirtualThreadHelpers();
 
         TraceClassFileTransformer transformer = new TraceClassFileTransformer(config);
         if (config.contextDepth > 0) {
@@ -306,9 +347,9 @@ public final class TraceAgent {
             + ", requiredIncludeRules=" + config.requiredIncludeRules.size()
             + ", configIncludeRules=" + config.includeRules.size()
             + ", excludeRules=" + config.excludeRules.size());
-        if (!candidates.isEmpty()) {
-            retransformSafely(inst, candidates);
-        }
+        retransformSafely(inst, candidates, transformer);
+        TraceRuntime.configureVirtualThreadCarrierHooks(transformer.hasVirtualThreadCarrierHooks());
+        TraceRuntime.setEnabled(true);
         TraceLog.info("[trace-java] filter: " + config.filterRuleStatus());
     }
 

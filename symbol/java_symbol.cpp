@@ -20,6 +20,7 @@
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <sys/types.h>
+#include <poll.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <cstdlib>
@@ -462,6 +463,35 @@ static bool WaitForPath(const std::string& path)
     return false;
 }
 
+static bool WaitForAttachResponse(int fd, int pid)
+{
+    constexpr int attachResponseTimeoutMs = 10000;
+    struct pollfd event = {};
+    event.fd = fd;
+    event.events = POLLIN;
+    int result;
+    do {
+        result = poll(&event, 1, attachResponseTimeoutMs);
+    } while (result < 0 && errno == EINTR);
+
+    if (result == 0) {
+        ERR_PRINT("Timed out after %d ms waiting for JVM attach response for pid %d\n",
+            attachResponseTimeoutMs, pid);
+        return false;
+    }
+    if (result < 0) {
+        ERR_PRINT("Failed waiting for JVM attach response for pid %d: %s\n",
+            pid, strerror(errno));
+        return false;
+    }
+    if ((event.revents & POLLIN) == 0) {
+        ERR_PRINT("JVM attach response socket failed for pid %d, revents=0x%x\n",
+            pid, static_cast<unsigned>(event.revents));
+        return false;
+    }
+    return true;
+}
+
 int attach_java_process(int pid, JavaAttachInfo* info) {
     std::lock_guard<std::mutex> attachGuard(g_javaAttachMutex);
     int targetPid = GetThreadGroupId(pid);
@@ -532,6 +562,12 @@ int attach_java_process(int pid, JavaAttachInfo* info) {
     WriteDataToSocket(fd, ABSOLUTE);
     WriteDataToSocket(fd, std::string(PERF_MAP_OPTION_PREFIX) + targetPerfMapPath + "," +
                            AGENT_PATH_OPTION_PREFIX + agentPath.targetVisiblePath);
+    if (!WaitForAttachResponse(fd, targetPid)) {
+        close(fd);
+        unlink(perfMapPath.c_str());
+        CleanupAgentPathOnFailure(agentPath);
+        return -1;
+    }
     unsigned char buf[128];
     ssize_t readLen = read(fd, buf, 1);
     if (readLen > 0) {

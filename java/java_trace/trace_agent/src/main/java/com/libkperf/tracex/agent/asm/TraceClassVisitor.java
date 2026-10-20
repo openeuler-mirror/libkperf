@@ -14,21 +14,16 @@
  ******************************************************************************/
 package com.libkperf.tracex.agent.asm;
 
-import com.libkperf.tracex.agent.MethodId;
 import com.libkperf.tracex.agent.TraceConfig;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
-
-import java.util.ArrayList;
-import java.util.List;
 
 public final class TraceClassVisitor extends ClassVisitor {
     private static final int SKIP_ACCESS = Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE | Opcodes.ACC_SYNTHETIC;
 
     private final TraceConfig config;
     private final String owner;
-    private final List<MethodId> instrumentedMethods = new ArrayList<MethodId>();
     private int instrumented;
 
     public TraceClassVisitor(ClassVisitor cv, TraceConfig config, String owner) {
@@ -46,7 +41,6 @@ public final class TraceClassVisitor extends ClassVisitor {
         }
 
         instrumented++;
-        instrumentedMethods.add(new MethodId(owner, name, desc));
         return new TraceMethodVisitor(api, next, access, name, desc, owner);
     }
 
@@ -62,9 +56,5 @@ public final class TraceClassVisitor extends ClassVisitor {
 
     public int instrumentedMethodCount() {
         return instrumented;
-    }
-
-    public List<MethodId> instrumentedMethods() {
-        return instrumentedMethods;
     }
 }
