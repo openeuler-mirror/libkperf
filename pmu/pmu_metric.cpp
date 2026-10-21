@@ -1689,6 +1689,10 @@ namespace KUNPENG_PMU {
         }
         for (unsigned i = 0; i < len; ++i) {
             string evt = pmuData[i].evt;
+            auto countPercent = pmuData[i].countPercent;
+            if (countPercent == PMU_COUNT_NOT_SUPPORTED) {
+                continue;
+            }
             string devName;
             string evtName;
             // Get device name and event string.

@@ -305,6 +305,12 @@ struct SampleRawField {
     unsigned isSigned; //is signed or is unsigned
 };
 
+enum CountPercentType {
+    PMU_COUNT_NOT_COUNTED = -1,   // not counted
+    PMU_COUNT_NOT_SUPPORTED = -2, // not supported
+    PMU_COUNT_COUNTED = 1,        // counted
+};
+
 struct PmuData {
     struct Stack* stack;            // call stack
     const char *evt;                // event name

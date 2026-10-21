@@ -283,15 +283,15 @@ int KUNPENG_PMU::EvtListDefault::Read(EventData &eventData)
 
 /**
  * @brief forge pmudata for counting, which not supported.
- * countPercent=-2 not supported
- * countPercent=-1，not counted
+ * countPercent=PMU_COUNT_NOT_SUPPORTED not supported
+ * countPercent=PMU_COUNT_NOT_COUNTED, not counted
  */
 void KUNPENG_PMU::EvtListDefault::ForgePmuData(KUNPENG_PMU::EventData &eventData) const 
 {
     eventData.data.emplace_back(PmuData{0});
     auto& current = eventData.data.back();
     current.count = 0;
-    current.countPercent = -2;
+    current.countPercent = PMU_COUNT_NOT_SUPPORTED;
     current.groupId = -1;
     current.evt = pmuEvt->name.c_str();
     current.comm = "system";
