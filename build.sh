@@ -47,7 +47,7 @@ creat_dir "${BUILD_DIR}"
 export CC=gcc
 export CXX=g++
 PYTHON_EXE=""
-PYTHON_WHL=false
+WHL=false
 if [ -d "${THIRD_PARTY}/local" ];then
   echo ${THIRD_PARTY}/local "is exist"
 else
@@ -98,6 +98,29 @@ for arg in "$@"; do
             ;;
     esac
 done
+
+clean_python_build()
+{
+    local python_cmd="${PYTHON_EXE}"
+    if [ -z "${python_cmd}" ]; then
+        if command -v python3 >/dev/null 2>&1; then
+            python_cmd=python3
+        else
+            python_cmd=python
+        fi
+    fi
+
+    echo "removing the previously installed Python package"
+    "${python_cmd}" "${PROJECT_DIR}/python/modules/uninstall.py"
+
+    echo "cleaning the previous CMake build directory"
+    rm -rf -- "${BUILD_DIR}"
+    creat_dir "${BUILD_DIR}"
+}
+
+if [ "${PYTHON}" = "true" ] && [ "${WHL}" != "true" ]; then
+    clean_python_build
+fi
 
 ARCH_TARGET="AArch64"
 ARCH=$(uname -m)
