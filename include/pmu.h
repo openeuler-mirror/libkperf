@@ -828,11 +828,20 @@ struct UTraceData {
     int tid;
     int cpu;
     int64_t timestamp;
-    uint64_t gPtr; /* GO g pointer or high-bit tagged Java VT ID; bit 62 marks degraded inference */
+    /*
+     * Execution-context identity:
+     *   0                 no Go goroutine or Java virtual-thread context;
+     *   bit 63 == 0       a Go runtime g pointer;
+     *   bit 63 == 1       a Java virtual-thread context ID.
+     * For Java virtual-thread context IDs only:
+     *   bit 62 == 0       precise mount/unmount tracking;
+     *   bit 62 == 1       degraded mount inference from traced method-entry events;
+     *   bits 61..0        Thread.getId() payload (zero is normalized to one).
+     */
+    uint64_t gPtr;
     const char* module;
     const char* func;
-    /* 0: enter, 1: return, 2/3: precise VT mount/unmount,
-       4/5: degraded VT mount/unmount inference */
+    /* 0: enter, 1: return */
     unsigned isRet;
 };
 

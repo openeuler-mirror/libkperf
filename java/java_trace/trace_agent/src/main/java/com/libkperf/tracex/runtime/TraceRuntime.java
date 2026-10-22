@@ -103,10 +103,8 @@ public final class TraceRuntime {
         }
         sink = next;
 
-        TraceLog.info("[trace-java-runtime] reconfigured" + ", shmPath=" + shmPath +
-                            ", slotCount=" + slotCount + ", active=" + next.isActive() +
-                            ", virtualThreads=" + VirtualThreadSupport.isSupported() +
-                            ", carrierTid=" + NativeThreadInfo.isNativeTidAvailable());
+        TraceLog.info("[trace-java-runtime] enabled: virtualThreads=" + VirtualThreadSupport.isSupported() +
+            ", carrierTid=" + NativeThreadInfo.isNativeTidAvailable() + ", bufferSlots=" + slotCount);
 
         enabled = true;
     }
@@ -125,8 +123,6 @@ public final class TraceRuntime {
                 TraceLog.warn("[trace-java-runtime] stop close sink failed: " + t, t);
             }
         }
-
-        TraceLog.info("[trace-java-runtime] disabled");
     }
 
     public static void setEnabled(boolean value) {
@@ -149,7 +145,6 @@ public final class TraceRuntime {
     public static void configureVirtualThreadCarrierHooks(boolean installed) {
         virtualThreadCarrierHooksEnabled = installed;
         if (installed) {
-            TraceLog.info("[trace-java-runtime] virtual-thread carrier call-site hooks enabled");
             return;
         }
         if (VirtualThreadSupport.isSupported() && !virtualThreadFallbackLogged) {
@@ -163,7 +158,7 @@ public final class TraceRuntime {
         recordCarrierVirtualThreadTransition(virtualThread, SharedEventSink.EVENT_VTHREAD_MOUNT);
     }
 
-    public static void virtualThreadBeforeUnmount(Thread virtualThread) {
+    public static void virtualThreadAfterUnmount(Thread virtualThread) {
         recordCarrierVirtualThreadTransition(virtualThread, SharedEventSink.EVENT_VTHREAD_UNMOUNT);
     }
 
@@ -183,7 +178,7 @@ public final class TraceRuntime {
                 return;
             }
             int tid = NativeThreadInfo.currentTidSafe();
-            // Before mount and before unmount Thread.currentThread() is the carrier.
+            // Before mount and after unmount Thread.currentThread() is the carrier.
             // The virtual-thread identity is carried separately in contextId/gPtr.
             byte[] comm = SharedEventSink.utf8(currentThreadName());
             int commId = s.registerCarrierThread(tid, comm);
@@ -367,7 +362,7 @@ public final class TraceRuntime {
             Thread thread = Thread.currentThread();
             virtualThread = VirtualThreadSupport.isVirtual(thread);
             // platform thread: 0
-            // virtual thread: high-bit tagged + Java thread ID
+            // virtual thread: bit 63 Java tag, bit 62 degraded tag, bits 61..0 Thread.getId() payload
             contextId = virtualThread ? VirtualThreadSupport.contextId(thread) : 0L;
         }
 
@@ -434,6 +429,7 @@ public final class TraceRuntime {
         // Marking Java virtual-thread IDs keeps them distinct from the Go g pointer.
         private static final long CONTEXT_ID_FLAG = Long.MIN_VALUE;
         private static final long CONTEXT_DEGRADED_FLAG = 1L << 62;
+        private static final long CONTEXT_ID_MASK = CONTEXT_DEGRADED_FLAG - 1L;
         private static final Method IS_VIRTUAL = findIsVirtual();
 
         private VirtualThreadSupport() {
@@ -455,7 +451,7 @@ public final class TraceRuntime {
         }
 
         static long contextId(Thread thread) {
-            long id = thread.getId() & Long.MAX_VALUE;
+            long id = thread.getId() & CONTEXT_ID_MASK;
             return CONTEXT_ID_FLAG | (id == 0L ? 1L : id);
         }
 

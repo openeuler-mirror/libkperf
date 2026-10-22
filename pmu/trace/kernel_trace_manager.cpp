@@ -90,8 +90,6 @@ int KernelTraceManager::Open(const UTraceAttr *traceAttr, const std::vector<std:
                                   available, availablePath, selected, &selectionStats);
     TraceLog("[trace-kernel] filter: " + FormatTraceFilterRuleStatus(includePatterns, excludePatterns,
         selectionStats.includeRuleMatched, selectionStats.excludeRuleMatched) + "\n");
-    TraceLog("[trace-kernel] options: buffer_size_kb_per_cpu=" + std::to_string(bufferSizeKb) +
-        ", funcgraph_irqs=" + std::string(traceIrqs ? "true" : "false") + "\n");
     if (!selectionOk) {
         return -1;
     }
@@ -113,13 +111,11 @@ int KernelTraceManager::Open(const UTraceAttr *traceAttr, const std::vector<std:
     std::string globalNotraceFilter;
     if (!kernel_trace::AcquireGlobalTraceFs(session, &globalNotraceFilter, &error)) {
         New(LIBPERF_ERR_KERNEL_TRACE_FAILED, error);
-        TraceLog("[trace-kernel] error: " + error + "\n");
         return -1;
     }
     if (!kernel_trace::ApplyGlobalNotraceFilter(selected, globalNotraceFilter, &error)) {
         kernel_trace::ResetGlobalTraceFs(session);
         New(LIBPERF_ERR_KERNEL_TRACE_FAILED, error);
-        TraceLog("[trace-kernel] error: " + error + "\n");
         return -1;
     }
     session.addresses = kernel_trace::ResolveKernelSymbols(selected);
@@ -127,7 +123,6 @@ int KernelTraceManager::Open(const UTraceAttr *traceAttr, const std::vector<std:
     if (!kernel_trace::ConfigureGlobalTraceFs(session, selected, bufferSizeKb, traceIrqs, &error)) {
         kernel_trace::ResetGlobalTraceFs(session);
         New(LIBPERF_ERR_KERNEL_TRACE_FAILED, error);
-        TraceLog("[trace-kernel] error: " + error + "\n");
         return -1;
     }
     sessions_.emplace(pd, std::move(session));
@@ -154,7 +149,6 @@ int KernelTraceManager::Enable(int pd)
         kernel_trace::SetCurrentTracer(session, "nop");
         session.rawStream.reset();
         std::string detail = "Enable failed at " + step + ": " + message;
-        TraceLog("[trace-kernel] error: " + detail + "\n");
         New(LIBPERF_ERR_KERNEL_TRACE_FAILED, detail);
         return -1;
     };

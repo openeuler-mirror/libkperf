@@ -30,14 +30,12 @@ public final class NativeThreadInfo {
         loadTried = true;
 
         if (absolutePath == null || absolutePath.isEmpty()) {
-            TraceLog.info("[trace-java-runtime] native lib path is empty, native TID unavailable");
             return;
         }
 
         try {
             System.load(absolutePath);
             loaded = true;
-            TraceLog.info("[trace-java-runtime] native thread info loaded: " + absolutePath);
         } catch (RuntimeException | LinkageError t) {
             loaded = false;
             TraceLog.warn("[trace-java-runtime] native thread info load failed: " + absolutePath + ", ex=" + t, t);
