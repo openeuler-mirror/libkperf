@@ -218,6 +218,14 @@ bash build.sh install_path=/path/to/install utrace=true
 bash build.sh install_path=/path/to/install python=true
 ```
 
+当指定 `python=true` 且 `whl` 不为 `true` 时，`build.sh` 会在构建前使用
+`python_exe` 对应的解释器清除已安装的旧版 `libkperf` Python 文件，并重新创建
+`_build` 目录，然后编译并安装新的 Python 包。该清理过程仅使用 Python 标准库，
+不依赖 `pip`；首次安装时如果未发现旧版文件，会直接继续构建。
+
+未指定 `python=true` 时不会触发上述清理。指定 `whl=true` 时，Python 打包阶段
+会生成 wheel，但不会卸载当前已安装的 Python 包，也不会执行上述 `_build` 清理。
+
 如果环境中有多个 Python 版本：
 
 ```shell
@@ -233,8 +241,10 @@ bash build.sh install_path=/path/to/install python=true whl=true
 **卸载 Python 包**：
 
 ```shell
-python3 -m pip uninstall -y libkperf
+python3 python/modules/uninstall.py
 ```
+
+如果构建时指定了 `python_exe`，手动卸载时也应使用同一个 Python 解释器。
 
 **注**：如果Python模块运行时报错类似下面内容：
 
