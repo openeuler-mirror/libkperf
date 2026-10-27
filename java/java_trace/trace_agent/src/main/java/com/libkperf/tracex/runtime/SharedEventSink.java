@@ -31,7 +31,6 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -120,7 +119,7 @@ final class SharedEventSink implements AutoCloseable {
     private final AtomicLong publishedSequence = new AtomicLong(0L);
     private final AtomicLong droppedEvents = new AtomicLong(0L);
     private final AtomicLong writerState = new AtomicLong(0L);
-    private final AtomicBoolean publishing = new AtomicBoolean(false);
+    private final AtomicInteger publishWip = new AtomicInteger(0);
     private volatile boolean closed;
 
     private static final class ThreadMetadataKey {
@@ -355,31 +354,48 @@ final class SharedEventSink implements AutoCloseable {
     }
 
     private void drainPublished() {
-        while (!publishing.compareAndSet(false, true)) {
-            if (closed) {
-                return;
-            }
-            Thread.yield();
+        // The writer changing WIP from 0 to 1 becomes the sole drainer.
+        // Contending writers only register pending work and return immediately.
+        if (publishWip.getAndIncrement() != 0) {
+            return;
         }
+
+        int missed = 1;
+        boolean completed = false;
         try {
-            long seq = publishedSequence.get();
-            while (!closed) {
-                long next = seq + 1L;
-                if (next >= nextSequence.get()) {
+            for (;;) {
+                drainContiguousPublishedSlots();
+                missed = publishWip.addAndGet(-missed);
+                if (missed == 0) {
+                    completed = true;
                     return;
                 }
-                int slotIndex = slotIndex(next);
-                MappedByteBuffer slotBuffer = slotBuffer(slotIndex);
-                int base = slotOffset(slotIndex);
-                if (getLongAcquire(slotBuffer, base + SLOT_SEQ) != next) {
-                    return;
-                }
-                putLongRelease(HEADER_WRITE_SEQ, next);
-                publishedSequence.set(next);
-                seq = next;
             }
         } finally {
-            publishing.set(false);
+            // Do not leave the WIP gate permanently owned if buffer access throws.
+            // A later writer can retry publishing the already committed slots.
+            if (!completed) {
+                publishWip.set(0);
+            }
+        }
+    }
+
+    private void drainContiguousPublishedSlots() {
+        long seq = publishedSequence.get();
+        while (!closed) {
+            long next = seq + 1L;
+            if (next >= nextSequence.get()) {
+                return;
+            }
+            int slotIndex = slotIndex(next);
+            MappedByteBuffer slotBuffer = slotBuffer(slotIndex);
+            int base = slotOffset(slotIndex);
+            if (getLongAcquire(slotBuffer, base + SLOT_SEQ) != next) {
+                return;
+            }
+            putLongRelease(HEADER_WRITE_SEQ, next);
+            publishedSequence.set(next);
+            seq = next;
         }
     }
 
