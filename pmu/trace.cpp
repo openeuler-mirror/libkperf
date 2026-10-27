@@ -26,6 +26,7 @@
 #include "trace_log.h"
 #include "kernel_trace_manager.h"
 #include "common.h"
+#include "process_map.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -862,6 +863,13 @@ static int OpenJavaBackend(UTraceAttr *attr)
         pcerr::New(LIBPERF_ERR_NULL_POINTER, "Java UTraceAttr pidList is empty");
         return -1;
     }
+    const int jvmPid = GetTgid(attr->pidList[0]);
+    if (jvmPid <= 0) {
+        pcerr::New(LIBPERF_ERR_INVALID_PID,
+            "Cannot resolve JVM process PID from task ID " + std::to_string(attr->pidList[0]));
+        return -1;
+    }
+
     int pd = PmuList::GetInstance()->NewPd();
     if (pd == -1) {
         pcerr::New(LIBPERF_ERR_NO_AVAIL_PD);
@@ -870,7 +878,7 @@ static int OpenJavaBackend(UTraceAttr *attr)
 
     // if java symbol list is empty, includeRules will be nullptr
     std::string includeRules = BuildJavaSymSrc(attr);
-    int err = JavaTraceManager::GetInstance().Open(pd, attr->pidList[0], includeRules.empty() ? nullptr : includeRules.c_str());
+    int err = JavaTraceManager::GetInstance().Open(pd, jvmPid, includeRules.empty() ? nullptr : includeRules.c_str());
     if (err != 0) {
         PmuList::GetInstance()->Close(pd);
         return -1;
