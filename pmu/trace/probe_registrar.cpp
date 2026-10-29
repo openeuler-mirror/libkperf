@@ -24,7 +24,6 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
-#include <sys/random.h>
 
 namespace {
 // tracefs parses commands, not an ordinary byte stream. Submit each line in
@@ -194,19 +193,26 @@ const std::string &ProbeRegistrar::GetUprobeFilePath() const
 
 std::string ProbeRegistrar::GenerateGroupName() const
 {
+    const int fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) {
+        pcerr::New(LIBPERF_ERR_UTRACE_PROBE_REGISTER_FAILED, "Failed to open /dev/urandom");
+        return "";
+    }
     uint64_t nonce[2];
     size_t done = 0;
     while (done < sizeof(nonce)) {
-        const ssize_t n = getrandom(reinterpret_cast<char *>(nonce) + done, sizeof(nonce) - done, 0);
+        const ssize_t n = read(fd, reinterpret_cast<char *>(nonce) + done, sizeof(nonce) - done);
         if (n < 0 && errno == EINTR) {
             continue;
         }
         if (n <= 0) {
+            close(fd);
             pcerr::New(LIBPERF_ERR_UTRACE_PROBE_REGISTER_FAILED, "Failed to generate private uprobe group");
             return "";
         }
         done += static_cast<size_t>(n);
     }
+    close(fd);
     static std::atomic<uint64_t> sequence{0};
     std::ostringstream group;
     group << "kp_" << std::hex << getpid() << "_" << std::setfill('0')
