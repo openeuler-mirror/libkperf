@@ -95,15 +95,152 @@ struct StorePcDebugStat {
 
 static constexpr size_t MAX_DEBUG_STORE_PC_KEYS = 4096;
 static constexpr size_t MAX_DEBUG_STORE_PC_ROWS = 128;
+static constexpr size_t MAX_DEBUG_SPE_EVENT_MASKS = 256;
+
+struct SpeEventDescriptor {
+    unsigned long bit;
+    const char* name;
+};
+
+static const SpeEventDescriptor SPE_EVENT_DESCRIPTORS[] = {
+    {SPE_EV_EXCEPT, "SPE_EV_EXCEPT"},
+    {SPE_EV_RETIRED, "SPE_EV_RETIRED"},
+    {SPE_EV_L1D_ACCESS, "SPE_EV_L1D_ACCESS"},
+    {SPE_EV_L1D_REFILL, "SPE_EV_L1D_REFILL"},
+    {SPE_EV_TLB_ACCESS, "SPE_EV_TLB_ACCESS"},
+    {SPE_EV_TLB_WALK, "SPE_EV_TLB_WALK"},
+    {SPE_EV_NOT_TAKEN, "SPE_EV_NOT_TAKEN"},
+    {SPE_EV_MISPRED, "SPE_EV_MISPRED"},
+    {SPE_EV_LLC_ACCESS, "SPE_EV_LLC_ACCESS"},
+    {SPE_EV_LLC_MISS, "SPE_EV_LLC_MISS"},
+    {SPE_EV_REMOTE_ACCESS, "SPE_EV_REMOTE_ACCESS"},
+    {SPE_EV_ALIGNMENT, "SPE_EV_ALIGNMENT"},
+    {SPE_EV_PARTIAL_PRED, "SPE_EV_PARTIAL_PRED"},
+    {SPE_EV_EMPTY_PRED, "SPE_EV_EMPTY_PRED"},
+    {SPE_FORWARD_HAZARD, "SPE_FORWARD_HAZARD"},
+    {SPE_STRUCTURE_HAZARD, "SPE_STRUCTURE_HAZARD"},
+};
+
 static bool g_speDebugEnabled = false;
 static map<StorePcDebugKey, StorePcDebugStat> g_storePcDebugStats;
 static uint64_t g_droppedStorePcDebugSamples = 0;
+static uint64_t g_speEventRecords = 0;
+static uint64_t g_speEventNoneRecords = 0;
+static uint64_t g_speEventUnknownRecords = 0;
+static unsigned long g_speEventUnknownBits = 0;
+static uint64_t g_speEventCounts[sizeof(SPE_EVENT_DESCRIPTORS) /
+                                 sizeof(SPE_EVENT_DESCRIPTORS[0])] = {};
+static map<unsigned long, uint64_t> g_speEventMaskStats;
+static uint64_t g_droppedSpeEventMasks = 0;
 
 void ConfigureSpeDebug(bool enabled)
 {
     g_speDebugEnabled = enabled;
     g_storePcDebugStats.clear();
     g_droppedStorePcDebugSamples = 0;
+    g_speEventRecords = 0;
+    g_speEventNoneRecords = 0;
+    g_speEventUnknownRecords = 0;
+    g_speEventUnknownBits = 0;
+    for (auto& count : g_speEventCounts) count = 0;
+    g_speEventMaskStats.clear();
+    g_droppedSpeEventMasks = 0;
+}
+
+static unsigned long KnownSpeEventBits()
+{
+    static const unsigned long known = []() {
+        unsigned long bits = 0;
+        for (const auto& descriptor : SPE_EVENT_DESCRIPTORS) {
+            bits |= descriptor.bit;
+        }
+        return bits;
+    }();
+    return known;
+}
+
+static string SpeEventMaskNames(unsigned long event)
+{
+    string result;
+    for (const auto& descriptor : SPE_EVENT_DESCRIPTORS) {
+        if ((event & descriptor.bit) == 0) continue;
+        if (!result.empty()) result += '|';
+        result += descriptor.name;
+    }
+    const unsigned long unknown = event & ~KnownSpeEventBits();
+    if (unknown != 0) {
+        ostringstream value;
+        value << "UNKNOWN(0x" << hex << unknown << ')';
+        if (!result.empty()) result += '|';
+        result += value.str();
+    }
+    return result.empty() ? "NONE" : result;
+}
+
+static void AccountSpeEventDebug(unsigned long event)
+{
+    if (!g_speDebugEnabled) return;
+
+    ++g_speEventRecords;
+    if (event == 0) ++g_speEventNoneRecords;
+    for (size_t i = 0; i < sizeof(SPE_EVENT_DESCRIPTORS) /
+                            sizeof(SPE_EVENT_DESCRIPTORS[0]); ++i) {
+        if ((event & SPE_EVENT_DESCRIPTORS[i].bit) != 0) {
+            ++g_speEventCounts[i];
+        }
+    }
+    const unsigned long unknown = event & ~KnownSpeEventBits();
+    if (unknown != 0) {
+        ++g_speEventUnknownRecords;
+        g_speEventUnknownBits |= unknown;
+    }
+
+    auto it = g_speEventMaskStats.find(event);
+    if (it != g_speEventMaskStats.end()) {
+        ++it->second;
+    } else if (g_speEventMaskStats.size() < MAX_DEBUG_SPE_EVENT_MASKS) {
+        g_speEventMaskStats.emplace(event, 1);
+    } else {
+        ++g_droppedSpeEventMasks;
+    }
+}
+
+void PrintSpeEventDebug()
+{
+    if (!g_speDebugEnabled) return;
+
+    cout << "\n" << string(80, '=') << "\n"
+         << "DEBUG SPE EVENT STAT\n"
+         << string(80, '=') << "\n"
+         << "Records with SPE extension (before pipeline filtering): "
+         << g_speEventRecords << "\n"
+         << left << setw(30) << "Event bit" << right << setw(14) << "Records" << "\n"
+         << string(44, '-') << "\n";
+    for (size_t i = 0; i < sizeof(SPE_EVENT_DESCRIPTORS) /
+                            sizeof(SPE_EVENT_DESCRIPTORS[0]); ++i) {
+        cout << left << setw(30) << SPE_EVENT_DESCRIPTORS[i].name
+             << right << setw(14) << g_speEventCounts[i] << "\n";
+    }
+    cout << left << setw(30) << "NONE"
+         << right << setw(14) << g_speEventNoneRecords << "\n"
+         << left << setw(30) << "UNKNOWN_BITS"
+         << right << setw(14) << g_speEventUnknownRecords << "\n";
+
+    cout << "Observed event masks (event is a bit map; per-bit counts can overlap):\n";
+    for (const auto& entry : g_speEventMaskStats) {
+        ostringstream mask;
+        mask << "0x" << hex << entry.first;
+        cout << "SPE_EVENT_MASK mask=" << mask.str()
+             << " events=" << SpeEventMaskNames(entry.first)
+             << " records=" << entry.second << "\n";
+    }
+    if (g_speEventUnknownBits != 0 || g_droppedSpeEventMasks > 0) {
+        ostringstream unknown;
+        unknown << "0x" << hex << g_speEventUnknownBits;
+        cout << "DEBUG SPE EVENT NOTE: unknown_bits=" << unknown.str()
+             << " dropped_records_after_mask_cap=" << g_droppedSpeEventMasks << "\n";
+    }
+    cout << string(80, '=') << "\n";
 }
 
 static void AccountStorePcDebug(const PmuData& record, const SampleInfo& sample,
@@ -292,15 +429,25 @@ void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
         targetPidSet.insert(targetPids.begin(), targetPids.end());
     }
 
+    SpeDecodeStats* decode = g_speDebugEnabled ? &ctx.speDecode : nullptr;
+
     for (int i = 0; i < len; ++i) {
         const auto& record = data[i];
+        if (decode != nullptr) ++decode->recordsSeen;
+        if (record.ext != nullptr) AccountSpeEventDebug(record.ext->event);
         if (readEndNs > 0 && record.ts > readEndNs + 1000000LL) {
+            if (decode != nullptr) ++decode->afterRead;
             ++ctx.speTimestamps.afterRead;
             continue;
         }
 
         SampleInfo sample = PrepSample(record);
-        if (!sample.hasExt || (!sample.isLoad && !sample.isStore)) {
+        if (!sample.hasExt) {
+            if (decode != nullptr) ++decode->missingExt;
+            continue;
+        }
+        if (!sample.isLoad && !sample.isStore) {
+            if (decode != nullptr) ++decode->nonLoadStore;
             continue;
         }
         bool accountRead = sample.isLoad && IsDramSource(sample.source);
@@ -308,6 +455,18 @@ void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
         const bool isTarget = targetPidSet.find(record.pid) != targetPidSet.end();
         const bool isKernel = IsKernelSample(sample);
         const bool isTargetUser = isTarget && !isKernel;
+        if (decode != nullptr) {
+            if (isKernel) {
+                ++decode->kernelRecords;
+            } else if (isTargetUser) {
+                ++decode->targetUserRecords;
+            } else {
+                ++decode->otherUserRecords;
+            }
+            if (sample.isLoad && !accountRead) ++decode->nonDramLoads;
+            if (accountRead) ++decode->eligibleDramLoads;
+            if (accountWrite) ++decode->eligibleStores;
+        }
         string funcName = UNKNOWN;
         string moduleName = UNKNOWN;
         if (isTargetUser && sample.hasSym) {
@@ -335,7 +494,12 @@ void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
         contribution.write = accountWrite;
         contribution.funcKey = funcKey;
         if (!BucketSpeContribution(ctx, windows, contribution)) {
+            if (decode != nullptr) ++decode->bucketRejected;
             continue;
+        }
+        if (decode != nullptr) {
+            ++decode->bucketedRecords;
+            if (isTargetUser) ++decode->targetBucketedRecords;
         }
         if (accountRead) ++ctx.spe.systemReadSamples;
         if (accountWrite) ++ctx.spe.systemWriteSamples;

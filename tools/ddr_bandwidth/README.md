@@ -132,7 +132,7 @@ sudo tools/bin/ddr_bandwidth \
     --min-latency N    SPE minimum latency
     --top N            输出 Top N 函数
     --pcie-bdf BDF     指定 PCIe BDF，可重复
-    --debug            输出 timing、逐窗口归因、SPE/window health 和 store-PC 调试信息
+    --debug            输出 timing、逐窗口归因、SPE 配置/event/health 和 store-PC 调试信息
 ```
 
 ## 输出结果说明
@@ -231,11 +231,14 @@ DEBUG TIMING
 DBG_WINDOW
 DBG_FUNC
 DBG_TIMESTAMP
+DEBUG SPE CONFIG
+DEBUG SPE SAMPLE PIPELINE DIAGNOSTICS
 DEBUG SPE / WINDOW HEALTH
+DEBUG SPE EVENT STAT
 DEBUG SPE STORE PC STAT
 ```
 
-其中包括采集时间、逐窗口 DDRC/DMA/分母/分子/归因字节、SPE drain 数量与耗时、时间戳异常、空窗口/读取失败，以及 store PC、指令编码和访问宽度等诊断信息。
+其中包括采集时间、逐窗口 DDRC/DMA/分母/分子/归因字节、实际 SPE period/data filter/event filter 配置、SPE record pipeline、各 event bit 及实际 event-mask 组合、SPE drain 数量与耗时、时间戳异常、空窗口/读取失败，以及 store PC、指令编码和访问宽度等诊断信息。`PmuDataExt::event` 是位图，因此同一条 record 可能同时计入多个 event bit。
 这些信息仅用于调试，不参与正式 DDR 带宽权重计算。
 
 ## 注意事项

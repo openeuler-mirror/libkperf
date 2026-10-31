@@ -36,6 +36,9 @@ struct PcieCollector {
 
 double NowSec();
 int64_t NowNs();
+void ConfigureSpeDebug(bool enabled);
+void PrintSpeEventDebug();
+void PrintSpeStorePcDebug();
 void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
                      const std::vector<int>& targetPids, SpeWindowState& windows,
                      int64_t readEndNs);

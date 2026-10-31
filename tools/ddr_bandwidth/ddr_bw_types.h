@@ -89,6 +89,24 @@ struct SpeTimestampStats {
     uint64_t unbucketed = 0;
 };
 
+// Counts each stage of the SPE record processing pipeline. These counters
+// describe records (an atomic record can be both a load and a store).
+struct SpeDecodeStats {
+    uint64_t recordsSeen = 0;
+    uint64_t afterRead = 0;
+    uint64_t missingExt = 0;
+    uint64_t nonLoadStore = 0;
+    uint64_t targetUserRecords = 0;
+    uint64_t kernelRecords = 0;
+    uint64_t otherUserRecords = 0;
+    uint64_t nonDramLoads = 0;
+    uint64_t eligibleDramLoads = 0;
+    uint64_t eligibleStores = 0;
+    uint64_t bucketRejected = 0;
+    uint64_t bucketedRecords = 0;
+    uint64_t targetBucketedRecords = 0;
+};
+
 struct SpeWindowState {
     int64_t collectionStartNs = 0;
     int64_t openStartNs = 0;
@@ -164,6 +182,7 @@ struct BwContext {
     std::unordered_map<std::string, FuncBwStat> funcStats;
     std::vector<WindowRecord> windows;
     SpeTotals spe;
+    SpeDecodeStats speDecode;
     SpeTimestampStats speTimestamps;
     TrafficTotals traffic;
     AttributionTotals attribution;

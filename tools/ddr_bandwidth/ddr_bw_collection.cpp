@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <limits>
 #include <signal.h>
+#include <sstream>
 #include <sys/wait.h>
 #include <unistd.h>
 #include "pcerrc.h"
@@ -35,9 +36,6 @@ static unsigned SignalTargets(const vector<int>& pids, int signo, const char* na
     }
     return signaled;
 }
-
-void ConfigureSpeDebug(bool enabled);
-void PrintSpeStorePcDebug();
 
 struct CollectionHealth {
     double speReadCostSec = 0.0;
@@ -170,6 +168,64 @@ static void PrintCollectionHealth(const CollectionHealth& health)
 }
 
 
+static void PrintSpePipelineDiagnostics(const CollectionHealth& health,
+                                        const BwContext& ctx)
+{
+    const SpeDecodeStats& decode = ctx.speDecode;
+    const uint64_t targetSamples = ctx.spe.readSamples + ctx.spe.writeSamples;
+
+    cout << "\n" << string(80, '=') << "\n"
+         << "DEBUG SPE SAMPLE PIPELINE DIAGNOSTICS\n"
+         << string(80, '=') << "\n"
+         << "collector: drains=" << health.speDrains
+         << " empty=" << health.speEmptyDrains
+         << " failed=" << health.speFailedDrains
+         << " records_returned=" << health.speRecords << "\n"
+         << "decode: seen=" << decode.recordsSeen
+         << " after_read=" << decode.afterRead
+         << " missing_ext=" << decode.missingExt
+         << " non_load_store=" << decode.nonLoadStore << "\n"
+         << "scope: target_user=" << decode.targetUserRecords
+         << " other_user=" << decode.otherUserRecords
+         << " kernel=" << decode.kernelRecords << "\n"
+         << "operation: dram_loads=" << decode.eligibleDramLoads
+         << " stores=" << decode.eligibleStores
+         << " non_dram_loads=" << decode.nonDramLoads << "\n"
+         << "windowing: bucketed=" << decode.bucketedRecords
+         << " target_bucketed=" << decode.targetBucketedRecords
+         << " rejected=" << decode.bucketRejected << "\n"
+         << "timestamp rejects: missing=" << ctx.speTimestamps.missing
+         << " before_start=" << ctx.speTimestamps.beforeStart
+         << " after_stop=" << ctx.speTimestamps.afterStop
+         << " after_read=" << ctx.speTimestamps.afterRead
+         << " unbucketed=" << ctx.speTimestamps.unbucketed << "\n"
+         << "result: target_dram_loads=" << ctx.spe.readSamples
+         << " target_stores=" << ctx.spe.writeSamples
+         << " function_rows=" << ctx.funcStats.size() << "\n";
+
+    cout << "Diagnosis: ";
+    if (health.speFailedDrains > 0 && health.speRecords == 0) {
+        cout << "SPE reads failed before any record was collected; check the backend error above.\n";
+    } else if (health.speRecords == 0) {
+        cout << "the collector returned no SPE records; check SPE support/permissions, sampling period, and whether the workload ran.\n";
+    } else if (decode.recordsSeen == 0) {
+        cout << "records were returned by PmuRead but none reached processing; inspect the collector/read handoff.\n";
+    } else if (decode.eligibleDramLoads == 0 && decode.eligibleStores == 0) {
+        cout << "collection worked, but decoding/filtering found no eligible DRAM-load or store records.\n";
+    } else if (decode.targetUserRecords == 0) {
+        cout << "eligible system SPE traffic exists, but no user record matched the target PID(s); check PID selection and process lifetime.\n";
+    } else if (decode.targetBucketedRecords == 0) {
+        cout << "target records exist, but none survived operation and timestamp-window filtering; inspect operation/window counters above.\n";
+    } else if (targetSamples == 0) {
+        cout << "target records reached a window but produced no eligible DRAM-load/store sample; inspect non_dram_loads and timestamp counters.\n";
+    } else if (ctx.funcStats.empty()) {
+        cout << "target samples were counted, but function statistics were not created; this indicates a post-processing defect.\n";
+    } else {
+        cout << "the SPE pipeline produced target function samples.\n";
+    }
+    cout << string(80, '=') << "\n";
+}
+
 static size_t SealWindow(BwContext& ctx, SpeWindowState& windows,
                          int64_t startNs, int64_t endNs,
                          double ddrcRead, double ddrcWrite,
@@ -252,6 +308,80 @@ struct CollectorSet {
     bool ddrcPreviousReadOk = true;
 };
 
+static string HexValue(unsigned long value)
+{
+    ostringstream out;
+    out << "0x" << hex << value;
+    return out.str();
+}
+
+static string SpeDataFilterNames(unsigned long filter)
+{
+    string result;
+    unsigned long known = 0;
+    auto append = [&](unsigned long flag, const char* name) {
+        known |= flag;
+        if ((filter & flag) == 0) return;
+        if (!result.empty()) result += '|';
+        result += name;
+    };
+    append(TS_ENABLE, "TS_ENABLE");
+    append(PA_ENABLE, "PA_ENABLE");
+    append(PCT_ENABLE, "PCT_ENABLE");
+    append(JITTER, "JITTER");
+    append(BRANCH_FILTER, "BRANCH_FILTER");
+    append(LOAD_FILTER, "LOAD_FILTER");
+    append(STORE_FILTER, "STORE_FILTER");
+    const unsigned long unknown = filter & ~known;
+    if (unknown != 0) {
+        if (!result.empty()) result += '|';
+        result += "UNKNOWN(" + HexValue(unknown) + ')';
+    }
+    return result.empty() ? "NONE" : result;
+}
+
+static string SpeEventFilterNames(unsigned long filter)
+{
+    string result;
+    unsigned long known = 0;
+    auto append = [&](unsigned long flag, const char* name) {
+        known |= flag;
+        if ((filter & flag) == 0) return;
+        if (!result.empty()) result += '|';
+        result += name;
+    };
+    append(SPE_EVENT_RETIRED, "SPE_EVENT_RETIRED");
+    append(SPE_EVENT_L1DMISS, "SPE_EVENT_L1DMISS");
+    append(SPE_EVENT_TLB_WALK, "SPE_EVENT_TLB_WALK");
+    append(SPE_EVENT_MISPREDICTED, "SPE_EVENT_MISPREDICTED");
+    const unsigned long unknown = filter & ~known;
+    if (unknown != 0) {
+        if (!result.empty()) result += '|';
+        result += "UNKNOWN(" + HexValue(unknown) + ')';
+    }
+    return result.empty() ? "SPE_EVENT_NONE" : result;
+}
+
+static void PrintSpeConfigDebug(const PmuAttr& attr)
+{
+    const unsigned long dataFilter = static_cast<unsigned long>(attr.dataFilter);
+    const unsigned long eventFilter = static_cast<unsigned long>(attr.evFilter);
+    cout << "\n" << string(80, '=') << "\n"
+         << "DEBUG SPE CONFIG\n"
+         << string(80, '=') << "\n"
+         << "scope=system-wide"
+         << " period=" << attr.period
+         << " min_latency=" << attr.minLatency
+         << " exclude_user=" << attr.excludeUser
+         << " exclude_kernel=" << attr.excludeKernel
+         << " symbol_mode=" << static_cast<int>(attr.symbolMode) << "\n"
+         << "data_filter=" << SpeDataFilterNames(dataFilter)
+         << " (" << HexValue(dataFilter) << ")\n"
+         << "event_filter=" << SpeEventFilterNames(eventFilter)
+         << " (" << HexValue(eventFilter) << ")\n"
+         << string(80, '=') << "\n";
+}
+
 static void CleanupCollectors(CollectorSet& set)
 {
     if (set.spePd != -1) PmuClose(set.spePd);
@@ -276,6 +406,9 @@ static bool OpenSpeCollector(const ArgsContext& act, CollectorSet& set)
     // System-wide collection cannot use target-bound enable_on_exec. The child
     // remains blocked until all collectors are enabled and baselined below.
     attr.enableOnExec = 0;
+    if (act.debug) {
+        PrintSpeConfigDebug(attr);
+    }
     set.spePd = PmuOpen(SPE_SAMPLING, &attr);
     if (set.spePd == -1) {
         cerr << "PmuOpen SPE_SAMPLING failed: " << Perror() << "\n";
@@ -586,6 +719,7 @@ static bool SleepUntil(double targetSec, volatile sig_atomic_t* stopRequested)
 
 int RunDdrBandwidthCollection(ArgsContext& act, volatile sig_atomic_t* stopRequested, volatile int* execErrNo)
 {
+    ConfigureSpeDebug(act.debug);
     CollectorSet collectors;
     if (!InitializeCollectors(act, collectors)) {
         CleanupCollectors(collectors);
@@ -595,7 +729,6 @@ int RunDdrBandwidthCollection(ArgsContext& act, volatile sig_atomic_t* stopReque
     BwContext ctx;
     CollectionHealth health;
     CollectionHealth* healthPtr = &health;
-    ConfigureSpeDebug(act.debug);
 
     // The synchronization protocol is opt-in and used only by the dedicated
     // exact-window validation demo. Do not tie this to --debug: sending
@@ -673,7 +806,9 @@ int RunDdrBandwidthCollection(ArgsContext& act, volatile sig_atomic_t* stopReque
     RefreshSpeWindowHealth(health, ctx);
     PrintSummary(ctx, collectors.ddrcOpened, collectors.pcieOpened, timing, act);
     if (act.debug) {
+        PrintSpePipelineDiagnostics(health, ctx);
         PrintCollectionHealth(health);
+        PrintSpeEventDebug();
         PrintSpeStorePcDebug();
     }
     CleanupCollectors(collectors);
