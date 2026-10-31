@@ -1,7 +1,7 @@
 #include <algorithm>
-#include <cerrno>
 #include <cctype>
-#include <climits>
+#include <cerrno>
+#include <limits>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -14,13 +14,13 @@
 #include <string>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <unordered_map>
 #include <vector>
 #include "ddr_bw_cli.h"
 #include "ddr_bw_collection.h"
 using namespace std;
 
 static constexpr double BYTES_PER_MIB_LOCAL = 1024.0 * 1024.0;
-static constexpr double OPS_PER_MILLION = 1000.0 * 1000.0;
 static const char* SHORT_OPS = "p:d:i:h";
 static const struct option LONG_OPS[] = {
     {"pid", required_argument, nullptr, 'p'},
@@ -31,11 +31,14 @@ static const struct option LONG_OPS[] = {
     {"top", required_argument, nullptr, 1003},
     {"pcie-bdf", required_argument, nullptr, 1004},
     {"debug", no_argument, nullptr, 1005},
+    {"spe-read-interval", required_argument, nullptr, 1006},
+    {"min-samples", required_argument, nullptr, 1007},
     {"help", no_argument, nullptr, 'h'},
     {nullptr, 0, nullptr, 0}
 };
 
-static bool ParseUnsigned(const char* arg, const char* name, unsigned long& out)
+static bool ParseUnsigned(const char* arg, const char* name, unsigned long& out,
+                          unsigned long maximum = std::numeric_limits<unsigned long>::max())
 {
     if (arg == nullptr || *arg == '\0') {
         cerr << "Error: parameter '" << name << "' is empty.\n";
@@ -51,9 +54,8 @@ static bool ParseUnsigned(const char* arg, const char* name, unsigned long& out)
     char* end = nullptr;
     errno = 0;
     unsigned long val = strtoul(arg, &end, 10);
-    if (end == arg || *end != '\0' || errno == ERANGE) {
-        cerr << "Error: parameter '" << name
-             << "' is invalid or out of range: '" << arg << "'.\n";
+    if (errno == ERANGE || val > maximum || end == arg || *end != '\0') {
+        cerr << "Error: parameter '" << name << "' is invalid: '" << arg << "'.\n";
         return false;
     }
     out = val;
@@ -81,8 +83,8 @@ static bool AppendPidList(const char* arg, vector<int>& pids)
         char* tail = nullptr;
         errno = 0;
         long value = strtol(token.c_str(), &tail, 10);
-        if (tail == token.c_str() || *tail != '\0' || errno == ERANGE ||
-            value <= 0 || value > INT_MAX) {
+        if (errno == ERANGE || value > numeric_limits<int>::max() ||
+            tail == token.c_str() || *tail != '\0' || value <= 0) {
             cerr << "Error: invalid pid '" << token << "'.\n";
             return false;
         }
@@ -93,6 +95,7 @@ static bool AppendPidList(const char* arg, vector<int>& pids)
 
         if (endPos == string::npos) break;
         begin = endPos + 1;
+        if (begin == text.size()) return false;
     }
     return !pids.empty();
 }
@@ -107,11 +110,13 @@ void PrintHelp()
         "  -p, --pid <pid[,pid...]> Target process ID(s); repeatable\n"
         "  -d, --duration <sec>      Collection duration in seconds (default: 10)\n"
         "  -i, --interval <ms>       Attribution window in ms (default: 100)\n"
-        "      --period <n>          SPE sampling period\n"
+        "      --spe-read-interval <ms> SPE drain interval (default: 50; capped by window)\n"
+        "      --min-samples <n>     Minimum effective samples per direction (default: 1)\n"
+        "      --period <n>          SPE sampling period (default: 2048; not milliseconds)\n"
         "      --min-latency <n>     Minimum latency filter in cycles\n"
         "      --top <n>             Show top N functions (default: 20)\n"
         "      --pcie-bdf <bdf>      Collect only this PCIe BDF (repeatable; default: all)\n"
-        "      --debug               Print timing, SPE/window health and store-PC diagnostics\n"
+        "      --debug               Print timing, per-window attribution and SPE diagnostics\n"
         "  -h, --help                Show this help\n\n"
         "Examples:\n"
         "  ddr_bandwidth -p 12345 -d 10\n"
@@ -131,31 +136,19 @@ bool ParseArgs(int argc, char** argv, ArgsContext& act)
                 break;
             case 'd': {
                 unsigned long val = 0;
-                if (!ParseUnsigned(optarg, "duration", val)) return false;
-                if (val == 0 || val > static_cast<unsigned long>(INT_MAX)) {
-                    cerr << "Error: duration must be in 1.." << INT_MAX << " seconds.\n";
-                    return false;
-                }
+                if (!ParseUnsigned(optarg, "duration", val, numeric_limits<int>::max()) || val == 0) return false;
                 act.duration = static_cast<int>(val);
                 break;
             }
             case 'i': {
                 unsigned long val = 0;
-                if (!ParseUnsigned(optarg, "interval", val)) return false;
-                if (val == 0 || val > static_cast<unsigned long>(INT_MAX)) {
-                    cerr << "Error: interval must be in 1.." << INT_MAX << " ms.\n";
-                    return false;
-                }
+                if (!ParseUnsigned(optarg, "interval", val, numeric_limits<int>::max()) || val == 0) return false;
                 act.interval = static_cast<int>(val);
                 break;
             }
             case 1001: {
                 unsigned long val = 0;
-                if (!ParseUnsigned(optarg, "period", val)) return false;
-                if (val == 0 || val > static_cast<unsigned long>(UINT_MAX)) {
-                    cerr << "Error: period must be in 1.." << UINT_MAX << ".\n";
-                    return false;
-                }
+                if (!ParseUnsigned(optarg, "period", val, numeric_limits<unsigned>::max()) || val == 0) return false;
                 act.period = static_cast<unsigned>(val);
                 break;
             }
@@ -167,11 +160,7 @@ bool ParseArgs(int argc, char** argv, ArgsContext& act)
             }
             case 1003: {
                 unsigned long val = 0;
-                if (!ParseUnsigned(optarg, "top", val)) return false;
-                if (val == 0 || val > static_cast<unsigned long>(INT_MAX)) {
-                    cerr << "Error: top must be in 1.." << INT_MAX << ".\n";
-                    return false;
-                }
+                if (!ParseUnsigned(optarg, "top", val, numeric_limits<int>::max()) || val == 0) return false;
                 act.topN = static_cast<int>(val);
                 break;
             }
@@ -185,6 +174,18 @@ bool ParseArgs(int argc, char** argv, ArgsContext& act)
             case 1005:
                 act.debug = true;
                 break;
+            case 1006: {
+                unsigned long val = 0;
+                if (!ParseUnsigned(optarg, "spe-read-interval", val, numeric_limits<int>::max()) || val == 0) return false;
+                act.speReadInterval = static_cast<int>(val);
+                break;
+            }
+            case 1007: {
+                unsigned long val = 0;
+                if (!ParseUnsigned(optarg, "min-samples", val) || val == 0) return false;
+                act.minSamples = val;
+                break;
+            }
             case 'h':
                 PrintHelp();
                 return false;
@@ -229,14 +230,10 @@ static string ShortenRight(const string& value, size_t width)
     return "..." + value.substr(value.size() - (width - 3));
 }
 
-static void PrintRateCell(double rate, bool calibrated)
+static void PrintBwCell(double bw)
 {
-    if (rate <= 0.0) {
-        cout << setw(14) << "-";
-    } else {
-        cout << setw(14) << rate /
-            (calibrated ? BYTES_PER_MIB_LOCAL : OPS_PER_MILLION);
-    }
+    if (bw <= 0.0) cout << setw(14) << "-";
+    else cout << setw(14) << bw / BYTES_PER_MIB_LOCAL;
 }
 
 static void PrintFunctionTable(BwContext& ctx, bool calibrated,
@@ -248,56 +245,63 @@ static void PrintFunctionTable(BwContext& ctx, bool calibrated,
         FuncBwStat stat = entry.second;
         if (durationSec > 0.0) {
             if (calibrated) {
-                stat.readRate = stat.attributedReadBytes / durationSec;
-                stat.writeRate = stat.attributedWriteBytes / durationSec;
-            } else {
-                stat.readRate = static_cast<double>(stat.readWeight) * act.period / durationSec;
-                stat.writeRate = static_cast<double>(stat.writeWeight) * act.period / durationSec;
+                stat.readBw = stat.attributedReadBytes / durationSec;
+                stat.writeBw = stat.attributedWriteBytes / durationSec;
             }
         }
-        stat.totalRate = stat.readRate + stat.writeRate;
+        stat.totalBw = stat.readBw + stat.writeBw;
         stats.push_back(move(stat));
     }
 
     sort(stats.begin(), stats.end(), [](const FuncBwStat& lhs, const FuncBwStat& rhs) {
-        return lhs.totalRate > rhs.totalRate;
+        if (lhs.totalBw != rhs.totalBw) return lhs.totalBw > rhs.totalBw;
+        const uint64_t lhsSamples = lhs.readSamples + lhs.writeSamples;
+        const uint64_t rhsSamples = rhs.readSamples + rhs.writeSamples;
+        if (lhsSamples != rhsSamples) return lhsSamples > rhsSamples;
+        return lhs.funcKey < rhs.funcKey;
     });
 
     constexpr int FUNC_WIDTH = 72;
     constexpr int MODULE_WIDTH = 45;
-    const int tableWidth = FUNC_WIDTH + MODULE_WIDTH + 14 + 14 + 14 + 10;
+    constexpr int PID_WIDTH = 12;
+    const int tableWidth = PID_WIDTH + FUNC_WIDTH + MODULE_WIDTH +
+        14 + 14 + 14 + 14 + 14;
 
-    cout << string(tableWidth, '=') << "\n"
-         << (calibrated ? "CPU DDR BANDWIDTH BY FUNCTION"
-                        : "SPE MEMORY OPERATION ESTIMATES BY FUNCTION") << "\n"
+    cout << string(tableWidth, '=') << "\nCPU DDR BANDWIDTH BY USER FUNCTION\n"
          << string(tableWidth, '=') << "\n"
-         << left << setw(FUNC_WIDTH) << "Function"
+         << left << setw(PID_WIDTH) << "PID"
+         << setw(FUNC_WIDTH) << "Function"
          << setw(MODULE_WIDTH) << "Module"
-         << right << setw(14) << (calibrated ? "Read BW" : "DRAM loads")
-         << setw(14) << (calibrated ? "Write BW(est*)" : "Stores(est*)")
-         << setw(14) << (calibrated ? "Total BW" : "Total(est*)")
-         << setw(10) << "Samples" << "\n"
-         << left << setw(FUNC_WIDTH) << ""
+         << right << setw(14) << "Read BW"
+         << setw(14) << "Write BW(est*)"
+         << setw(14) << "Total BW"
+         << setw(14) << "Read samples" << setw(14) << "Store samples" << "\n"
+         << left << setw(PID_WIDTH) << ""
+         << setw(FUNC_WIDTH) << ""
          << setw(MODULE_WIDTH) << ""
-         << right << setw(14) << (calibrated ? "(MiB/s)" : "(Mops/s)")
-         << setw(14) << (calibrated ? "(MiB/s)" : "(Mops/s)")
-         << setw(14) << (calibrated ? "(MiB/s)" : "(Mops/s)")
+         << right << setw(14) << "(MiB/s)"
+         << setw(14) << "(MiB/s)"
+         << setw(14) << "(MiB/s)"
          << setw(10) << "" << "\n"
          << string(tableWidth, '-') << "\n";
 
     int shown = 0;
     for (const auto& stat : stats) {
         if (shown >= act.topN) break;
-        if (stat.totalRate <= 0.0 && stat.readSamples == 0 && stat.writeSamples == 0) continue;
+        if (stat.totalBw <= 0.0 && stat.readSamples == 0 && stat.writeSamples == 0) continue;
 
-        cout << left << setw(FUNC_WIDTH) << ShortenLeft(stat.funcName, FUNC_WIDTH - 2)
+        cout << left << setw(PID_WIDTH) << stat.pid
+             << setw(FUNC_WIDTH) << ShortenLeft(stat.funcName, FUNC_WIDTH - 2)
              << setw(MODULE_WIDTH) << ShortenRight(stat.moduleName, MODULE_WIDTH - 2)
              << right << fixed << setprecision(2);
-        PrintRateCell(stat.readRate, calibrated);
-        PrintRateCell(stat.writeRate, calibrated);
-        cout << setw(14) << stat.totalRate /
-                (calibrated ? BYTES_PER_MIB_LOCAL : OPS_PER_MILLION)
-             << setw(10) << (stat.readSamples + stat.writeSamples) << "\n";
+        if (calibrated) {
+            PrintBwCell(stat.readBw);
+            PrintBwCell(stat.writeBw);
+            cout << setw(14) << stat.totalBw / BYTES_PER_MIB_LOCAL;
+        } else {
+            cout << setw(14) << "N/A" << setw(14) << "N/A" << setw(14) << "N/A";
+        }
+        cout << setw(14) << stat.readSamples << setw(14) << stat.writeSamples << "\n";
         ++shown;
     }
     if (shown == 0) cout << "No eligible SPE load/store samples.\n";
@@ -331,42 +335,40 @@ static void PrintProcessTable(const BwContext& ctx, bool calibrated,
     }
 
     cout << "\n" << string(78, '=') << "\n"
-         << (calibrated ? "CPU DDR BANDWIDTH BY PROCESS"
-                        : "SPE MEMORY OPERATION ESTIMATES BY PROCESS") << "\n"
+         << "CPU DDR BANDWIDTH BY PROCESS (USER-SPACE)\n"
          << string(78, '=') << "\n"
          << left << setw(12) << "PID"
-         << right << setw(16) << (calibrated ? "Read BW" : "DRAM loads")
-         << setw(16) << (calibrated ? "Write BW(est*)" : "Stores(est*)")
-         << setw(16) << (calibrated ? "Total BW" : "Total(est*)")
+         << right << setw(16) << "Read BW"
+         << setw(16) << "Write BW(est*)"
+         << setw(16) << "Total BW"
          << setw(14) << "Samples" << "\n"
          << left << setw(12) << ""
-         << right << setw(16) << (calibrated ? "(MiB/s)" : "(Mops/s)")
-         << setw(16) << (calibrated ? "(MiB/s)" : "(Mops/s)")
-         << setw(16) << (calibrated ? "(MiB/s)" : "(Mops/s)")
+         << right << setw(16) << "(MiB/s)"
+         << setw(16) << "(MiB/s)"
+         << setw(16) << "(MiB/s)"
          << setw(14) << "" << "\n"
          << string(78, '-') << "\n";
 
     for (const auto& entry : processes) {
         const ProcessBwStat& p = entry.second;
-        double readRate = 0.0;
-        double writeRate = 0.0;
+        double readBw = 0.0;
+        double writeBw = 0.0;
         if (durationSec > 0.0) {
             if (calibrated) {
-                readRate = p.readBytes / durationSec;
-                writeRate = p.writeBytes / durationSec;
-            } else {
-                readRate = static_cast<double>(p.readWeight) * act.period / durationSec;
-                writeRate = static_cast<double>(p.writeWeight) * act.period / durationSec;
+                readBw = p.readBytes / durationSec;
+                writeBw = p.writeBytes / durationSec;
             }
         }
 
-        const double unitScale = calibrated ? BYTES_PER_MIB_LOCAL : OPS_PER_MILLION;
-        cout << left << setw(12) << p.pid
-             << right << fixed << setprecision(2)
-             << setw(16) << readRate / unitScale
-             << setw(16) << writeRate / unitScale
-             << setw(16) << (readRate + writeRate) / unitScale
-             << setw(14) << p.samples << "\n";
+        cout << left << setw(12) << p.pid << right << fixed << setprecision(2);
+        if (calibrated) {
+            cout << setw(16) << readBw / BYTES_PER_MIB_LOCAL
+                 << setw(16) << writeBw / BYTES_PER_MIB_LOCAL
+                 << setw(16) << (readBw + writeBw) / BYTES_PER_MIB_LOCAL;
+        } else {
+            cout << setw(16) << "N/A" << setw(16) << "N/A" << setw(16) << "N/A";
+        }
+        cout << setw(14) << p.samples << "\n";
     }
     cout << string(78, '-') << "\n";
 }
@@ -398,11 +400,131 @@ static void PrintPcieTable(const BwContext& ctx, double durationSec)
     cout << string(68, '-') << "\n";
 }
 
+static const char* WindowDirectionState(const WindowRecord& window, bool read,
+                                        uint64_t minSamples)
+{
+    if (!window.valid) return "invalid";
+    const double residual = read ? window.residualReadBytes : window.residualWriteBytes;
+    if (residual <= 0.0) return "no_traffic";
+    const uint64_t target = read ? window.targetReadSamples :
+                                   window.effectiveTargetWriteSamples;
+    if (target < minSamples) return "sparse";
+    const uint64_t denominator = read ? window.systemReadSamples :
+                                        window.effectiveTargetWriteSamples;
+    if (denominator == 0) return "no_denominator";
+    return "ok";
+}
+
+static uint64_t SumWeights(const unordered_map<string, uint64_t>& weights)
+{
+    uint64_t total = 0;
+    for (const auto& entry : weights) total += entry.second;
+    return total;
+}
+
+static void PrintWindowDebug(const BwContext& ctx, const ArgsContext& act)
+{
+    for (size_t i = 0; i < ctx.windows.size(); ++i) {
+        const auto& w = ctx.windows[i];
+        const uint64_t funcRead = SumWeights(w.funcReadSamples);
+        const uint64_t funcWrite = SumWeights(w.effectiveFuncWriteSamples);
+        const uint64_t currentFuncWrite = SumWeights(w.funcWriteSamples);
+        cout << "DBG_WINDOW"
+             << " window=" << i
+             << " start_ns=" << w.startNs
+             << " end_ns=" << w.endNs
+             << " duration_ns=" << max<int64_t>(0, w.endNs - w.startNs)
+             << " spe_read_cost_ns=" << w.speReadCostNs
+             << " spe_drains=" << w.speDrains
+             << " ddrc_valid=" << w.ddrcValid
+             << " spe_valid=" << w.speValid
+             << " pcie_valid=" << w.pcieValid
+             << " ddrc_read_bytes=" << w.ddrcReadBytes
+             << " ddrc_write_bytes=" << w.ddrcWriteBytes
+             << " observed_dma_read_bytes=" << w.observedDmaReadBytes
+             << " observed_dma_write_bytes=" << w.observedDmaWriteBytes
+             << " deducted_dma_read_bytes=" << w.deductedDmaReadBytes
+             << " deducted_dma_write_bytes=" << w.deductedDmaWriteBytes
+             << " residual_read_bytes=" << w.residualReadBytes
+             << " residual_write_bytes=" << w.residualWriteBytes
+             << " system_read_weight=" << w.systemReadSamples
+             << " system_write_weight=" << w.effectiveSystemWriteSamples
+             << " current_system_write_weight=" << w.systemWriteSamples
+             << " kernel_read_weight=" << w.kernelReadSamples
+             << " kernel_write_weight=" << w.effectiveKernelWriteSamples
+             << " current_kernel_write_weight=" << w.kernelWriteSamples
+             << " target_read_weight=" << w.targetReadSamples
+             << " target_write_weight=" << w.effectiveTargetWriteSamples
+             << " current_target_write_weight=" << w.targetWriteSamples
+             << " function_read_weight=" << funcRead
+             << " function_write_weight=" << funcWrite
+             << " current_function_write_weight=" << currentFuncWrite
+             << " background_read_weight="
+             << (w.systemReadSamples >= w.targetReadSamples
+                    ? w.systemReadSamples - w.targetReadSamples : 0)
+             << " background_write_weight="
+             << (w.effectiveSystemWriteSamples >= w.effectiveTargetWriteSamples
+                    ? w.effectiveSystemWriteSamples -
+                        w.effectiveTargetWriteSamples : 0)
+             << " current_background_write_weight="
+             << (w.systemWriteSamples >= w.targetWriteSamples
+                    ? w.systemWriteSamples - w.targetWriteSamples : 0)
+             << " attributed_read_bytes=" << w.attributedReadBytes
+             << " attributed_write_bytes=" << w.attributedWriteBytes
+             << " kernel_attributed_read_bytes=" << w.attributedKernelReadBytes
+             << " kernel_observed_write_bytes=" << w.observedKernelWriteBytes
+             << " unattributed_read_bytes="
+             << max(0.0, w.residualReadBytes - w.attributedReadBytes -
+                              w.attributedKernelReadBytes)
+             << " unattributed_write_bytes="
+             << max(0.0, w.residualWriteBytes - w.attributedWriteBytes)
+             << " read_state=" << WindowDirectionState(w, true, act.minSamples)
+             << " write_state=" << WindowDirectionState(w, false, act.minSamples)
+             << "\n";
+
+        map<string, pair<uint64_t, uint64_t>> functions;
+        for (const auto& entry : w.funcReadSamples) functions[entry.first].first = entry.second;
+        for (const auto& entry : w.effectiveFuncWriteSamples) {
+            functions[entry.first].second = entry.second;
+        }
+        for (const auto& entry : functions) {
+            const auto stat = ctx.funcStats.find(entry.first);
+            const int pid = stat == ctx.funcStats.end() ? 0 : stat->second.pid;
+            const string name = stat == ctx.funcStats.end() ? entry.first : stat->second.funcName;
+            const double readBytes =
+                string(WindowDirectionState(w, true, act.minSamples)) == "ok"
+                ? w.residualReadBytes * entry.second.first / w.systemReadSamples : 0.0;
+            const double writeBytes =
+                entry.second.second >= act.minSamples &&
+                string(WindowDirectionState(w, false, act.minSamples)) == "ok"
+                ? w.residualWriteBytes * entry.second.second /
+                    w.effectiveTargetWriteSamples : 0.0;
+            cout << "DBG_FUNC window=" << i
+                 << " pid=" << pid
+                 << " function=" << quoted(name)
+                 << " read_weight=" << entry.second.first
+                 << " write_weight=" << entry.second.second
+                 << " read_bytes=" << readBytes
+                 << " write_bytes=" << writeBytes << "\n";
+        }
+    }
+    cout << "DBG_TIMESTAMP"
+         << " missing=" << ctx.speTimestamps.missing
+         << " before_start=" << ctx.speTimestamps.beforeStart
+         << " after_stop=" << ctx.speTimestamps.afterStop
+         << " after_read=" << ctx.speTimestamps.afterRead
+         << " late=" << ctx.speTimestamps.late
+         << " unbucketed=" << ctx.speTimestamps.unbucketed
+         << "\n";
+}
+
 void PrintSummary(BwContext& ctx, bool ddrcOpened, bool pcieOpened,
                   const CollectionTiming& timing, const ArgsContext& act)
 {
     const double durationSec = timing.durationSec;
-    const bool calibrated = ctx.traffic.ddrcWindows > 0;
+    const bool calibrated = any_of(
+        ctx.windows.begin(), ctx.windows.end(),
+        [](const WindowRecord& window) { return window.ddrcValid; });
     const double calibratedDurationSec = ctx.traffic.ddrcElapsedSec > 0.0
         ? ctx.traffic.ddrcElapsedSec : durationSec;
 
@@ -415,8 +537,10 @@ void PrintSummary(BwContext& ctx, bool ddrcOpened, bool pcieOpened,
             ctx.traffic.ddrcReadBytes - ctx.traffic.deductedDmaReadBytes);
         const double residualWrite = max(0.0,
             ctx.traffic.ddrcWriteBytes - ctx.traffic.deductedDmaWriteBytes);
-        const double unattributedRead = max(0.0, residualRead - ctx.attribution.readBytes);
-        const double unattributedWrite = max(0.0, residualWrite - ctx.attribution.writeBytes);
+        const double unattributedRead = max(0.0, residualRead -
+            ctx.attribution.readBytes - ctx.attribution.kernelReadBytes);
+        const double unattributedWrite = max(0.0, residualWrite -
+            ctx.attribution.writeBytes);
 
         cout << "\n" << string(80, '=') << "\nDDR BANDWIDTH SUMMARY\n"
              << string(80, '=') << "\n"
@@ -441,19 +565,25 @@ void PrintSummary(BwContext& ctx, bool ddrcOpened, bool pcieOpened,
         printBw("Observed PCIe DMA", ctx.traffic.observedDmaReadBytes, ctx.traffic.observedDmaWriteBytes);
         printBw("PCIe DMA deducted", ctx.traffic.deductedDmaReadBytes, ctx.traffic.deductedDmaWriteBytes);
         printBw("System residual (DDRC - DMA)", residualRead, residualWrite);
-        printBw(act.pids.size() > 1 ? "Target PID(s) attributed" : "Target PID attributed",
+        printBw(act.pids.size() > 1 ? "Target PID(s) user attributed" :
+                                      "Target PID user attributed",
                 ctx.attribution.readBytes, ctx.attribution.writeBytes);
-        printBw("Unattributed/system", unattributedRead, unattributedWrite);
+        printBw("Kernel observed (read partition)",
+                ctx.attribution.kernelReadBytes, 0.0);
+        printBw("Kernel observed (write overlap*)", 0.0,
+                ctx.attribution.kernelObservedWriteBytes);
+        printBw("Other user/system", unattributedRead, unattributedWrite);
         cout << string(80, '-') << "\n";
 
         const double residualTotal = residualRead + residualWrite;
-        const double attributedTotal = ctx.attribution.readBytes + ctx.attribution.writeBytes;
+        const double attributedTotal =
+            ctx.attribution.readBytes + ctx.attribution.writeBytes;
         const double coverage = residualTotal > 0.0
             ? 100.0 * attributedTotal / residualTotal : 0.0;
-        cout << "Attribution coverage: " << coverage << "%    Windows: read "
-             << ctx.attribution.readWindows << "/" << ctx.traffic.ddrcWindows
-             << ", write " << ctx.attribution.writeWindows << "/"
-             << ctx.traffic.ddrcWindows << "\n";
+        cout << "Attribution coverage: " << coverage
+             << "%    User function windows: read "
+             << ctx.attribution.readWindows << "/" << ctx.windows.size()
+             << ", write " << ctx.attribution.writeWindows << "/" << ctx.windows.size() << "\n";
 
         if (!pcieOpened) {
             cout << "PCIe: unavailable; DMA is included in system residual.\n";
@@ -461,11 +591,6 @@ void PrintSummary(BwContext& ctx, bool ddrcOpened, bool pcieOpened,
             cout << "PCIe: no raw flux windows; DMA was not deducted.\n";
         } else {
             cout << "PCIe: " << ctx.traffic.pcieWindows << " synchronized windows\n";
-        }
-        if (ctx.traffic.pcieIncompleteWindows > 0) {
-            cout << "PCIe: " << ctx.traffic.pcieIncompleteWindows
-                 << " incomplete windows; DMA deduction and function attribution "
-                    "were skipped for those windows.\n";
         }
 
         if (ctx.traffic.dmaDeductionClamped) {
@@ -475,36 +600,25 @@ void PrintSummary(BwContext& ctx, bool ddrcOpened, bool pcieOpened,
         cout << string(80, '=') << "\n";
         PrintPcieTable(ctx, durationSec);
     } else {
-        const double estimatedReadOps =
-            static_cast<double>(ctx.spe.readWeight) * act.period;
-        const double estimatedWriteOps =
-            static_cast<double>(ctx.spe.writeWeight) * act.period;
-        cout << "Estimated SPE operation rates: DRAM loads="
-             << estimatedReadOps / durationSec / OPS_PER_MILLION
-             << " stores=" << estimatedWriteOps / durationSec / OPS_PER_MILLION
-             << " total=" << (estimatedReadOps + estimatedWriteOps) /
-                    durationSec / OPS_PER_MILLION
-             << " Mops/s (sample-count estimate, period=" << act.period << ")\n";
+        cout << "DDR bandwidth unavailable: SPE sample counts and period do not measure bytes.\n";
         cout << "DDRC status: "
-             << (ddrcOpened ? "opened but returned no metric windows" : "unavailable")
-             << "; physical DDR bandwidth is not available.\n";
+             << (ddrcOpened ? "opened but returned no metric windows" : "unavailable") << ".\n";
     }
 
-    cout << "\nSPE samples: DRAM loads=" << ctx.spe.readSamples
-         << "  stores=" << ctx.spe.writeSamples
+    cout << "\nSPE samples: target_dram_loads=" << ctx.spe.readSamples
+         << "  target_stores=" << ctx.spe.writeSamples
+         << "  system_dram_loads=" << ctx.spe.systemReadSamples
+         << "  system_stores=" << ctx.spe.systemWriteSamples
+         << "  kernel_dram_loads=" << ctx.spe.kernelReadSamples
+         << "  kernel_stores=" << ctx.spe.kernelWriteSamples
          << "  filtered=" << ctx.spe.filteredSamples
          << "  duration=" << durationSec << "s\n";
-    if (calibrated) {
-        cout << "* Write BW(est*) distributes DDRC write bytes using store sample counts. "
-                "Store retirement and later dirty-line DRAM writeback are not one-to-one.\n";
-    } else {
-        cout << "* SPE-only Mops/s values estimate sampled operation rates, not bytes or "
-                "physical DDR bandwidth; store sampling density can depend on opcode.\n";
-    }
 
     if (act.debug) {
         cout << fixed << setprecision(6) << "DEBUG TIMING\n"
              << "  requested_duration=" << timing.requestedSec << "\n"
+             << "  start_ns=" << timing.startNs << "\n"
+             << "  end_ns=" << timing.endNs << "\n"
              << "  startSec=" << timing.startSec << "\n"
              << "  lastCollectSec=" << timing.lastCollectSec << "\n"
              << "  endSec=" << timing.endSec << "\n"
@@ -521,6 +635,7 @@ void PrintSummary(BwContext& ctx, bool ddrcOpened, bool pcieOpened,
                  << " min_running_pct="
                  << (bytes.hasRunningRatio ? bytes.minRunningRatio * 100.0 : 0.0) << "\n";
         }
+        PrintWindowDebug(ctx, act);
         cout << "\n";
     }
 }

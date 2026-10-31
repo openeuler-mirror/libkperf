@@ -20,6 +20,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
+#include <time.h>
 #include "pmu_event.h"
 #include "arm_spe_decoder.h"
 #include "process_map.h"
@@ -65,6 +66,8 @@ static int OpenSpeEvent(PmuEvt *pmuAttr, int cpu, int pid)
     attr.read_format = PERF_FORMAT_ID;
     attr.exclude_kernel = pmuAttr->excludeKernel;
     attr.exclude_user = pmuAttr->excludeUser;
+    attr.use_clockid = 1;
+    attr.clockid = CLOCK_MONOTONIC;
 
     if (pmuAttr->enableOnExec) {
         attr.enable_on_exec = 1;
@@ -100,6 +103,8 @@ static int OpenDummyEvent(PmuEvt *pmuAttr, int cpu, int pid)
     attr.inherit = 1;
     attr.exclude_guest = pmuAttr->excludeGuest;
     attr.exclude_host = pmuAttr->excludeHost;
+    attr.use_clockid = 1;
+    attr.clockid = CLOCK_MONOTONIC;
 
     if (pmuAttr->enableOnExec) {
         attr.enable_on_exec = 1;

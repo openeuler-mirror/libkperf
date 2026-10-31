@@ -18,13 +18,18 @@
 using namespace std;
 typedef unsigned long ulong;
 
-double NowSec()
+int64_t NowNs()
 {
     timespec ts{};
     if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
-        return 0.0;
+        return 0;
     }
-    return static_cast<double>(ts.tv_sec) + static_cast<double>(ts.tv_nsec) / 1e9;
+    return static_cast<int64_t>(ts.tv_sec) * 1000000000LL + ts.tv_nsec;
+}
+
+double NowSec()
+{
+    return static_cast<double>(NowNs()) / 1e9;
 }
 
 
@@ -260,16 +265,24 @@ static SampleInfo PrepSample(const PmuData& data)
     return sample;
 }
 
+static bool IsKernelSample(const SampleInfo& sample)
+{
+    return sample.hasSym && sample.sym != nullptr &&
+           sample.sym->module != nullptr &&
+           strcmp(sample.sym->module, "[kernel]") == 0;
+}
+
 void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
-                     const vector<int>& targetPids, IntervalWeights& weights)
+                     const vector<int>& targetPids, SpeWindowState& windows,
+                     int64_t readEndNs)
 {
     if (data == nullptr || len <= 0) {
         return;
     }
 
-    // The PMU is already PID-filtered, but keep a defensive software filter.
-    // Cache an unordered_set per calling thread so a 10 ms SPE drain does not
-    // rebuild it every time. The set is refreshed only if the target PID list changes.
+    // Full system-wide SPE (user + kernel) supplies the denominator. Kernel-PC
+    // records are retained only in a system-level bucket; this set selects the
+    // target user-space numerators.
     static thread_local vector<int> cachedTargetPids;
     static thread_local unordered_set<int> targetPidSet;
     if (cachedTargetPids != targetPids) {
@@ -281,7 +294,8 @@ void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
 
     for (int i = 0; i < len; ++i) {
         const auto& record = data[i];
-        if (targetPidSet.find(record.pid) == targetPidSet.end()) {
+        if (readEndNs > 0 && record.ts > readEndNs + 1000000LL) {
+            ++ctx.speTimestamps.afterRead;
             continue;
         }
 
@@ -289,32 +303,65 @@ void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
         if (!sample.hasExt || (!sample.isLoad && !sample.isStore)) {
             continue;
         }
-
         bool accountRead = sample.isLoad && IsDramSource(sample.source);
         bool accountWrite = sample.isStore;
-        if (sample.isLoad && !accountRead) {
+        const bool isTarget = targetPidSet.find(record.pid) != targetPidSet.end();
+        const bool isKernel = IsKernelSample(sample);
+        const bool isTargetUser = isTarget && !isKernel;
+        string funcName = UNKNOWN;
+        string moduleName = UNKNOWN;
+        if (isTargetUser && sample.hasSym) {
+            funcName = ProcessSymbolName(sample.sym);
+            if (sample.sym->module != nullptr) {
+                moduleName = sample.sym->module;
+            }
+        }
+        if (isTargetUser && sample.isLoad && !accountRead) {
             ++ctx.spe.filteredSamples;
         }
         if (!accountRead && !accountWrite) {
             continue;
         }
 
-        string funcName = UNKNOWN;
-        string moduleName = UNKNOWN;
-        if (sample.hasSym) {
-            funcName = ProcessSymbolName(sample.sym);
-            if (sample.sym->module != nullptr) {
-                moduleName = sample.sym->module;
-            }
+        string funcKey;
+        if (isTargetUser) {
+            funcKey = to_string(sample.pid) + ':' + funcName + "@" + moduleName;
+        }
+        SpeContribution contribution;
+        contribution.timestampNs = record.ts;
+        contribution.target = isTargetUser;
+        contribution.kernel = isKernel;
+        contribution.read = accountRead;
+        contribution.write = accountWrite;
+        contribution.funcKey = funcKey;
+        if (!BucketSpeContribution(ctx, windows, contribution)) {
+            continue;
+        }
+        if (accountRead) ++ctx.spe.systemReadSamples;
+        if (accountWrite) ++ctx.spe.systemWriteSamples;
+        if (isKernel) {
+            if (accountRead) ++ctx.spe.kernelReadSamples;
+            if (accountWrite) ++ctx.spe.kernelWriteSamples;
+            continue;
+        }
+        if (!isTargetUser) {
+            continue;
         }
 
         AccountStorePcDebug(record, sample, funcName, moduleName);
 
-        string funcKey = to_string(sample.pid) + ':' + funcName + "@" + moduleName;
+        if (accountRead) {
+            ++ctx.spe.readWeight;
+            ++ctx.spe.readSamples;
+        }
+        if (accountWrite) {
+            ++ctx.spe.writeWeight;
+            ++ctx.spe.writeSamples;
+        }
+
         auto& stat = ctx.funcStats[funcKey];
         if (stat.funcName.empty()) {
-            stat.funcName = targetPids.size() > 1 ?
-                to_string(sample.pid) + ':' + funcName : funcName;
+            stat.funcName = funcName;
             stat.moduleName = moduleName;
             stat.funcKey = funcKey;
             stat.pid = sample.pid;
@@ -325,10 +372,6 @@ void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
             // not the logical load operand width.
             ++stat.readWeight;
             ++stat.readSamples;
-            ++ctx.spe.readWeight;
-            ++ctx.spe.readSamples;
-            ++weights.funcReadSamples[funcKey];
-            ++weights.totalReadSamples;
         }
 
         if (accountWrite) {
@@ -338,10 +381,6 @@ void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
             // writeback, and SPE store sampling density is opcode-dependent.
             ++stat.writeWeight;
             ++stat.writeSamples;
-            ++ctx.spe.writeWeight;
-            ++ctx.spe.writeSamples;
-            ++weights.funcWriteSamples[funcKey];
-            ++weights.totalWriteSamples;
         }
     }
 }
@@ -350,7 +389,7 @@ bool ReadDdrcInterval(int pd, PmuDeviceAttr* attrs, unsigned attrLen, double& re
 {
     PmuData* rawData = nullptr;
     int rawLen = PmuRead(pd, &rawData);
-    if (rawLen <= 0 || rawData == nullptr) {
+    if (rawLen <= 0 || rawData == nullptr || Perrorno() != 0) {
         if (rawData != nullptr) {
             PmuDataFree(rawData);
         }
@@ -360,24 +399,26 @@ bool ReadDdrcInterval(int pd, PmuDeviceAttr* attrs, unsigned attrLen, double& re
     PmuDeviceData* metricData = nullptr;
     int metricLen = PmuGetDevMetric(rawData, rawLen, attrs, attrLen, &metricData);
     if (metricLen <= 0 || metricData == nullptr) {
-        if (metricData != nullptr) {
-            DevDataFree(metricData);
-        }
+        if (metricData != nullptr) DevDataFree(metricData);
         PmuDataFree(rawData);
         return false;
     }
 
+    bool hasRead = false;
+    bool hasWrite = false;
     for (int i = 0; i < metricLen; ++i) {
         if (metricData[i].metric == PMU_DDR_READ_BW) {
+            hasRead = true;
             readBytes += metricData[i].count;
         } else if (metricData[i].metric == PMU_DDR_WRITE_BW) {
+            hasWrite = true;
             writeBytes += metricData[i].count;
         }
     }
 
     DevDataFree(metricData);
     PmuDataFree(rawData);
-    return true;
+    return hasRead && hasWrite;
 }
 
 static bool BdfToConfigValue(const string& bdf, string& configValue)
@@ -436,7 +477,7 @@ bool PrimePmuRead(int pd, double& readSec, string& error)
 {
     PmuData* data = nullptr;
     int len = PmuRead(pd, &data);
-    if (len < 0) {
+    if (len < 0 || Perrorno() != 0) {
         error = CurrentPmuError("baseline PmuRead");
         if (data != nullptr) {
             PmuDataFree(data);
@@ -558,107 +599,51 @@ bool OpenPcieCollector(const string& bdf, PcieCollector& collector,
 }
 
 
-struct PcieIntervalSample {
-    PcieCollector* collector = nullptr;
-    PcieBytes bytes;
-};
-
-PcieReadResult ReadPcieInterval(vector<PcieCollector>& collectors,
-                                BwContext& ctx, PcieBytes& total)
+bool ReadPcieInterval(vector<PcieCollector>& collectors, BwContext& ctx, PcieBytes& total, double stoppedSec)
 {
-    total = {};
-    PcieReadResult result;
-    vector<PcieIntervalSample> staged;
-    staged.reserve(collectors.size());
-
+    bool readAny = false;
     for (auto& collector : collectors) {
         if (collector.pd == -1) {
             continue;
         }
-        ++result.attempted;
 
         PmuData* rawData = nullptr;
         int rawLen = PmuRead(collector.pd, &rawData);
-        if (rawLen <= 0 || rawData == nullptr) {
+        if (rawLen <= 0 || rawData == nullptr || Perrorno() != 0) {
             if (rawData != nullptr) {
                 PmuDataFree(rawData);
             }
-            collector.synchronized = false;
-            ++result.failed;
-            result.incompleteBdfs.push_back(collector.bdf);
             continue;
         }
 
-        const double readSec = NowSec();
-        PcieIntervalSample sample;
-        sample.collector = &collector;
+        double readSec = stoppedSec > 0.0 ? stoppedSec : NowSec();
+        readAny = true;
+        PcieBytes& device = ctx.traffic.pcieByBdf[collector.bdf];
         if (collector.lastReadSec > 0.0 && readSec > collector.lastReadSec) {
-            sample.bytes.elapsedSec = readSec - collector.lastReadSec;
+            device.elapsedSec += readSec - collector.lastReadSec;
         }
         collector.lastReadSec = readSec;
 
-        bool sawRxMwr = false;
-        bool sawTxCpl = false;
         for (int i = 0; i < rawLen; ++i) {
             if (rawData[i].evt == nullptr) {
                 continue;
             }
             if (rawData[i].countPercent > 0.0) {
-                sample.bytes.minRunningRatio = sample.bytes.hasRunningRatio
-                    ? min(sample.bytes.minRunningRatio, rawData[i].countPercent)
-                    : rawData[i].countPercent;
-                sample.bytes.hasRunningRatio = true;
+                device.minRunningRatio = device.hasRunningRatio ? min(device.minRunningRatio, rawData[i].countPercent) : rawData[i].countPercent;
+                device.hasRunningRatio = true;
             }
             string eventName = rawData[i].evt;
             double bytes = static_cast<double>(rawData[i].count) * 4.0;
             if (eventName.find("rx_mwr_flux") != string::npos) {
-                sample.bytes.rxMwr += bytes;
-                sawRxMwr = true;
+                device.rxMwr += bytes;
+                total.rxMwr += bytes;
             } else if (eventName.find("tx_cpl_flux") != string::npos) {
-                sample.bytes.txCpl += bytes;
-                sawTxCpl = true;
+                device.txCpl += bytes;
+                total.txCpl += bytes;
             }
         }
         PmuDataFree(rawData);
-
-        // A successful read after a failed one establishes a new baseline. Its
-        // counts may span multiple DDRC windows, so discard it for attribution.
-        if (!collector.synchronized) {
-            collector.synchronized = true;
-            ++result.resynchronized;
-            result.incompleteBdfs.push_back(collector.bdf);
-            continue;
-        }
-
-        if (!sawRxMwr || !sawTxCpl) {
-            ++result.failed;
-            result.incompleteBdfs.push_back(collector.bdf);
-            continue;
-        }
-
-        ++result.succeeded;
-        staged.emplace_back(move(sample));
     }
 
-    // Commit only an all-collector, same-window snapshot. Partial data must not
-    // be used for DMA deduction because it would inflate the CPU residual.
-    if (!result.Complete()) {
-        return result;
-    }
-
-    for (const auto& sample : staged) {
-        PcieBytes& device = ctx.traffic.pcieByBdf[sample.collector->bdf];
-        device.rxMwr += sample.bytes.rxMwr;
-        device.txCpl += sample.bytes.txCpl;
-        device.elapsedSec += sample.bytes.elapsedSec;
-        if (sample.bytes.hasRunningRatio) {
-            device.minRunningRatio = device.hasRunningRatio
-                ? min(device.minRunningRatio, sample.bytes.minRunningRatio)
-                : sample.bytes.minRunningRatio;
-            device.hasRunningRatio = true;
-        }
-        total.rxMwr += sample.bytes.rxMwr;
-        total.txCpl += sample.bytes.txCpl;
-    }
-    return result;
+    return readAny;
 }
