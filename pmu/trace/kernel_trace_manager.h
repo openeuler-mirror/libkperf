@@ -77,6 +77,8 @@ public:
         std::string tracingThreshold;
         std::string tracingCpuMask;
         std::string bufferSizeKb;
+        std::string eventsEnable;
+        std::vector<std::string> enabledEventPaths;
         std::unordered_map<std::string, std::string> perCpuBufferSizeKb;
         std::unordered_map<std::string, std::string> options;
     };

@@ -15,6 +15,7 @@
 #include "test_common.h"
 #include "common.h"
 #include "cpu_map.h"
+#include "process_map.h"
 #include <dirent.h>
 
 using namespace std;
@@ -528,4 +529,63 @@ TEST_F(TestCount, Test100000ThreadInCountingMode) {
     PmuDisable(pd);
     int len = PmuRead(pd, &data);
     ASSERT_GT(len, 0);
+}
+
+TEST_F(TestCount, CountThreadNotWholeProcess) {
+    // Count one thread (tid) of a multi-threaded process.
+    // A thread id should be monitored alone, just like perf_event_open does,
+    // instead of being expanded to all threads of the process.
+    appPid = RunTestApp("test_12threads");
+    sleep(1);
+    int numTid = 0;
+    int* tids = GetChildTid(appPid, &numTid);
+    ASSERT_NE(tids, nullptr);
+    ASSERT_GT(numTid, 1);
+    int workerTid = -1;
+    for (int i = 0; i < numTid; ++i) {
+        if (tids[i] != appPid) {
+            workerTid = tids[i];
+            break;
+        }
+    }
+    delete[] tids;
+    ASSERT_NE(workerTid, -1);
+
+    // Count with the thread id: only this thread is monitored.
+    int tidList[1] = {workerTid};
+    char *evtList[1] = {"cycles"};
+    PmuAttr attr = {0};
+    attr.pidList = tidList;
+    attr.numPid = 1;
+    attr.evtList = evtList;
+    attr.numEvt = 1;
+
+    pd = PmuOpen(COUNTING, &attr);
+    ASSERT_NE(pd, -1);
+    int ret = PmuCollect(pd, 1000, collectInterval);
+    ASSERT_EQ(ret, SUCCESS);
+    int len = PmuRead(pd, &data);
+    // One thread with one event results in exactly one data entry.
+    ASSERT_EQ(len, 1);
+    ASSERT_TRUE(CheckDataEvt(data, len, "cycles"));
+    ASSERT_EQ(data[0].tid, workerTid);
+    ASSERT_TRUE(CheckDataPid(data, len, appPid));
+    if (data != nullptr) {
+        PmuDataFree(data);
+        data = nullptr;
+    }
+    PmuClose(pd);
+    pd = -1;
+
+    // Count with the process id: all threads of the process are still monitored.
+    int pidList[1] = {appPid};
+    attr.pidList = pidList;
+    pd1 = PmuOpen(COUNTING, &attr);
+    ASSERT_NE(pd1, -1);
+    ret = PmuCollect(pd1, 1000, collectInterval);
+    ASSERT_EQ(ret, SUCCESS);
+    int len1 = PmuRead(pd1, &data1);
+    ASSERT_EQ(len1, numTid);
+    ASSERT_TRUE(CheckDataEvt(data1, len1, "cycles"));
+    ASSERT_TRUE(CheckDataPid(data1, len1, appPid));
 }

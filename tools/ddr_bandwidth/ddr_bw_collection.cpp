@@ -120,7 +120,8 @@ static void RefreshSpeWindowHealth(CollectionHealth& health, const BwContext& ct
     }
 }
 
-static void PrintCollectionHealth(const CollectionHealth& health)
+static void PrintCollectionHealth(const CollectionHealth& health,
+                                  const ArgsContext& act, double durationSec)
 {
     const double avgDrain = health.speDrains > 0
         ? static_cast<double>(health.speRecords) / static_cast<double>(health.speDrains)
@@ -134,6 +135,11 @@ static void PrintCollectionHealth(const CollectionHealth& health)
 
     const uint64_t minRead = health.counterWindows > 0 ? health.minReadSamples : 0;
     const uint64_t minWrite = health.counterWindows > 0 ? health.minWriteSamples : 0;
+    const uint64_t expectedWindows = act.interval > 0
+        ? static_cast<uint64_t>(durationSec * 1000.0 / act.interval + 0.5)
+        : 0;
+    const double speReadRatio = durationSec > 0.0
+        ? health.speReadCostSec / durationSec * 100.0 : 0.0;
 
     cout << "\n" << string(80, '=') << "\n"
          << "DEBUG SPE / WINDOW HEALTH\n"
@@ -145,8 +151,11 @@ static void PrintCollectionHealth(const CollectionHealth& health)
          << " avg_records/drain=" << fixed << setprecision(2) << avgDrain
          << " max_records/drain=" << health.maxSpeRecordsPerDrain << "\n"
          << "SPE PmuRead wall time: total=" << health.speReadCostSec
-         << "s max=" << health.maxSpeReadCostSec << "s (includes decode/symbol work; not exact SPE pause time)\n"
+         << "s max=" << health.maxSpeReadCostSec
+         << "s share=" << speReadRatio
+         << "% (includes decode/symbol work; not exact SPE pause time)\n"
          << "Counter windows: total=" << health.counterWindows
+         << " expected~=" << expectedWindows
          << " DDRC=" << health.ddrcValidWindows << "/" << health.ddrcAttemptedWindows
          << " PCIe=" << health.pcieValidWindows << "/" << health.pcieAttemptedWindows << "\n"
          << "PCIe incomplete windows=" << health.pcieIncompleteWindows
@@ -155,10 +164,12 @@ static void PrintCollectionHealth(const CollectionHealth& health)
          << "SPE evidence windows: read=" << health.readEvidenceWindows
          << " write=" << health.writeEvidenceWindows
          << " zero=" << health.zeroEvidenceWindows << "\n"
-         << "Target read samples/window: min=" << minRead
+         << (act.systemWide ? "All-user" : "Target")
+         << " read samples/window: min=" << minRead
          << " avg=" << avgRead
          << " max=" << health.maxReadSamples << "\n"
-         << "Target effective write samples/window (current+2 history): min="
+         << (act.systemWide ? "All-user" : "Target")
+         << " effective write samples/window (current+2 history): min="
          << minWrite
          << " avg=" << avgWrite
          << " max=" << health.maxWriteSamples << "\n";
@@ -167,6 +178,13 @@ static void PrintCollectionHealth(const CollectionHealth& health)
         health.ddrcValidWindows < health.ddrcAttemptedWindows ||
         health.pcieValidWindows < health.pcieAttemptedWindows) {
         cout << "Health status: WARN (collector read failures detected)\n";
+    } else if (expectedWindows > 0 &&
+               health.counterWindows * 10 < expectedWindows * 8) {
+        cout << "Health status: WARN (fewer than 80% of scheduled windows were collected; "
+                "increase --period)\n";
+    } else if (speReadRatio > 20.0) {
+        cout << "Health status: WARN (SPE read/decode consumed more than 20% of "
+                "collection time; increase --period)\n";
     } else if (health.speDrains > 0 &&
                health.speEmptyDrains * 10 > health.speDrains) {
         cout << "Health status: WARN (>10% SPE drains were empty)\n";
@@ -176,14 +194,16 @@ static void PrintCollectionHealth(const CollectionHealth& health)
     } else {
         cout << "Health status: OK\n";
     }
-    cout << "Note: this health block detects empty/failed reads and evidence gaps; "
+    cout << "Note: this health block detects empty/failed reads, evidence gaps, and "
+            "scheduling overload; "
             "it does not claim hardware AUX-loss detection.\n"
          << string(80, '=') << "\n";
 }
 
 
 static void PrintSpePipelineDiagnostics(const CollectionHealth& health,
-                                        const BwContext& ctx)
+                                        const BwContext& ctx,
+                                        const ArgsContext& act)
 {
     const SpeDecodeStats& decode = ctx.speDecode;
     const uint64_t targetSamples = ctx.spe.readSamples + ctx.spe.writeSamples;
@@ -199,24 +219,27 @@ static void PrintSpePipelineDiagnostics(const CollectionHealth& health,
          << " after_read=" << decode.afterRead
          << " missing_ext=" << decode.missingExt
          << " non_load_store=" << decode.nonLoadStore << "\n"
-         << "scope: target_user=" << decode.targetUserRecords
+         << "scope: attribution=" << (act.systemWide ? "all-users" : "target-pids")
+         << " selected_user=" << decode.targetUserRecords
          << " other_user=" << decode.otherUserRecords
          << " kernel=" << decode.kernelRecords << "\n"
-         << "source fallback: unavailable_loads=" << decode.sourceUnavailableLoads
-         << " llc_miss_dram_loads=" << decode.eventFallbackDramLoads << "\n"
-         << "operation: dram_loads=" << decode.eligibleDramLoads
+         << "read mode: "
+         << (IsSpeDataSourceSupported() ? "dram-source" : "all-load-fallback")
+         << " fallback_loads=" << decode.fallbackModeLoads << "\n"
+         << "operation: eligible_read_loads=" << decode.eligibleReadLoads
          << " stores=" << decode.eligibleStores
-         << " non_dram_loads=" << decode.nonDramLoads << "\n"
+         << " excluded_read_loads=" << decode.excludedReadLoads << "\n"
          << "windowing: bucketed=" << decode.bucketedRecords
-         << " target_bucketed=" << decode.targetBucketedRecords
+         << " selected_bucketed=" << decode.targetBucketedRecords
          << " rejected=" << decode.bucketRejected << "\n"
          << "timestamp rejects: missing=" << ctx.speTimestamps.missing
          << " before_start=" << ctx.speTimestamps.beforeStart
          << " after_stop=" << ctx.speTimestamps.afterStop
          << " after_read=" << ctx.speTimestamps.afterRead
+         << " late=" << ctx.speTimestamps.late
          << " unbucketed=" << ctx.speTimestamps.unbucketed << "\n"
-         << "result: target_dram_loads=" << ctx.spe.readSamples
-         << " target_stores=" << ctx.spe.writeSamples
+         << "result: selected_read_samples=" << ctx.spe.readSamples
+         << " selected_stores=" << ctx.spe.writeSamples
          << " function_rows=" << ctx.funcStats.size() << "\n";
 
     cout << "Diagnosis: ";
@@ -226,18 +249,18 @@ static void PrintSpePipelineDiagnostics(const CollectionHealth& health,
         cout << "the collector returned no SPE records; check SPE support/permissions, sampling period, and whether the workload ran.\n";
     } else if (decode.recordsSeen == 0) {
         cout << "records were returned by PmuRead but none reached processing; inspect the collector/read handoff.\n";
-    } else if (decode.eligibleDramLoads == 0 && decode.eligibleStores == 0) {
-        cout << "collection worked, but decoding/filtering found no eligible DRAM-load or store records.\n";
+    } else if (decode.eligibleReadLoads == 0 && decode.eligibleStores == 0) {
+        cout << "collection worked, but decoding/filtering found no eligible read-load or store records.\n";
     } else if (decode.targetUserRecords == 0) {
-        cout << "eligible system SPE traffic exists, but no user record matched the target PID(s); check PID selection and process lifetime.\n";
+        cout << "eligible system SPE traffic exists, but no user record matched the attribution scope; check PID selection and process lifetime.\n";
     } else if (decode.targetBucketedRecords == 0) {
-        cout << "target records exist, but none survived operation and timestamp-window filtering; inspect operation/window counters above.\n";
+        cout << "selected records exist, but none survived operation and timestamp-window filtering; inspect operation/window counters above.\n";
     } else if (targetSamples == 0) {
-        cout << "target records reached a window but produced no eligible DRAM-load/store sample; inspect non_dram_loads and timestamp counters.\n";
+        cout << "selected records reached a window but produced no eligible read-load/store sample; inspect excluded_read_loads and timestamp counters.\n";
     } else if (ctx.funcStats.empty()) {
-        cout << "target samples were counted, but function statistics were not created; this indicates a post-processing defect.\n";
+        cout << "selected samples were counted, but function statistics were not created; this indicates a post-processing defect.\n";
     } else {
-        cout << "the SPE pipeline produced target function samples.\n";
+        cout << "the SPE pipeline produced selected user-function samples.\n";
     }
     cout << string(80, '=') << "\n";
 }
@@ -385,26 +408,6 @@ static string SpeEventFilterNames(unsigned long filter)
     return result.empty() ? "SPE_EVENT_NONE" : result;
 }
 
-static void PrintSpeConfigDebug(const PmuAttr& attr)
-{
-    const unsigned long dataFilter = static_cast<unsigned long>(attr.dataFilter);
-    const unsigned long eventFilter = static_cast<unsigned long>(attr.evFilter);
-    cout << "\n" << string(80, '=') << "\n"
-         << "DEBUG SPE CONFIG\n"
-         << string(80, '=') << "\n"
-         << "scope=system-wide"
-         << " period=" << attr.period
-         << " min_latency=" << attr.minLatency
-         << " exclude_user=" << attr.excludeUser
-         << " exclude_kernel=" << attr.excludeKernel
-         << " symbol_mode=" << static_cast<int>(attr.symbolMode) << "\n"
-         << "data_filter=" << SpeDataFilterNames(dataFilter)
-         << " (" << HexValue(dataFilter) << ")\n"
-         << "event_filter=" << SpeEventFilterNames(eventFilter)
-         << " (" << HexValue(eventFilter) << ")\n"
-         << string(80, '=') << "\n";
-}
-
 static void CleanupCollectors(CollectorSet& set)
 {
     if (set.spePd != -1) PmuClose(set.spePd);
@@ -413,6 +416,21 @@ static void CleanupCollectors(CollectorSet& set)
         if (collector.pd != -1) PmuClose(collector.pd);
     }
     set.spePd = set.ddrcPd = -1;
+}
+
+static void ClosePcieCollectors(CollectorSet& set, bool disableFirst)
+{
+    for (auto& collector : set.pcieCollectors) {
+        if (collector.pd == -1) {
+            continue;
+        }
+        if (disableFirst) {
+            PmuDisable(collector.pd);
+        }
+        PmuClose(collector.pd);
+        collector.pd = -1;
+    }
+    set.pcieOpened = false;
 }
 
 static bool OpenSpeCollector(const ArgsContext& act, CollectorSet& set)
@@ -429,9 +447,6 @@ static bool OpenSpeCollector(const ArgsContext& act, CollectorSet& set)
     // System-wide collection cannot use target-bound enable_on_exec. The child
     // remains blocked until all collectors are enabled and baselined below.
     attr.enableOnExec = 0;
-    if (act.debug) {
-        PrintSpeConfigDebug(attr);
-    }
     set.spePd = PmuOpen(SPE_SAMPLING, &attr);
     if (set.spePd == -1) {
         cerr << "PmuOpen SPE_SAMPLING failed: " << Perror() << "\n";
@@ -481,14 +496,16 @@ static void OpenHardwareCollectors(const ArgsContext& act, CollectorSet& set)
             cerr << "Warning: unable to open raw PCIe payload events for BDF " << bdf << ": " << error << ".\n";
         }
     }
-    set.pcieOpened = !set.pcieCollectors.empty();
     if (bdfs.empty()) {
         cerr << "Warning: no PCIe endpoint BDF was discovered; DMA traffic will not be deducted.\n";
-    } else if (!set.pcieOpened) {
+    } else if (set.pcieCollectors.empty()) {
         cerr << "Warning: no PCIe BDF is collectable; DMA traffic will not be deducted.\n";
     } else if (set.pcieCollectors.size() != bdfs.size()) {
-        cerr << "Warning: PCIe PMU is partially available; only " << set.pcieCollectors.size() << " of " << bdfs.size()
-             << " requested BDFs will be deducted.\n";
+        cerr << "Warning: PCIe PMU is available for only " << set.pcieCollectors.size()
+             << " of " << bdfs.size() << " requested BDFs; partial DMA data will not be deducted.\n";
+        ClosePcieCollectors(set, false);
+    } else {
+        set.pcieOpened = true;
     }
 }
 
@@ -501,18 +518,20 @@ static bool EnableCollectors(CollectorSet& set)
         set.ddrcOpened = false;
     }
     unsigned enabled = 0;
-    for (auto& collector : set.pcieCollectors) {
-        if (PmuEnable(collector.pd) != 0) {
-            cerr << "Warning: failed to enable PCIe PMU for BDF " << collector.bdf << " (" << Perror() << ").\n";
-            PmuClose(collector.pd);
-            collector.pd = -1;
-        } else {
-            ++enabled;
+    if (set.pcieOpened) {
+        for (auto& collector : set.pcieCollectors) {
+            if (PmuEnable(collector.pd) != 0) {
+                cerr << "Warning: failed to enable PCIe PMU for BDF " << collector.bdf << " (" << Perror() << ").\n";
+                PmuClose(collector.pd);
+                collector.pd = -1;
+            } else {
+                ++enabled;
+            }
         }
-    }
-    set.pcieOpened = enabled > 0;
-    if (!set.pcieCollectors.empty() && !set.pcieOpened) {
-        cerr << "Warning: no PCIe PMU could be enabled; DMA traffic will not be deducted.\n";
+        if (enabled != set.pcieCollectors.size()) {
+            ClosePcieCollectors(set, true);
+            cerr << "Warning: not all PCIe PMUs could be enabled; partial DMA data will not be deducted.\n";
+        }
     }
     if (PmuEnable(set.spePd) != 0) {
         cerr << "PmuEnable SPE_SAMPLING failed: " << Perror() << "\n";
@@ -544,9 +563,9 @@ static bool PrimeCollectors(CollectorSet& set)
         }
         error.clear();
     }
-    if (set.pcieOpened) set.pcieOpened = primed > 0;
-    if (!set.pcieCollectors.empty() && !set.pcieOpened) {
-        cerr << "Warning: no PCIe PMU passed the baseline read; DMA traffic will not be deducted.\n";
+    if (set.pcieOpened && primed != set.pcieCollectors.size()) {
+        ClosePcieCollectors(set, true);
+        cerr << "Warning: not all PCIe PMUs passed the baseline read; partial DMA data will not be deducted.\n";
     }
 
     if (set.ddrcOpened &&
@@ -725,6 +744,7 @@ static void CollectCounterWindow(const ArgsContext& act, CollectorSet& set, BwCo
 
 static bool TargetExited(const ArgsContext& act)
 {
+    if (act.systemWide) return false;
     if (act.isLaunch) {
         int status = 0;
         return waitpid(act.pid, &status, WNOHANG) == act.pid;
@@ -761,6 +781,11 @@ static bool SleepUntil(double targetSec, volatile sig_atomic_t* stopRequested)
 
 int RunDdrBandwidthCollection(ArgsContext& act, volatile sig_atomic_t* stopRequested, volatile int* execErrNo)
 {
+    if (act.duration <= 0 || act.interval <= 0 || act.speReadInterval <= 0) {
+        cerr << "Error: collection duration, interval, and SPE read interval must be positive.\n";
+        return 1;
+    }
+
     ConfigureSpeDebug(act.debug);
     CollectorSet collectors;
     if (!InitializeCollectors(act, collectors)) {
@@ -775,7 +800,8 @@ int RunDdrBandwidthCollection(ArgsContext& act, volatile sig_atomic_t* stopReque
     // The synchronization protocol is opt-in and used only by the dedicated
     // exact-window validation demo. Do not tie this to --debug: sending
     // SIGUSR1/SIGUSR2 to an arbitrary application would be unsafe.
-    const bool exactStoreSync = ExactStoreSyncEnabled() && !act.isLaunch;
+    const bool exactStoreSync = ExactStoreSyncEnabled() &&
+        !act.isLaunch && !act.systemWide;
 
     const int64_t startNs = NowNs();
     const double startSec = static_cast<double>(startNs) / 1e9;
@@ -848,10 +874,9 @@ int RunDdrBandwidthCollection(ArgsContext& act, volatile sig_atomic_t* stopReque
     RefreshSpeWindowHealth(health, ctx);
     PrintSummary(ctx, collectors.ddrcOpened, collectors.pcieOpened, timing, act);
     if (act.debug) {
-        PrintSpePipelineDiagnostics(health, ctx);
-        PrintCollectionHealth(health);
+        PrintSpePipelineDiagnostics(health, ctx, act);
+        PrintCollectionHealth(health, act, timing.durationSec);
         PrintSpeEventDebug();
-        PrintSpeStorePcDebug();
     }
     CleanupCollectors(collectors);
     return 0;

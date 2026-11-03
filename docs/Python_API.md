@@ -103,6 +103,7 @@ kperf.open(collector_type: kperf.PmuTaskType, pmu_attr: kperf.PmuAttr)
 * 返回值是int值
   fd > 0 成功初始化
   fd == -1 初始化失败，可通过 kperf.error()查看错误信息
+  > **注意：** 在SAMPLING和COUNTING模式下输入多个事件时，如果其中部分事件异常（如不支持、打开失败等），libkperf会跳过异常事件并继续初始化剩余事件，此时仍会返回fd > 0。异常事件可通过kperf.get_warn_msg()接口查看告警信息；COUNTING模式下还可通过PmuData.countPercent字段判断各事件是否被成功采集（详见下文countPercent取值说明）。
   以下是kperf.open的一个示例:
 
 ```python
@@ -177,7 +178,11 @@ pd为kperf.open返回值
   * comm: 执行指令名称
   * period: 采样间隔
   * count: 计数
-  * countPercent: 计数比值，使能时间/运行时间
+  * countPercent: 计数比值，使能时间/运行时间。仅在COUNTING模式下有效，取值含义如下：
+    * (0,1): partially counted，事件部分时间被采集。当采集的事件数超过可用硬件计数器数目时，内核会对事件进行多路复用（multiplexing），使事件轮流占用计数器。countPercent为事件实际运行时间与使能时间的比值，越接近1表示采集越充分，越接近0表示采集越不充分
+    * 1: counted，事件被正常采集，实际运行时间等于使能时间
+    * -1: not counted，事件未被采集，如事件分组中事件数超过硬件计数器数目时，该组所有事件都不会被采集
+    * -2: not supported，事件在当前环境不被支持
   * ext: SPE独特数据
     * pa  物理地址
     * va  虚拟地址
@@ -383,7 +388,8 @@ kperf.device_open(dev_attr: List[PmuDeviceAttr]) 初始化采集uncore事件指�
     * PMU_HHA_CROSS_NUMA 采集每个numa的跨numa访问HHA的操作比例
     * PMU_HHA_CROSS_SOCKET 采集每个numa的跨socket访问HHA的操作比例
   * bdf: 指定需要采集设备的bdf号，只对pcie带宽和smmu指标有效
-  * port: 指定需要采集设备的port号，只对pcie延时指标有效
+  * port: 指定单个PCIE Root Port，支持PCIE带宽和延时指标；同时设置bdf时优先使用port
+  * ports: 指定PCIE Root Port列表，优先级高于port，并且多个端口必须属于同一个PCIE PMU
 * 返回值是int类型，pd > 0表示初始化成功，pd == -1初始化失败，可通过kperf.error()查看错误信息，以下是一个kperf.device_open的示例
 
 ```python
@@ -442,6 +448,10 @@ kperf.device_bdf_list(bdf_type: PmuBdfType): 查找当前系统pcie指标中有�
     bdf_list = kperf.device_bdf_list(bdf_type)
     print(bdf_list)
 ```
+`PMU_BDF_TYPE_PORT`用于查询PCIE Root Port BDF。
+调用`device_bdf_list(PmuBdfType.PMU_BDF_TYPE_PORT)`可获取支持采集的Root Port。
+多个端口通过`PmuDeviceAttr(..., ports=["20:00.0", "20:04.0"])`传入；
+端口列表同时支持PCIE带宽和延时指标，并且所有端口必须属于同一个PCIE PMU。
 
 ### kperf.get_cpu_freq
 

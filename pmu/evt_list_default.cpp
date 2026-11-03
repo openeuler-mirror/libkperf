@@ -126,8 +126,8 @@ int KUNPENG_PMU::EvtListDefault::Init(const bool groupEnable, const std::shared_
                 err = perfEvt->Init(groupEnable, groupFd, resetOutPutFd);
             }
             if (err != SUCCESS) {
-                if (!perfEvt->IsMainPid()) {
-                    // child pid init err
+                if (!perfEvt->IsRequiredTarget()) {
+                    // A discovered child thread is optional. Ignore its initialization error and continue with the other targets
                     perfEvt->SetInitErr(true);
                     evtVec.emplace_back(perfEvt);
                     continue;
@@ -214,6 +214,13 @@ int KUNPENG_PMU::EvtListDefault::Read(EventData &eventData)
 
     std::unique_lock<std::mutex> lg(mutex);
 
+    if (GetIsInitErr()) {
+        if (this->pmuEvt->collectType == COUNTING) {
+            this->ForgePmuData(eventData);
+        }
+        return SUCCESS;
+    }
+
     for (auto rowList : this->xyCounterArray) {
         for (auto evt : rowList) {
             int err = evt->BeginRead();
@@ -272,6 +279,26 @@ int KUNPENG_PMU::EvtListDefault::Read(EventData &eventData)
     }
 
     return SUCCESS;
+}
+
+/**
+ * @brief forge pmudata for counting, which not supported.
+ * countPercent=PMU_COUNT_NOT_SUPPORTED not supported
+ * countPercent=PMU_COUNT_NOT_COUNTED, not counted
+ */
+void KUNPENG_PMU::EvtListDefault::ForgePmuData(KUNPENG_PMU::EventData &eventData) const 
+{
+    eventData.data.emplace_back(PmuData{});
+    auto& current = eventData.data.back();
+    current.count = 0;
+    current.countPercent = PMU_COUNT_NOT_SUPPORTED;
+    current.groupId = -1;
+    current.evt = pmuEvt->name.c_str();
+    current.comm = "system";
+    current.cgroupName = "";
+    current.tid = -1;
+    current.pid = -1;
+    current.cpu = -1;
 }
 
 int KUNPENG_PMU::EvtListDefault::Pause()

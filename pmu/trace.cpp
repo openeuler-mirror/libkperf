@@ -26,6 +26,7 @@
 #include "trace_log.h"
 #include "kernel_trace_manager.h"
 #include "common.h"
+#include "process_map.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -67,6 +68,12 @@ static std::unordered_map<int, JvmTraceSession> g_jvmTraceSessions;
 static std::unordered_map<int, KernelTraceSession> g_kernelTraceSessions;
 static std::unordered_map<UTraceData *, int> g_mergedTraceLens;
 static std::unordered_map<int, std::string> g_traceLogSessionIds;
+
+static constexpr unsigned K_VTHREAD_MOUNT_EVENT = 2;
+static constexpr unsigned K_VTHREAD_UNMOUNT_EVENT = 3;
+static constexpr unsigned K_VTHREAD_MOUNT_DEGRADED_EVENT = 4;
+static constexpr unsigned K_VTHREAD_UNMOUNT_DEGRADED_EVENT = 5;
+static constexpr uint64_t K_JAVA_VTHREAD_CONTEXT_FLAG = UINT64_C(1) << 63;
 
 static JvmTraceSession *GetJvmTraceSession(int pd)
 {
@@ -379,56 +386,269 @@ static bool IsInTraceWindow(const UTraceData &data, int64_t windowStartNs, int64
     return data.timestamp >= windowStartNs && data.timestamp <= windowEndNs;
 }
 
-static int CountTraceDataInWindow(const UTraceData *data, int len, int64_t windowStartNs, int64_t windowEndNs)
+static bool IsVirtualThreadTransition(const UTraceData &data)
+{
+    return data.isRet == K_VTHREAD_MOUNT_EVENT
+        || data.isRet == K_VTHREAD_UNMOUNT_EVENT
+        || data.isRet == K_VTHREAD_MOUNT_DEGRADED_EVENT
+        || data.isRet == K_VTHREAD_UNMOUNT_DEGRADED_EVENT;
+}
+
+static bool ShouldMergeTraceData(const UTraceData &data, int64_t windowStartNs, int64_t windowEndNs)
+{
+    // A mount before the visible trace window establishes the carrier state for
+    // kernel/native records inside the window, so transition events are retained
+    // internally until context association is complete.
+    return IsVirtualThreadTransition(data) || IsInTraceWindow(data, windowStartNs, windowEndNs);
+}
+
+static int CountTraceDataForMerge(const UTraceData *data, int len,
+    int64_t windowStartNs, int64_t windowEndNs)
 {
     if (data == nullptr || len <= 0) {
         return 0;
     }
     return static_cast<int>(std::count_if(data, data + len,
         [windowStartNs, windowEndNs](const UTraceData &event) {
-            return IsInTraceWindow(event, windowStartNs, windowEndNs);
+            return ShouldMergeTraceData(event, windowStartNs, windowEndNs);
         }));
 }
 
-static UTraceData *MergeTraceData(UTraceData *nativeData, int nativeLen, UTraceData *javaData, int javaLen,
-    UTraceData *kernelData = nullptr, int kernelLen = 0, int64_t windowStartNs = 0, int64_t windowEndNs = 0)
+struct TraceMergeInputStats {
+    int nativeInput{0};
+    int nativeKept{0};
+    int javaInput{0};
+    int javaKept{0};
+    int kernelInput{0};
+    int kernelKept{0};
+};
+
+static void LogTraceMergeInput(const TraceMergeInputStats &stats)
 {
+    TraceLog(MakeLogMessage("[trace] merge input: native=", stats.nativeInput, "/", stats.nativeKept,
+        ", java=", stats.javaInput, "/", stats.javaKept,
+        ", kernel=", stats.kernelInput, "/", stats.kernelKept, "\n"));
+}
+
+static bool IsUsableJavaThreadName(const UTraceData &event)
+{
+    return event.gPtr == 0 && event.comm != nullptr && event.comm[0] != '\0'
+        && std::strcmp(event.comm, "unknown") != 0 && std::strcmp(event.comm, "carrier") != 0;
+}
+
+static std::unordered_map<int, std::string> BuildJavaThreadNamesByTid(
+    const UTraceData *data, int len)
+{
+    std::unordered_map<int, std::string> names;
+    if (data == nullptr || len <= 0) {
+        return names;
+    }
+    for (int i = 0; i < len; ++i) {
+        const UTraceData &event = data[i];
+        if (!IsUsableJavaThreadName(event)) {
+            continue;
+        }
+        std::string &name = names[event.tid];
+        if (std::strlen(event.comm) > name.size()) {
+            name = event.comm;
+        }
+    }
+    return names;
+}
+
+static void PreferJavaThreadName(UTraceData &event,
+    const std::unordered_map<int, std::string> &javaThreadNames)
+{
+    if (event.gPtr != 0) {
+        return;
+    }
+    auto name = javaThreadNames.find(event.tid);
+    if (name == javaThreadNames.end()
+        || (event.comm != nullptr && std::strlen(event.comm) >= name->second.size())) {
+        return;
+    }
+    char *fullComm = TraceDupString(name->second);
+    if (fullComm == nullptr) {
+        return;
+    }
+    std::free(const_cast<char *>(event.comm));
+    event.comm = fullComm;
+}
+
+static void AssociateVirtualThreadContext(UTraceData *data, int len)
+{
+    // Phase 1: retain the best Java-supplied name for each virtual-thread context on each carrier TID
+    std::unordered_map<uint64_t, std::unordered_map<int, std::string>> javaCommByContextTid;
+    for (int i = 0; i < len; ++i) {
+        const UTraceData &event = data[i];
+        // bit 63 distinguishes Java virtual-thread IDs from zero and Go g pointers
+        if ((event.gPtr & K_JAVA_VTHREAD_CONTEXT_FLAG) == 0 || event.comm == nullptr || event.comm[0] == '\0'
+            || std::strcmp(event.comm, "unknown") == 0 || std::strcmp(event.comm, "carrier") == 0) {
+            continue;
+        }
+        std::string &comm = javaCommByContextTid[event.gPtr][event.tid];
+        // The same thread may have both an OS-truncated comm and the full Java thread name. Prefer the longer one
+        if (std::strlen(event.comm) > comm.size()) {
+            comm = event.comm;
+        }
+    }
+
+    // Phase 2: apply mount intervals to native/kernel events that have no context ID
+    std::unordered_map<int, uint64_t> mountedByTid;
+    for (int i = 0; i < len; ++i) {
+        UTraceData &event = data[i];
+        if (event.isRet == K_VTHREAD_MOUNT_EVENT
+            || event.isRet == K_VTHREAD_MOUNT_DEGRADED_EVENT) {
+            if (event.gPtr != 0) {
+                mountedByTid[event.tid] = event.gPtr;
+            }
+            continue;
+        }
+        if (event.isRet == K_VTHREAD_UNMOUNT_EVENT
+            || event.isRet == K_VTHREAD_UNMOUNT_DEGRADED_EVENT) {
+            auto mounted = mountedByTid.find(event.tid);
+            if (mounted != mountedByTid.end() && mounted->second == event.gPtr) {
+                mountedByTid.erase(mounted);
+            }
+            continue;
+        }
+        if (event.gPtr == 0) {
+            auto mounted = mountedByTid.find(event.tid);
+            if (mounted != mountedByTid.end()) {
+                event.gPtr = mounted->second;
+            }
+        }
+    }
+
+    // Phase 3: propagate the selected name only to events from the same virtual-thread context and carrier TID
+    for (int i = 0; i < len; ++i) {
+        UTraceData &event = data[i];
+        auto context = javaCommByContextTid.find(event.gPtr);
+        if (context == javaCommByContextTid.end()) {
+            continue;
+        }
+        auto thread = context->second.find(event.tid);
+        if (thread == context->second.end()
+            || (event.comm != nullptr && thread->second == event.comm)) {
+            continue;
+        }
+
+        char *fullComm = TraceDupString(thread->second);
+        if (fullComm != nullptr) {
+            std::free(const_cast<char *>(event.comm));
+            event.comm = fullComm;
+        }
+    }
+}
+
+static int RemoveVirtualThreadTransitions(UTraceData *data, int len)
+{
+    int visible = 0;
+    for (int i = 0; i < len; ++i) {
+        if (IsVirtualThreadTransition(data[i])) {
+            FreeTraceDataFields(data[i]);
+            continue;
+        }
+        if (visible != i) {
+            data[visible] = data[i];
+        }
+        visible++;
+    }
+    return visible;
+}
+
+static int FinalizeVirtualThreadContext(UTraceData *data, int len)
+{
+    if (data == nullptr || len <= 0) {
+        return 0;
+    }
+    AssociateVirtualThreadContext(data, len);
+    int visible = RemoveVirtualThreadTransitions(data, len);
+    auto merged = g_mergedTraceLens.find(data);
+    if (merged != g_mergedTraceLens.end()) {
+        merged->second = visible;
+    }
+    return visible;
+}
+
+static UTraceData *MergeTraceData(UTraceData *nativeData, int nativeLen, UTraceData *javaData, int javaLen,
+    UTraceData *kernelData = nullptr, int kernelLen = 0, int64_t windowStartNs = 0, int64_t windowEndNs = 0,
+    bool keepVirtualThreadTransitions = false, int *mergedLen = nullptr, TraceMergeInputStats *stats = nullptr)
+{
+    if (mergedLen != nullptr) {
+        *mergedLen = 0;
+    }
     if ((nativeLen > 0 && nativeData == nullptr) || (javaLen > 0 && javaData == nullptr) ||
         (kernelLen > 0 && kernelData == nullptr)) {
         pcerr::New(LIBPERF_ERR_NULL_POINTER, "Trace data is null while trace length is positive");
+        if (mergedLen != nullptr) {
+            *mergedLen = -1;
+        }
         return nullptr;
     }
-    int nLen = CountTraceDataInWindow(nativeData, nativeLen, windowStartNs, windowEndNs);
-    int jLen = CountTraceDataInWindow(javaData, javaLen, windowStartNs, windowEndNs);
-    int kLen = CountTraceDataInWindow(kernelData, kernelLen, windowStartNs, windowEndNs);
+    // Java and perf collectors are explicitly enabled/disabled, so their data
+    // is already collection-window scoped. Only raw kernel data needs the
+    // additional timestamp-window filter.
+    int nLen = CountTraceDataForMerge(nativeData, nativeLen, 0, 0);
+    int jLen = CountTraceDataForMerge(javaData, javaLen, 0, 0);
+    int kLen = CountTraceDataForMerge(kernelData, kernelLen, windowStartNs, windowEndNs);
     int total = nLen + jLen + kLen;
+    if (stats != nullptr) {
+        stats->nativeInput = nativeLen;
+        stats->nativeKept = nLen;
+        stats->javaInput = javaLen;
+        stats->javaKept = jLen;
+        stats->kernelInput = kernelLen;
+        stats->kernelKept = kLen;
+    }
     if (total <= 0) {
         return nullptr;
     }
     UTraceData *merged = static_cast<UTraceData *>(std::calloc(total, sizeof(UTraceData)));
     if (merged == nullptr) {
         pcerr::New(COMMON_ERR_NOMEM, "calloc merged UTraceData failed");
+        if (mergedLen != nullptr) {
+            *mergedLen = -1;
+        }
         return nullptr;
     }
 
+    // The first merge gets names directly from Java events. The final
+    // Java/native/kernel merge receives the already reconciled user events in
+    // nativeData, so they carry the same full names forward to kernel events.
+    const UTraceData *threadNameData = javaLen > 0 ? javaData : nativeData;
+    const int threadNameLen = javaLen > 0 ? javaLen : nativeLen;
+    const std::unordered_map<int, std::string> javaThreadNames =
+        BuildJavaThreadNamesByTid(threadNameData, threadNameLen);
     int idx = 0;
     for (int i = 0; i < nativeLen; ++i) {
-        if (IsInTraceWindow(nativeData[i], windowStartNs, windowEndNs)) {
+        if (ShouldMergeTraceData(nativeData[i], 0, 0)) {
             merged[idx++] = DeepCopyTraceData(nativeData[i]);
+            PreferJavaThreadName(merged[idx - 1], javaThreadNames);
         }
     }
     for (int i = 0; i < javaLen; ++i) {
-        if (IsInTraceWindow(javaData[i], windowStartNs, windowEndNs)) {
+        if (ShouldMergeTraceData(javaData[i], 0, 0)) {
             merged[idx++] = DeepCopyTraceData(javaData[i]);
         }
     }
     for (int i = 0; i < kernelLen; ++i) {
-        if (IsInTraceWindow(kernelData[i], windowStartNs, windowEndNs)) {
+        if (ShouldMergeTraceData(kernelData[i], windowStartNs, windowEndNs)) {
             merged[idx++] = DeepCopyTraceData(kernelData[i]);
+            PreferJavaThreadName(merged[idx - 1], javaThreadNames);
         }
     }
     SortTraceDataByTimestamp(merged, static_cast<size_t>(total));
-    g_mergedTraceLens[merged] = total;
+    AssociateVirtualThreadContext(merged, total);
+    int visible = keepVirtualThreadTransitions ? total : RemoveVirtualThreadTransitions(merged, total);
+    if (visible <= 0) {
+        std::free(merged);
+        return nullptr;
+    }
+    g_mergedTraceLens[merged] = visible;
+    if (mergedLen != nullptr) {
+        *mergedLen = visible;
+    }
     return merged;
 }
 
@@ -643,6 +863,13 @@ static int OpenJavaBackend(UTraceAttr *attr)
         pcerr::New(LIBPERF_ERR_NULL_POINTER, "Java UTraceAttr pidList is empty");
         return -1;
     }
+    const int jvmPid = GetTgid(attr->pidList[0]);
+    if (jvmPid <= 0) {
+        pcerr::New(LIBPERF_ERR_INVALID_PID,
+            "Cannot resolve JVM process PID from task ID " + std::to_string(attr->pidList[0]));
+        return -1;
+    }
+
     int pd = PmuList::GetInstance()->NewPd();
     if (pd == -1) {
         pcerr::New(LIBPERF_ERR_NO_AVAIL_PD);
@@ -651,7 +878,7 @@ static int OpenJavaBackend(UTraceAttr *attr)
 
     // if java symbol list is empty, includeRules will be nullptr
     std::string includeRules = BuildJavaSymSrc(attr);
-    int err = JavaTraceManager::GetInstance().Open(pd, attr->pidList[0], includeRules.empty() ? nullptr : includeRules.c_str());
+    int err = JavaTraceManager::GetInstance().Open(pd, jvmPid, includeRules.empty() ? nullptr : includeRules.c_str());
     if (err != 0) {
         PmuList::GetInstance()->Close(pd);
         return -1;
@@ -727,16 +954,27 @@ static int CommitTraceLogSession(int pd, const std::string &id)
     return pd;
 }
 
-static void WarnOptionalKernelTraceFailure(const char *operation, int error, const std::string &errorMessage)
+static std::string KernelTraceFailureDetail(const char *operation, int error, const std::string &errorMessage)
 {
-    std::string detail = "Kernel trace " + std::string(operation) + " failed";
+    std::string detail = "kernel trace unavailable during " + std::string(operation);
     if (!errorMessage.empty()) {
         detail += ": " + errorMessage;
     } else if (error != SUCCESS) {
         detail += ": error=" + std::to_string(error);
     }
+    return detail;
+}
+
+static void LogRequiredKernelTraceFailure(const char *operation, int error, const std::string &errorMessage)
+{
+    TraceLog("[trace-kernel] error: " + KernelTraceFailureDetail(operation, error, errorMessage) + "\n");
+}
+
+static void WarnOptionalKernelTraceFailure(const char *operation, int error, const std::string &errorMessage)
+{
+    std::string detail = KernelTraceFailureDetail(operation, error, errorMessage);
     pcerr::SetWarn(LIBPERF_WARN_UTRACE_KERNEL_FAILED, detail);
-    TraceLog("[trace-kernel] warning: " + detail + "; continue with user trace only\n");
+    TraceLog("[trace-kernel] warning: " + detail + "; continue with user-space tracing only\n");
     pcerr::New(SUCCESS);
 }
 
@@ -835,10 +1073,6 @@ int UTraceOpen(struct UTraceAttr *attr)
             return -1;
         }
     }
-    if (!hasKernelTrace) {
-        return CommitTraceLogSession(userPd, traceLogSessionId);
-    }
-
     if (hasJavaRequest && userPd >= 0 && PrepareJavaTrace(userPd) != 0) {
         int err = Perrorno();
         std::string errMsg = Perror() == nullptr ? "" : Perror();
@@ -850,6 +1084,10 @@ int UTraceOpen(struct UTraceAttr *attr)
         return -1;
     }
 
+    if (!hasKernelTrace) {
+        return CommitTraceLogSession(userPd, traceLogSessionId);
+    }
+
     int kernelPd = KernelTraceManager::GetInstance().Open(attr, symbols.kernelFunctions, filter.kernelIncludes,
         filter.kernelExcludes, filter.kernelFtraceBufferSizeKb, filter.kernelFtraceIrqs);
     if (kernelPd < 0) {
@@ -859,6 +1097,7 @@ int UTraceOpen(struct UTraceAttr *attr)
             WarnOptionalKernelTraceFailure("open", err, errMsg);
             return CommitTraceLogSession(userPd, traceLogSessionId);
         }
+        LogRequiredKernelTraceFailure("open", err, errMsg);
         if (err != SUCCESS) {
             pcerr::New(err, errMsg);
         }
@@ -949,9 +1188,12 @@ static int DisableUserTrace(int pd)
     return PmuDisable(pd);
 }
 
-static int ReadUserTrace(int pd, struct UTraceData **traceData)
+static int ReadUserTrace(int pd, struct UTraceData **traceData, TraceMergeInputStats *stats)
 {
     pcerr::New(SUCCESS);
+    if (stats != nullptr) {
+        *stats = TraceMergeInputStats{};
+    }
     if (traceData == nullptr) {
         pcerr::New(LIBPERF_ERR_NULL_POINTER, "UTraceData cannot be null");
         return -1;
@@ -1008,21 +1250,22 @@ static int ReadUserTrace(int pd, struct UTraceData **traceData)
                 }
             }
         }
-        // merge native trace data and java trace data
-        int totalLen = (nativeLen > 0 ? nativeLen : 0) + (javaLen > 0 ? javaLen : 0);
-        UTraceData *merged = MergeTraceData(nativeData, nativeLen, javaData, javaLen);
+        bool keepTransitions = GetKernelTraceSession(pd) != nullptr;
+        int mergedLen = 0;
+        UTraceData *merged = MergeTraceData(nativeData, nativeLen, javaData, javaLen,
+            nullptr, 0, 0, 0, keepTransitions, &mergedLen, stats);
         if (nativeData != nullptr) {
             TraceDataManager::GetInstance().FreeTraceData(nativeData);
         }
         if (javaData != nullptr) {
             JavaTraceManager::GetInstance().FreeData(javaData);
         }
-        if (merged == nullptr && totalLen > 0) {
+        if (mergedLen < 0) {
             return -1;
         }
         pcerr::New(SUCCESS);
         *traceData = merged;
-        return totalLen;
+        return mergedLen;
     }
 
     PmuData *pmuData = nullptr;
@@ -1046,6 +1289,10 @@ static int ReadUserTrace(int pd, struct UTraceData **traceData)
         TraceLog("[trace-native] error: convert PMU data to UTraceData failed\n");
         pcerr::New(LIBPERF_ERR_NULL_POINTER, "Convert PMU data to UTraceData failed");
         return -1;
+    }
+    if (stats != nullptr) {
+        stats->nativeInput = convertedLen;
+        stats->nativeKept = convertedLen;
     }
     *traceData = data;
     return convertedLen;
@@ -1074,7 +1321,11 @@ int UTraceEnable(int pd)
     }
     if (kernelSession->kernelOnly) {
         int ret = KernelTraceManager::GetInstance().Enable(kernelSession->kernelPd);
-        if (ret == 0) {
+        if (ret != 0) {
+            int error = Perrorno();
+            const char *message = Perror();
+            LogRequiredKernelTraceFailure("enable", error, message == nullptr ? "" : message);
+        } else {
             kernelSession->windowStartNs = GetMonotonicTimeNs();
             kernelSession->windowEndNs = 0;
         }
@@ -1112,7 +1363,13 @@ int UTraceDisable(int pd)
         kernelSession->windowEndNs = GetMonotonicTimeNs();
     }
     if (kernelSession->kernelOnly) {
-        return KernelTraceManager::GetInstance().Disable(kernelSession->kernelPd);
+        int ret = KernelTraceManager::GetInstance().Disable(kernelSession->kernelPd);
+        if (ret != 0) {
+            int error = Perrorno();
+            const char *message = Perror();
+            LogRequiredKernelTraceFailure("disable", error, message == nullptr ? "" : message);
+        }
+        return ret;
     }
 
     int kernelRet = KernelTraceManager::GetInstance().Disable(kernelSession->kernelPd);
@@ -1147,14 +1404,19 @@ int UTraceRead(int pd, struct UTraceData **traceData)
     *traceData = nullptr;
 
     KernelTraceSession *kernelSession = GetKernelTraceSession(pd);
+    TraceMergeInputStats stats;
     if (kernelSession == nullptr) {
-        return ReadUserTrace(pd, traceData);
+        int len = ReadUserTrace(pd, traceData, &stats);
+        if (len >= 0) {
+            LogTraceMergeInput(stats);
+        }
+        return len;
     }
 
     UTraceData *userData = nullptr;
     int userLen = 0;
     if (!kernelSession->kernelOnly) {
-        userLen = ReadUserTrace(pd, &userData);
+        userLen = ReadUserTrace(pd, &userData, &stats);
         if (userLen < 0) {
             return userLen;
         }
@@ -1166,13 +1428,20 @@ int UTraceRead(int pd, struct UTraceData **traceData)
         int kernelErr = Perrorno();
         std::string kernelErrMsg = Perror() == nullptr ? "" : Perror();
         if (kernelSession->kernelOnly) {
+            LogRequiredKernelTraceFailure("read", kernelErr, kernelErrMsg);
             return kernelLen;
         }
         int kernelPd = kernelSession->kernelPd;
         KernelTraceManager::GetInstance().Close(kernelPd);
         EraseKernelTraceSession(pd);
         WarnOptionalKernelTraceFailure("read", kernelErr, kernelErrMsg);
+        userLen = FinalizeVirtualThreadContext(userData, userLen);
+        if (userData != nullptr && userLen == 0) {
+            UTraceDataFree(userData);
+            userData = nullptr;
+        }
         *traceData = userData;
+        LogTraceMergeInput(stats);
         return userLen;
     }
 
@@ -1180,13 +1449,12 @@ int UTraceRead(int pd, struct UTraceData **traceData)
     AppendKernelTraceData(kernelBlock, kernelData, kernelLen);
     int mergedKernelLen = static_cast<int>(kernelBlock.data.size());
     UTraceData *kernelTraceData = kernelBlock.data.empty() ? nullptr : kernelBlock.data.data();
-    int filteredUserLen = CountTraceDataInWindow(userData, userLen,
-        kernelSession->windowStartNs, kernelSession->windowEndNs);
-    int filteredKernelLen = CountTraceDataInWindow(kernelTraceData, mergedKernelLen,
-        kernelSession->windowStartNs, kernelSession->windowEndNs);
-    int totalLen = filteredUserLen + filteredKernelLen;
+    int mergedLen = 0;
+    TraceMergeInputStats finalStats;
     UTraceData *merged = MergeTraceData(userData, userLen, nullptr, 0, kernelTraceData, mergedKernelLen,
-        kernelSession->windowStartNs, kernelSession->windowEndNs);
+        kernelSession->windowStartNs, kernelSession->windowEndNs, false, &mergedLen, &finalStats);
+    stats.kernelInput = finalStats.kernelInput;
+    stats.kernelKept = finalStats.kernelKept;
 
     if (userData != nullptr) {
         UTraceDataFree(userData);
@@ -1194,12 +1462,13 @@ int UTraceRead(int pd, struct UTraceData **traceData)
     if (kernelData != nullptr) {
         KernelTraceManager::GetInstance().FreeData(kernelData);
     }
-    if (merged == nullptr && totalLen > 0) {
+    if (mergedLen < 0) {
         return -1;
     }
     pcerr::New(SUCCESS);
     *traceData = merged;
-    return totalLen;
+    LogTraceMergeInput(stats);
+    return mergedLen;
 }
 
 void UTraceClose(int pd)

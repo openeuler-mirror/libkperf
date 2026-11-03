@@ -14,8 +14,6 @@
  ******************************************************************************/
 package com.libkperf.tracex.runtime;
 
-import com.libkperf.tracex.agent.TraceLog;
-
 public final class NativeThreadInfo {
 
     private static volatile boolean loaded = false;
@@ -32,14 +30,12 @@ public final class NativeThreadInfo {
         loadTried = true;
 
         if (absolutePath == null || absolutePath.isEmpty()) {
-            TraceLog.info("[trace-java-runtime] native lib path is empty, fallback to Java thread id/time");
             return;
         }
 
         try {
             System.load(absolutePath);
             loaded = true;
-            TraceLog.info("[trace-java-runtime] native thread info loaded: " + absolutePath);
         } catch (RuntimeException | LinkageError t) {
             loaded = false;
             TraceLog.warn("[trace-java-runtime] native thread info load failed: " + absolutePath + ", ex=" + t, t);
@@ -48,14 +44,18 @@ public final class NativeThreadInfo {
 
     public static int currentTidSafe() {
         if (!loaded) {
-            return (int) Thread.currentThread().getId();
+            return -1;
         }
 
         try {
             return currentTid0();
         } catch (RuntimeException | LinkageError t) {
-            return (int) Thread.currentThread().getId();
+            return -1;
         }
+    }
+
+    public static boolean isNativeTidAvailable() {
+        return loaded;
     }
 
     public static int currentCpuSafe() {

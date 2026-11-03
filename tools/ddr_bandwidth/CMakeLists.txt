@@ -10,6 +10,9 @@ add_library(ddr_bw_core STATIC
 target_include_directories(ddr_bw_core PUBLIC
     "${CMAKE_CURRENT_LIST_DIR}"
 )
+target_include_directories(ddr_bw_core PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/../../util"
+)
 
 if (TARGET tools_deps)
     target_link_libraries(ddr_bw_core PUBLIC tools_deps)

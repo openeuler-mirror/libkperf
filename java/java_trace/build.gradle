@@ -39,7 +39,7 @@ subprojects {
         .orElse(defaultJavaOutDir)
 
     tasks.withType(Jar) {
-        destinationDirectory.set(file(javaOutDir.get()))
+        destinationDirectory.set(layout.dir(javaOutDir.map { file(it) }))
         archiveVersion.set("")
     }
 }

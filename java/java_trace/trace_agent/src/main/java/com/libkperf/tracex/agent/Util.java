@@ -14,6 +14,8 @@
  ******************************************************************************/
 package com.libkperf.tracex.agent;
 
+import com.libkperf.tracex.runtime.TraceLog;
+
 import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
 import java.io.InputStream;
@@ -29,22 +31,6 @@ public final class Util {
     public static String get(Map<String, String> m, String k, String d) {
         String v = m.get(k);
         return v == null ? d : v;
-    }
-
-    public static int parseInt(String v, int fallback) {
-        try {
-            return Integer.parseInt(v.trim());
-        } catch (Exception ignored) {
-            return fallback;
-        }
-    }
-
-    public static long parseLong(String v, long fallback) {
-        try {
-            return Long.parseLong(v.trim());
-        } catch (Exception ignored) {
-            return fallback;
-        }
     }
 
     public static String stripComment(String line) {

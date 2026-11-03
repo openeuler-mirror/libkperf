@@ -2,6 +2,16 @@
 #include <cstddef>
 #include "ddr_bw_types.h"
 
+static uint64_t OtherUserSamples(uint64_t systemSamples,
+                                 uint64_t targetSamples,
+                                 uint64_t kernelSamples)
+{
+    const uint64_t nonTargetSamples = systemSamples > targetSamples
+        ? systemSamples - targetSamples : 0;
+    return nonTargetSamples > kernelSamples
+        ? nonTargetSamples - kernelSamples : 0;
+}
+
 template <typename Bucket>
 static void AddContribution(Bucket& bucket, const SpeContribution& contribution)
 {
@@ -44,7 +54,11 @@ static void ResetAttribution(BwContext& ctx)
         window.effectiveKernelWriteSamples = 0;
         window.effectiveSystemWriteSamples = 0;
         window.attributedKernelReadBytes = 0.0;
-        window.observedKernelWriteBytes = 0.0;
+        window.attributedOtherReadBytes = 0.0;
+        window.attributedKernelWriteBytes = 0.0;
+        window.attributedOtherWriteBytes = 0.0;
+        window.unattributedReadBytes = 0.0;
+        window.unattributedWriteBytes = 0.0;
     }
 }
 
@@ -69,19 +83,26 @@ static void BuildEffectiveWriteSamples(BwContext& ctx)
 
 static void FinalizeReadAttribution(BwContext& ctx, uint64_t minSamples)
 {
-    // Same-window DRAM-sample-count attribution:
-    // residual_read[i] is distributed only by DRAM-source load sample counts
-    // observed in window i.
+    // Same-window read-sample-count attribution:
+    // residual_read[i] is distributed by eligible read sample counts observed
+    // in window i. HIPG uses DRAM-source loads; the source-less fallback uses
+    // all valid SPE loads as approximate statistical weights.
     for (auto& window : ctx.windows) {
-        if (!window.valid || window.residualReadBytes <= 0.0) continue;
-        if (window.systemReadSamples == 0) {
-            if (window.targetReadSamples < minSamples) {
-                ++ctx.attribution.sparseReadWindows;
-            } else {
-                ++ctx.attribution.noDenominatorReadWindows;
-            }
+        if (window.residualReadBytes <= 0.0) continue;
+        if (!window.valid) {
+            window.unattributedReadBytes = window.residualReadBytes;
+            ctx.attribution.unattributedReadBytes += window.unattributedReadBytes;
             continue;
         }
+        if (window.systemReadSamples == 0) {
+            ++ctx.attribution.noDenominatorReadWindows;
+            window.unattributedReadBytes = window.residualReadBytes;
+            ctx.attribution.unattributedReadBytes += window.unattributedReadBytes;
+            continue;
+        }
+        const uint64_t otherReadSamples = OtherUserSamples(
+            window.systemReadSamples, window.targetReadSamples,
+            window.kernelReadSamples);
         if (window.kernelReadSamples > 0) {
             window.attributedKernelReadBytes = window.residualReadBytes *
                 static_cast<double>(window.kernelReadSamples) /
@@ -89,8 +110,18 @@ static void FinalizeReadAttribution(BwContext& ctx, uint64_t minSamples)
             ctx.attribution.kernelReadBytes +=
                 window.attributedKernelReadBytes;
         }
+        if (otherReadSamples > 0) {
+            window.attributedOtherReadBytes = window.residualReadBytes *
+                static_cast<double>(otherReadSamples) /
+                static_cast<double>(window.systemReadSamples);
+            ctx.attribution.otherReadBytes += window.attributedOtherReadBytes;
+        }
         if (window.targetReadSamples < minSamples) {
             ++ctx.attribution.sparseReadWindows;
+            window.unattributedReadBytes = std::max(0.0,
+                window.residualReadBytes - window.attributedKernelReadBytes -
+                window.attributedOtherReadBytes);
+            ctx.attribution.unattributedReadBytes += window.unattributedReadBytes;
             continue;
         }
 
@@ -112,48 +143,80 @@ static void FinalizeReadAttribution(BwContext& ctx, uint64_t minSamples)
         if (attributedInWindow > 0.0) {
             ++ctx.attribution.readWindows;
         }
+        window.unattributedReadBytes = std::max(0.0,
+            window.residualReadBytes - window.attributedReadBytes -
+            window.attributedKernelReadBytes - window.attributedOtherReadBytes);
+        ctx.attribution.unattributedReadBytes += window.unattributedReadBytes;
     }
 }
 
 static void FinalizeWriteAttribution(BwContext& ctx, uint64_t minSamples)
 {
+    // The current window and its two predecessors provide one common
+    // system-wide store denominator. Target user, other user and kernel are
+    // mutually exclusive shares of the current residual write traffic.
     BuildEffectiveWriteSamples(ctx);
     for (auto& window : ctx.windows) {
-        if (!window.valid || window.residualWriteBytes <= 0.0) continue;
-        if (window.effectiveKernelWriteSamples > 0 &&
-            window.effectiveSystemWriteSamples > 0) {
-            window.observedKernelWriteBytes = window.residualWriteBytes *
+        if (window.residualWriteBytes <= 0.0) continue;
+        if (!window.valid) {
+            window.unattributedWriteBytes = window.residualWriteBytes;
+            ctx.attribution.unattributedWriteBytes += window.unattributedWriteBytes;
+            continue;
+        }
+        if (window.effectiveSystemWriteSamples == 0) {
+            ++ctx.attribution.noDenominatorWriteWindows;
+            window.unattributedWriteBytes = window.residualWriteBytes;
+            ctx.attribution.unattributedWriteBytes += window.unattributedWriteBytes;
+            continue;
+        }
+
+        const uint64_t otherWriteSamples = OtherUserSamples(
+            window.effectiveSystemWriteSamples,
+            window.effectiveTargetWriteSamples,
+            window.effectiveKernelWriteSamples);
+        if (window.effectiveKernelWriteSamples > 0) {
+            window.attributedKernelWriteBytes = window.residualWriteBytes *
                 static_cast<double>(window.effectiveKernelWriteSamples) /
                 static_cast<double>(window.effectiveSystemWriteSamples);
-            ctx.attribution.kernelObservedWriteBytes +=
-                window.observedKernelWriteBytes;
+            ctx.attribution.kernelWriteBytes +=
+                window.attributedKernelWriteBytes;
+        }
+        if (otherWriteSamples > 0) {
+            window.attributedOtherWriteBytes = window.residualWriteBytes *
+                static_cast<double>(otherWriteSamples) /
+                static_cast<double>(window.effectiveSystemWriteSamples);
+            ctx.attribution.otherWriteBytes += window.attributedOtherWriteBytes;
         }
         if (window.effectiveTargetWriteSamples < minSamples) {
             ++ctx.attribution.sparseWriteWindows;
-            continue;
-        }
-        if (window.effectiveTargetWriteSamples == 0) {
-            ++ctx.attribution.noDenominatorWriteWindows;
+            window.unattributedWriteBytes = std::max(0.0,
+                window.residualWriteBytes - window.attributedKernelWriteBytes -
+                window.attributedOtherWriteBytes);
+            ctx.attribution.unattributedWriteBytes += window.unattributedWriteBytes;
             continue;
         }
 
-        // Write traffic is normalized within the target PID set. Once the
-        // target has enough store evidence, the whole residual belongs to
-        // the target; function shares divide that residual by target stores.
-        window.attributedWriteBytes = window.residualWriteBytes;
-        ctx.attribution.writeBytes += window.residualWriteBytes;
-        ++ctx.attribution.writeWindows;
-
+        double attributedInWindow = 0.0;
         for (const auto& entry : window.effectiveFuncWriteSamples) {
-            if (entry.second < minSamples) {
+            if (entry.second == 0) {
                 continue;
             }
 
             const double bytes = window.residualWriteBytes *
                 static_cast<double>(entry.second) /
-                static_cast<double>(window.effectiveTargetWriteSamples);
+                static_cast<double>(window.effectiveSystemWriteSamples);
             ctx.funcStats[entry.first].attributedWriteBytes += bytes;
+            ctx.attribution.writeBytes += bytes;
+            attributedInWindow += bytes;
         }
+        window.attributedWriteBytes = attributedInWindow;
+        if (attributedInWindow > 0.0) {
+            ++ctx.attribution.writeWindows;
+        }
+        window.unattributedWriteBytes = std::max(0.0,
+            window.residualWriteBytes - window.attributedWriteBytes -
+            window.attributedKernelWriteBytes - window.attributedOtherWriteBytes);
+        ctx.attribution.unattributedWriteBytes += window.unattributedWriteBytes;
     }
 }
 

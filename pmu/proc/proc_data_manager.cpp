@@ -178,6 +178,7 @@ const map<ProcSource, ProcDataManager::ParserFunc> &ProcDataManager::GetProcFile
             e.affinity = Trim(c);
             entries.push_back(move(e));
             r.entries = new vector<IrqAffinityEntryInternal>(move(entries));
+            r.destroy = [](void *p) { delete static_cast<vector<IrqAffinityEntryInternal>*>(p); };
             return SUCCESS;
         };
         return m;

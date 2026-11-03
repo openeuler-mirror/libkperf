@@ -1,3 +1,20 @@
+pluginManagement {
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == 'com.github.johnrengelman.shadow') {
+                def current = org.gradle.util.GradleVersion.current()
+                if (current >= org.gradle.util.GradleVersion.version('8.0')) {
+                    useVersion('8.1.1')
+                } else if (current >= org.gradle.util.GradleVersion.version('7.0')) {
+                    useVersion('7.1.2')
+                } else {
+                    useVersion('6.1.0')
+                }
+            }
+        }
+    }
+}
+
 rootProject.name = "java_trace"
 include("trace_cli")
 include("trace_agent")

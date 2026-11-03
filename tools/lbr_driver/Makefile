@@ -2,7 +2,7 @@
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
 
-obj-m := simple-pebs.o
+obj-m := simple-lbr-trace.o
 
 ccflags-y += -I$(src)/../../pmu/lbr_driver
 

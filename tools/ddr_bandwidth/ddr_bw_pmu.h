@@ -17,7 +17,6 @@ constexpr const char* UNKNOWN = "UNKNOWN";
 struct SampleInfo {
     bool hasExt = false;
     bool hasSym = false;
-    bool hasSource = false;
     bool isLoad = false;
     bool isStore = false;
     unsigned short source = 0;
@@ -30,6 +29,8 @@ struct SampleInfo {
 struct PcieCollector {
     int pd = -1;
     std::string bdf;
+    std::string rxMwrEvent;
+    std::string txCplEvent;
     std::vector<std::unique_ptr<char[]>> eventStorage;
     std::vector<char*> eventList;
     double lastReadSec = 0.0;
@@ -52,9 +53,9 @@ struct PcieReadResult {
 
 double NowSec();
 int64_t NowNs();
+bool IsSpeDataSourceSupported();
 void ConfigureSpeDebug(bool enabled);
 void PrintSpeEventDebug();
-void PrintSpeStorePcDebug();
 void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
                      const std::vector<int>& targetPids, SpeWindowState& windows,
                      int64_t readEndNs);

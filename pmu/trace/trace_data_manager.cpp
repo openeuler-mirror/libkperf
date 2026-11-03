@@ -29,6 +29,9 @@ UTraceData *TraceDataManager::ConvertToTraceData(int pd, PmuData *data, int len,
 
     std::vector<UTraceData> traceData;
     for (int i = 0; i < len; ++i) {
+        if (data[i].stack == nullptr || data[i].stack->symbol == nullptr || data[i].evt == nullptr) {
+            continue;
+        }
         uint64_t gPtr = 0;
         if (GetFetchG(pd)) {
             PmuGetField(data[i].rawData, "g", &gPtr, sizeof(gPtr));

@@ -389,7 +389,8 @@ void SymbolizableObjectFile::parsePLTSection(const object::ObjectFile *Obj) {
     const char* DynstrTable = nullptr;
     size_t DynstrSize = 0;
     auto* ELFObj = dyn_cast<ELF64LEObjectFile>(Obj);
-    uint64_t PLTStart, PLTSize;
+    uint64_t PLTStart = 0;
+    uint64_t PLTSize = 0;
     StringRef PLTContents, DynStrContents, DynsymContents, RelaPLTContents;
     bool HasGot = false; // if .plt.got section exists, need got_symbols.
     std::map<uint64_t, uint32_t> GotToSymbol;
@@ -431,10 +432,17 @@ void SymbolizableObjectFile::parsePLTSection(const object::ObjectFile *Obj) {
         return;
     }
 
+    if (PLTSize == 0 && PLTStart == 0) {
+      return;
+    }
+
     const uint64_t PLTEntrySize = getPLTEntrySize(Obj->getArch());
     const uint64_t FirstEntrySize = getFirstEntrySize(Obj->getArch());
     PLTSymbols[PLTStart] = {.Addr = PLTStart, .Name = "unkown@plt", .Size = FirstEntrySize};
     const uint64_t BaseAddr = PLTStart + FirstEntrySize;
+    if (PLTSize < FirstEntrySize) {
+      return;
+    }
     const size_t NumEntries = (PLTSize - FirstEntrySize) / PLTEntrySize;
     for (size_t I = 0; I < NumEntries; ++I) {
         const uint64_t Addr = BaseAddr + I * PLTEntrySize;

@@ -1,5 +1,6 @@
 plugins {
     id 'java-library'
+    id 'com.github.johnrengelman.shadow'
 }
 
 dependencies {
@@ -8,14 +9,20 @@ dependencies {
 }
 
 tasks.named('jar') {
+    enabled = false
+}
+
+tasks.named('shadowJar') {
     archiveBaseName = 'trace_agent'
+    archiveClassifier = ''
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
-    from {
-        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
-    }
-
     exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
+
+    // The agent can be loaded into applications which already provide a different
+    // ASM version (for example Flink and Hive). Keep the agent's ASM private so
+    // parent-first class loading cannot bind agent code to the application's ASM.
+    relocate 'org.objectweb.asm', 'com.libkperf.tracex.shaded.asm'
 
     manifest {
         attributes(
@@ -25,6 +32,63 @@ tasks.named('jar') {
             'Can-Redefine-Classes': 'true'
         )
     }
+}
+
+tasks.named('assemble') {
+    dependsOn tasks.named('shadowJar')
+}
+
+tasks.register('verifyAsmIsolation') {
+    dependsOn tasks.named('shadowJar')
+
+    doLast {
+        def agentJar = tasks.named('shadowJar').get().archiveFile.get().asFile
+        def contents = zipTree(agentJar)
+        def privateAsm = contents.matching {
+            include 'com/libkperf/tracex/shaded/asm/ClassVisitor.class'
+        }.files
+        def exposedAsm = contents.matching {
+            include 'org/objectweb/asm/**'
+        }.files
+
+        if (privateAsm.isEmpty()) {
+            throw new GradleException("Private ASM classes are missing from ${agentJar}")
+        }
+        if (!exposedAsm.isEmpty()) {
+            throw new GradleException("Unrelocated ASM classes are present in ${agentJar}")
+        }
+
+        def agentClass = contents.matching {
+            include 'com/libkperf/tracex/agent/TraceAgent.class'
+        }.singleFile
+        byte[] classBytes = agentClass.bytes
+        int majorVersion = ((classBytes[6] & 0xff) << 8) | (classBytes[7] & 0xff)
+        if (majorVersion != 52) {
+            throw new GradleException("Agent must use Java 8 bytecode, found class major version ${majorVersion}")
+        }
+
+        def jarFile = new java.util.jar.JarFile(agentJar)
+        try {
+            def attributes = jarFile.manifest.mainAttributes
+            def expectedManifest = [
+                'Premain-Class': 'com.libkperf.tracex.agent.TraceAgent',
+                'Agent-Class': 'com.libkperf.tracex.agent.TraceAgent',
+                'Can-Retransform-Classes': 'true',
+                'Can-Redefine-Classes': 'true'
+            ]
+            expectedManifest.each { key, value ->
+                if (attributes.getValue(key) != value) {
+                    throw new GradleException("Invalid ${key} in ${agentJar}")
+                }
+            }
+        } finally {
+            jarFile.close()
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('verifyAsmIsolation')
 }
 
 // build thread info native lib
@@ -64,6 +128,6 @@ tasks.register("buildNativeThreadInfo", Exec) {
     }
 }
 
-tasks.named("jar") {
+tasks.named("shadowJar") {
     dependsOn tasks.named("buildNativeThreadInfo")
 }

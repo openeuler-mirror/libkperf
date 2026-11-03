@@ -1,6 +1,6 @@
 # See docs/CMake.html for instructions about how to build LLVM with CMake.
 
-cmake_minimum_required(VERSION 3.4.3)
+cmake_minimum_required(VERSION 3.5)
 
 cmake_policy(SET CMP0022 NEW)
 
@@ -11,7 +11,7 @@ cmake_policy(SET CMP0048 NEW)
 # stripped everywhere that access the SOURCES property, so we just
 # defer to the OLD behavior of not including generator expressions
 # in the output for now.
-cmake_policy(SET CMP0051 OLD)
+cmake_policy(SET CMP0051 NEW)
 
 cmake_policy(SET CMP0056 NEW)
 

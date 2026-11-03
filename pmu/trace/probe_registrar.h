@@ -22,6 +22,7 @@ struct ProbeEvent {
     std::string eventName;
     std::string binaryPath;
     uint64_t offset;
+    bool installedByUs;
 };
 
 class ProbeRegistrar {
@@ -59,7 +60,5 @@ private:
 
     const std::string &GetUprobeFilePath() const;
 
-    std::string GenerateGroupName(const std::string &binaryPath) const;
-
-    std::string SanitizeStr(const std::string &input, size_t maxLen) const;
+    std::string GenerateGroupName() const;
 };

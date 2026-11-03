@@ -113,6 +113,23 @@ public:
         return pmuEvt->name.c_str();
     }
 
+    bool GetIsInitErr() const 
+    {
+        return isInitErr;
+    }
+
+    void SetIsInitErr(const bool isInitErr) {
+        this->isInitErr = isInitErr;
+    }
+
+    const std::string& GetInitErrMsg() {
+        return this->initErrMsg;
+    }
+
+    void SetInitErrMsg(const std::string& initErrMsg) {
+        this->initErrMsg = initErrMsg;
+    }
+
     virtual void SetGroupInfo(const EventGroupInfo &grpInfo) = 0;
     virtual void AddNewProcess(pid_t pid, const bool groupEnable, const std::shared_ptr<EvtList> evtLeader) = 0;
     virtual void ClearExitFd(std::set<int> noProcList) = 0;
@@ -137,6 +154,8 @@ protected:
     int prevStat;
     int evtStat;
     std::mutex mutex;
+    bool isInitErr = false;
+    std::string initErrMsg;
 
     int CollectorDoTask(PerfEvtPtr collector, int task)
     {

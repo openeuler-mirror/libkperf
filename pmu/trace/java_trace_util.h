@@ -60,6 +60,7 @@ bool WriteJavaOnlyFilterConfig(const std::string &sourcePath, const std::string 
 std::string JavaTraceLogPath();
 void JavaTraceLog(const std::string &message);
 bool JavaTracePrepareTargetFiles(JavaBackendImpl &impl);
+bool JavaTraceSetTargetFileAccess(const JavaBackendImpl &impl, int fd, const std::string &path);
 void JavaTraceFlushTargetLog(const JavaBackendImpl &impl);
 void JavaTraceCleanupTargetAssets(JavaBackendImpl *impl);
 std::string TimestampSuffix();

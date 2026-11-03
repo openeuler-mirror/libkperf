@@ -4,15 +4,13 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <limits>
-#include <map>
 #include <unordered_set>
 #include <vector>
 #include <sstream>
-#include <sys/uio.h>
 #include <time.h>
 #include <unistd.h>
 #include "pcerrc.h"
+#include "cpu_map.h"
 #include "symbol.h"
 #include "ddr_bw_pmu.h"
 #include "ddr_bw_collection.h"
@@ -39,72 +37,11 @@ static bool IsDramSource(unsigned short source)
     return source == HIP_LOCAL_MEM || source == HIP_REMOTE_MEM;
 }
 
-static bool IsDramEventFallback(unsigned long event)
+bool IsSpeDataSourceSupported()
 {
-    // An LLC miss is the closest event-only indication that a load reached
-    // beyond the cache hierarchy. SPE_EV_REMOTE_ACCESS alone can also describe
-    // a remote cache access, so it must not be treated as remote DRAM.
-    return (event & SPE_EV_LLC_MISS) != 0;
+    static const bool supported = GetCpuType() == HIPG;
+    return supported;
 }
-
-static bool ReadInsn32(pid_t pid, ulong pc, uint32_t& insn)
-{
-    insn = 0;
-    if (pid <= 0 || pc == 0) {
-        return false;
-    }
-    iovec local{&insn, sizeof(insn)};
-    iovec remote{reinterpret_cast<void*>(pc), sizeof(insn)};
-    ssize_t r = process_vm_readv(pid, &local, 1, &remote, 1, 0);
-    return r == static_cast<ssize_t>(sizeof(insn));
-}
-
-// Debug-only decoder. It is never used by the production bandwidth attribution
-// path. Write attribution is based on store sample counts, not operand width.
-static int DecodeAccessBytes(uint32_t insn)
-{
-    bool vectorReg = ((insn >> 26) & 0x1u) != 0;
-    uint32_t opc = (insn >> 30) & 0x3u;
-    if ((insn & 0x3A000000u) == 0x28000000u) {
-        if (!vectorReg) {
-            return (4 << ((opc >> 1) & 0x1u)) * 2;
-        }
-        if (opc == 3) {
-            return 0;
-        }
-        return (4 << opc) * 2;
-    }
-    if (vectorReg) {
-        return 16;
-    }
-    return static_cast<int>(1u << opc);
-}
-
-struct StorePcDebugKey {
-    pid_t pid = -1;
-    int cpu = -1;
-    ulong pc = 0;
-
-    bool operator<(const StorePcDebugKey& other) const
-    {
-        if (pid != other.pid) return pid < other.pid;
-        if (cpu != other.cpu) return cpu < other.cpu;
-        return pc < other.pc;
-    }
-};
-
-struct StorePcDebugStat {
-    uint64_t samples = 0;
-    string function;
-    string module;
-    int accessBytes = 0;
-    uint32_t insn = 0;
-    bool hasInsn = false;
-};
-
-static constexpr size_t MAX_DEBUG_STORE_PC_KEYS = 4096;
-static constexpr size_t MAX_DEBUG_STORE_PC_ROWS = 128;
-static constexpr size_t MAX_DEBUG_SPE_EVENT_MASKS = 256;
 
 struct SpeEventDescriptor {
     unsigned long bit;
@@ -131,29 +68,21 @@ static const SpeEventDescriptor SPE_EVENT_DESCRIPTORS[] = {
 };
 
 static bool g_speDebugEnabled = false;
-static map<StorePcDebugKey, StorePcDebugStat> g_storePcDebugStats;
-static uint64_t g_droppedStorePcDebugSamples = 0;
 static uint64_t g_speEventRecords = 0;
 static uint64_t g_speEventNoneRecords = 0;
 static uint64_t g_speEventUnknownRecords = 0;
 static unsigned long g_speEventUnknownBits = 0;
 static uint64_t g_speEventCounts[sizeof(SPE_EVENT_DESCRIPTORS) /
                                  sizeof(SPE_EVENT_DESCRIPTORS[0])] = {};
-static map<unsigned long, uint64_t> g_speEventMaskStats;
-static uint64_t g_droppedSpeEventMasks = 0;
 
 void ConfigureSpeDebug(bool enabled)
 {
     g_speDebugEnabled = enabled;
-    g_storePcDebugStats.clear();
-    g_droppedStorePcDebugSamples = 0;
     g_speEventRecords = 0;
     g_speEventNoneRecords = 0;
     g_speEventUnknownRecords = 0;
     g_speEventUnknownBits = 0;
     for (auto& count : g_speEventCounts) count = 0;
-    g_speEventMaskStats.clear();
-    g_droppedSpeEventMasks = 0;
 }
 
 static unsigned long KnownSpeEventBits()
@@ -166,24 +95,6 @@ static unsigned long KnownSpeEventBits()
         return bits;
     }();
     return known;
-}
-
-static string SpeEventMaskNames(unsigned long event)
-{
-    string result;
-    for (const auto& descriptor : SPE_EVENT_DESCRIPTORS) {
-        if ((event & descriptor.bit) == 0) continue;
-        if (!result.empty()) result += '|';
-        result += descriptor.name;
-    }
-    const unsigned long unknown = event & ~KnownSpeEventBits();
-    if (unknown != 0) {
-        ostringstream value;
-        value << "UNKNOWN(0x" << hex << unknown << ')';
-        if (!result.empty()) result += '|';
-        result += value.str();
-    }
-    return result.empty() ? "NONE" : result;
 }
 
 static void AccountSpeEventDebug(unsigned long event)
@@ -204,14 +115,6 @@ static void AccountSpeEventDebug(unsigned long event)
         g_speEventUnknownBits |= unknown;
     }
 
-    auto it = g_speEventMaskStats.find(event);
-    if (it != g_speEventMaskStats.end()) {
-        ++it->second;
-    } else if (g_speEventMaskStats.size() < MAX_DEBUG_SPE_EVENT_MASKS) {
-        g_speEventMaskStats.emplace(event, 1);
-    } else {
-        ++g_droppedSpeEventMasks;
-    }
 }
 
 void PrintSpeEventDebug()
@@ -226,153 +129,20 @@ void PrintSpeEventDebug()
          << left << setw(30) << "Event bit" << right << setw(14) << "Records" << "\n"
          << string(44, '-') << "\n";
     for (size_t i = 0; i < sizeof(SPE_EVENT_DESCRIPTORS) /
-                            sizeof(SPE_EVENT_DESCRIPTORS[0]); ++i) {
+                             sizeof(SPE_EVENT_DESCRIPTORS[0]); ++i) {
+        if (g_speEventCounts[i] == 0) continue;
         cout << left << setw(30) << SPE_EVENT_DESCRIPTORS[i].name
              << right << setw(14) << g_speEventCounts[i] << "\n";
     }
-    cout << left << setw(30) << "NONE"
-         << right << setw(14) << g_speEventNoneRecords << "\n"
-         << left << setw(30) << "UNKNOWN_BITS"
-         << right << setw(14) << g_speEventUnknownRecords << "\n";
+    cout << "none_records=" << g_speEventNoneRecords
+         << " unknown_records=" << g_speEventUnknownRecords << "\n";
 
-    cout << "Observed event masks (event is a bit map; per-bit counts can overlap):\n";
-    for (const auto& entry : g_speEventMaskStats) {
-        ostringstream mask;
-        mask << "0x" << hex << entry.first;
-        cout << "SPE_EVENT_MASK mask=" << mask.str()
-             << " events=" << SpeEventMaskNames(entry.first)
-             << " records=" << entry.second << "\n";
-    }
-    if (g_speEventUnknownBits != 0 || g_droppedSpeEventMasks > 0) {
+    if (g_speEventUnknownBits != 0) {
         ostringstream unknown;
         unknown << "0x" << hex << g_speEventUnknownBits;
-        cout << "DEBUG SPE EVENT NOTE: unknown_bits=" << unknown.str()
-             << " dropped_records_after_mask_cap=" << g_droppedSpeEventMasks << "\n";
+        cout << "DEBUG SPE EVENT NOTE: unknown_bits=" << unknown.str() << "\n";
     }
     cout << string(80, '=') << "\n";
-}
-
-static void AccountStorePcDebug(const PmuData& record, const SampleInfo& sample,
-                                const string& funcName, const string& moduleName)
-{
-    if (!g_speDebugEnabled || !sample.isStore || sample.pc == 0) {
-        return;
-    }
-
-    StorePcDebugKey key;
-    key.pid = sample.pid;
-    key.cpu = record.cpu;
-    key.pc = sample.pc;
-
-    auto it = g_storePcDebugStats.find(key);
-    if (it == g_storePcDebugStats.end()) {
-        if (g_storePcDebugStats.size() >= MAX_DEBUG_STORE_PC_KEYS) {
-            ++g_droppedStorePcDebugSamples;
-            return;
-        }
-
-        StorePcDebugStat stat;
-        stat.function = funcName;
-        stat.module = moduleName;
-
-        uint32_t insn = 0;
-        if (ReadInsn32(sample.pid, sample.pc, insn)) {
-            stat.insn = insn;
-            stat.hasInsn = true;
-            int decoded = DecodeAccessBytes(insn);
-            if (decoded > 0) {
-                stat.accessBytes = decoded;
-            }
-        }
-        it = g_storePcDebugStats.emplace(key, move(stat)).first;
-    }
-
-    ++it->second.samples;
-}
-
-void PrintSpeStorePcDebug()
-{
-    if (!g_speDebugEnabled) {
-        return;
-    }
-
-    struct Row {
-        StorePcDebugKey key;
-        StorePcDebugStat stat;
-    };
-
-    vector<Row> rows;
-    rows.reserve(g_storePcDebugStats.size());
-    for (const auto& entry : g_storePcDebugStats) {
-        rows.push_back({entry.first, entry.second});
-    }
-    sort(rows.begin(), rows.end(), [](const Row& lhs, const Row& rhs) {
-        if (lhs.stat.samples != rhs.stat.samples) {
-            return lhs.stat.samples > rhs.stat.samples;
-        }
-        if (lhs.key.pid != rhs.key.pid) return lhs.key.pid < rhs.key.pid;
-        if (lhs.key.cpu != rhs.key.cpu) return lhs.key.cpu < rhs.key.cpu;
-        return lhs.key.pc < rhs.key.pc;
-    });
-
-    cout << "\n" << string(126, '=') << "\n"
-         << "DEBUG SPE STORE PC STAT\n"
-         << string(126, '=') << "\n"
-         << left << setw(10) << "PID"
-         << setw(6) << "CPU"
-         << setw(14) << "PC"
-         << setw(44) << "Function"
-         << setw(12) << "Samples"
-         << setw(10) << "Width(B)"
-         << setw(14) << "Insn"
-         << "Module\n"
-         << string(126, '-') << "\n";
-
-    const size_t rowCount = min(rows.size(), MAX_DEBUG_STORE_PC_ROWS);
-    for (size_t i = 0; i < rowCount; ++i) {
-        const Row& row = rows[i];
-        ostringstream pc;
-        pc << "0x" << hex << row.key.pc;
-        ostringstream insn;
-        if (row.stat.hasInsn) {
-            insn << "0x" << hex << setw(8) << setfill('0') << row.stat.insn;
-        } else {
-            insn << "-";
-        }
-
-        string function = row.stat.function;
-        if (function.size() > 42) {
-            function = function.substr(0, 39) + "...";
-        }
-
-        cout << left << setfill(' ')
-             << setw(10) << row.key.pid
-             << setw(6) << row.key.cpu
-             << setw(14) << pc.str()
-             << setw(44) << function
-             << setw(12) << dec << row.stat.samples
-             << setw(10) << row.stat.accessBytes
-             << setw(14) << insn.str()
-             << row.stat.module << "\n";
-
-        // Stable machine-readable form for debug tooling.
-        cout << "STORE_PC"
-             << " pid=" << row.key.pid
-             << " cpu=" << row.key.cpu
-             << " pc=" << pc.str()
-             << " samples=" << row.stat.samples
-             << " width=" << row.stat.accessBytes
-             << " insn=" << insn.str()
-             << "\n";
-    }
-
-    if (rows.size() > rowCount || g_droppedStorePcDebugSamples > 0) {
-        cout << "DEBUG STORE PC NOTE: unique_keys=" << rows.size()
-             << " shown=" << rowCount
-             << " dropped_samples_after_key_cap=" << g_droppedStorePcDebugSamples
-             << "\n";
-    }
-    cout << string(126, '=') << "\n";
 }
 
 static string ProcessSymbolName(const Symbol* sym)
@@ -399,8 +169,12 @@ static SampleInfo PrepSample(const PmuData& data)
 
     sample.hasExt = true;
     sample.source = data.ext->source;
-    sample.hasSource = sample.source != numeric_limits<unsigned short>::max();
     sample.event = data.ext->event;
+    // The decoder uses UINT32_MAX when an SPE record has no operation packet.
+    // Do not interpret that sentinel as every operation bit being present.
+    if (data.ext->op == static_cast<uint32_t>(-1)) {
+        return sample;
+    }
     bool isAtomic = (data.ext->op & SPE_OP_ATOMIC) != 0;
     sample.isLoad = (data.ext->op & SPE_OP_LD) != 0 || isAtomic;
     sample.isStore = (data.ext->op & SPE_OP_ST) != 0 || isAtomic;
@@ -430,7 +204,7 @@ void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
 
     // Full system-wide SPE (user + kernel) supplies the denominator. Kernel-PC
     // records are retained only in a system-level bucket; this set selects the
-    // target user-space numerators.
+    // selected user-space numerators. An empty target list selects all users.
     static thread_local vector<int> cachedTargetPids;
     static thread_local unordered_set<int> targetPidSet;
     if (cachedTargetPids != targetPids) {
@@ -439,8 +213,10 @@ void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
         targetPidSet.reserve(targetPids.size() * 2 + 1);
         targetPidSet.insert(targetPids.begin(), targetPids.end());
     }
+    const bool selectAllUsers = targetPids.empty();
 
     SpeDecodeStats* decode = g_speDebugEnabled ? &ctx.speDecode : nullptr;
+    const bool useSpeSource = IsSpeDataSourceSupported();
 
     for (int i = 0; i < len; ++i) {
         const auto& record = data[i];
@@ -461,17 +237,20 @@ void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
             if (decode != nullptr) ++decode->nonLoadStore;
             continue;
         }
-        const bool useEventSourceFallback = sample.isLoad && !sample.hasSource;
-        if (useEventSourceFallback && !ctx.speSourceFallbackWarningPrinted) {
-            cerr << "Warning: SPE data source is unavailable; using SPE_EV_LLC_MISS "
-                    "as an approximate DRAM-load fallback. Read attribution may be less accurate.\n";
+        const bool useAllLoadFallback = sample.isLoad && !useSpeSource;
+        if (useAllLoadFallback && !ctx.speSourceFallbackWarningPrinted) {
+            cerr << "Warning: this CPU type does not support the SPE data source used by "
+                    "ddr_bandwidth; using all valid SPE load samples as approximate "
+                    "read-attribution weights. Cache hits may be included, so function-level "
+                    "Read BW may be less accurate.\n";
             ctx.speSourceFallbackWarningPrinted = true;
         }
-        bool accountRead = sample.isLoad && (sample.hasSource
+        bool accountRead = sample.isLoad && (useSpeSource
             ? IsDramSource(sample.source)
-            : IsDramEventFallback(sample.event));
+            : true);
         bool accountWrite = sample.isStore;
-        const bool isTarget = targetPidSet.find(record.pid) != targetPidSet.end();
+        const bool isTarget = selectAllUsers ||
+            targetPidSet.find(record.pid) != targetPidSet.end();
         const bool isKernel = IsKernelSample(sample);
         const bool isTargetUser = isTarget && !isKernel;
         if (decode != nullptr) {
@@ -482,12 +261,9 @@ void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
             } else {
                 ++decode->otherUserRecords;
             }
-            if (useEventSourceFallback) ++decode->sourceUnavailableLoads;
-            if (useEventSourceFallback && accountRead) {
-                ++decode->eventFallbackDramLoads;
-            }
-            if (sample.isLoad && !accountRead) ++decode->nonDramLoads;
-            if (accountRead) ++decode->eligibleDramLoads;
+            if (useAllLoadFallback) ++decode->fallbackModeLoads;
+            if (sample.isLoad && !accountRead) ++decode->excludedReadLoads;
+            if (accountRead) ++decode->eligibleReadLoads;
             if (accountWrite) ++decode->eligibleStores;
         }
         string funcName = UNKNOWN;
@@ -535,8 +311,6 @@ void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
             continue;
         }
 
-        AccountStorePcDebug(record, sample, funcName, moduleName);
-
         if (accountRead) {
             ++ctx.spe.readWeight;
             ++ctx.spe.readSamples;
@@ -555,8 +329,9 @@ void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
         }
 
         if (accountRead) {
-            // Physical DDR read attribution uses DRAM-source load sample counts,
-            // not the logical load operand width.
+            // HIPG uses DRAM-source loads. CPUs without that source field use
+            // all valid load samples as a statistical distribution weight.
+            // The logical load operand width is not part of either weight.
             ++stat.readWeight;
             ++stat.readSamples;
         }
@@ -732,8 +507,58 @@ static bool ResolvePciePmuName(const string& bdf, string& pmuName, string& error
     return true;
 }
 
+static bool ReadPcieEventConfig(const string& pmuName, const char* eventName,
+                                string& config)
+{
+    const string path = "/sys/bus/event_source/devices/" + pmuName +
+                        "/events/" + eventName;
+    ifstream file(path);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    string definition;
+    getline(file, definition);
+    istringstream fields(definition);
+    string field;
+    while (getline(fields, field, ',')) {
+        const size_t first = field.find_first_not_of(" \t\r\n");
+        const size_t last = field.find_last_not_of(" \t\r\n");
+        if (first == string::npos) {
+            continue;
+        }
+        field = field.substr(first, last - first + 1);
+
+        const size_t equal = field.find('=');
+        if (equal == string::npos) {
+            continue;
+        }
+        const string key = field.substr(0, equal);
+        if (key == "config" || key == "event") {
+            // libkperf accepts "config" as an alias for the PMU's event field.
+            config = "config=" + field.substr(equal + 1);
+            return true;
+        }
+    }
+    return false;
+}
+
+static string BuildPciePayloadEvent(const string& pmuName, const char* eventName,
+                                    const char* fallbackConfig,
+                                    const string& bdfValue)
+{
+    string config;
+    if (!ReadPcieEventConfig(pmuName, eventName, config)) {
+        // Some vendor kernels expose the PCIe PMU and its format fields but
+        // omit the standard event aliases. These event IDs are defined by the
+        // HiSilicon PCIe PMU ABI; rx_mwr uses the same ID as libkperf's metric.
+        config = string("config=") + fallbackConfig;
+    }
+    return pmuName + "/" + config + ",bdf=" + bdfValue + ",len_mode=1/";
+}
+
 bool OpenPcieCollector(const string& bdf, PcieCollector& collector,
-                              string& error)
+                               string& error)
 {
     string pmuName;
     string bdfValue;
@@ -747,9 +572,13 @@ bool OpenPcieCollector(const string& bdf, PcieCollector& collector,
 
     //   TX CPL -> device DMA Read from host memory
     //   RX MWr -> device DMA Write to host memory
+    collector.rxMwrEvent = BuildPciePayloadEvent(
+        pmuName, "rx_mwr_flux", "0x0104", bdfValue);
+    collector.txCplEvent = BuildPciePayloadEvent(
+        pmuName, "tx_cpl_flux", "0x1005", bdfValue);
     const vector<string> eventNames = {
-        pmuName + "/rx_mwr_flux,bdf=" + bdfValue + ",len_mode=1/",
-        pmuName + "/tx_cpl_flux,bdf=" + bdfValue + ",len_mode=1/"
+        collector.rxMwrEvent,
+        collector.txCplEvent
     };
 
     collector.eventStorage.reserve(eventNames.size());
@@ -771,12 +600,7 @@ bool OpenPcieCollector(const string& bdf, PcieCollector& collector,
 
     int pd = PmuOpen(COUNTING, &attr);
     if (pd == -1) {
-        ostringstream details;
-        details << CurrentPmuError("PmuOpen(COUNTING)");
-        for (size_t i = 0; i < eventNames.size(); ++i) {
-            details << "\n  event[" << i << "]=" << eventNames[i];
-        }
-        error = details.str();
+        error = CurrentPmuError("PmuOpen(COUNTING) for PCIe payload events");
         return false;
     }
 
@@ -840,10 +664,10 @@ PcieReadResult ReadPcieInterval(vector<PcieCollector>& collectors,
             }
             string eventName = rawData[i].evt;
             double bytes = static_cast<double>(rawData[i].count) * 4.0;
-            if (eventName.find("rx_mwr_flux") != string::npos) {
+            if (eventName == collector.rxMwrEvent) {
                 sample.bytes.rxMwr += bytes;
                 sawRxMwr = true;
-            } else if (eventName.find("tx_cpl_flux") != string::npos) {
+            } else if (eventName == collector.txCplEvent) {
                 sample.bytes.txCpl += bytes;
                 sawTxCpl = true;
             }

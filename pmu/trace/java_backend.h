@@ -18,6 +18,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <sys/types.h>
+#include <unordered_map>
 
 struct JavaBackendTarget {
     std::string filterConfigPath;
@@ -26,6 +28,9 @@ struct JavaBackendTarget {
     std::string assetDirHost;
     std::string shmPath;
     std::string logPath;
+    uid_t fsUid{};
+    gid_t fsGid{};
+    bool credentialsValid{false};
 };
 
 struct JavaBackendImpl {
@@ -40,6 +45,11 @@ struct JavaBackendImpl {
     size_t shmSize{0};
     void *mapped{nullptr};
     uint64_t readSeq{0};
+    // Avoid repeating the same empty-read diagnostic when UTraceRead is polled.
+    uint64_t lastEmptyReadSeq{0};
+    bool hasLoggedEmptyRead = false;
+    // java records contain the tid visible in the target's pid namespace, translate it to the host TID
+    std::unordered_map<int, int> hostTidByNamespaceTid;
     bool runtimeStopped = false;
     bool runtimeRestored = false;
     bool runtimePrepared = false;

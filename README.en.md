@@ -235,6 +235,18 @@ bash build.sh install_path=/path/to/install utrace=true
 bash build.sh install_path=/path/to/install python=true
 ```
 
+When `python=true` is specified and `whl` is not `true`, `build.sh`
+uses the interpreter selected by `python_exe` to remove files from a previous
+`libkperf` Python installation, recreates the `_build` directory, and then
+builds and installs the new Python package. This cleanup uses only the Python
+standard library and does not depend on `pip`. On a first-time installation,
+the build continues normally when no previous installation is found.
+
+The cleanup is not performed unless `python=true` is specified. With
+`whl=true`, the Python packaging step generates a wheel without uninstalling
+the currently installed Python package or performing the `_build` cleanup
+above.
+
 If multiple Python versions exist in the environment:
 
 ```shell
@@ -250,8 +262,11 @@ bash build.sh install_path=/path/to/install python=true whl=true
 **Uninstall the Python package**:
 
 ```shell
-python3 -m pip uninstall -y libkperf
+python3 python/modules/uninstall.py
 ```
+
+If `python_exe` was specified during the build, use the same Python
+interpreter for manual uninstallation.
 
 **Note**: If a Python module reports an error similar to the following:
 

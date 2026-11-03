@@ -374,8 +374,14 @@ struct RawTraceStream {
         uint64_t pidValue = 0;
         uint64_t functionAddress = 0;
         if (!ReadNumber(payload, payloadLength, format->commonPid, pidValue) ||
-            !ReadNumber(payload, payloadLength, format->function, functionAddress) ||
-            pidValue == 0 || pidValue > INT_MAX || timestamp > static_cast<uint64_t>(INT64_MAX)) {
+            !ReadNumber(payload, payloadLength, format->function, functionAddress)) {
+            ++invalidPayloadRecords;
+            return;
+        }
+        if (pidValue == 0) {
+            return;
+        }
+        if (pidValue > INT_MAX || timestamp > static_cast<uint64_t>(INT64_MAX)) {
             ++invalidPayloadRecords;
             return;
         }

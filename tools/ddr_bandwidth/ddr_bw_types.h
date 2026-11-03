@@ -77,7 +77,11 @@ struct WindowRecord {
     double attributedReadBytes = 0.0;
     double attributedWriteBytes = 0.0;
     double attributedKernelReadBytes = 0.0;
-    double observedKernelWriteBytes = 0.0;
+    double attributedOtherReadBytes = 0.0;
+    double attributedKernelWriteBytes = 0.0;
+    double attributedOtherWriteBytes = 0.0;
+    double unattributedReadBytes = 0.0;
+    double unattributedWriteBytes = 0.0;
 };
 
 struct SpeTimestampStats {
@@ -99,10 +103,9 @@ struct SpeDecodeStats {
     uint64_t targetUserRecords = 0;
     uint64_t kernelRecords = 0;
     uint64_t otherUserRecords = 0;
-    uint64_t sourceUnavailableLoads = 0;
-    uint64_t eventFallbackDramLoads = 0;
-    uint64_t nonDramLoads = 0;
-    uint64_t eligibleDramLoads = 0;
+    uint64_t fallbackModeLoads = 0;
+    uint64_t eligibleReadLoads = 0;
+    uint64_t excludedReadLoads = 0;
     uint64_t eligibleStores = 0;
     uint64_t bucketRejected = 0;
     uint64_t bucketedRecords = 0;
@@ -169,8 +172,12 @@ struct TrafficTotals {
 struct AttributionTotals {
     double readBytes = 0.0;
     double writeBytes = 0.0;
+    double otherReadBytes = 0.0;
+    double otherWriteBytes = 0.0;
     double kernelReadBytes = 0.0;
-    double kernelObservedWriteBytes = 0.0;
+    double kernelWriteBytes = 0.0;
+    double unattributedReadBytes = 0.0;
+    double unattributedWriteBytes = 0.0;
     uint64_t readWindows = 0;
     uint64_t writeWindows = 0;
     uint64_t sparseReadWindows = 0;

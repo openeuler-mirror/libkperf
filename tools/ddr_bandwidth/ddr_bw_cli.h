@@ -20,6 +20,7 @@ struct ArgsContext {
     int topN = 20;
     bool debug = false;
     bool isLaunch = false;
+    bool systemWide = false;
     int fd[2] = {-1, -1};
     std::vector<std::string> pcieBdfs;
     std::vector<std::string> command;

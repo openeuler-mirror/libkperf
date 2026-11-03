@@ -161,7 +161,9 @@ void IPmuGetMetricDataExt(struct PmuDeviceData* deviceData, struct MetricDataExt
 			break;
 		case PMU_METRIC_BDF:
 			metricData->bdf = deviceData->bdf;
-			metricData->port = deviceData->port;
+                 break;
+         case PMU_METRIC_PORT:
+                 metricData->port = deviceData->port;
 			break;
 		case PMU_METRIC_CLUSTER:
 			metricData->clusterId = deviceData->clusterId;
@@ -220,6 +222,7 @@ import "errors"
 import "unsafe"
 import "reflect"
 import "libkperf/sym"
+import "strings"
 
 // pmu task type, for PmuOpen collectType
 var (
@@ -378,6 +381,7 @@ var (
 var (
 	PMU_BDF_TYPE_PCIE C.enum_PmuBdfType = C.PMU_BDF_TYPE_PCIE // pcie collect metric.
 	PMU_BDF_TYPE_SMMU C.enum_PmuBdfType = C.PMU_BDF_TYPE_SMMU // smmu collect metric.
+    PMU_BDF_TYPE_PORT C.enum_PmuBdfType = C.PMU_BDF_TYPE_PORT // PCIe Root Port BDF.
 )
 
 // PmuMetricMode
@@ -388,6 +392,7 @@ var (
 	PMU_METRIC_CLUSTER C.enum_PmuMetricMode = C.PMU_METRIC_CLUSTER
     PMU_METRIC_BDF C.enum_PmuMetricMode  = C.PMU_METRIC_BDF
 	PMU_METRIC_CHANNEL C.enum_PmuMetricMode  = C.PMU_METRIC_CHANNEL
+    PMU_METRIC_PORT C.enum_PmuMetricMode  = C.PMU_METRIC_PORT
 )
 
 // PmuHwMetric
@@ -527,9 +532,9 @@ type PmuDeviceAttr struct {
 	// Used for PMU_PCIE_XXX_BW and PMU_SMMU_XXX to collect a specific pcie device.
     // The string of bdf is something like '7a:01.0'.
 	Bdf string
-    // Used for PMU_PCIE_XXX_LAT to collect latency data.
-    // Only one port supported.
+    // Used for PMU_PCIE_XXX_BW/LAT. Ports takes precedence over Port.
 	Port string
+    Ports []string
 }
 
 type DdrDataStructure struct {
@@ -1225,6 +1230,9 @@ func PmuDeviceBdfList(bdfType C.enum_PmuBdfType) ([]string, error) {
 	numBdf := C.uint(0)
 	bdfList := C.PmuDeviceBdfList(bdfType, &numBdf)
 	if bdfList == nil {
+		if numBdf == 0 && C.Perrorno() == 0 {
+			return []string{}, nil
+		}
 		return nil, errors.New(C.GoString(C.Perror()))
 	}
 	ptr := unsafe.Pointer(bdfList)
@@ -1257,8 +1265,12 @@ func PmuDeviceOpen(attr []PmuDeviceAttr) (int, error) {
 		} else {
 			cAttr[i].bdf = nil
 		}
-		if len(v.Port) > 0 {
-			cAttr[i].port = C.CString(v.Port)
+		port := v.Port
+		if len(v.Ports) > 0 {
+			port = strings.Join(v.Ports, ",")
+		}
+		if len(port) > 0 {
+			cAttr[i].port = C.CString(port)
 		} else {
 			cAttr[i].port = nil
 		}
@@ -1287,8 +1299,12 @@ func PmuGetDevMetric(dataVo PmuDataVo, deviceAttr []PmuDeviceAttr) (PmuDeviceDat
 		} else {
 			cAttr[i].bdf = nil
 		}
-		if len(v.Port) > 0 {
-			cAttr[i].port = C.CString(v.Port)
+		port := v.Port
+		if len(v.Ports) > 0 {
+			port = strings.Join(v.Ports, ",")
+		}
+		if len(port) > 0 {
+			cAttr[i].port = C.CString(port)
 		} else {
 			cAttr[i].port = nil
 		}

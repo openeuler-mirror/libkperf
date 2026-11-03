@@ -14,10 +14,9 @@
  ******************************************************************************/
 package com.libkperf.tracex.agent.asm;
 
-import com.libkperf.tracex.agent.MethodId;
 import com.libkperf.tracex.agent.TraceConfig;
-import com.libkperf.tracex.agent.TraceLog;
 import com.libkperf.tracex.agent.Util;
+import com.libkperf.tracex.runtime.TraceLog;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 
@@ -26,32 +25,29 @@ import java.lang.instrument.IllegalClassFormatException;
 import java.lang.instrument.Instrumentation;
 import java.security.ProtectionDomain;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class TraceClassFileTransformer implements ClassFileTransformer {
     public static final String TRACE_RUNTIME_OWNER = "com/libkperf/tracex/runtime/TraceRuntime";
     private static final String TRACE_RUNTIME_PACKAGE = "com/libkperf/tracex/runtime/";
+    private static final String VIRTUAL_THREAD_CLASS = "java/lang/VirtualThread";
+    // Dynamic attach invokes agentmain through these reflection classes. If
+    // they are retransformed, a later stop/restore attach can execute tracing
+    // callbacks while the runtime is being disabled and fail before agentmain
+    // is entered. Keep the control path permanently unmodified.
+    private static final String REFLECT_METHOD_CLASS = "java/lang/reflect/Method";
+    private static final String DIRECT_METHOD_HANDLE_ACCESSOR_CLASS =
+            "jdk/internal/reflect/DirectMethodHandleAccessor";
     private static final int RESTORE_BATCH_SIZE = 64;
 
-    // prevent the same class from being instrumented repeatedly
+    // Classes whose current definitions contain tracing instrumentation.
     private static final Set<ClassKey> INSTRUMENTED = ConcurrentHashMap.newKeySet();
 
-    // save the original class bytecode for subsequent restoration
-    private static final Map<ClassKey, byte[]> ORIGINAL = new ConcurrentHashMap<ClassKey, byte[]>();
-
-    // retransforms awaiting confirmation from Instrumentation.retransformClasses
-    private static final Set<ClassKey> PENDING = ConcurrentHashMap.newKeySet();
-
-    // prevent transformer re-entry
-    private static final ThreadLocal<Boolean> REENTRANT = new ThreadLocal<Boolean>();
-
     private final TraceConfig config;
+    private volatile boolean virtualThreadCarrierHooksEmitted;
 
     public TraceClassFileTransformer(TraceConfig config) {
         this.config = config;
@@ -64,6 +60,10 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
         if (className.startsWith(TRACE_RUNTIME_PACKAGE)) {
             return true;
         }
+        if (REFLECT_METHOD_CLASS.equals(className)
+                || DIRECT_METHOD_HANDLE_ACCESSOR_CLASS.equals(className)) {
+            return true;
+        }
         if (className.endsWith("package-info") || className.indexOf("$$Lambda$") >= 0) {
             return true;
         }
@@ -71,64 +71,73 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
     }
 
     public boolean shouldTransformInternalName(String className) {
-        return !isStructuralExcluded(className) && config.shouldTransformClass(className);
+        return VIRTUAL_THREAD_CLASS.equals(className)
+                || (!isStructuralExcluded(className) && config.shouldTransformClass(className));
     }
 
     @Override
     public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined,
                             ProtectionDomain protectionDomain, byte[] classfileBuffer) throws IllegalClassFormatException {
-        boolean reentrantSet = false;
         try {
             if (className == null || classfileBuffer == null) {
                 return null;
             }
-            if (Boolean.TRUE.equals(REENTRANT.get())) {
-                return null;
-            }
-            REENTRANT.set(Boolean.TRUE);
-            reentrantSet = true;
-
             if (!shouldTransformInternalName(className)) {
                 return null;
             }
             ClassKey key = new ClassKey(loader, className);
-            if (INSTRUMENTED.contains(key)) {
-                return null;
-            }
 
             ClassReader cr = new ClassReader(classfileBuffer);
-            ClassWriter cw = new SafeClassWriter(cr, ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS, loader);
-            TraceClassVisitor cv = new TraceClassVisitor(cw, config, className);
-            cr.accept(cv, ClassReader.EXPAND_FRAMES);
-            if (cv.instrumentedMethodCount() == 0) {
-                return null;
-            }
-            byte[] transformed = cw.toByteArray();
-            ORIGINAL.putIfAbsent(key, Arrays.copyOf(classfileBuffer, classfileBuffer.length));
-            if (!INSTRUMENTED.add(key)) {
-                return null;
-            }
-            if (classBeingRedefined == null) {
-                PENDING.add(key);
-            }
-            return transformed;
-        } catch (Throwable t) {
-            try {
-                TraceLog.warn("[trace-java-agent] transform failed for " + className + ": " + t, t);
-            } catch (Throwable ignored) {
-            }
-            return null;
-        } finally {
-            if (reentrantSet) {
-                try {
-                    REENTRANT.remove();
-                } catch (Throwable ignored) {
+            int instrumentedMethodCount;
+            if (VIRTUAL_THREAD_CLASS.equals(className)) {
+                // Pass 1: verify that runContinuation contains both carrier-side call sites.
+                if (!TraceMethodVisitor.supportsVirtualThreadCarrierCallSites(cr)) {
+                    TraceLog.warn("[trace-java-agent] virtual-thread carrier hooks unavailable"
+                            + ", runContinuation mount/unmount call sites not found", null);
+                    return null;
                 }
             }
+
+            ClassWriter cw = new SafeClassWriter(cr, ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS, loader);
+            if (VIRTUAL_THREAD_CLASS.equals(className)) {
+                // Pass 2: instrument the verified call sites, never mount/unmount method bodies.
+                TraceMethodVisitor.VirtualThreadInstrumentation vt =
+                        TraceMethodVisitor.instrumentVirtualThread(cr, cw);
+                if (vt.instrumentedMethodCount() != 1 || vt.mountCallSiteCount() == 0 || vt.unmountCallSiteCount() == 0) {
+                    TraceLog.warn("[trace-java-agent] virtual-thread carrier hooks unavailable"
+                            + ", runContinuationMethods=" + vt.instrumentedMethodCount()
+                            + ", mountCallSites=" + vt.mountCallSiteCount()
+                            + ", unmountCallSites=" + vt.unmountCallSiteCount(), null);
+                    return null;
+                }
+                instrumentedMethodCount = vt.instrumentedMethodCount();
+            } else {
+                TraceClassVisitor cv = new TraceClassVisitor(cw, config, className);
+                cr.accept(cv, ClassReader.EXPAND_FRAMES);
+                if (cv.instrumentedMethodCount() == 0) {
+                    return null;
+                }
+                instrumentedMethodCount = cv.instrumentedMethodCount();
+            }
+            byte[] transformed = cw.toByteArray();
+            INSTRUMENTED.add(key);
+            if (VIRTUAL_THREAD_CLASS.equals(className)) {
+                virtualThreadCarrierHooksEmitted = true;
+            }
+            TraceLog.info("[trace-java-agent] instrumented class=" + className.replace('/', '.')
+                    + ", methodCount=" + instrumentedMethodCount);
+            return transformed;
+        } catch (Throwable t) {
+            TraceLog.warn("[trace-java-agent] transform failed for " + className + ": " + t, t);
+            return null;
         }
     }
 
-    public static void confirmInstrumentation(Iterable<Class<?>> classes) {
+    public boolean hasVirtualThreadCarrierHooks() {
+        return virtualThreadCarrierHooksEmitted;
+    }
+
+    public void discardFailedRetransformations(Iterable<Class<?>> classes) {
         if (classes == null) {
             return;
         }
@@ -137,24 +146,10 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
                 continue;
             }
             ClassKey key = new ClassKey(clazz.getClassLoader(), Util.internalName(clazz));
-            PENDING.remove(key);
-        }
-    }
-
-    public static void rollbackInstrumentation(Iterable<Class<?>> classes) {
-        if (classes == null) {
-            return;
-        }
-        for (Class<?> clazz : classes) {
-            if (clazz == null) {
-                continue;
-            }
-            ClassKey key = new ClassKey(clazz.getClassLoader(), Util.internalName(clazz));
-            if (!PENDING.remove(key)) {
-                continue;
-            }
             INSTRUMENTED.remove(key);
-            ORIGINAL.remove(key);
+            if (VIRTUAL_THREAD_CLASS.equals(key.name)) {
+                virtualThreadCarrierHooksEmitted = false;
+            }
         }
     }
 
@@ -168,45 +163,11 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
         }
 
         if (INSTRUMENTED.isEmpty()) {
-            ORIGINAL.clear();
-            PENDING.clear();
             return;
         }
 
-        final Map<ClassKey, byte[]> restoreBytes = new HashMap<ClassKey, byte[]>(ORIGINAL);
         final Set<ClassKey> instrumentedSnapshot = ConcurrentHashMap.newKeySet();
         instrumentedSnapshot.addAll(INSTRUMENTED);
-
-        ClassFileTransformer restoreTransformer = new ClassFileTransformer() {
-            @Override
-            public byte[] transform(ClassLoader loader,
-                                    String className,
-                                    Class<?> classBeingRedefined,
-                                    ProtectionDomain protectionDomain,
-                                    byte[] classfileBuffer) {
-                try {
-                    if (className == null) {
-                        return null;
-                    }
-
-                    ClassKey key = new ClassKey(loader, className);
-                    byte[] original = restoreBytes.get(key);
-                    if (original != null) {
-                        return original;
-                    }
-
-                    return null;
-                } catch (Throwable t) {
-                    try {
-                        TraceLog.warn("[trace-java-agent] restore transform failed for " + className + ": " + t, t);
-                    } catch (Throwable ignored) {
-                    }
-                    return null;
-                }
-            }
-        };
-
-        inst.addTransformer(restoreTransformer, true);
 
         RestoreResult result = new RestoreResult();
         try {
@@ -217,23 +178,15 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
                     if (clazz == null) {
                         continue;
                     }
-                    if (!inst.isModifiableClass(clazz)) {
-                        continue;
-                    }
                     String internalName = Util.internalName(clazz);
                     key = new ClassKey(clazz.getClassLoader(), internalName);
                     if (!instrumentedSnapshot.contains(key)) {
                         continue;
                     }
-                    if (!restoreBytes.containsKey(key)) {
-                        byte[] fromClasspath = Util.readClassBytes(clazz.getClassLoader(), internalName);
-                        if (fromClasspath != null) {
-                            restoreBytes.put(key, fromClasspath);
-                        }
-                    }
-                    if (!restoreBytes.containsKey(key)) {
+                    if (!inst.isModifiableClass(clazz)) {
                         result.failed++;
-                        TraceLog.info("[trace-java-agent] restore skip no original bytes: " + Util.safeClassName(clazz));
+                        TraceLog.warn("[trace-java-agent] restore skip unmodifiable class: "
+                                + Util.safeClassName(clazz), null);
                         continue;
                     }
                     restoreCandidates.add(clazz);
@@ -250,14 +203,8 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
             result.failed++;
             TraceLog.warn("[trace-java-agent] restoreAll outer warning: " + t, t);
         } finally {
-            try {
-                inst.removeTransformer(restoreTransformer);
-            } catch (Throwable ignored) {
-            }
             if (result.failed == 0) {
                 INSTRUMENTED.clear();
-                PENDING.clear();
-                ORIGINAL.clear();
             }
         }
     }
@@ -290,8 +237,6 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
         for (Class<?> clazz : classes) {
             ClassKey key = new ClassKey(clazz.getClassLoader(), Util.internalName(clazz));
             INSTRUMENTED.remove(key);
-            PENDING.remove(key);
-            ORIGINAL.remove(key);
         }
         result.ok += classes.size();
     }

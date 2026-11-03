@@ -15,6 +15,7 @@
 package com.libkperf.tracex.agent;
 
 import com.libkperf.tracex.agent.asm.TraceClassFileTransformer;
+import com.libkperf.tracex.runtime.TraceLog;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;

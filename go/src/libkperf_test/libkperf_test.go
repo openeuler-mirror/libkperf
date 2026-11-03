@@ -336,6 +336,16 @@ func TestGetDeviceBdfList(t *testing.T) {
 		t.Logf("bdf is %v", v)
 	}
 
+	pciePortList, err := kperf.PmuDeviceBdfList(kperf.PMU_BDF_TYPE_PORT)
+	if err != nil {
+		t.Fatalf("kperf GetDevicePortList failed, expect err is nil, but is %v", err)
+	}
+	t.Log("Get PCIE Root Port list success!")
+	for _, v := range pciePortList {
+		t.Logf("port is %v", v)
+	}
+
+
 	smmuBdfList, err := kperf.PmuDeviceBdfList(kperf.PMU_BDF_TYPE_SMMU)
 	if err != nil {
 		t.Fatalf("kperf GetDeviceBdfList failed, expect err is nil, but is %v", err)

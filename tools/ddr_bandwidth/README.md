@@ -6,7 +6,7 @@
 
 * **DDRC PMU**：采集系统实际的物理 DRAM 读写流量。
 * **PCIe PMU**：采集 PCIe DMA 流量，并从 DDRC 流量中扣除。
-* **Arm SPE**：采集 system-wide 内存访问样本。Read 使用完整 system-wide 样本作为分母；Write 在目标 PID 内部归一化。
+* **Arm SPE**：采集 system-wide 内存访问样本。Read 和 Write 都使用完整 system-wide 样本作为分母。
 
 ## 基本原理
 
@@ -19,11 +19,11 @@ Residual Read  = max(0, DDRC Read  - PCIe DMA Read)
 Residual Write = max(0, DDRC Write - PCIe DMA Write)
 ```
 
-解析为 `[kernel]` 的 SPE 记录会按时间戳进入 system-wide 统计。Kernel Read 是 residual Read 的互斥分项；Kernel Write 仅是基于 system-wide store 比例的重叠观测值，不会从 Target Write 或 Other Write 中扣除。它们不会进入 Write 的目标 PID 分母、函数表、进程表或 store-PC 调试表，也不会按样本携带的 PID 强行归属给某个进程。
+解析为 `[kernel]` 的 SPE 记录会按时间戳进入 system-wide 统计。Target User、Other User 和 Kernel 使用相同的 system-wide 分母，形成互斥分项；没有可靠样本分母、目标样本未达到 `--min-samples` 或窗口无效的流量保留为 Unattributed。Kernel 样本不会进入目标函数表或进程表，也不会按样本携带的 PID 强行归属给某个进程。
 
 ### Read 归因
 
-Read 侧只使用 SPE 中数据来源为：
+SPE数据具有source字段的环境上，Read侧只使用SPE中数据来源为：
 
 ```text
 HIP_LOCAL_MEM
@@ -31,20 +31,24 @@ HIP_REMOTE_MEM
 ```
 
 的 load sample。
+其他source不可用的环境上，降级使用所有具有有效 OP 信息的 SPE load sample
+作为 DDRC 物理读流量的统计分配权重，并在首次处理 load 时输出警告。回退权重会包含 cache hit，因此只能用于近似函数热点分配，精度低于
+source 字段判断；DDRC 汇总流量仍是物理流量，但函数级 Read BW 不是独立硬件计数值。
 
-当底层 SPE record 没有 Data Source packet（解码后的 `source == 0xffff`）时，工具会降级使用
-`SPE_EV_LLC_MISS` 事件位识别可能到达 DRAM 的 load，并在首次触发时输出警告。该路径只能提供近似判断，
-精度低于 `HIP_LOCAL_MEM/HIP_REMOTE_MEM`；`SPE_EV_REMOTE_ACCESS` 单独出现时不会被当作 DRAM，
-因为 remote access 也可能来自远端 cache，而不一定来自远端内存。
-
-每个 DRAM load sample 权重相同：
+每个符合当前模式的 Read sample 权重相同：
 
 ```text
+Target User Read Bytes = Residual Read Bytes × Target Read samples / System Read samples
+Other User Read Bytes  = Residual Read Bytes × Other Read samples  / System Read samples
+Kernel Read Bytes      = Residual Read Bytes × Kernel Read samples / System Read samples
+
 函数 Read Bytes
-    = CPU Read Bytes
-      × 函数 DRAM load sample 数
-      / 窗口内 system-wide（用户态 + 内核态）DRAM load sample 数
+    = Residual Read Bytes
+      × 函数 Read sample 数
+      / 窗口内 system-wide（用户态 + 内核态）Read sample 数
 ```
+
+Target User、Other User 和 Kernel 也分别按各自 Read sample 占 system-wide Read sample 的比例分配。目标样本未达到 `--min-samples` 时，不把目标份额强制分给函数，而是留在 Unattributed。
 
 ### Write 归因
 
@@ -52,14 +56,19 @@ Write 侧根据 SPE store sample 数进行估算。考虑 store retirement 到 d
 
 ```text
 函数 Write Bytes[i]
-    = CPU Write Bytes[i]
+    = Residual Write Bytes[i]
       × sum(函数 store samples[i-2..i])
-      / sum(目标 PID store samples[i-2..i])
+      / sum(system-wide store samples[i-2..i])
 ```
 
 第 0、1 个窗口只使用当时已经存在的窗口。历史样本仅作为当前 DDRC Write residual 的归因权重；每个窗口的 physical write residual 仍只分配一次。
 
-当三窗口目标 PID store samples 达到 `--min-samples` 时，Target Write 直接取该窗口的全部 Residual Write；各函数再按其占目标 PID store samples 的比例分配。
+Target User、Other User 和 Kernel 均使用同一组三窗口 system-wide store 分母。目标三窗口 store samples 达到 `--min-samples` 时，目标函数按其占 system-wide store samples 的比例分配；未达门槛的目标份额保留为 Unattributed。这样每个窗口都满足：
+
+```text
+Target User Write + Other User Write + Kernel Write + Unattributed Write
+    = Residual Write
+```
 
 Write 归因不再使用 store 指令访问宽度作为权重。
 
@@ -83,6 +92,17 @@ tools/bin/ddr_bandwidth
 ```
 
 ### 采集运行中的进程
+
+全局采集所有用户态进程（两种写法等价）：
+
+```bash
+sudo tools/bin/ddr_bandwidth -a -d 10
+sudo tools/bin/ddr_bandwidth -d 10
+```
+
+全局模式仍使用 system-wide SPE 分母，并把所有非内核用户态样本加入函数归因；函数表和进程表
+按带宽输出 Top N。它不会执行目标 PID 存活检查或目标进程信号同步。系统进程较多时样本量和
+符号解析开销会明显增加，应适当提高 `--period` 并通过 `--debug` 检查实际窗口数。
 
 单进程：
 
@@ -108,11 +128,24 @@ sudo tools/bin/ddr_bandwidth -p 12345,12346 -d 10
 sudo tools/bin/ddr_bandwidth -p 12345 -p 12346 -d 10
 ```
 
-> **多进程采集限制：** SPE 是 system-wide 的统计采样，各目标进程共享每个 CPU 上的采样机会和
-> AUX buffer，并不会按 PID 分配固定或相同的样本配额。多个进程并发运行时，调度时长、CPU 迁移、
-> 指令类型、采样碰撞和缓冲区压力都可能使各 PID 的样本数产生偏差，因此进程间样本数及由其计算的
-> 带宽比例不应视为精确占比，也可能与分别单进程采集的结果不同。需要较高精度时，建议分别采集目标
-> 进程；必须多进程采集时，应延长采集时间、重复测量，并结合 `--debug` 的 SPE health 信息判断结果稳定性。
+#### 多进程采集精度与 SPE 影响
+
+SPE 是 system-wide 的统计采样，不是每个 PID 独占的精确计数器。多个目标进程并发运行时，它们共享
+每个 CPU 上的 SPE 采样机会和 AUX buffer，硬件不会为各 PID 分配固定或相同的样本配额。因此不同进程的
+CPU 运行时间、CPU 迁移、访存指令类型、采样随机性、采样碰撞及缓冲区压力，都可能造成各 PID 样本数偏差。
+
+DDRC/PCIe 给出的系统物理流量总量不受目标 PID 数量影响，但进程级和函数级带宽需要按照 SPE 样本比例
+进行归因。某个 PID 的样本偏多或偏少会直接传导到其 Read/Write 带宽结果，因此多进程表中的样本数和
+带宽比例只能作为统计估计，不能视为各进程的精确硬件流量占比；多进程同时采集的结果也可能与分别进行
+单进程采集的结果不同。进程运行时间很短、各进程负载差异较大或有效样本很少时，这种偏差会更加明显。
+
+使用建议：
+
+* 对精度要求较高时，优先分别对每个目标进程进行单进程采集。
+* 必须多进程采集时，尽量让各进程覆盖相同且稳定的工作阶段，适当延长采集时间并重复测量。
+* 可适当减小 `--period` 增加样本数，但过小会增加采样开销和 AUX buffer 压力，需要观察结果是否稳定。
+* 使用 `--debug` 检查各 PID 样本数、空窗口、读取失败和 `DEBUG SPE / WINDOW HEALTH`；样本严重不均衡或
+  有效样本过少时，应降低对进程级、函数级归因结果的置信度。
 
 ### 拉起程序并采集
 
@@ -131,19 +164,25 @@ sudo tools/bin/ddr_bandwidth \
     -d 10
 ```
 
+工具优先从 `/sys/bus/event_source/devices/<pmu>/events/` 读取 PCIe payload
+事件配置。部分旧版或裁剪版内核没有导出事件别名时，会使用 HiSilicon PCIe
+PMU ABI 定义的 raw event code。任一指定或自动发现的 BDF 无法打开、启用或完成
+baseline 时，本次采集不使用残缺的 PCIe 数据做 DMA 扣减。
+
 常用参数：
 
 ```text
+-a, --all             全局采集所有用户态进程；未指定 -p/启动命令时默认启用
 -p, --pid PID          目标进程 PID，可指定多个
 -d, --duration SEC     采集时间，默认 10 秒
 -i, --interval MS      DDRC 归因窗口，默认 100 ms
     --spe-read-interval MS  SPE 读取间隔，默认 50 ms，不超过归因窗口
-    --min-samples N    每方向最低有效样本数，默认 1；Read 看当前窗口，Write 看当前加前两窗口
+    --min-samples N    每方向最低目标用户态样本数，默认 1；Read 看当前窗口，Write 看当前加前两窗口
     --period N         SPE sample period，默认 2048，不是毫秒
     --min-latency N    SPE minimum latency
-    --top N            输出 Top N 函数
+    --top N            输出 Top N 函数；全局模式也限制进程表行数
     --pcie-bdf BDF     指定 PCIe BDF，可重复
-    --debug            输出 timing、逐窗口归因、SPE 配置/event/health 和 store-PC 调试信息
+    --debug            输出聚合 timing、SPE 配置/pipeline/event 和窗口健康统计
 ```
 
 ## 输出结果说明
@@ -166,9 +205,9 @@ PID         Function              Read BW     Write BW(est*)   Total BW    Read 
 * **Read BW**：归因到该函数的物理 DDR Read 带宽。
 * **Write BW(est*)**：根据 SPE store sample 数估算的 DDR Write 带宽。
 * **Total BW**：Read BW + Write BW。
-* **Read samples / Store samples**：该用户态函数采集到的 DRAM load / store 样本数，包含因窗口证据不足而未用于分配流量的样本。原子操作可能同时计入两列；`[kernel]` 样本只进入 Read 系统分母和系统级汇总。
+* **Read samples / Store samples**：该用户态函数采集到的有效 Read load / store 样本数，包含因窗口证据不足而未用于分配流量的样本。SPE source字段有效的环境上 Read samples 仅包含 DRAM-source load，其他 CPU 类型包含全部有效 load。原子操作可能同时计入两列；`[kernel]` 样本只进入 system-wide Read/Write 分母和系统级汇总。
 
-多进程采集时还会输出进程级汇总：
+多进程或全局采集时还会输出进程级汇总：
 
 ```text
 CPU DDR BANDWIDTH BY PROCESS (USER-SPACE)
@@ -180,7 +219,8 @@ PID              Read BW   Write BW(est*)   Total BW    Samples
 12346             523.11        921.35       1444.46     156237
 ```
 
-用于查看各目标进程用户态函数对应的 DDR 带宽和 SPE sample 分布。
+用于查看各目标进程用户态函数对应的 DDR 带宽和 SPE sample 分布。全局模式按带宽排序并只显示
+`--top` 指定的进程数。
 
 汇总结果示例：
 
@@ -193,12 +233,11 @@ Metric                         Read       Write       Total
 DDRC physical traffic        2604.45      192.15     2796.60
 Observed PCIe DMA               0.24        0.00        0.24
 PCIe DMA deducted               0.24        0.00        0.24
-System residual              2604.21      192.15     2796.36
-Target PID(s) user attributed 2580.00        0.00     2580.00
-Kernel observed (read partition) 8.00         0.00        8.00
-Kernel observed (write overlap*) 0.00       120.00      120.00
-Other user/system               16.21       192.15      208.36
-* Kernel observed Write 与 Target Write 重叠，不能相加。
+System residual (DDRC - DMA) 2604.21      192.15     2796.36
+Target PID(s) user (SPE-attributed) 2580.00  19.22     2599.22
+Other user (SPE-attributed)     16.21      153.72      169.93
+Kernel (SPE-attributed)          8.00        9.61       17.61
+Unattributed                     0.00        9.60        9.60
 ```
 
 各项含义：
@@ -207,19 +246,19 @@ Other user/system               16.21       192.15      208.36
 * **Observed PCIe DMA**：PCIe PMU 观测到的 DMA 流量。
 * **PCIe DMA deducted**：实际从 DDRC 流量中扣除的 DMA 流量。
 * **System residual**：扣除 PCIe DMA 后剩余的 CPU/System DDR 流量。
-* **Target PID(s) user attributed**：Read 为目标用户态函数的归因之和；Write 在目标 store evidence 达标时取完整 Residual Write，函数表再在目标 PID 内部分配。
-* **Kernel observed (read partition)**：按 system-wide kernel load sample 比例估算，是 Residual Read 的互斥分项。
-* **Kernel observed (write overlap*)**：按 system-wide kernel store sample 比例估算的 informational observation；它与 Target Write 重叠，不能相加，也不参与 `Other user/system` 的扣减。
-* **Other user/system**：Read 扣除目标用户归因和 Kernel Read；Write 只扣除 Target Write，不扣除重叠的 Kernel Write observation。
+* **Target PID(s) user (SPE-attributed)**：按目标用户态样本占 system-wide 样本的比例估算；函数表中的目标函数使用相同分母。
+* **Other user (SPE-attributed)**：按非目标用户态样本占 system-wide 样本的比例估算；不进入目标函数表。
+* **Kernel (SPE-attributed)**：按 kernel 样本占 system-wide 样本的比例估算，是 Residual Read/Write 的互斥分项，不是独立硬件计数值。
+* **Unattributed**：无可靠分母、目标证据未达到门槛或窗口无效而未分配的 Residual 流量。
 
 ```text
-Attribution coverage: 93.13%
+System partition coverage: 99.66%
 User function windows: read 100/100, write 0/100
 ```
 
 其中：
 
-* **Attribution coverage**：CPU/System residual 中成功归因到目标进程的比例。
+* **System partition coverage**：CPU/System residual 中成功划分为 Target User、Other User 或 Kernel 的比例；剩余部分对应 Unattributed。
 * **read 100/100**：100 个窗口中，100 个窗口有足够用户态 Read SPE 样本且有可归因读流量。
 * **write 0/100**：100 个窗口中没有可用于用户态函数 Write 归因的 store 样本。
 
@@ -239,26 +278,27 @@ sudo tools/bin/ddr_bandwidth \
 
 ```text
 DEBUG TIMING
-DBG_WINDOW
-DBG_FUNC
-DBG_TIMESTAMP
-DEBUG SPE CONFIG
 DEBUG SPE SAMPLE PIPELINE DIAGNOSTICS
 DEBUG SPE / WINDOW HEALTH
 DEBUG SPE EVENT STAT
-DEBUG SPE STORE PC STAT
+Attribution windows: invalid=... read_sparse=... read_no_denominator=... write_sparse=... write_no_denominator=...
 ```
 
-其中包括采集时间、逐窗口 DDRC/DMA/分母/分子/归因字节、实际 SPE period/data filter/event filter 配置、SPE record pipeline、各 event bit 及实际 event-mask 组合、SPE drain 数量与耗时、时间戳异常、空窗口/读取失败，以及 store PC、指令编码和访问宽度等诊断信息。`PmuDataExt::event` 是位图，因此同一条 record 可能同时计入多个 event bit。
+其中包括采集时间、SPE record pipeline、各 event bit的聚合计数、SPE drain 数量与耗时占比、实际/理论窗口数、时间戳异常、空窗口、读取失败，
+以及归因无效、目标样本稀疏和缺少 system-wide 分母的窗口数。
+为避免海量输出及额外调试开销，不再打印逐窗口、逐函数、event-mask 组合和 store-PC 明细。
+`PmuDataExt::event` 是位图，因此同一条 record 可能同时计入多个 event bit。
 这些信息仅用于调试，不参与正式 DDR 带宽权重计算。
 
 ## 注意事项
 
-DDRC、PCIe PMU 和 SPE 都按系统级作用域采集；SPE 的 system-wide 分母同时包含用户态和内核态，函数分子只取目标 PID 的用户态样本。kernel PC 仅形成系统级观测 bucket，不按 PID 归因。
+DDRC、PCIe PMU 和 SPE 都按系统级作用域采集；SPE 的 system-wide 分母同时包含用户态和内核态。
+PID 模式的函数分子只取目标 PID 的用户态样本，全局模式取所有非内核用户态样本。kernel PC 仅形成
+系统级观测 bucket，不按 PID 归因。
 
 因此，为了获得更准确的进程和函数级归因结果，建议采集期间尽量减少其他高 DDR 带宽进程的干扰。
 
-Read BW 表示基于 DRAM-source SPE sample 对 **physical DDR read traffic** 的统计归因结果，不等同于函数执行的逻辑 load 字节数。
+Read BW 表示对 **physical DDR read traffic** 的统计归因结果，不等同于函数执行的逻辑 load 字节数。SPE source 字段有效的环境上使用 DRAM-source SPE sample；其他 CPU 类型使用全部有效 load 作为近似权重，可能包含 cache hit，函数级结果应视为热点估算。
 
 Write BW 基于 store sample 数进行统计归因，不使用 store 指令访问宽度作为正式权重。由于 store retirement 与 dirty cache line 最终写回 DRAM 存在时间差，同时 SPE 对不同 store 指令的采样密度可能存在差异，因此 Write BW 应视为估算值。
 

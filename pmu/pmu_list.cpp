@@ -44,6 +44,7 @@ namespace KUNPENG_PMU {
     std::mutex PmuList::dataListMtx;
     std::mutex PmuList::dataParentMtx;
     std::mutex PmuList::analysisStatusMtx;
+    std::mutex PmuList::dummyListMtx;
 
     int PmuList::CheckRlimit(const unsigned pd, const unsigned fdNum)
     {
@@ -164,6 +165,8 @@ namespace KUNPENG_PMU {
     {
         auto err = evtList->Init(groupEnable, evtLeader);
         if (err != SUCCESS) {
+            evtList->SetInitErrMsg(Perror());
+            evtList->SetIsInitErr(true);
             (void)evtList->Close();
             return err;
         }
@@ -177,10 +180,6 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    static inline bool IsNotInitFatalErr(int err) {
-        return err == LIBPERF_ERR_OPEN_INVALID_FILE;
-    }
-
     int PmuList::InitScanEvtLists(const int pd, std::vector<std::shared_ptr<EvtList>> &evtLists, EvtInitCtx &ctx)
     {
         for (auto &evtList : evtLists) {
@@ -189,11 +188,8 @@ namespace KUNPENG_PMU {
             if (gid == -1) {
                 int err = EvtInit(false, nullptr, pd, evtList);
                 if (err != SUCCESS) {
-                    if (!IsNotInitFatalErr(err)) {
-                        return err;
-                    }
                     ctx.lastErr = err;
-                    ctx.removeEvt.insert(evtList.get());
+                    ctx.removeEvt.insert(evtList);
                     continue;
                 } else {
                     ctx.oneEvtInitOk = true;
@@ -205,11 +201,8 @@ namespace KUNPENG_PMU {
             if (ctx.eventGroupInfoMap.find(gid) == ctx.eventGroupInfoMap.end()) {
                 int err = EvtInit(true, nullptr, pd, evtList);
                 if (err != SUCCESS) {
-                    if (!IsNotInitFatalErr(err)) {
-                        return err;
-                    }
                     ctx.lastErr = err;
-                    ctx.removeEvt.insert(evtList.get());
+                    ctx.removeEvt.insert(evtList);
                     ctx.groupLeaderOk[gid] = false;
                     ctx.eventGroupInfoMap[gid].uncoreState = static_cast<UncoreState>(UncoreState::InitState);
                     continue;
@@ -270,11 +263,8 @@ namespace KUNPENG_PMU {
                     }
                 }
                 if (err != SUCCESS) {
-                    if (!IsNotInitFatalErr(err)) {
-                        return err;
-                    }
                     ctx.lastErr = err;
-                    ctx.removeEvt.insert(child.get());
+                    ctx.removeEvt.insert(child);
                     continue;
                 } else {
                     ctx.oneEvtInitOk = true;
@@ -285,22 +275,33 @@ namespace KUNPENG_PMU {
         return SUCCESS;
     }
 
-    static inline std::string GetRemoveEvtNames(const std::unordered_set<const EvtList*>& removeEvt)
+    /**
+     * Constructing an alarm for invalid events.
+     */
+    static inline std::string ConstructWarnForInvliadEvent(const std::unordered_set<std::shared_ptr<EvtList>>& removeEvt)
     {
-        std::vector<std::string> names;
-        names.reserve(removeEvt.size());
-        for (auto p : removeEvt) {
+        std::string tips;
+        std::string out;
+        for (auto& p : removeEvt) {
             if (!p) {
                 continue;
             }
-            names.emplace_back(p->GetPmuEvtName());
-        }
-        std::string out;
-        for (size_t i = 0; i < names.size(); ++i) {
-            if (i) {
-                out += ",";
+            std::string evtName = std::string{p->GetPmuEvtName()};
+            out += evtName + ",";
+            if (!p->GetInitErrMsg().empty()) {
+                std::string tip = "Failure to open event '" + evtName + "' on PMU because of " + p->GetInitErrMsg() + ";";
+                tips += tip;
             }
-            out += names[i];
+        }
+
+        if (!out.empty()) {
+            out.pop_back();
+        }
+
+        if (!tips.empty()) {
+            tips.pop_back();
+            out += ";";
+            out += tips;
         }
         return out;
     }
@@ -318,13 +319,7 @@ namespace KUNPENG_PMU {
         if (err != SUCCESS) {
             return err;
         }
-        const std::string removedNames = GetRemoveEvtNames(ctx.removeEvt);
-        // remove invalid event
-        if (!ctx.removeEvt.empty()) {
-            evtLists.erase(std::remove_if(evtLists.begin(), evtLists.end(), [&](const std::shared_ptr<EvtList> &p) {
-                 return (!p) || (ctx.removeEvt.find(p.get()) != ctx.removeEvt.end());}), evtLists.end());
-        }
-
+        const std::string warnMsg = ConstructWarnForInvliadEvent(ctx.removeEvt);
         // add to dataEvtGroupList: leader ok and at least one child group init successfully
         std::unordered_map<int, struct EventGroupInfo> processedGroupInfoMap;
         for (auto &kv : ctx.eventGroupInfoMap) {
@@ -341,7 +336,7 @@ namespace KUNPENG_PMU {
                     if (!sp) {
                         continue;
                     }
-                    if (ctx.removeEvt.count(sp.get())) {
+                    if (ctx.removeEvt.count(sp)) {
                         continue;
                     }
                     newInfo.evtGroupChildList.push_back(evt);
@@ -362,7 +357,7 @@ namespace KUNPENG_PMU {
             return ctx.lastErr;
         }
         if (ctx.lastErr != SUCCESS) {
-            SetWarn(ctx.lastErr, "Initialization failed: " + removedNames);
+            SetWarn(ctx.lastErr, "Initialization failed: " + warnMsg);
         }
         return SUCCESS;
     }
@@ -440,7 +435,7 @@ namespace KUNPENG_PMU {
         }
         std::set<int> noProcList;
         for (const auto &it : pidList) {
-            if (it->isMain) {
+            if (it->keepUntilClose) {
                 continue;
             }
             std::string path = "/proc/" + std::to_string(it->tid);
@@ -1209,7 +1204,8 @@ namespace KUNPENG_PMU {
                 New(LIBPERF_ERR_FAIL_GET_PROC);
                 return LIBPERF_ERR_FAIL_GET_PROC;
             }
-            procTopo->isMain = true;
+            procTopo->keepUntilClose = true;
+            procTopo->isRequired = true;
             procTopoList.emplace_back(unique_ptr<ProcTopology, void (*)(ProcTopology*)>(procTopo, FreeProcTopo));
             return SUCCESS;
         }
@@ -1218,6 +1214,27 @@ namespace KUNPENG_PMU {
             return SUCCESS;
         }
         for (int masterPid : pmuTaskAttrHead->pidList) {
+            // In counting mode, a thread id (tid != tgid) targets a single thread, which is
+            // consistent with the semantics of perf_event_open. Monitor only this thread
+            // instead of expanding it to all threads of the process, otherwise the collected
+            // data would cover the whole process while the caller asked for one thread.
+            if (pmuTaskAttrHead->pmuEvt->collectType == COUNTING && masterPid != 0) {
+                int tgid = GetTgid(masterPid);
+                if (tgid != -1 && tgid != masterPid) {
+                    struct ProcTopology* threadTopo = GetProcTopology(masterPid);
+                    if (threadTopo == nullptr) {
+                        New(LIBPERF_ERR_FAIL_GET_PROC, "process not found: " + std::to_string(masterPid));
+                        return LIBPERF_ERR_FAIL_GET_PROC;
+                    }
+                    // This thread was explicitly requested, so an open failure must be returned to the caller. 
+                    // Do not keep it until PmuClose: unlike a process root, an exited worker thread
+                    // can be removed by the periodic cleanup path.
+                    threadTopo->isRequired = true;
+                    DBG_PRINT("Add to proc map: %d\n", masterPid);
+                    procTopoList.emplace_back(shared_ptr<ProcTopology>(threadTopo, FreeProcTopo));
+                    continue;
+                }
+            }
             int numChild = 0;
             int* childTidList = GetChildTid(masterPid, &numChild);
             if (childTidList == nullptr) {
@@ -1231,7 +1248,12 @@ namespace KUNPENG_PMU {
                     SetWarn(LIBPERF_WARN_FAIL_GET_PROC, "process not found: " + std::to_string(childTidList[j]));
                     continue;
                 }
-                procTopo->isMain = (masterPid == procTopo->tid || masterPid == 0);
+                // The original process target stays alive until PmuClose and
+                // must initialize successfully. Threads discovered by expanding
+                // that process are optional and may be cleaned up when they exit.
+                const bool isOriginalTarget = (masterPid == procTopo->tid || masterPid == 0);
+                procTopo->keepUntilClose = isOriginalTarget;
+                procTopo->isRequired = isOriginalTarget;
                 foundProc = true;
                 DBG_PRINT("Add to proc map: %d\n", childTidList[j]);
                 procTopoList.emplace_back(shared_ptr<ProcTopology>(procTopo, FreeProcTopo));
@@ -1330,7 +1352,7 @@ namespace KUNPENG_PMU {
 
     void PmuList::EraseDummyEvent(const unsigned pd)
     {
-        lock_guard<mutex> lg(pmuListMtx);
+        lock_guard<mutex> lg(dummyListMtx);
         if (dummyList.find(pd) != dummyList.end()) {
             DummyEvent* pEvent = dummyList.at(pd);
             dummyList.erase(pd);

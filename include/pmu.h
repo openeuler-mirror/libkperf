@@ -305,6 +305,12 @@ struct SampleRawField {
     unsigned isSigned; //is signed or is unsigned
 };
 
+enum CountPercentType {
+    PMU_COUNT_NOT_COUNTED = -1,   // not counted
+    PMU_COUNT_NOT_SUPPORTED = -2, // not supported
+    PMU_COUNT_COUNTED = 1,        // counted
+};
+
 struct PmuData {
     struct Stack* stack;            // call stack
     const char *evt;                // event name
@@ -320,7 +326,8 @@ struct PmuData {
     double countPercent;            // event count Percent. when count = 0, countPercent = -1; Only available for Counting.
     struct PmuDataExt *ext;         // extension. Only available for Spe.
     struct SampleRawData *rawData;  // trace pointer collect data.
-    const char* cgroupName;         // trace data from which cgroup 
+    const char* cgroupName;         // trace data from which cgroup
+    int ip = -1;                    // sample ip, only available for lbr driver. This info can generally be obtained through stack->symbol->addr.
 };
 
 struct PmuTraceData {
@@ -556,14 +563,15 @@ struct PmuDeviceAttr {
     // Used for PMU_PCIE_XXX_BW and PMU_SMMU_XXX to collect a specifi pcie device.
     // The string of bdf is something like '7a:01.0'.
     char *bdf;
-    // Used for PMU_PCIE_XXX_LAT to collect latency data.
-    // Only one port supported.
+    // Used for PMU_PCIE_XXX_BW/LAT. Multiple ports can be specified as a comma-separated list: "20:00.0,20:04.0".
+    // For PCIe metrics, port takes precedence when both bdf and port are set.
     char *port;
 };
 
 enum PmuBdfType {
-    PMU_BDF_TYPE_PCIE,  // pcie collect metric.
-    PMU_BDF_TYPE_SMMU   // smmu collect metric.
+    PMU_BDF_TYPE_PCIE,       // PCIe Endpoint BDF.
+    PMU_BDF_TYPE_SMMU,       // SMMU device BDF.
+    PMU_BDF_TYPE_PORT        // PCIe Root Port BDF.
 };
 
 enum PmuMetricMode {
@@ -572,12 +580,15 @@ enum PmuMetricMode {
     PMU_METRIC_NUMA,
     PMU_METRIC_CLUSTER,
     PMU_METRIC_BDF,
-    PMU_METRIC_CHANNEL
+    PMU_METRIC_CHANNEL,
+    PMU_METRIC_PORT
 };
 
 /**
  * @brief
- * Query all available bdf list from system.
+ * Query all available device BDFs from system. PMU_BDF_TYPE_PCIE returns
+ * endpoint BDFs, PMU_BDF_TYPE_PORT returns PCIe Root Port BDFs, and
+ * PMU_BDF_TYPE_SMMU returns SMMU BDFs.
  * @param bdfType type of bdf chosen by user
  * @param numBdf length of bdf list
  * @return bdf list
@@ -822,9 +833,20 @@ struct UTraceData {
     int tid;
     int cpu;
     int64_t timestamp;
+    /*
+     * Execution-context identity:
+     *   0                 no Go goroutine or Java virtual-thread context;
+     *   bit 63 == 0       a Go runtime g pointer;
+     *   bit 63 == 1       a Java virtual-thread context ID.
+     * For Java virtual-thread context IDs only:
+     *   bit 62 == 0       precise mount/unmount tracking;
+     *   bit 62 == 1       degraded mount inference from traced method-entry events;
+     *   bits 61..0        Thread.getId() payload (zero is normalized to one).
+     */
     uint64_t gPtr;
     const char* module;
     const char* func;
+    /* 0: enter, 1: return */
     unsigned isRet;
 };
 

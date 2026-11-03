@@ -27,6 +27,7 @@ using namespace std;
 using namespace KUNPENG_PMU;
 
 static std::unordered_map<std::string, std::unordered_map<string, uint64_t>> unCoreRawFieldsValues;
+static uint64_t MAX_BIT_WIDTH = 64;
 
 static int GetDeviceType(const string &devName)
 {
@@ -308,8 +309,14 @@ static bool ValidConfigValueAndGenerateFields(const std::unordered_map<string, U
         }
         auto& configBitFiled = findConfig->second;
         unsigned bitWidth = configBitFiled.endBit - configBitFiled.startBit + 1;
-        uint64_t maxValue = (1ULL << bitWidth) - 1;
-
+        uint64_t maxValue;
+        // if the value ranges from 0 to 63, it indicates that the 64bits are full.
+        if (bitWidth >= MAX_BIT_WIDTH) {
+            maxValue = UINT64_MAX;
+        } else {
+            maxValue = (1ULL << bitWidth) - 1;
+        }
+        
         uint64_t configValue = 0;
         try {
             configValue = stoull(value, nullptr, 0);

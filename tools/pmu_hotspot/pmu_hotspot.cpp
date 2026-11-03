@@ -21,6 +21,11 @@
 #include <iomanip>
 #include <signal.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <cerrno>
+#include <stdexcept>
 #include "pcerrc.h"
 #include "pmu.h"
 #include "symbol.h"
@@ -236,7 +241,11 @@ void BlockedSample(int pid, double interval, int count, bool blockedSample)
 
 bool ExistPath(const std::string &filePath) {
     struct stat statbuf{};
-    return stat(filePath.c_str(), &statbuf) == 0;
+    if (stat(filePath.c_str(), &statbuf) != 0) {
+        return false;
+    }
+    // 仅接受可执行的普通文件，目录、设备文件与无可执行位的路径都在此拒绝
+    return S_ISREG(statbuf.st_mode) && access(filePath.c_str(), X_OK) == 0;
 }
 
 void StartProc(char *process, int &pid)
@@ -249,10 +258,43 @@ void StartProc(char *process, int &pid)
         throw std::invalid_argument("process name not a exec file.");
     }
 
+    // 通过管道侦测 exec 失败：exec 成功时写端随 FD_CLOEXEC 自动关闭，父进程读不到数据；
+    // exec 失败时子进程把 errno 写入管道，父进程据此报错，不会把已退出的 pid 返回给调用方。
+    int fd[2];
+    if (pipe(fd) != 0) {
+        throw std::runtime_error("failed to create pipe for starting process.");
+    }
+    if (fcntl(fd[1], F_SETFD, FD_CLOEXEC) != 0) {
+        close(fd[0]);
+        close(fd[1]);
+        throw std::runtime_error("failed to set FD_CLOEXEC for starting process.");
+    }
+
     pid = fork();
+    if (pid < 0) {
+        close(fd[0]);
+        close(fd[1]);
+        throw std::runtime_error("failed to fork process.");
+    }
     if (pid == 0) {
-        execlp(process, process, nullptr);
-        exit(0);
+        close(fd[0]);
+        // 使用 execl 而非 execlp：执行对象与 ExistPath 校验过的路径严格一致，不经过 PATH 搜索
+        execl(process, process, nullptr);
+        int err = errno;
+        if (write(fd[1], &err, sizeof(err)) < 0) {
+            // 写入失败不改变退出码语义，仍以 127 退出
+        }
+        _exit(127);
+    }
+    close(fd[1]);
+    int err = 0;
+    ssize_t len = read(fd[0], &err, sizeof(err));
+    close(fd[0]);
+    if (len == static_cast<ssize_t>(sizeof(err))) {
+        // exec 失败：回收子进程，避免调用方对已退出的进程继续采样
+        waitpid(pid, nullptr, 0);
+        pid = -1;
+        throw std::runtime_error(std::string("failed to execute process: ") + strerror(err));
     }
 }
 
