@@ -388,7 +388,8 @@ kperf.device_open(dev_attr: List[PmuDeviceAttr]) 初始化采集uncore事件指�
     * PMU_HHA_CROSS_NUMA 采集每个numa的跨numa访问HHA的操作比例
     * PMU_HHA_CROSS_SOCKET 采集每个numa的跨socket访问HHA的操作比例
   * bdf: 指定需要采集设备的bdf号，只对pcie带宽和smmu指标有效
-  * port: 指定需要采集设备的port号，只对pcie延时指标有效
+  * port: 指定单个PCIE Root Port，支持PCIE带宽和延时指标；同时设置bdf时优先使用port
+  * ports: 指定PCIE Root Port列表，优先级高于port，并且多个端口必须属于同一个PCIE PMU
 * 返回值是int类型，pd > 0表示初始化成功，pd == -1初始化失败，可通过kperf.error()查看错误信息，以下是一个kperf.device_open的示例
 
 ```python
@@ -447,6 +448,10 @@ kperf.device_bdf_list(bdf_type: PmuBdfType): 查找当前系统pcie指标中有�
     bdf_list = kperf.device_bdf_list(bdf_type)
     print(bdf_list)
 ```
+`PMU_BDF_TYPE_PORT`用于查询PCIE Root Port BDF。
+调用`device_bdf_list(PmuBdfType.PMU_BDF_TYPE_PORT)`可获取支持采集的Root Port。
+多个端口通过`PmuDeviceAttr(..., ports=["20:00.0", "20:04.0"])`传入；
+端口列表同时支持PCIE带宽和延时指标，并且所有端口必须属于同一个PCIE PMU。
 
 ### kperf.get_cpu_freq
 

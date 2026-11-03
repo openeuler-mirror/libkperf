@@ -213,21 +213,23 @@ class PmuDeviceAttr(_libkperf.PmuDeviceAttr):
         // Used for PMU_PCIE_XXX_BW and PMU_SMMU_XXX to collect a specifi pcie device.
         // The string of bdf is something like '7a:01.0'.
         char *bdf;
-        // Used for PMU_PCIE_XXX_LAT to collect latency data.
-        // Only one port supported.
+        // Used for PMU_PCIE_XXX_BW/LAT. Multiple ports are supported.
+        // Example: "20:00.0,20:04.0".
         char *port;
     };
     """
-    def __init__(self, metric, bdf=None, port=None):
+    def __init__(self, metric, bdf=None, port=None, ports=None):
         super(PmuDeviceAttr, self).__init__(
             metric=metric,
             bdf=bdf,
-            port=port
+            port=port,
+            ports=ports
         )
 
 class PmuBdfType:
     PMU_BDF_TYPE_PCIE = 0   # pcie collect metric.
     PMU_BDF_TYPE_SMMU = 1   # smmu collect metric.
+    PMU_BDF_TYPE_PORT = 2  # PCIe Root Port BDF.
 
 class PmuMetricMode:
     PMU_METRIC_INVALID = 0
@@ -236,6 +238,7 @@ class PmuMetricMode:
     PMU_METRIC_CLUSTER = 3
     PMU_METRIC_BDF = 4
     PMU_METRIC_CHANNEL = 5
+    PMU_METRIC_PORT = 6
 
 class ImplPmuDeviceData(_libkperf.ImplPmuDeviceData):
     pass

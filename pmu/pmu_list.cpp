@@ -1213,6 +1213,24 @@ namespace KUNPENG_PMU {
             return SUCCESS;
         }
         for (int masterPid : pmuTaskAttrHead->pidList) {
+            // In counting mode, a thread id (tid != tgid) targets a single thread, which is
+            // consistent with the semantics of perf_event_open. Monitor only this thread
+            // instead of expanding it to all threads of the process, otherwise the collected
+            // data would cover the whole process while the caller asked for one thread.
+            if (pmuTaskAttrHead->pmuEvt->collectType == COUNTING && masterPid != 0) {
+                int tgid = GetTgid(masterPid);
+                if (tgid != -1 && tgid != masterPid) {
+                    struct ProcTopology* threadTopo = GetProcTopology(masterPid);
+                    if (threadTopo == nullptr) {
+                        New(LIBPERF_ERR_FAIL_GET_PROC, "process not found: " + std::to_string(masterPid));
+                        return LIBPERF_ERR_FAIL_GET_PROC;
+                    }
+                    threadTopo->isMain = true;
+                    DBG_PRINT("Add to proc map: %d\n", masterPid);
+                    procTopoList.emplace_back(shared_ptr<ProcTopology>(threadTopo, FreeProcTopo));
+                    continue;
+                }
+            }
             int numChild = 0;
             int* childTidList = GetChildTid(masterPid, &numChild);
             if (childTidList == nullptr) {

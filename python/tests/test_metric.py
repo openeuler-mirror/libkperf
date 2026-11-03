@@ -72,6 +72,8 @@ def print_dev_data_details(dev_data):
             print(f"clusterId:{dev_data_item.clusterId}")
         elif dev_data_item.mode == kperf.PmuMetricMode.PMU_METRIC_BDF:
             print(f"bdf:{dev_data_item.bdf}")
+        elif dev_data_item.mode == kperf.PmuMetricMode.PMU_METRIC_PORT:
+            print(f"port:{dev_data_item.port}")
 
 
 def test_get_pcie_bdf_list():
@@ -81,6 +83,15 @@ def test_get_pcie_bdf_list():
     for bdf in bdf_list_iter:
         print(f"bdf: {bdf}")
     assert bdf_list_iter is not None, f"Expected non-null bdf_list_iter, but got {bdf_list_iter}"
+
+def test_get_pcie_port_list():
+    port_list = kperf.device_bdf_list(kperf.PmuBdfType.PMU_BDF_TYPE_PORT)
+    print(kperf.error())
+    for port in port_list:
+        print(f"port: {port}")
+    assert port_list is not None
+
+
 
 def test_get_smmu_bdf_list():
     bdf_type = kperf.PmuBdfType.PMU_BDF_TYPE_SMMU
@@ -279,10 +290,10 @@ def test_collect_hha_cross():
     kperf.close(pd)
 
 def test_get_metric_pcie_latency():
-    bdf_list_iter = kperf.device_bdf_list(kperf.PmuBdfType.PMU_BDF_TYPE_PCIE)
+    port_list = kperf.device_bdf_list(kperf.PmuBdfType.PMU_BDF_TYPE_PORT)
     dev_attr = [
-        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_PCIE_RX_MRD_LAT, port=port)
-        for port in bdf_list_iter
+        kperf.PmuDeviceAttr(metric=kperf.PmuDeviceMetric.PMU_PCIE_RX_MRD_LAT, ports=[port])
+        for port in port_list
     ]
     pd = kperf.device_open(dev_attr)
     print(kperf.error())
@@ -296,6 +307,7 @@ def test_get_metric_pcie_latency():
     dev_data = kperf.get_device_metric(ori_data, dev_attr)
     assert len(dev_data) == len(dev_attr)
     print_dev_data_details(dev_data)
+    assert all(item.mode == kperf.PmuMetricMode.PMU_METRIC_PORT for item in dev_data.iter)
     kperf.close(pd)
 
 if __name__ == '__main__':

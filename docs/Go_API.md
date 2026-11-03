@@ -367,6 +367,11 @@ func main() {
    }
 }
 ```
+`PMU_BDF_TYPE_PORT`用于查询PCIE Root Port BDF。
+调用`PmuDeviceBdfList(PMU_BDF_TYPE_PORT)`可获取支持采集的Root Port。
+多个端口通过`PmuDeviceAttr.Ports`传入，并且必须属于同一个PCIE PMU。
+端口列表同时支持PCIE带宽和延时指标。
+
 ### kperf.PmuDeviceOpen
 
 func PmuDeviceOpen(attr []PmuDeviceAttr) (int, error) 初始化采集uncore事件指标的能力
@@ -390,7 +395,9 @@ func PmuDeviceOpen(attr []PmuDeviceAttr) (int, error) 初始化采集uncore事�
     * PMU_HHA_CROSS_NUMA 采集每个numa的跨numa访问HHA的操作比例
     * PMU_HHA_CROSS_SOCKET 采集每个numa的跨socket访问HHA的操作比例
   * Bdf: 指定需要采集设备的bdf号，只对pcie带宽和smmu指标有效
-  * Port: 指定需要采集设备的port号，只对pcie延时指标有效
+  * Port: 指定单个 PCIE Root Port，支持 PCIE 带宽和延时指标；同时设置 Bdf 时优先使用 Port
+  * Ports: 指定 PCIE Root Port BDF 列表，优先级高于 Port 和 Bdf
+    多个端口必须属于同一个 PCIE PMU
 * 返回值是int和error，pd > 0表示初始化成功，pd == -1初始化失败，可通过kperf.error()查看错误信息，以下是一个kperf.device_open的示例
 
 ```go

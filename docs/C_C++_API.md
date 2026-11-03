@@ -278,7 +278,8 @@
     * PMU_HHA_CROSS_NUMA 采集每个numa的跨numa访问HHA的操作比例
     * PMU_HHA_CROSS_SOCKET 采集每个numa的跨socket访问HHA的操作比例
   * char *bdf: 指定需要采集设备的bdf号，只对pcie带宽和smmu指标有效
-  * char *port: 指定需要采集设备的port号，只对pcie延时指标有效
+  * char *port: 指定需要采集的PCIE Root Port，支持PCIE带宽和延时指标；多个端口使用逗号分隔。
+    同时设置bdf和port时优先使用port，并且多个端口必须属于同一个PCIE PMU。
 * 与PmuOpen类似，返回task Id
   返回值 > 0    初始化成功
   返回值 = -1  初始化失败，可通过Perror()查看错误信息
@@ -295,7 +296,8 @@
       PMU_METRIC_NUMA,
       PMU_METRIC_CLUSTER,
       PMU_METRIC_BDF,
-      PMU_METRIC_CHANNEL
+      PMU_METRIC_CHANNEL,
+      PMU_METRIC_PORT
   * union：
     * unsigned coreId: 数据的core编号
     * unsigned numaId: 数据的numa编号
@@ -318,8 +320,9 @@
 从系统中查找所有的bdf列表
 
 * enum PmuBdfType
-    * PMU_BDF_TYPE_PCIE  PCIE设备对应的bdf
+    * PMU_BDF_TYPE_PCIE  PCIE Endpoint对应的bdf
     * PMU_BDF_TYPE_SMMU  SMMU设备对应的bdf
+    * PMU_BDF_TYPE_PORT  PCIE Root Port对应的BDF
 
 ### void DevDataFree(struct PmuDeviceData *data);
 清理PmuDeviceData的指针数据
