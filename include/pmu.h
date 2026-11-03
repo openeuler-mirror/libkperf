@@ -326,7 +326,8 @@ struct PmuData {
     double countPercent;            // event count Percent. when count = 0, countPercent = -1; Only available for Counting.
     struct PmuDataExt *ext;         // extension. Only available for Spe.
     struct SampleRawData *rawData;  // trace pointer collect data.
-    const char* cgroupName;         // trace data from which cgroup 
+    const char* cgroupName;         // trace data from which cgroup
+    int ip = -1;                    // sample ip, only available for lbr driver. This info can generally be obtained through stack->symbol->addr.
 };
 
 struct PmuTraceData {

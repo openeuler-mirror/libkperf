@@ -111,7 +111,7 @@ namespace KUNPENG_PMU {
         extPool.push_back(extPtrs);
         for (size_t i = 0; i < speRecords.size(); ++i) {
             auto rec = speRecords[i];
-            data.emplace_back(PmuData{0});
+            data.emplace_back(PmuData{});
             auto &current = data.back();
             current.pid = static_cast<pid_t>(procTopo->pid);
             current.tid = static_cast<int>(rec->tid);

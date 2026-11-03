@@ -31,7 +31,7 @@
 #include "pmu_metric.h"
 #include "trace_point_parser.h"
 #include "pmu.h"
-#include "simple_pebs_backend.h"
+#include "lbr_trace_backend.h"
 
 using namespace pcerr;
 using namespace KUNPENG_PMU;
@@ -724,14 +724,14 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
 
         if (pd == -1) {
             FreeEvtList(previousEventList.first, previousEventList.second);
-        // use pebs driver to collect data when LBR sampling is unavailable
+        // use driver to collect data when LBR sampling is unavailable
         #ifdef IS_X86
-            if (attr->branchSampleFilter != 0) {
-                int driverPd = PebsDriverManager::Instance().Open(attr);
+            if (attr->branchSampleFilter != 0 && err == LIBPERF_ERR_INVALID_EVENT) {
+                int driverPd = LbrDriverManager::Instance().Open(attr);
                 if (driverPd >= 0) {
                     return driverPd;
                 } else {
-                    New(LIBPERF_ERR_LBR_DRIVER_INVALID, "The pebs driver is not loaded or unavailable to collect lbr.");
+                    New(LIBPERF_ERR_LBR_DRIVER_INVALID, "The driver is not loaded or unavailable to collect lbr.");
                     return -1;
                 }
             }
@@ -758,8 +758,8 @@ int PmuEnable(int pd)
     SetWarn(SUCCESS);
 // collect LBR data via the driver. The process is distinguished by driverPd
 #ifdef IS_X86
-    if (PebsDriverManager::IsDriverPd(pd)) {
-        return PebsDriverManager::Instance().Enable(pd);
+    if (LbrDriverManager::IsDriverPd(pd)) {
+        return LbrDriverManager::Instance().Enable(pd);
     }
 #endif
     return PmuCollectStart(pd);
@@ -769,8 +769,8 @@ int PmuDisable(int pd)
 {
     SetWarn(SUCCESS);
 #ifdef IS_X86
-    if (PebsDriverManager::IsDriverPd(pd)) {
-        return PebsDriverManager::Instance().Disable(pd);
+    if (LbrDriverManager::IsDriverPd(pd)) {
+        return LbrDriverManager::Instance().Disable(pd);
     }
 #endif
     return PmuCollectPause(pd);
@@ -1018,8 +1018,8 @@ int PmuRead(int pd, struct PmuData** pmuData)
 {
     SetWarn(SUCCESS);
 #ifdef IS_X86
-    if (PebsDriverManager::IsDriverPd(pd)) {
-        return PebsDriverManager::Instance().Read(pd, pmuData);
+    if (LbrDriverManager::IsDriverPd(pd)) {
+        return LbrDriverManager::Instance().Read(pd, pmuData);
     }
 #endif
     try {
@@ -1054,10 +1054,10 @@ int ResolvePmuDataSymbol(struct PmuData* pmuData)
 void PmuClose(int pd)
 {
     SetWarn(SUCCESS);
-// clean up resources related to pebs driver of lbr collection
+// clean up resources related to driver of lbr collection
 #ifdef IS_X86
-    if (PebsDriverManager::IsDriverPd(pd)) {
-        return PebsDriverManager::Instance().Close(pd);
+    if (LbrDriverManager::IsDriverPd(pd)) {
+        return LbrDriverManager::Instance().Close(pd);
     }
 #endif
     if (!PdValid(pd)) {

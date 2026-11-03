@@ -242,7 +242,7 @@ int KUNPENG_PMU::PerfCounterDefault::CountValueToData(const __u64 value, const _
     }
     accumCount = value;
 
-    data.emplace_back(PmuData{0});
+    data.emplace_back(PmuData{});
     auto& current = data.back();
     current.count = increCount;
     current.countPercent = 1.0 / percent;

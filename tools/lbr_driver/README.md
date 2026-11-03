@@ -1,5 +1,5 @@
 # x86 LBR Collection Tool
-`simple-pebs` is an x86 (Intel) Linux kernel module that collects branch information (LBR) using PEBS + LBR and writes samples into a per-CPU output buffer. The data is exposed to user space via `/dev/simple-pebs`.
+`simple-lbr-trace` is an x86 (Intel) Linux kernel module that collects branch information (LBR) using `sched_switch` and `hrtimer` writes samples into a per-CPU ring buffer. The data is exposed to user space via `/dev/simple-lbr-trace`.
 
 ## Requirements
 1. Kernel build directory must exist:
@@ -10,13 +10,11 @@
 
 3. Supported environments:
    - Linux kernel **5.4** only.
-   - The CPU must support the required PMU features (PEBS / LBR).
+   - The CPU must support the required PMU features (Arch LBR).
 
 
 Tested CPU:
 - **Emerald Rapids** (Architectural LBR)
-
-To add support for a new CPU model, add its **model ID** in the `check_cpu()` function in the driver source.
 
 ## Build
 
@@ -29,40 +27,40 @@ make
 ```shell
 sudo make install
 sudo depmod -a
-sudo modprobe simple-pebs
+sudo modprobe simple-lbr-trace
 ```
 Or, in a debug environment:
 ```shell
-sudo insmod simple-pebs.ko
+sudo insmod simple-lbr-trace.ko
 ```
 
 ## Check
 Confirm the device exists:
 ```shell
-test -c /dev/simple-pebs && echo "OK"
+test -c /dev/simple-lbr-trace && echo "OK"
 ```
 
 Check `dmesg`:
 ```shell
-dmesg | tail -n 200 | grep -i pebs
+dmesg | tail -n 200 | grep -i trace
 ```
 You should see output similar to:
 ```shell
-[14725.398928] simple_pebs: Adaptive PEBS (v4) detected
-...
-[14725.587040] simple_pebs: cpu20 PEBS_DATA_CFG=1f000008 (lbr_depth=32)
-[14725.587040] simple_pebs: 72: allocate_buffer: status 0 ctrl 0 counter 0
-...
-[14725.587040] simple_pebs: Initialized
+[23533.198653] Initialized: device=/dev/simple-lbr-trace, sample_period_us=500
 ```
 
 ## Uninstall
 ```shell
-sudo modprobe -r simple-pebs
+sudo modprobe -r simple-lbr-trace
 ```
 Or, in a debug environment:
 ```shell
-sudo rmmod simple-pebs
+sudo rmmod simple-lbr-trace
+```
+
+Check `dmesg`, you can see the exit infomation:
+```shell
+[23629.530629] simple-trace-lbr: Exited
 ```
 
 ## Usage
@@ -74,10 +72,13 @@ bash build.sh
 The LBR collection demo is documented in: libkperf/docs/Details_Usage/采集BRBE数据
 
 Current limitations:
-- PID and CPU filtering is not supported.
+- A PID must be specified for collection.
 - Only collect pmu 'cycles' event.
 - The tsc time in output data is `rdtsc` time, which is different from the ts in PMU collection.
 
-To change the sampling period, modify the `PERIOD` value in the driver source code and rebuild the module.
+To change the sampling period, specify the `sample_period` value when install the driver like:
+```shell
+sudo insmod simple-lbr-trace.ko sample_period=200
+```
 
-To Configuring the branch event, modify the `ctl` in `setup_arch_lbr` function.
+To Configuring the branch event, modify the `ctl` in `lbr_enable_cpu` function.
