@@ -126,8 +126,8 @@ int KUNPENG_PMU::EvtListDefault::Init(const bool groupEnable, const std::shared_
                 err = perfEvt->Init(groupEnable, groupFd, resetOutPutFd);
             }
             if (err != SUCCESS) {
-                if (!perfEvt->IsMainPid()) {
-                    // child pid init err
+                if (!perfEvt->IsRequiredTarget()) {
+                    // A discovered child thread is optional. Ignore its initialization error and continue with the other targets
                     perfEvt->SetInitErr(true);
                     evtVec.emplace_back(perfEvt);
                     continue;
