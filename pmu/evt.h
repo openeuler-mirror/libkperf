@@ -83,11 +83,12 @@ public:
         return initErr;
     }
 
-    virtual bool IsMainPid() const
+    virtual bool IsRequiredTarget() const
     {
         if (procMap.find(pid) != procMap.end()) {
-            return this->procMap[pid]->isMain;
+            return this->procMap[pid]->isRequired;
         }
+        // CPU-wide targets have no process topology entry and must not be silently discarded when initialization fails
         return true;
     }
 

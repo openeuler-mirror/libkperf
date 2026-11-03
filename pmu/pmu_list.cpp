@@ -435,7 +435,7 @@ namespace KUNPENG_PMU {
         }
         std::set<int> noProcList;
         for (const auto &it : pidList) {
-            if (it->isMain) {
+            if (it->keepUntilClose) {
                 continue;
             }
             std::string path = "/proc/" + std::to_string(it->tid);
@@ -1204,7 +1204,8 @@ namespace KUNPENG_PMU {
                 New(LIBPERF_ERR_FAIL_GET_PROC);
                 return LIBPERF_ERR_FAIL_GET_PROC;
             }
-            procTopo->isMain = true;
+            procTopo->keepUntilClose = true;
+            procTopo->isRequired = true;
             procTopoList.emplace_back(unique_ptr<ProcTopology, void (*)(ProcTopology*)>(procTopo, FreeProcTopo));
             return SUCCESS;
         }
@@ -1225,7 +1226,10 @@ namespace KUNPENG_PMU {
                         New(LIBPERF_ERR_FAIL_GET_PROC, "process not found: " + std::to_string(masterPid));
                         return LIBPERF_ERR_FAIL_GET_PROC;
                     }
-                    threadTopo->isMain = true;
+                    // This thread was explicitly requested, so an open failure must be returned to the caller. 
+                    // Do not keep it until PmuClose: unlike a process root, an exited worker thread
+                    // can be removed by the periodic cleanup path.
+                    threadTopo->isRequired = true;
                     DBG_PRINT("Add to proc map: %d\n", masterPid);
                     procTopoList.emplace_back(shared_ptr<ProcTopology>(threadTopo, FreeProcTopo));
                     continue;
@@ -1244,7 +1248,12 @@ namespace KUNPENG_PMU {
                     SetWarn(LIBPERF_WARN_FAIL_GET_PROC, "process not found: " + std::to_string(childTidList[j]));
                     continue;
                 }
-                procTopo->isMain = (masterPid == procTopo->tid || masterPid == 0);
+                // The original process target stays alive until PmuClose and
+                // must initialize successfully. Threads discovered by expanding
+                // that process are optional and may be cleaned up when they exit.
+                const bool isOriginalTarget = (masterPid == procTopo->tid || masterPid == 0);
+                procTopo->keepUntilClose = isOriginalTarget;
+                procTopo->isRequired = isOriginalTarget;
                 foundProc = true;
                 DBG_PRINT("Add to proc map: %d\n", childTidList[j]);
                 procTopoList.emplace_back(shared_ptr<ProcTopology>(procTopo, FreeProcTopo));

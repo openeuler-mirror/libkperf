@@ -115,7 +115,8 @@ struct ProcTopology *GetProcTopology(pid_t pid)
     if (pid == 0) {
         procTopo->pid = 0;
         procTopo->comm = strdup("swapper");
-        procTopo->isMain = false;
+        procTopo->keepUntilClose = false;
+        procTopo->isRequired = false;
         return procTopo.release();
     }
     try {

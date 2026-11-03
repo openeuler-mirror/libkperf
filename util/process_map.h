@@ -29,7 +29,11 @@ struct ProcTopology {
     char* comm;
     char* exe;
     bool kernel;
-    bool isMain;
+    // Skip periodic exited-thread cleanup for this target, leaving its perf
+    // resources to be released by PmuClose.
+    bool keepUntilClose;
+    // opening a perf event for this target is required
+    bool isRequired;
     char* execComm;
     unsigned long execTs;
 };
