@@ -288,7 +288,7 @@ int KUNPENG_PMU::EvtListDefault::Read(EventData &eventData)
  */
 void KUNPENG_PMU::EvtListDefault::ForgePmuData(KUNPENG_PMU::EventData &eventData) const 
 {
-    eventData.data.emplace_back(PmuData{0});
+    eventData.data.emplace_back(PmuData{});
     auto& current = eventData.data.back();
     current.count = 0;
     current.countPercent = PMU_COUNT_NOT_SUPPORTED;
