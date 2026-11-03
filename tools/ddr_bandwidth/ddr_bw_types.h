@@ -28,9 +28,9 @@ struct FuncBwStat {
     uint64_t writeSamples = 0;
     double attributedReadBytes = 0.0;
     double attributedWriteBytes = 0.0;
-    double readBw = 0.0;
-    double writeBw = 0.0;
-    double totalBw = 0.0;
+    double readRate = 0.0;
+    double writeRate = 0.0;
+    double totalRate = 0.0;
 };
 
 struct IntervalWeights {
@@ -160,6 +160,7 @@ struct TrafficTotals {
     double deductedDmaWriteBytes = 0.0;
     double ddrcElapsedSec = 0.0;
     uint64_t pcieWindows = 0;
+    uint64_t pcieIncompleteWindows = 0;
     bool dmaDeductionClamped = false;
 };
 
@@ -178,7 +179,6 @@ struct AttributionTotals {
 };
 
 struct BwContext {
-    std::unordered_map<int, std::unordered_map<unsigned long, int>> accessBytesByPidAndPc;
     std::unordered_map<std::string, FuncBwStat> funcStats;
     std::vector<WindowRecord> windows;
     SpeTotals spe;

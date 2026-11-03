@@ -21,6 +21,7 @@
 using namespace std;
 
 static constexpr double BYTES_PER_MIB_LOCAL = 1024.0 * 1024.0;
+static constexpr double OPS_PER_MILLION = 1000.0 * 1000.0;
 static const char* SHORT_OPS = "p:d:i:h";
 static const struct option LONG_OPS[] = {
     {"pid", required_argument, nullptr, 'p'},
@@ -230,10 +231,14 @@ static string ShortenRight(const string& value, size_t width)
     return "..." + value.substr(value.size() - (width - 3));
 }
 
-static void PrintBwCell(double bw)
+static void PrintRateCell(double rate, bool calibrated)
 {
-    if (bw <= 0.0) cout << setw(14) << "-";
-    else cout << setw(14) << bw / BYTES_PER_MIB_LOCAL;
+    if (rate <= 0.0) {
+        cout << setw(14) << "-";
+    } else {
+        cout << setw(14) << rate /
+            (calibrated ? BYTES_PER_MIB_LOCAL : OPS_PER_MILLION);
+    }
 }
 
 static void PrintFunctionTable(BwContext& ctx, bool calibrated,
@@ -245,16 +250,21 @@ static void PrintFunctionTable(BwContext& ctx, bool calibrated,
         FuncBwStat stat = entry.second;
         if (durationSec > 0.0) {
             if (calibrated) {
-                stat.readBw = stat.attributedReadBytes / durationSec;
-                stat.writeBw = stat.attributedWriteBytes / durationSec;
+                stat.readRate = stat.attributedReadBytes / durationSec;
+                stat.writeRate = stat.attributedWriteBytes / durationSec;
+            } else {
+                stat.readRate = static_cast<double>(stat.readWeight) *
+                    act.period / durationSec;
+                stat.writeRate = static_cast<double>(stat.writeWeight) *
+                    act.period / durationSec;
             }
         }
-        stat.totalBw = stat.readBw + stat.writeBw;
+        stat.totalRate = stat.readRate + stat.writeRate;
         stats.push_back(move(stat));
     }
 
     sort(stats.begin(), stats.end(), [](const FuncBwStat& lhs, const FuncBwStat& rhs) {
-        if (lhs.totalBw != rhs.totalBw) return lhs.totalBw > rhs.totalBw;
+        if (lhs.totalRate != rhs.totalRate) return lhs.totalRate > rhs.totalRate;
         const uint64_t lhsSamples = lhs.readSamples + lhs.writeSamples;
         const uint64_t rhsSamples = rhs.readSamples + rhs.writeSamples;
         if (lhsSamples != rhsSamples) return lhsSamples > rhsSamples;
@@ -267,40 +277,39 @@ static void PrintFunctionTable(BwContext& ctx, bool calibrated,
     const int tableWidth = PID_WIDTH + FUNC_WIDTH + MODULE_WIDTH +
         14 + 14 + 14 + 14 + 14;
 
-    cout << string(tableWidth, '=') << "\nCPU DDR BANDWIDTH BY USER FUNCTION\n"
+    cout << string(tableWidth, '=') << "\n"
+         << (calibrated ? "CPU DDR BANDWIDTH BY USER FUNCTION"
+                        : "SPE MEMORY OPERATION ESTIMATES BY USER FUNCTION") << "\n"
          << string(tableWidth, '=') << "\n"
          << left << setw(PID_WIDTH) << "PID"
          << setw(FUNC_WIDTH) << "Function"
          << setw(MODULE_WIDTH) << "Module"
-         << right << setw(14) << "Read BW"
-         << setw(14) << "Write BW(est*)"
-         << setw(14) << "Total BW"
+         << right << setw(14) << (calibrated ? "Read BW" : "DRAM loads")
+         << setw(14) << (calibrated ? "Write BW(est*)" : "Stores(est*)")
+         << setw(14) << (calibrated ? "Total BW" : "Total(est*)")
          << setw(14) << "Read samples" << setw(14) << "Store samples" << "\n"
          << left << setw(PID_WIDTH) << ""
          << setw(FUNC_WIDTH) << ""
          << setw(MODULE_WIDTH) << ""
-         << right << setw(14) << "(MiB/s)"
-         << setw(14) << "(MiB/s)"
-         << setw(14) << "(MiB/s)"
+         << right << setw(14) << (calibrated ? "(MiB/s)" : "(Mops/s)")
+         << setw(14) << (calibrated ? "(MiB/s)" : "(Mops/s)")
+         << setw(14) << (calibrated ? "(MiB/s)" : "(Mops/s)")
          << setw(10) << "" << "\n"
          << string(tableWidth, '-') << "\n";
 
     int shown = 0;
     for (const auto& stat : stats) {
         if (shown >= act.topN) break;
-        if (stat.totalBw <= 0.0 && stat.readSamples == 0 && stat.writeSamples == 0) continue;
+        if (stat.totalRate <= 0.0 && stat.readSamples == 0 && stat.writeSamples == 0) continue;
 
         cout << left << setw(PID_WIDTH) << stat.pid
              << setw(FUNC_WIDTH) << ShortenLeft(stat.funcName, FUNC_WIDTH - 2)
              << setw(MODULE_WIDTH) << ShortenRight(stat.moduleName, MODULE_WIDTH - 2)
              << right << fixed << setprecision(2);
-        if (calibrated) {
-            PrintBwCell(stat.readBw);
-            PrintBwCell(stat.writeBw);
-            cout << setw(14) << stat.totalBw / BYTES_PER_MIB_LOCAL;
-        } else {
-            cout << setw(14) << "N/A" << setw(14) << "N/A" << setw(14) << "N/A";
-        }
+        PrintRateCell(stat.readRate, calibrated);
+        PrintRateCell(stat.writeRate, calibrated);
+        cout << setw(14) << stat.totalRate /
+            (calibrated ? BYTES_PER_MIB_LOCAL : OPS_PER_MILLION);
         cout << setw(14) << stat.readSamples << setw(14) << stat.writeSamples << "\n";
         ++shown;
     }
@@ -335,40 +344,44 @@ static void PrintProcessTable(const BwContext& ctx, bool calibrated,
     }
 
     cout << "\n" << string(78, '=') << "\n"
-         << "CPU DDR BANDWIDTH BY PROCESS (USER-SPACE)\n"
+         << (calibrated ? "CPU DDR BANDWIDTH BY PROCESS (USER-SPACE)"
+                        : "SPE MEMORY OPERATION ESTIMATES BY PROCESS (USER-SPACE)") << "\n"
          << string(78, '=') << "\n"
          << left << setw(12) << "PID"
-         << right << setw(16) << "Read BW"
-         << setw(16) << "Write BW(est*)"
-         << setw(16) << "Total BW"
+         << right << setw(16) << (calibrated ? "Read BW" : "DRAM loads")
+         << setw(16) << (calibrated ? "Write BW(est*)" : "Stores(est*)")
+         << setw(16) << (calibrated ? "Total BW" : "Total(est*)")
          << setw(14) << "Samples" << "\n"
          << left << setw(12) << ""
-         << right << setw(16) << "(MiB/s)"
-         << setw(16) << "(MiB/s)"
-         << setw(16) << "(MiB/s)"
+         << right << setw(16) << (calibrated ? "(MiB/s)" : "(Mops/s)")
+         << setw(16) << (calibrated ? "(MiB/s)" : "(Mops/s)")
+         << setw(16) << (calibrated ? "(MiB/s)" : "(Mops/s)")
          << setw(14) << "" << "\n"
          << string(78, '-') << "\n";
 
     for (const auto& entry : processes) {
         const ProcessBwStat& p = entry.second;
-        double readBw = 0.0;
-        double writeBw = 0.0;
+        double readRate = 0.0;
+        double writeRate = 0.0;
         if (durationSec > 0.0) {
             if (calibrated) {
-                readBw = p.readBytes / durationSec;
-                writeBw = p.writeBytes / durationSec;
+                readRate = p.readBytes / durationSec;
+                writeRate = p.writeBytes / durationSec;
+            } else {
+                readRate = static_cast<double>(p.readWeight) *
+                    act.period / durationSec;
+                writeRate = static_cast<double>(p.writeWeight) *
+                    act.period / durationSec;
             }
         }
 
-        cout << left << setw(12) << p.pid << right << fixed << setprecision(2);
-        if (calibrated) {
-            cout << setw(16) << readBw / BYTES_PER_MIB_LOCAL
-                 << setw(16) << writeBw / BYTES_PER_MIB_LOCAL
-                 << setw(16) << (readBw + writeBw) / BYTES_PER_MIB_LOCAL;
-        } else {
-            cout << setw(16) << "N/A" << setw(16) << "N/A" << setw(16) << "N/A";
-        }
-        cout << setw(14) << p.samples << "\n";
+        const double unitScale = calibrated ? BYTES_PER_MIB_LOCAL : OPS_PER_MILLION;
+        cout << left << setw(12) << p.pid
+             << right << fixed << setprecision(2)
+             << setw(16) << readRate / unitScale
+             << setw(16) << writeRate / unitScale
+             << setw(16) << (readRate + writeRate) / unitScale
+             << setw(14) << p.samples << "\n";
     }
     cout << string(78, '-') << "\n";
 }
@@ -592,6 +605,11 @@ void PrintSummary(BwContext& ctx, bool ddrcOpened, bool pcieOpened,
         } else {
             cout << "PCIe: " << ctx.traffic.pcieWindows << " synchronized windows\n";
         }
+        if (ctx.traffic.pcieIncompleteWindows > 0) {
+            cout << "PCIe: " << ctx.traffic.pcieIncompleteWindows
+                 << " incomplete windows; DMA deduction and function attribution "
+                    "were skipped for those windows.\n";
+        }
 
         if (ctx.traffic.dmaDeductionClamped) {
             cout << "Note: PCIe DMA exceeded DDRC in one or more windows; "
@@ -600,9 +618,19 @@ void PrintSummary(BwContext& ctx, bool ddrcOpened, bool pcieOpened,
         cout << string(80, '=') << "\n";
         PrintPcieTable(ctx, durationSec);
     } else {
-        cout << "DDR bandwidth unavailable: SPE sample counts and period do not measure bytes.\n";
+        const double estimatedReadOps =
+            static_cast<double>(ctx.spe.readWeight) * act.period;
+        const double estimatedWriteOps =
+            static_cast<double>(ctx.spe.writeWeight) * act.period;
+        cout << "Estimated SPE operation rates: DRAM loads="
+             << estimatedReadOps / durationSec / OPS_PER_MILLION
+             << " stores=" << estimatedWriteOps / durationSec / OPS_PER_MILLION
+             << " total=" << (estimatedReadOps + estimatedWriteOps) /
+                    durationSec / OPS_PER_MILLION
+             << " Mops/s (sample-count estimate, period=" << act.period << ")\n";
         cout << "DDRC status: "
-             << (ddrcOpened ? "opened but returned no metric windows" : "unavailable") << ".\n";
+             << (ddrcOpened ? "opened but returned no metric windows" : "unavailable")
+             << "; physical DDR bandwidth is not available.\n";
     }
 
     cout << "\nSPE samples: target_dram_loads=" << ctx.spe.readSamples
@@ -613,6 +641,13 @@ void PrintSummary(BwContext& ctx, bool ddrcOpened, bool pcieOpened,
          << "  kernel_stores=" << ctx.spe.kernelWriteSamples
          << "  filtered=" << ctx.spe.filteredSamples
          << "  duration=" << durationSec << "s\n";
+    if (calibrated) {
+        cout << "* Write BW(est*) distributes DDRC write bytes using store sample counts. "
+                "Store retirement and later dirty-line DRAM writeback are not one-to-one.\n";
+    } else {
+        cout << "* SPE-only Mops/s values estimate sampled operation rates, not bytes or "
+                "physical DDR bandwidth; store sampling density can depend on opcode.\n";
+    }
 
     if (act.debug) {
         cout << fixed << setprecision(6) << "DEBUG TIMING\n"

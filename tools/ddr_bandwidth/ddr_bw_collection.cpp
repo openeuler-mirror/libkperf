@@ -51,6 +51,9 @@ struct CollectionHealth {
     uint64_t ddrcValidWindows = 0;
     uint64_t pcieAttemptedWindows = 0;
     uint64_t pcieValidWindows = 0;
+    uint64_t pcieIncompleteWindows = 0;
+    uint64_t pcieFailedReads = 0;
+    uint64_t pcieResynchronizedReads = 0;
 
     uint64_t readEvidenceWindows = 0;
     uint64_t writeEvidenceWindows = 0;
@@ -65,7 +68,8 @@ struct CollectionHealth {
 
 static void AccountWindowHealth(CollectionHealth* health,
                                 bool ddrcAttempted, bool ddrcOk,
-                                bool pcieAttempted, bool pcieOk)
+                                bool pcieAttempted,
+                                const PcieReadResult& pcieResult)
 {
     if (health == nullptr) return;
 
@@ -76,7 +80,13 @@ static void AccountWindowHealth(CollectionHealth* health,
     }
     if (pcieAttempted) {
         ++health->pcieAttemptedWindows;
-        if (pcieOk) ++health->pcieValidWindows;
+        if (pcieResult.Complete()) {
+            ++health->pcieValidWindows;
+        } else {
+            ++health->pcieIncompleteWindows;
+        }
+        health->pcieFailedReads += pcieResult.failed;
+        health->pcieResynchronizedReads += pcieResult.resynchronized;
     }
 
 }
@@ -139,6 +149,9 @@ static void PrintCollectionHealth(const CollectionHealth& health)
          << "Counter windows: total=" << health.counterWindows
          << " DDRC=" << health.ddrcValidWindows << "/" << health.ddrcAttemptedWindows
          << " PCIe=" << health.pcieValidWindows << "/" << health.pcieAttemptedWindows << "\n"
+         << "PCIe incomplete windows=" << health.pcieIncompleteWindows
+         << " failed_reads=" << health.pcieFailedReads
+         << " resynchronized_reads=" << health.pcieResynchronizedReads << "\n"
          << "SPE evidence windows: read=" << health.readEvidenceWindows
          << " write=" << health.writeEvidenceWindows
          << " zero=" << health.zeroEvidenceWindows << "\n"
@@ -151,7 +164,8 @@ static void PrintCollectionHealth(const CollectionHealth& health)
          << " max=" << health.maxWriteSamples << "\n";
 
     if (health.speFailedDrains > 0 ||
-        health.ddrcValidWindows < health.ddrcAttemptedWindows) {
+        health.ddrcValidWindows < health.ddrcAttemptedWindows ||
+        health.pcieValidWindows < health.pcieAttemptedWindows) {
         cout << "Health status: WARN (collector read failures detected)\n";
     } else if (health.speDrains > 0 &&
                health.speEmptyDrains * 10 > health.speDrains) {
@@ -230,7 +244,8 @@ static size_t SealWindow(BwContext& ctx, SpeWindowState& windows,
                          int64_t startNs, int64_t endNs,
                          double ddrcRead, double ddrcWrite,
                          const PcieBytes& pcie, bool ddrcReadOk,
-                         bool ddrcContinuous, bool pcieReadOk)
+                         bool ddrcContinuous, bool pcieAttempted,
+                         bool pcieReadOk)
 {
     WindowRecord window;
     window.startNs = startNs;
@@ -238,7 +253,8 @@ static size_t SealWindow(BwContext& ctx, SpeWindowState& windows,
     window.ddrcValid = ddrcReadOk && ddrcContinuous;
     window.speValid = windows.open.valid;
     window.pcieValid = pcieReadOk;
-    window.valid = window.ddrcValid && window.speValid;
+    const bool pcieIncomplete = pcieAttempted && !pcieReadOk;
+    window.valid = window.ddrcValid && window.speValid && !pcieIncomplete;
     window.ddrcReadBytes = ddrcRead;
     window.ddrcWriteBytes = ddrcWrite;
 
@@ -246,7 +262,11 @@ static size_t SealWindow(BwContext& ctx, SpeWindowState& windows,
         ctx.traffic.ddrcReadBytes += ddrcRead;
         ctx.traffic.ddrcWriteBytes += ddrcWrite;
     }
-    // Keep current PCIe behavior unchanged: no running-ratio or partial-read gating.
+    // An incomplete PCIe snapshot has an unknown DMA component. Keep the DDRC
+    // physical total, but do not deduct DMA or attribute that window to functions.
+    if (ddrcReadOk && pcieIncomplete) {
+        ++ctx.traffic.pcieIncompleteWindows;
+    }
     const double observedDmaRead = ddrcReadOk && pcieReadOk ? pcie.txCpl : 0.0;
     const double observedDmaWrite = ddrcReadOk && pcieReadOk ? pcie.rxMwr : 0.0;
     window.observedDmaReadBytes = observedDmaRead;
@@ -306,6 +326,7 @@ struct CollectorSet {
     vector<PcieCollector> pcieCollectors;
     double ddrcLastReadSec = 0.0;
     bool ddrcPreviousReadOk = true;
+    bool pcieIncompleteWarningPrinted = false;
 };
 
 static string HexValue(unsigned long value)
@@ -512,6 +533,7 @@ static bool PrimeCollectors(CollectorSet& set)
     for (auto& collector : set.pcieCollectors) {
         if (collector.pd == -1) continue;
         if (PrimePmuRead(collector.pd, collector.lastReadSec, error)) {
+            collector.synchronized = true;
             ++primed;
         } else {
             cerr << "Warning: PCIe baseline read failed for BDF " << collector.bdf << " (" << error << ").\n";
@@ -660,8 +682,26 @@ static void CollectCounterWindow(const ArgsContext& act, CollectorSet& set, BwCo
 
     PcieBytes pcie;
     const bool pcieAttempted = set.pcieOpened;
-    bool pcieOk = set.pcieOpened && ReadPcieInterval(
-        set.pcieCollectors, ctx, pcie, finalWindow ? boundarySec : 0.0);
+    PcieReadResult pcieResult;
+    if (pcieAttempted) {
+        pcieResult = ReadPcieInterval(
+            set.pcieCollectors, ctx, pcie, finalWindow ? boundarySec : 0.0);
+        if (!pcieResult.Complete() && !set.pcieIncompleteWarningPrinted) {
+            cerr << "Warning: incomplete PCIe counter window (successful="
+                 << pcieResult.succeeded << ", failed=" << pcieResult.failed
+                 << ", resynchronized=" << pcieResult.resynchronized
+                 << "); DMA deduction and function attribution are skipped";
+            if (!pcieResult.incompleteBdfs.empty()) {
+                cerr << " for BDF(s):";
+                for (const auto& bdf : pcieResult.incompleteBdfs) {
+                    cerr << " " << bdf;
+                }
+            }
+            cerr << ".\n";
+            set.pcieIncompleteWarningPrinted = true;
+        }
+    }
+    const bool pcieOk = pcieAttempted && pcieResult.Complete();
     if (finalWindow) {
         windows.finalEndNs = boundaryNs;
         PmuDisable(set.spePd);
@@ -669,7 +709,7 @@ static void CollectCounterWindow(const ArgsContext& act, CollectorSet& set, BwCo
 
     const size_t windowIndex = SealWindow(
         ctx, windows, lastCollectNs, boundaryNs, ddrcRead, ddrcWrite,
-        pcie, ddrcOk, ddrcContinuous, pcieOk);
+        pcie, ddrcOk, ddrcContinuous, pcieAttempted, pcieOk);
     CollectSpeSlice(act, set, ctx, windows, health, &ctx.windows[windowIndex]);
     if (finalWindow) {
         // SPE EndRead enables sampling, even when the caller disabled it first.
@@ -677,7 +717,7 @@ static void CollectCounterWindow(const ArgsContext& act, CollectorSet& set, BwCo
     }
     AccountWindowHealth(health, ddrcAttempted,
                         ctx.windows[windowIndex].ddrcValid,
-                        pcieAttempted, pcieOk);
+                        pcieAttempted, pcieResult);
     lastCollectNs = boundaryNs;
 }
 

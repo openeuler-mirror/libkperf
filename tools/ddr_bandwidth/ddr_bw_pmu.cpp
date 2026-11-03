@@ -763,13 +763,25 @@ bool OpenPcieCollector(const string& bdf, PcieCollector& collector,
 }
 
 
-bool ReadPcieInterval(vector<PcieCollector>& collectors, BwContext& ctx, PcieBytes& total, double stoppedSec)
+struct PcieIntervalSample {
+    PcieCollector* collector = nullptr;
+    PcieBytes bytes;
+};
+
+PcieReadResult ReadPcieInterval(vector<PcieCollector>& collectors,
+                                BwContext& ctx, PcieBytes& total,
+                                double stoppedSec)
 {
-    bool readAny = false;
+    total = {};
+    PcieReadResult result;
+    vector<PcieIntervalSample> staged;
+    staged.reserve(collectors.size());
+
     for (auto& collector : collectors) {
         if (collector.pd == -1) {
             continue;
         }
+        ++result.attempted;
 
         PmuData* rawData = nullptr;
         int rawLen = PmuRead(collector.pd, &rawData);
@@ -777,37 +789,82 @@ bool ReadPcieInterval(vector<PcieCollector>& collectors, BwContext& ctx, PcieByt
             if (rawData != nullptr) {
                 PmuDataFree(rawData);
             }
+            collector.synchronized = false;
+            ++result.failed;
+            result.incompleteBdfs.push_back(collector.bdf);
             continue;
         }
 
-        double readSec = stoppedSec > 0.0 ? stoppedSec : NowSec();
-        readAny = true;
-        PcieBytes& device = ctx.traffic.pcieByBdf[collector.bdf];
+        const double readSec = stoppedSec > 0.0 ? stoppedSec : NowSec();
+        PcieIntervalSample sample;
+        sample.collector = &collector;
         if (collector.lastReadSec > 0.0 && readSec > collector.lastReadSec) {
-            device.elapsedSec += readSec - collector.lastReadSec;
+            sample.bytes.elapsedSec = readSec - collector.lastReadSec;
         }
         collector.lastReadSec = readSec;
 
+        bool sawRxMwr = false;
+        bool sawTxCpl = false;
         for (int i = 0; i < rawLen; ++i) {
             if (rawData[i].evt == nullptr) {
                 continue;
             }
             if (rawData[i].countPercent > 0.0) {
-                device.minRunningRatio = device.hasRunningRatio ? min(device.minRunningRatio, rawData[i].countPercent) : rawData[i].countPercent;
-                device.hasRunningRatio = true;
+                sample.bytes.minRunningRatio = sample.bytes.hasRunningRatio
+                    ? min(sample.bytes.minRunningRatio, rawData[i].countPercent)
+                    : rawData[i].countPercent;
+                sample.bytes.hasRunningRatio = true;
             }
             string eventName = rawData[i].evt;
             double bytes = static_cast<double>(rawData[i].count) * 4.0;
             if (eventName.find("rx_mwr_flux") != string::npos) {
-                device.rxMwr += bytes;
-                total.rxMwr += bytes;
+                sample.bytes.rxMwr += bytes;
+                sawRxMwr = true;
             } else if (eventName.find("tx_cpl_flux") != string::npos) {
-                device.txCpl += bytes;
-                total.txCpl += bytes;
+                sample.bytes.txCpl += bytes;
+                sawTxCpl = true;
             }
         }
         PmuDataFree(rawData);
+
+        // A successful read after a failed one establishes a new baseline. Its
+        // counts may span multiple DDRC windows, so discard it for attribution.
+        if (!collector.synchronized) {
+            collector.synchronized = true;
+            ++result.resynchronized;
+            result.incompleteBdfs.push_back(collector.bdf);
+            continue;
+        }
+
+        if (!sawRxMwr || !sawTxCpl) {
+            ++result.failed;
+            result.incompleteBdfs.push_back(collector.bdf);
+            continue;
+        }
+
+        ++result.succeeded;
+        staged.emplace_back(move(sample));
     }
 
-    return readAny;
+    // Commit only an all-collector, same-window snapshot. Partial data must not
+    // be used for DMA deduction because it would inflate the CPU residual.
+    if (!result.Complete()) {
+        return result;
+    }
+
+    for (const auto& sample : staged) {
+        PcieBytes& device = ctx.traffic.pcieByBdf[sample.collector->bdf];
+        device.rxMwr += sample.bytes.rxMwr;
+        device.txCpl += sample.bytes.txCpl;
+        device.elapsedSec += sample.bytes.elapsedSec;
+        if (sample.bytes.hasRunningRatio) {
+            device.minRunningRatio = device.hasRunningRatio
+                ? min(device.minRunningRatio, sample.bytes.minRunningRatio)
+                : sample.bytes.minRunningRatio;
+            device.hasRunningRatio = true;
+        }
+        total.rxMwr += sample.bytes.rxMwr;
+        total.txCpl += sample.bytes.txCpl;
+    }
+    return result;
 }
