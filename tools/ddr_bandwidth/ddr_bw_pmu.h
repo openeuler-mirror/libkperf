@@ -17,9 +17,11 @@ constexpr const char* UNKNOWN = "UNKNOWN";
 struct SampleInfo {
     bool hasExt = false;
     bool hasSym = false;
+    bool hasSource = false;
     bool isLoad = false;
     bool isStore = false;
     unsigned short source = 0;
+    unsigned long event = 0;
     unsigned long pc = 0;
     int pid = 0;
     Symbol* sym = nullptr;

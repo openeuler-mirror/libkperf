@@ -32,6 +32,11 @@ HIP_REMOTE_MEM
 
 的 load sample。
 
+当底层 SPE record 没有 Data Source packet（解码后的 `source == 0xffff`）时，工具会降级使用
+`SPE_EV_LLC_MISS` 事件位识别可能到达 DRAM 的 load，并在首次触发时输出警告。该路径只能提供近似判断，
+精度低于 `HIP_LOCAL_MEM/HIP_REMOTE_MEM`；`SPE_EV_REMOTE_ACCESS` 单独出现时不会被当作 DRAM，
+因为 remote access 也可能来自远端 cache，而不一定来自远端内存。
+
 每个 DRAM load sample 权重相同：
 
 ```text
@@ -102,6 +107,12 @@ sudo tools/bin/ddr_bandwidth -p 12345,12346 -d 10
 ```bash
 sudo tools/bin/ddr_bandwidth -p 12345 -p 12346 -d 10
 ```
+
+> **多进程采集限制：** SPE 是 system-wide 的统计采样，各目标进程共享每个 CPU 上的采样机会和
+> AUX buffer，并不会按 PID 分配固定或相同的样本配额。多个进程并发运行时，调度时长、CPU 迁移、
+> 指令类型、采样碰撞和缓冲区压力都可能使各 PID 的样本数产生偏差，因此进程间样本数及由其计算的
+> 带宽比例不应视为精确占比，也可能与分别单进程采集的结果不同。需要较高精度时，建议分别采集目标
+> 进程；必须多进程采集时，应延长采集时间、重复测量，并结合 `--debug` 的 SPE health 信息判断结果稳定性。
 
 ### 拉起程序并采集
 

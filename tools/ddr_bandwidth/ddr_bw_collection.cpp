@@ -202,6 +202,8 @@ static void PrintSpePipelineDiagnostics(const CollectionHealth& health,
          << "scope: target_user=" << decode.targetUserRecords
          << " other_user=" << decode.otherUserRecords
          << " kernel=" << decode.kernelRecords << "\n"
+         << "source fallback: unavailable_loads=" << decode.sourceUnavailableLoads
+         << " llc_miss_dram_loads=" << decode.eventFallbackDramLoads << "\n"
          << "operation: dram_loads=" << decode.eligibleDramLoads
          << " stores=" << decode.eligibleStores
          << " non_dram_loads=" << decode.nonDramLoads << "\n"

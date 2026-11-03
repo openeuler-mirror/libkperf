@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <unordered_set>
 #include <vector>
@@ -36,6 +37,14 @@ double NowSec()
 static bool IsDramSource(unsigned short source)
 {
     return source == HIP_LOCAL_MEM || source == HIP_REMOTE_MEM;
+}
+
+static bool IsDramEventFallback(unsigned long event)
+{
+    // An LLC miss is the closest event-only indication that a load reached
+    // beyond the cache hierarchy. SPE_EV_REMOTE_ACCESS alone can also describe
+    // a remote cache access, so it must not be treated as remote DRAM.
+    return (event & SPE_EV_LLC_MISS) != 0;
 }
 
 static bool ReadInsn32(pid_t pid, ulong pc, uint32_t& insn)
@@ -390,6 +399,8 @@ static SampleInfo PrepSample(const PmuData& data)
 
     sample.hasExt = true;
     sample.source = data.ext->source;
+    sample.hasSource = sample.source != numeric_limits<unsigned short>::max();
+    sample.event = data.ext->event;
     bool isAtomic = (data.ext->op & SPE_OP_ATOMIC) != 0;
     sample.isLoad = (data.ext->op & SPE_OP_LD) != 0 || isAtomic;
     sample.isStore = (data.ext->op & SPE_OP_ST) != 0 || isAtomic;
@@ -450,7 +461,15 @@ void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
             if (decode != nullptr) ++decode->nonLoadStore;
             continue;
         }
-        bool accountRead = sample.isLoad && IsDramSource(sample.source);
+        const bool useEventSourceFallback = sample.isLoad && !sample.hasSource;
+        if (useEventSourceFallback && !ctx.speSourceFallbackWarningPrinted) {
+            cerr << "Warning: SPE data source is unavailable; using SPE_EV_LLC_MISS "
+                    "as an approximate DRAM-load fallback. Read attribution may be less accurate.\n";
+            ctx.speSourceFallbackWarningPrinted = true;
+        }
+        bool accountRead = sample.isLoad && (sample.hasSource
+            ? IsDramSource(sample.source)
+            : IsDramEventFallback(sample.event));
         bool accountWrite = sample.isStore;
         const bool isTarget = targetPidSet.find(record.pid) != targetPidSet.end();
         const bool isKernel = IsKernelSample(sample);
@@ -462,6 +481,10 @@ void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
                 ++decode->targetUserRecords;
             } else {
                 ++decode->otherUserRecords;
+            }
+            if (useEventSourceFallback) ++decode->sourceUnavailableLoads;
+            if (useEventSourceFallback && accountRead) {
+                ++decode->eventFallbackDramLoads;
             }
             if (sample.isLoad && !accountRead) ++decode->nonDramLoads;
             if (accountRead) ++decode->eligibleDramLoads;

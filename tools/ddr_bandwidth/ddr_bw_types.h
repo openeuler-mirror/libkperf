@@ -99,6 +99,8 @@ struct SpeDecodeStats {
     uint64_t targetUserRecords = 0;
     uint64_t kernelRecords = 0;
     uint64_t otherUserRecords = 0;
+    uint64_t sourceUnavailableLoads = 0;
+    uint64_t eventFallbackDramLoads = 0;
     uint64_t nonDramLoads = 0;
     uint64_t eligibleDramLoads = 0;
     uint64_t eligibleStores = 0;
@@ -186,6 +188,7 @@ struct BwContext {
     SpeTimestampStats speTimestamps;
     TrafficTotals traffic;
     AttributionTotals attribution;
+    bool speSourceFallbackWarningPrinted = false;
 };
 
 void FinalizeAttribution(BwContext& ctx, uint64_t minSamples);
