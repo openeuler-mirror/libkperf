@@ -31,7 +31,9 @@
 #include "pmu_metric.h"
 #include "trace_point_parser.h"
 #include "pmu.h"
+#if defined(IS_X86) && defined(LBR_DRIVER_ENABLED)
 #include "lbr_trace_backend.h"
+#endif
 
 using namespace pcerr;
 using namespace KUNPENG_PMU;
@@ -725,7 +727,7 @@ int PmuOpen(enum PmuTaskType collectType, struct PmuAttr *attr)
         if (pd == -1) {
             FreeEvtList(previousEventList.first, previousEventList.second);
         // use driver to collect data when LBR sampling is unavailable
-        #ifdef IS_X86
+        #if defined(IS_X86) && defined(LBR_DRIVER_ENABLED)
             if (attr->branchSampleFilter != 0 && err == LIBPERF_ERR_INVALID_EVENT) {
                 int driverPd = LbrDriverManager::Instance().Open(attr);
                 if (driverPd >= 0) {
@@ -757,7 +759,7 @@ int PmuEnable(int pd)
 {
     SetWarn(SUCCESS);
 // collect LBR data via the driver. The process is distinguished by driverPd
-#ifdef IS_X86
+#if defined(IS_X86) && defined(LBR_DRIVER_ENABLED)
     if (LbrDriverManager::IsDriverPd(pd)) {
         return LbrDriverManager::Instance().Enable(pd);
     }
@@ -768,7 +770,7 @@ int PmuEnable(int pd)
 int PmuDisable(int pd)
 {
     SetWarn(SUCCESS);
-#ifdef IS_X86
+#if defined(IS_X86) && defined(LBR_DRIVER_ENABLED)
     if (LbrDriverManager::IsDriverPd(pd)) {
         return LbrDriverManager::Instance().Disable(pd);
     }
@@ -1017,7 +1019,7 @@ void PmuStop(int pd)
 int PmuRead(int pd, struct PmuData** pmuData)
 {
     SetWarn(SUCCESS);
-#ifdef IS_X86
+#if defined(IS_X86) && defined(LBR_DRIVER_ENABLED)
     if (LbrDriverManager::IsDriverPd(pd)) {
         return LbrDriverManager::Instance().Read(pd, pmuData);
     }
@@ -1055,7 +1057,7 @@ void PmuClose(int pd)
 {
     SetWarn(SUCCESS);
 // clean up resources related to driver of lbr collection
-#ifdef IS_X86
+#if defined(IS_X86) && defined(LBR_DRIVER_ENABLED)
     if (LbrDriverManager::IsDriverPd(pd)) {
         return LbrDriverManager::Instance().Close(pd);
     }

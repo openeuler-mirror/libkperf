@@ -208,7 +208,9 @@ int LbrDriverManager::Disable(int pd)
 
 
 static int TransferLbrRingToPmuData(LbrDriverSession& s, const CpuChunk& c, std::vector<PmuData>& outData,
-                                    std::vector<PmuDataExt*>& extPool, int totalSamples, int& idx)
+                                    std::vector<KUNPENG_PMU::PerfSampleIps>& sampleIps,
+                                    std::vector<PmuDataExt*>& extPool,
+                                    int totalSamples, int& idx)
 {
     if (c.cpu < 0 || c.cpu >= s.cpuNum) {
         return -1;
@@ -231,8 +233,9 @@ static int TransferLbrRingToPmuData(LbrDriverSession& s, const CpuChunk& c, std:
         d.cpu = static_cast<int>(r->cpu);
         d.evt = "lbr_trace";
         d.ext = nullptr;
-        d.ip = static_cast<int>(r->ip);
         d.period = 1;
+        sampleIps.emplace_back();
+        sampleIps.back().ips.push_back((unsigned long)r->ip);
 
         int depth = static_cast<int>(r->lbr_depth);
         depth = std::min(depth, (int)SIMPLE_LBR_MAX_LBR);
@@ -253,8 +256,8 @@ static int TransferLbrRingToPmuData(LbrDriverSession& s, const CpuChunk& c, std:
 
         if (nr > 0) {
             try {
-                auto* ext = new PmuDataExt();
-                auto* br  = new BranchSampleRecord[nr]();
+                std::unique_ptr<PmuDataExt> ext(new PmuDataExt());
+                std::unique_ptr<BranchSampleRecord[]> br(new BranchSampleRecord[nr]());
                 for (int k = 0; k < nr; k++) {
                     int i = validIdx[k];
                     uint64_t info = r->lbr_info[i];
@@ -265,9 +268,10 @@ static int TransferLbrRingToPmuData(LbrDriverSession& s, const CpuChunk& c, std:
                     br[k].predicted = (uint8_t)(br[k].misPred ? 0 : 1);
                 }
                 ext->nr = (unsigned long)nr;
-                ext->branchRecords = br;
-                d.ext = ext;
-                extPool.push_back(ext);
+                ext->branchRecords = br.get();
+                extPool.push_back(ext.get());
+                d.ext = ext.release();
+                (void)br.release();
             } catch (const std::bad_alloc&) {
                 pcerr::New(LIBPERF_ERR_LBR_DRIVER_INVALID, "Read LBR driver failed: bad_alloc occurs.");
                 return -1;
@@ -369,6 +373,7 @@ int LbrDriverManager::Read(int pd, PmuData** out)
         int rc = TransferLbrRingToPmuData(
             *s, c,
             ed.data,
+            ed.sampleIps,
             ed.extPool,
             totalSamples,
             idx
