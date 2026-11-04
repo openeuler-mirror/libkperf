@@ -96,6 +96,7 @@ public:
     int ResolvePmuDataSymbol(struct PmuData* iPmuData);
 
     std::vector<PerfRecordSample> GetMetaData(PmuData* pmuData) const;
+    std::vector<unsigned long> GetSampleIps(PmuData* pmuData) const;
     void AddNewProcess(const unsigned &pd, int pid);
     PmuData* RegisterDriverHandle(EventData&& newData);
 

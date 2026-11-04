@@ -935,6 +935,21 @@ namespace KUNPENG_PMU {
         return findData->second.metaData;
     }
 
+    std::vector<unsigned long> PmuList::GetSampleIps(PmuData* pmuData) const
+    {
+        auto findData = userDataList.find(pmuData);
+        if (findData == userDataList.end()) {
+            return {};
+        }
+
+        std::vector<unsigned long> sampleIps;
+        sampleIps.reserve(findData->second.sampleIps.size());
+        for (const auto& sample : findData->second.sampleIps) {
+            sampleIps.push_back(sample.ips.empty() ? 0 : sample.ips.front());
+        }
+        return sampleIps;
+    }
+
     void PmuList::AggregateData(const std::vector<PmuData>& evData, std::vector<PmuData>& newEvData)
     {
         // Acccumulate stat data in previous PmuCollect for convenient use.

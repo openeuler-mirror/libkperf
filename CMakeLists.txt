@@ -79,6 +79,9 @@ if (JAVA_TRACE)
     message(STATUS "Generated java_trace_config.h -> ${JAVA_TRACE_CONFIG_H}")
 endif()
 
+option(LBR_DRIVER "Enable the x86 LBR driver backend" OFF)
+message(STATUS "LBR driver backend support: ${LBR_DRIVER}")
+
 add_subdirectory(pmu)
 
 if (JAVA_AGENT)

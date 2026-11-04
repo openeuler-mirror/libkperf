@@ -31,6 +31,8 @@ INCLUDE_TEST=false
 GO=false
 # Bpf mode for counting
 BPF=false
+# LBR driver fallback backend
+LBR_DRIVER=false
 # ASAN
 ASAN=false
 
@@ -80,6 +82,9 @@ for arg in "$@"; do
             ;;
         bpf=*)
             BPF="${arg#*=}"
+            ;;
+        lbr_driver=*)
+            LBR_DRIVER="${arg#*=}"
             ;;
         asan=*)
             ASAN="${arg#*=}"
@@ -200,6 +205,7 @@ build_libkperf()
         "-DCMAKE_INSTALL_PREFIX=${INSTALL_PATH}"
         "-DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
         "-DBPF=${BPF}"
+        "-DLBR_DRIVER=${LBR_DRIVER}"
         "-DJAVA_TRACE=${JAVA_TRACE}"
         "-DARCH_TARGET=${ARCH_TARGET}"
         "-DELF_LLVM=${ELF_LLVM}"

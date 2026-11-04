@@ -176,6 +176,7 @@ public:
     int Dump(PmuData *data, const int len)
     {
         int err = SUCCESS;
+        const auto sampleIps = PmuList::GetInstance()->GetSampleIps(data);
         // Write events like mmap, mmap2, comm, fork...
         err = WriteInfoSamples(fd, data, ph.data.size);
         if (err != SUCCESS) {
@@ -188,7 +189,8 @@ public:
 	    size_t offset = 0;
         for (int i = 0; i < len; ++i) {
             auto &d = data[i];
-            err = WritePmuData(d, offset, buffer);
+            const unsigned long sampleIp = static_cast<size_t>(i) < sampleIps.size() ? sampleIps[i] : 0;
+            err = WritePmuData(d, sampleIp, offset, buffer);
             if (err != SUCCESS) {
 		        delete[] buffer;
                 return err;
@@ -264,7 +266,7 @@ private:
 	    return size;
     }
 
-    int WritePmuData(const PmuData &d, size_t &offset, uint8_t *buffer)
+    int WritePmuData(const PmuData &d, unsigned long sampleIp, size_t &offset, uint8_t *buffer)
     {
         size_t branchNr = 0;
         if (d.ext && d.ext->nr) {
@@ -275,13 +277,11 @@ private:
         sample->header.type = PERF_RECORD_SAMPLE;
         sample->header.misc = PERF_RECORD_MISC_USER;
         sample->header.size = sizeof(PerfSample) + branchNr * sizeof(perf_branch_entry);
-        if (d.ip != -1) {
-            sample->ip = d.ip;
-        } else {
-            if (d.stack && d.stack->symbol) {
-                sample->ip = d.stack->symbol->addr;
-                modules.insert(d.stack->symbol->module);
-            }
+        if (d.evt && strcmp(d.evt, "lbr_trace") == 0 && sampleIp != 0) {
+            sample->ip = sampleIp;
+        } else if (d.stack && d.stack->symbol) {
+            sample->ip = d.stack->symbol->addr;
+            modules.insert(d.stack->symbol->module);
         }
         sample->tid = d.tid;
         sample->pid = d.pid;
