@@ -36,4 +36,4 @@ add_custom_target(${PROJECT_NAME} ALL
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-add_dependencies(${PROJECT_NAME} kperf sym)
+add_dependencies(${PROJECT_NAME} kperf kperf_static sym sym_static)
