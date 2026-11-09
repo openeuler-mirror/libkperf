@@ -81,18 +81,19 @@ final class SharedEventSink implements AutoCloseable {
     // Ring descriptor table: one cache-line padded 128-byte entry per ring.
     static final int DESC_SIZE = 128;
     static final int DESC_WRITE_SEQ = 0;
-    // Per-ring watermark of events the consumer's lag let a wrap overwrite (recordWrapLoss).
-    static final int DESC_DROPPED = 8;
     static final int DESC_TID = 16;
     static final int DESC_RING_IDX = 20;
-    // Consumer writeback: highest sequence the backend has committed to its read cursor.
-    static final int DESC_CONSUMED_SEQ = 24;
     // Per-ring count of events a late writer self-rejected because its slot was reused
-    // after a full wrap (claimSlot); distinct cause from DESC_DROPPED.
+    // after a full wrap (claimSlot).
     static final int DESC_LATE_DROPS = 32;
 
-    // Record layout: SLOT_SEQ is the publish marker (first field, written last) and
-    // SLOT_DATA_TYPE (second field) selects which per-type field group decodes the rest.
+    // Record layout: SLOT_SEQ is a seqlock marker. A writer stamps seq | WRITE_BIT before
+    // touching the payload and stores the plain seq after the last field write, so a reader
+    // that brackets its payload access with marker checks can never deliver torn data: an
+    // overwrite in progress shows the flagged value and a completed one shows the next
+    // lap's seq, neither of which equals the expected seq. SLOT_DATA_TYPE (second field)
+    // selects which per-type field group decodes the rest.
+    static final long WRITE_BIT = Long.MIN_VALUE;
     static final int SLOT_SIZE = 64;
     static final int SLOT_SEQ = 0;
     static final int SLOT_DATA_TYPE = 8;
@@ -210,8 +211,6 @@ final class SharedEventSink implements AutoCloseable {
         final MappedByteBuffer data;
         final AtomicLong claim = new AtomicLong(0L);
         final AtomicLong publish = new AtomicLong(0L);
-        // Highest lost-event count ever observed on this ring (see recordWrapLoss).
-        final AtomicLong lossFloor = new AtomicLong(0L);
         // Events rejected by late writers (slot already reused after a full wrap).
         final AtomicLong lateDrops = new AtomicLong(0L);
 
@@ -325,8 +324,6 @@ final class SharedEventSink implements AutoCloseable {
         for (int i = 0; i < ringCount; i++) {
             int base = i * DESC_SIZE;
             descBuffer.putLong(base + DESC_WRITE_SEQ, 0L);
-            descBuffer.putLong(base + DESC_CONSUMED_SEQ, 0L);
-            descBuffer.putLong(base + DESC_DROPPED, 0L);
             descBuffer.putLong(base + DESC_LATE_DROPS, 0L);
         }
         putIntRelease(HEADER_ACTIVE, 1);
@@ -441,6 +438,7 @@ final class SharedEventSink implements AutoCloseable {
         }
         int base = slotIndex(seq) * SLOT_SIZE;
         MappedByteBuffer slotBuffer = ring.data;
+        markSlotWriting(slotBuffer, base, seq);
 
         slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_METHOD);
         slotBuffer.putLong(base + SLOT_METHOD_ADDR, addr);
@@ -520,6 +518,7 @@ final class SharedEventSink implements AutoCloseable {
         }
         int base = slotIndex(seq) * SLOT_SIZE;
         MappedByteBuffer slotBuffer = ring.data;
+        markSlotWriting(slotBuffer, base, seq);
 
         slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_PHASE);
         slotBuffer.putInt(base + SLOT_VT_COMM_ID, commId);
@@ -547,6 +546,7 @@ final class SharedEventSink implements AutoCloseable {
         }
         int base = slotIndex(seq) * SLOT_SIZE;
         MappedByteBuffer slotBuffer = ring.data;
+        markSlotWriting(slotBuffer, base, seq);
 
         slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_PHASE);
         slotBuffer.putInt(base + SLOT_VT_COMM_ID, -1);
@@ -575,6 +575,7 @@ final class SharedEventSink implements AutoCloseable {
         }
         int base = slotIndex(seq) * SLOT_SIZE;
         MappedByteBuffer slotBuffer = ring.data;
+        markSlotWriting(slotBuffer, base, seq);
 
         slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_PHASE);
         slotBuffer.putInt(base + SLOT_VT_COMM_ID, -1);
@@ -612,7 +613,6 @@ final class SharedEventSink implements AutoCloseable {
                 break;
             }
         }
-        recordWrapLoss(ring, seq);
     }
 
     // SharedEventSink claim entry: reject writers that lag the published watermark by a full
@@ -628,25 +628,13 @@ final class SharedEventSink implements AutoCloseable {
         return seq;
     }
 
-    // The consumer writes its committed read cursor back into the ring descriptor. A sequence
-    // more than one ring capacity ahead of that cursor has already overwritten an unconsumed
-    // slot, i.e. the consumer fell behind and events were lost. The count stays per-ring in
-    // DESC_DROPPED (no global aggregation); lossFloor keeps it monotonic so the same lost
-    // event is never counted by two racing writers.
-    private void recordWrapLoss(Ring ring, long seq) {
-        long consumed = readLongAcquire(descBuffer, ring.descBase + DESC_CONSUMED_SEQ);
-        long lost = seq - (long) slotsPerRing - consumed;
-        if (lost <= 0) {
-            return;
-        }
-        long prev;
-        do {
-            prev = ring.lossFloor.get();
-        } while (prev < lost && !ring.lossFloor.compareAndSet(prev, lost));
-        if (prev >= lost) {
-            return;
-        }
-        putLongRelease(descBuffer, ring.descBase + DESC_DROPPED, ring.lossFloor.get());
+    // seqlock entry: stamp the in-progress marker on the slot and order it before every
+    // payload store. A consumer that re-reads the marker after decoding sees either this
+    // flagged value or the next lap's seq whenever the slot was touched mid-read, so torn
+    // data can never be delivered (late writers and wrap-overwrite races both covered).
+    private void markSlotWriting(MappedByteBuffer slotBuffer, int base, long seq) {
+        slotBuffer.putLong(base + SLOT_SEQ, seq | WRITE_BIT);
+        MemoryFence.releaseFence();
     }
 
     private int slotIndex(long sequence) {
@@ -692,12 +680,6 @@ final class SharedEventSink implements AutoCloseable {
 
     private int getIntAcquire(int offset) {
         int value = headerBuffer.getInt(offset);
-        MemoryFence.acquireFence();
-        return value;
-    }
-
-    private long readLongAcquire(ByteBuffer source, int offset) {
-        long value = source.getLong(offset);
         MemoryFence.acquireFence();
         return value;
     }

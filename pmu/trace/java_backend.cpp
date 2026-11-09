@@ -79,10 +79,6 @@ static constexpr size_t K_THREAD_COMM_LEN = 32;
 // ABI v4 ring descriptor table (one padded 128-byte entry per ring).
 static constexpr size_t K_DESC_SIZE = 128;
 static constexpr size_t K_DESC_WRITE_SEQ = 0;
-// Per-ring watermark of consumer-lag wrap overwrites.
-static constexpr size_t K_DESC_DROPPED = 8;
-// Read-cursor writeback consumed by the producer's wrap-loss detection.
-static constexpr size_t K_DESC_CONSUMED_SEQ = 24;
 // Per-ring count of events a late writer self-rejected (slot reused after a full wrap).
 static constexpr size_t K_DESC_LATE_DROPS = 32;
 static constexpr uint32_t K_MAX_RING_COUNT = 65536;
@@ -90,6 +86,9 @@ static constexpr uint32_t K_MAX_SLOTS_PER_RING = 1U << 22;
 static constexpr uint64_t K_MAX_SHM_SIZE = 64ULL << 30;
 
 static constexpr size_t K_SLOT_SIZE = 64;
+// Seqlock marker: plain seq once fully written, seq | (1<<63) while the payload is being
+// written. Both equalities below reject the flagged value, so a record is decoded only when
+// the marker reads as seq before and after the payload access.
 static constexpr size_t K_SLOT_SEQ = 0;
 static constexpr size_t K_SLOT_DATA_TYPE = 8;
 
@@ -689,24 +688,27 @@ static void DecodeRingRange(RingReadShard *shard)
             if (!DecodeSlotRecord(shard, slot, &record.data, &record.timestamp)) {
                 return;
             }
+            // Seqlock revalidation: the acquire fence orders the payload loads above before
+            // the marker re-read, so an overwrite that started after the first check is
+            // detected here and the record is dropped (not delivered) instead of torn.
+            std::atomic_thread_fence(std::memory_order_acquire);
+            if (LoadAt<uint64_t>(slot, K_SLOT_SEQ) != seq) {
+                ++shard->seqMismatch;
+                FreeTraceDataFields(record.data);
+                continue;
+            }
             shard->records.push_back(record);
         }
         shard->cursors.emplace_back(ring, writeSeq);
     }
 }
 
-// Commit per-ring read cursors and publish the progress into DESC_CONSUMED_SEQ so the
-// producer can count events overwritten while the consumer lagged beyond one ring capacity.
-// Shards own disjoint ring ranges, so every descriptor field keeps a single writer.
-static void CommitRingCursors(JavaBackendImpl *impl, uint64_t descOffset,
-                              const std::vector<RingReadShard> &shards)
+// Commit per-ring read cursors so the next poll continues after the decoded range.
+static void CommitRingCursors(JavaBackendImpl *impl, const std::vector<RingReadShard> &shards)
 {
-    uint8_t *mem = static_cast<uint8_t *>(impl->mapped);
     for (const auto &shard : shards) {
         for (const auto &cursor : shard.cursors) {
             impl->ringReadSeq[cursor.first] = cursor.second;
-            StoreAtRelease<uint64_t>(mem + descOffset + static_cast<size_t>(cursor.first) * K_DESC_SIZE,
-                                     K_DESC_CONSUMED_SEQ, cursor.second);
         }
     }
 }
@@ -880,13 +882,11 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
     uint64_t overwritten = 0;
     uint64_t seqMismatch = 0;
     uint64_t metadataMismatch = 0;
-    uint64_t wrapDropped = 0;
     uint64_t lateDropped = 0;
     size_t total = 0;
     bool allocFailed = false;
     for (uint32_t r = 0; r < scanRings; ++r) {
         const uint8_t *desc = mem + descOffset + static_cast<size_t>(r) * K_DESC_SIZE;
-        wrapDropped += LoadAtAcquire<uint64_t>(desc, K_DESC_DROPPED);
         lateDropped += LoadAtAcquire<uint64_t>(desc, K_DESC_LATE_DROPS);
     }
     for (auto &shard : shards) {
@@ -902,8 +902,8 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
 
     if (overwritten > 0) {
         JavaTraceLog(MakeLogMessage("[trace-java] warning: consumer lagged behind, ", overwritten,
-            " events overwritten this round (wrap_dropped=", wrapDropped,
-            "): increase slots_per_ring in trace_filter.conf or shorten the read interval\n"));
+            " events overwritten this round: increase slots_per_ring in trace_filter.conf",
+            " or shorten the read interval\n"));
     }
 
     if (allocFailed) {
@@ -917,11 +917,11 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
 
     // No new events in any ring yet: keep the original single-shot empty diagnostic.
     if (total == 0) {
-        CommitRingCursors(impl, descOffset, shards);
+        CommitRingCursors(impl, shards);
         if (impl->lastEmptyReadTotalSeq != totalWrite) {
             JavaTraceLog(MakeLogMessage("[trace-java] collected: events=0", ", methods=", methodCount,
                 ", threads=", threadCount, ", dropped=", dropped,
-                ", wrap_dropped=", wrapDropped, ", late_dropped=", lateDropped, "\n"));
+                ", late_dropped=", lateDropped, "\n"));
             impl->lastEmptyReadTotalSeq = totalWrite;
         }
         return 0;
@@ -957,7 +957,7 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
 
     // Advance per-ring cursors only after the output block exists; alloc failures above
     // keep the old cursors so the next poll re-reads the same range.
-    CommitRingCursors(impl, descOffset, shards);
+    CommitRingCursors(impl, shards);
 
     size_t stored = flat.size();
     std::memcpy(raw, &stored, sizeof(size_t));
@@ -969,7 +969,6 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
                                 ", threads=", threadCount,
                                 ", rings=", scanRings,
                                 ", dropped=", dropped,
-                                ", wrap_dropped=", wrapDropped,
                                 ", late_dropped=", lateDropped,
                                 ", overwritten=", overwritten,
                                 ", seqMismatch=", seqMismatch,
