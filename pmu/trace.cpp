@@ -391,7 +391,7 @@ static bool IsInTraceWindow(const UTraceData &data, int64_t windowStartNs, int64
 
 // Payload accessors: UTraceData is now {format, size, payload}; per-field data lives
 // in the format-specific payload blob. Non-method records return neutral defaults so
-// the thread-name / virtual-thread reconciliation logic naturally skips VT_PHASE events.
+// the thread-name / virtual-thread reconciliation logic naturally skips VT_STAGE events.
 static const UTraceMethodPayload *MethodPayload(const UTraceData &data)
 {
     if (!UTraceIsMethodFormat(&data) || data.payload == nullptr) {
@@ -946,7 +946,7 @@ static int OpenJavaBackend(UTraceAttr *attr)
     // if java symbol list is empty, includeRules will be nullptr
     std::string includeRules = BuildJavaSymSrc(attr);
     int err = JavaTraceManager::GetInstance().Open(pd, jvmPid,
-        includeRules.empty() ? nullptr : includeRules.c_str(), attr->vtPhase != 0);
+        includeRules.empty() ? nullptr : includeRules.c_str(), attr->vtStage != 0);
     if (err != 0) {
         PmuList::GetInstance()->Close(pd);
         return -1;
@@ -1114,9 +1114,9 @@ int UTraceOpen(struct UTraceAttr *attr)
         return -1;
     }
     bool hasJavaRequest = hasJavaSymbols || (hasJavaConfig && isJvm);
-    if (attr->vtPhase != 0 && !hasJavaRequest) {
-        TraceLog("[trace] vtPhase is set but no Java trace is requested; "
-                 "virtual thread phases are only collected for JVM targets\n");
+    if (attr->vtStage != 0 && !hasJavaRequest) {
+        TraceLog("[trace] vtStage is set but no Java trace is requested; "
+                 "virtual thread stages are only collected for JVM targets\n");
     }
     if (!hasJavaRequest) {
         FilterNativeSymbols(symbols.userSymbols, filter);

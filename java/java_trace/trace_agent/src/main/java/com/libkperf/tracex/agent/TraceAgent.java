@@ -15,11 +15,11 @@
 package com.libkperf.tracex.agent;
 
 import com.libkperf.tracex.agent.asm.TraceClassFileTransformer;
-import com.libkperf.tracex.agent.asm.VTPhaseInstrumentation;
+import com.libkperf.tracex.agent.asm.VTStageInstrumentation;
 import com.libkperf.tracex.runtime.NativeThreadInfo;
 import com.libkperf.tracex.runtime.TraceLog;
 import com.libkperf.tracex.runtime.TraceRuntime;
-import com.libkperf.tracex.runtime.VTPhaseCollector;
+import com.libkperf.tracex.runtime.VTStageCollector;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -68,7 +68,7 @@ public final class TraceAgent {
             start(config, inst);
         } catch (Throwable t) {
             TraceRuntime.stop();
-            VTPhaseCollector.setEnabled(false);
+            VTStageCollector.setEnabled(false);
             try {
                 removeActiveTransformer();
             } catch (Throwable removeError) {
@@ -95,7 +95,7 @@ public final class TraceAgent {
     private static void runControlAction(String action, Instrumentation inst) {
         try {
             TraceRuntime.stop();
-            VTPhaseCollector.setEnabled(false);
+            VTStageCollector.setEnabled(false);
             if ("stop".equalsIgnoreCase(action)) {
                 removeActiveTransformer();
                 return;
@@ -317,7 +317,7 @@ public final class TraceAgent {
         }
 
         TraceRuntime.setEnabled(false);
-        VTPhaseCollector.setEnabled(false);
+        VTStageCollector.setEnabled(false);
         if (!removeActiveTransformer()) {
             throw new IllegalStateException("failed to remove previous trace transformer");
         }
@@ -342,7 +342,7 @@ public final class TraceAgent {
         }
 
         // Register the transformer before collecting candidates: collectCandidates
-        // proactively loads not-yet-loaded VT phase target classes via Class.forName,
+        // proactively loads not-yet-loaded VT stage target classes via Class.forName,
         // which only instruments them if this transformer is already installed.
         inst.addTransformer(transformer, true);
         activeTransformer = transformer;
@@ -356,7 +356,7 @@ public final class TraceAgent {
 
         retransformSafely(inst, candidates, transformer);
         TraceRuntime.configureVirtualThreadCarrierHooks(transformer.hasVirtualThreadCarrierHooks());
-        VTPhaseCollector.setEnabled(config.enableVtPhase);
+        VTStageCollector.setEnabled(config.enableVTStage);
         TraceLog.info("[trace-java-agent] instrumentation complete: carrierHooks="
                 + transformer.hasVirtualThreadCarrierHooks());
         TraceRuntime.setEnabled(true);
@@ -387,8 +387,8 @@ public final class TraceAgent {
             }
         }
 
-        if (config.enableVtPhase) {
-            for (String internal : VTPhaseInstrumentation.targetClassInternalNames()) {
+        if (config.enableVTStage) {
+            for (String internal : VTStageInstrumentation.targetClassInternalNames()) {
                 if (seen.contains(internal)) {
                     continue;
                 }
@@ -397,9 +397,9 @@ public final class TraceAgent {
                     Class.forName(binary, false, null);
                     // Class.forName triggers the already-registered transformer at load time,
                     // so the class is instrumented here and must not be queued for retransform.
-                    TraceLog.info("[trace-java-agent] proactively loaded VT phase target class: " + binary);
+                    TraceLog.info("[trace-java-agent] proactively loaded VT stage target class: " + binary);
                 } catch (Throwable t) {
-                    TraceLog.warn("[trace-java-agent] failed to proactively load VT phase target class: "
+                    TraceLog.warn("[trace-java-agent] failed to proactively load VT stage target class: "
                             + internal + ", error=" + t, t);
                 }
             }

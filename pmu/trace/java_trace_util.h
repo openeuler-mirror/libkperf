@@ -38,7 +38,7 @@ struct SplitTraceAttr {
 struct JavaTraceLocalConfig {
     uint32_t slotsPerRing;
     uint32_t consumerThreads;
-    bool enableVtPhase;
+    bool enableVTStage;
     bool valid;
 };
 
@@ -78,8 +78,8 @@ char *TraceDupString(const std::string &s);
 void *BuildMethodPayload(int64_t timestamp, unsigned long addr, uint64_t gPtr, int tid, int cpu,
                          unsigned isRet, const char *comm, const char *module, const char *func,
                          unsigned *outSize);
-void *BuildVtPhasePayload(int64_t timestamp, uint64_t carrierTid, uint64_t vtId,
-                          uint32_t phaseId, int cpu, int fd, int64_t bytes, uint32_t osTid,
+void *BuildVTStagePayload(int64_t timestamp, uint64_t carrierTid, uint64_t vtId,
+                          uint32_t stageId, int cpu, int fd, int64_t bytes, uint32_t osTid,
                           const char *comm, unsigned *outSize);
 
 UTraceData DeepCopyTraceData(const UTraceData &src);

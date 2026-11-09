@@ -53,7 +53,7 @@ struct JavaBackendImpl {
     void *mapped{nullptr};
     // Per-ring consumer cursors, sized from the header ring count.
     std::vector<uint64_t> ringReadSeq;
-    bool enableVtPhase{false};
+    bool enableVTStage{false};
     // Avoid repeating the same empty-read diagnostic when UTraceRead is polled.
     uint64_t lastEmptyReadTotalSeq{0};
     // java records contain the tid visible in the target's pid namespace, translate it to the host TID
@@ -63,7 +63,7 @@ struct JavaBackendImpl {
     bool runtimePrepared = false;
 };
 
-int JavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules, bool enableVtPhase);
+int JavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules, bool enableVTStage);
 int JavaBackendPrepare(JavaBackendImpl *impl);
 int JavaBackendEnable(JavaBackendImpl *impl);
 int JavaBackendDisable(JavaBackendImpl *impl);

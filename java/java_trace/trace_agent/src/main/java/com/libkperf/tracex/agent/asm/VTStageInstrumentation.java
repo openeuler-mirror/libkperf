@@ -10,11 +10,11 @@
  * See the Mulan PSL v2 for more details.
  * Author: Zou
  * Create: 2026-10-20
- * Description: Defines virtual-thread phase instrumentation target methods and their types
+ * Description: Defines virtual-thread stage instrumentation target methods and their types
  ******************************************************************************/
 package com.libkperf.tracex.agent.asm;
 
-public final class VTPhaseInstrumentation {
+public final class VTStageInstrumentation {
 
     public static final int TYPE_NONE = 0;
     public static final int TYPE_RUN = 1;
@@ -26,7 +26,7 @@ public final class VTPhaseInstrumentation {
     public static final int TYPE_PARK_NANOS = 9;
     public static final int TYPE_UNPARK = 10;
 
-    static final String VT_PHASE_COLLECTOR_OWNER = "com/libkperf/tracex/runtime/VTPhaseCollector";
+    static final String VT_STAGE_COLLECTOR_OWNER = "com/libkperf/tracex/runtime/VTStageCollector";
 
     static final String THREAD_OWNER = "java/lang/Thread";
     static final String THREAD_CURRENT_THREAD = "currentThread";
@@ -67,7 +67,7 @@ public final class VTPhaseInstrumentation {
     static final String NIO_FDVAL_METHOD = "fdVal";
     static final String NIO_FDVAL_DESC = "(Ljava/io/FileDescriptor;)I";
 
-    private VTPhaseInstrumentation() {
+    private VTStageInstrumentation() {
     }
 
     public static boolean isTargetClass(String classNameInternal) {

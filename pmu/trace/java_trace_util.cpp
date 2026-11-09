@@ -879,7 +879,7 @@ static constexpr const char *K_DIGITS = "0123456789";
 static constexpr const char *K_SLOT_COUNT_KEY = "slot_count";
 static constexpr const char *K_CONTEXT_DEPTH_KEY = "context_depth";
 static constexpr const char *K_CONTEXT_MAX_METHODS_KEY = "context_max_methods";
-static constexpr const char *K_VT_PHASE_KEY = "vt_phase";
+static constexpr const char *K_VT_STAGE_KEY = "vt_stage";
 static constexpr const char *K_SLOTS_PER_RING_KEY = "slots_per_ring";
 static constexpr const char *K_CONSUMER_THREADS_KEY = "consumer_threads";
 // Shared with the native trace pipeline (trace_filter_config.cpp). The Java
@@ -1003,8 +1003,8 @@ static bool ParseLocalConfigKeyValue(LocalConfigParseContext *context, const std
     if (key == K_CONTEXT_MAX_METHODS_KEY) {
         return ParseBoundedUnsignedValue(*context, K_CONTEXT_MAX_METHODS_KEY, value, K_MAX_CONTEXT_METHODS);
     }
-    if (key == K_VT_PHASE_KEY) {
-        context->config->enableVtPhase = (value == "true" || value == "1");
+    if (key == K_VT_STAGE_KEY) {
+        context->config->enableVTStage = (value == "true" || value == "1");
         return true;
     }
     if (key == K_SLOTS_PER_RING_KEY) {
@@ -1123,7 +1123,7 @@ JavaTraceLocalConfig LoadLocalConfig(const std::string &path)
 
     LocalConfigParseContext context(path, &out);
     out.valid = ParseLocalConfigStream(input, &context);
-    out.enableVtPhase = context.config->enableVtPhase;
+    out.enableVTStage = context.config->enableVTStage;
     return out;
 }
 
@@ -1270,8 +1270,8 @@ std::string BuildEnableCommand(const JavaBackendImpl &impl)
         cmd += " --include-file ";
         cmd += EscapeShell(targetIncludeFile);
     }
-    if (impl.enableVtPhase) {
-        cmd += " --vt-phase true";
+    if (impl.enableVTStage) {
+        cmd += " --vt-stage true";
     }
     return cmd;
 }
@@ -1423,19 +1423,19 @@ void *BuildMethodPayload(int64_t timestamp, unsigned long addr, uint64_t gPtr, i
     return FinishBlob(blob, outSize);
 }
 
-void *BuildVtPhasePayload(int64_t timestamp, uint64_t carrierTid, uint64_t vtId,
-                          uint32_t phaseId, int cpu, int fd, int64_t bytes, uint32_t osTid,
+void *BuildVTStagePayload(int64_t timestamp, uint64_t carrierTid, uint64_t vtId,
+                          uint32_t stageId, int cpu, int fd, int64_t bytes, uint32_t osTid,
                           const char *comm, unsigned *outSize)
 {
-    std::vector<char> blob(sizeof(UTraceVtPhasePayload), '\0');
+    std::vector<char> blob(sizeof(UTraceVTStagePayload), '\0');
     // See BuildMethodPayload: reserve string bytes so AppendBlobString cannot reallocate.
     size_t stringsLen = (comm != nullptr && comm[0] != '\0') ? std::strlen(comm) + 1 : 0;
     blob.reserve(blob.size() + stringsLen);
-    UTraceVtPhasePayload *p = reinterpret_cast<UTraceVtPhasePayload *>(blob.data());
+    UTraceVTStagePayload *p = reinterpret_cast<UTraceVTStagePayload *>(blob.data());
     p->timestamp = timestamp;
     p->carrierTid = carrierTid;
     p->vtId = vtId;
-    p->phaseId = phaseId;
+    p->stageId = stageId;
     p->cpu = cpu;
     p->fd = fd;
     p->bytesRead = bytes;

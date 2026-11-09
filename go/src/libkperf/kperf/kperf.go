@@ -585,26 +585,26 @@ type UTraceAttr struct {
 	SymSrc  []SymbolSource
 	PidList []int
 	FetchG  bool
-	VtPhase bool
+	VTStage bool
 }
 
 // UTraceFormat mirrors enum UTraceFormat in pmu.h.
 const (
 	UTraceFormatMethod   = 0
-	UTraceFormatVtPhase  = 1
+	UTraceFormatVTStage  = 1
 )
 
-// UTraceVtPhase mirrors enum UTraceVtPhase in pmu.h.
+// UTraceVTStage mirrors enum UTraceVTStage in pmu.h.
 const (
-	UTraceVtPhaseRun                = 0
-	UTraceVtPhaseDequeue            = 1
-	UTraceVtPhaseCreateRegistration = 2
-	UTraceVtPhaseUnparkReturn       = 3
-	UTraceVtPhasePollReturn         = 4
-	UTraceVtPhaseSocketRead         = 5
-	UTraceVtPhaseSocketWrite        = 6
-	UTraceVtPhaseParkEnter          = 7
-	UTraceVtPhaseParkReturn         = 8
+	UTraceVTStageRun                = 0
+	UTraceVTStageDequeue            = 1
+	UTraceVTStageCreateRegistration = 2
+	UTraceVTStageUnparkReturn       = 3
+	UTraceVTStagePollReturn         = 4
+	UTraceVTStageSocketRead         = 5
+	UTraceVTStageSocketWrite        = 6
+	UTraceVTStageParkEnter          = 7
+	UTraceVTStageParkReturn         = 8
 )
 
 type UTraceMethodData struct {
@@ -619,11 +619,11 @@ type UTraceMethodData struct {
 	Func      string
 }
 
-type UTraceVtPhaseData struct {
+type UTraceVTStageData struct {
 	Timestamp  int64
 	CarrierTid uint64
 	VtId       uint64
-	PhaseId    uint32
+	StageId    uint32
 	Cpu        int
 	Fd         int32
 	BytesRead  int64
@@ -632,13 +632,13 @@ type UTraceVtPhaseData struct {
 }
 
 // UTraceData is a fixed-size header; event fields live in format-specific
-// payload structs. Check Format, then use Method or VtPhase. Size gates
+// payload structs. Check Format, then use Method or VTStage. Size gates
 // forward-compatible access when payload structs grow new fields.
 type UTraceData struct {
 	Format  uint32
 	Size    uint32
 	Method  *UTraceMethodData  // non-nil when Format is UTraceFormatMethod
-	VtPhase *UTraceVtPhaseData // non-nil when Format is UTraceFormatVtPhase
+	VTStage *UTraceVTStageData // non-nil when Format is UTraceFormatVTStage
 }
 
 func FreePmuAttr(attr *C.struct_PmuAttr) {
@@ -1709,8 +1709,8 @@ func UTraceOpen(attr UTraceAttr) (int, error) {
 		cAttr.fetchG = C.uint(1)
 	}
 
-	if attr.VtPhase {
-		cAttr.vtPhase = C.uint(1)
+	if attr.VTStage {
+		cAttr.vtStage = C.uint(1)
 	}
 
 	pd := C.UTraceOpen(cAttr)
@@ -1779,13 +1779,13 @@ func UTraceRead(pd int) ([]UTraceData, *C.struct_UTraceData, error) {
 					Module:    goStringInBlob(elem.payload, m.moduleOff),
 					Func:      goStringInBlob(elem.payload, m.funcOff),
 				}
-			case UTraceFormatVtPhase:
-				v := (*C.struct_UTraceVtPhasePayload)(elem.payload)
-				item.VtPhase = &UTraceVtPhaseData{
+			case UTraceFormatVTStage:
+				v := (*C.struct_UTraceVTStagePayload)(elem.payload)
+				item.VTStage = &UTraceVTStageData{
 					Timestamp:  int64(v.timestamp),
 					CarrierTid: uint64(v.carrierTid),
 					VtId:       uint64(v.vtId),
-					PhaseId:    uint32(v.phaseId),
+					StageId:    uint32(v.stageId),
 					Cpu:        int(v.cpu),
 					Fd:         int32(v.fd),
 					BytesRead:  int64(v.bytesRead),

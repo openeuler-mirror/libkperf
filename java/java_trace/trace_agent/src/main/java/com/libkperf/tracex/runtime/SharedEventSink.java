@@ -108,13 +108,13 @@ final class SharedEventSink implements AutoCloseable {
     static final int SLOT_METHOD_TIMESTAMP = 40;
     static final int SLOT_METHOD_GPTR = 48;
 
-    // VT_PHASE record field group (DATA_TYPE_VT_PHASE): only the lifecycle fields are written.
+    // VT_STAGE record field group (DATA_TYPE_VT_STAGE): only the lifecycle fields are written.
     static final int SLOT_VT_CARRIER_TID = 16;
     static final int SLOT_VT_VT_ID = 24;
-    static final int SLOT_VT_PHASE_ID = 32;
+    static final int SLOT_VT_STAGE_ID = 32;
     static final int SLOT_VT_CPU = 36;
     static final int SLOT_VT_TIMESTAMP = 40;
-    // SOCKET_READ phase reuses the reserved tail of the VT_PHASE field group (bytes 48..63)
+    // SOCKET_READ stage reuses the reserved tail of the VT_STAGE field group (bytes 48..63)
     // to carry the socket fd and the byte count returned by SocketChannelImpl.read.
     static final int SLOT_VT_FD = 48;
     static final int SLOT_VT_BYTES = 52;
@@ -125,12 +125,12 @@ final class SharedEventSink implements AutoCloseable {
 
     // SLOT_DATA_TYPE: coarse record kind, drives the consumer's payload dispatch.
     static final short DATA_TYPE_METHOD = 0;
-    static final short DATA_TYPE_VT_PHASE = 1;
+    static final short DATA_TYPE_VT_STAGE = 1;
 
-    // VT_PHASE phaseId value for SocketChannelImpl.read completion events.
-    static final int VT_PHASE_SOCKET_READ_ID = 5;
-    // VT_PHASE phaseId value for NioSocketImpl.implWrite completion events.
-    static final int VT_PHASE_SOCKET_WRITE_ID = 6;
+    // VT_STAGE stageId value for SocketChannelImpl.read completion events.
+    static final int VT_STAGE_SOCKET_READ_ID = 5;
+    // VT_STAGE stageId value for NioSocketImpl.implWrite completion events.
+    static final int VT_STAGE_SOCKET_WRITE_ID = 6;
 
     // METHOD records carry the enter/exit or virtual-thread transition marker in SLOT_METHOD_IS_RET.
     static final int EVENT_METHOD_ENTER = 0;
@@ -504,9 +504,9 @@ final class SharedEventSink implements AutoCloseable {
         }
     }
 
-    // VT_PHASE record: writes DATA_TYPE_VT_PHASE and only the VT_PHASE field group,
+    // VT_STAGE record: writes DATA_TYPE_VT_STAGE and only the VT_STAGE field group,
     // so no method/comm/tid/isRet bytes are produced for lifecycle events.
-    boolean recordVtPhase(long carrierTid, long vtId, int phaseId, int cpu, long timestamp,
+    boolean recordVTStage(long carrierTid, long vtId, int stageId, int cpu, long timestamp,
                           int osTid, int commId) {
         if (!isActive()) {
             return false;
@@ -520,11 +520,11 @@ final class SharedEventSink implements AutoCloseable {
         MappedByteBuffer slotBuffer = ring.data;
         markSlotWriting(slotBuffer, base, seq);
 
-        slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_PHASE);
+        slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_STAGE);
         slotBuffer.putInt(base + SLOT_VT_COMM_ID, commId);
         slotBuffer.putLong(base + SLOT_VT_CARRIER_TID, carrierTid);
         slotBuffer.putLong(base + SLOT_VT_VT_ID, vtId);
-        slotBuffer.putInt(base + SLOT_VT_PHASE_ID, phaseId);
+        slotBuffer.putInt(base + SLOT_VT_STAGE_ID, stageId);
         slotBuffer.putInt(base + SLOT_VT_CPU, cpu);
         slotBuffer.putLong(base + SLOT_VT_TIMESTAMP, timestamp);
         slotBuffer.putInt(base + SLOT_VT_OS_TID, osTid);
@@ -548,11 +548,11 @@ final class SharedEventSink implements AutoCloseable {
         MappedByteBuffer slotBuffer = ring.data;
         markSlotWriting(slotBuffer, base, seq);
 
-        slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_PHASE);
+        slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_STAGE);
         slotBuffer.putInt(base + SLOT_VT_COMM_ID, -1);
         slotBuffer.putLong(base + SLOT_VT_CARRIER_TID, 0L);
         slotBuffer.putLong(base + SLOT_VT_VT_ID, vtId);
-        slotBuffer.putInt(base + SLOT_VT_PHASE_ID, VT_PHASE_SOCKET_READ_ID);
+        slotBuffer.putInt(base + SLOT_VT_STAGE_ID, VT_STAGE_SOCKET_READ_ID);
         slotBuffer.putInt(base + SLOT_VT_CPU, cpu);
         slotBuffer.putLong(base + SLOT_VT_TIMESTAMP, timestamp);
         slotBuffer.putInt(base + SLOT_VT_FD, fd);
@@ -577,11 +577,11 @@ final class SharedEventSink implements AutoCloseable {
         MappedByteBuffer slotBuffer = ring.data;
         markSlotWriting(slotBuffer, base, seq);
 
-        slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_PHASE);
+        slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_STAGE);
         slotBuffer.putInt(base + SLOT_VT_COMM_ID, -1);
         slotBuffer.putLong(base + SLOT_VT_CARRIER_TID, 0L);
         slotBuffer.putLong(base + SLOT_VT_VT_ID, vtId);
-        slotBuffer.putInt(base + SLOT_VT_PHASE_ID, VT_PHASE_SOCKET_WRITE_ID);
+        slotBuffer.putInt(base + SLOT_VT_STAGE_ID, VT_STAGE_SOCKET_WRITE_ID);
         slotBuffer.putInt(base + SLOT_VT_CPU, cpu);
         slotBuffer.putLong(base + SLOT_VT_TIMESTAMP, timestamp);
         slotBuffer.putInt(base + SLOT_VT_FD, fd);

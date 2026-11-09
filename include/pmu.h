@@ -824,28 +824,28 @@ struct UTraceAttr {
     int *pidList;
     unsigned numPid;
     unsigned fetchG; /* whether to capture the Go runtime `g` pointer at probe point */
-    unsigned vtPhase; /* whether to enable virtual thread phase collection (Java, JDK21).
-                         Overrides trace_filter.conf `vt_phase=false`; use 1 to force enable. */
+    unsigned vtStage; /* whether to enable virtual thread stage collection (Java, JDK21).
+                         Overrides trace_filter.conf `vt_stage=false`; use 1 to force enable. */
 };
 
 ///< Event format tag, selects how to decode UTraceData.payload.
 ///< Enter/exit is an attribute of the method payload (isRet), not a format.
 enum UTraceFormat {
     UTRACE_FMT_METHOD       = 0, ///< method enter/exit event, payload: struct UTraceMethodPayload
-    UTRACE_FMT_VT_PHASE     = 1, ///< Java virtual thread phase event, payload: struct UTraceVtPhasePayload
+    UTRACE_FMT_VT_STAGE     = 1, ///< Java virtual thread stage event, payload: struct UTraceVTStagePayload
 };
 
-///< Values for UTraceVtPhasePayload.phaseId
-enum UTraceVtPhase {
-    UTRACE_VT_PHASE_RUN = 0,
-    UTRACE_VT_PHASE_DEQUEUE = 1,
-    UTRACE_VT_PHASE_CREATE_REGISTRATION = 2,
-    UTRACE_VT_PHASE_UNPARK_RETURN = 3,
-    UTRACE_VT_PHASE_POLL_RETURN = 4,
-    UTRACE_VT_PHASE_SOCKET_READ = 5,
-    UTRACE_VT_PHASE_SOCKET_WRITE = 6,
-    UTRACE_VT_PHASE_PARK_ENTER = 7,
-    UTRACE_VT_PHASE_PARK_RETURN = 8,
+///< Values for UTraceVTStagePayload.stageId
+enum UTraceVTStage {
+    UTRACE_VT_STAGE_RUN = 0,
+    UTRACE_VT_STAGE_DEQUEUE = 1,
+    UTRACE_VT_STAGE_CREATE_REGISTRATION = 2,
+    UTRACE_VT_STAGE_UNPARK_RETURN = 3,
+    UTRACE_VT_STAGE_POLL_RETURN = 4,
+    UTRACE_VT_STAGE_SOCKET_READ = 5,
+    UTRACE_VT_STAGE_SOCKET_WRITE = 6,
+    UTRACE_VT_STAGE_PARK_ENTER = 7,
+    UTRACE_VT_STAGE_PARK_RETURN = 8,
 };
 
 /**
@@ -873,16 +873,16 @@ struct UTraceMethodPayload {
     uint32_t isRet;         ///< 0 = method enter, 1 = method exit
 };
 
-///< Payload for UTRACE_FMT_VT_PHASE events.
-struct UTraceVtPhasePayload {
+///< Payload for UTRACE_FMT_VT_STAGE events.
+struct UTraceVTStagePayload {
     int64_t timestamp;      ///< required first field
     uint64_t carrierTid;    ///< carrier thread id
     uint64_t vtId;          ///< virtual thread id
-    uint32_t phaseId;       ///< enum UTraceVtPhase
+    uint32_t stageId;       ///< enum UTraceVTStage
     int cpu;
     uint32_t commOff;       ///< offset to thread name string, 0 = absent
-    int32_t fd;             ///< socket fd for SOCKET_READ/SOCKET_WRITE phase, 0 otherwise
-    int64_t bytesRead;      ///< bytes returned by read/write for SOCKET_READ/SOCKET_WRITE phase
+    int32_t fd;             ///< socket fd for SOCKET_READ/SOCKET_WRITE stage, 0 otherwise
+    int64_t bytesRead;      ///< bytes returned by read/write for SOCKET_READ/SOCKET_WRITE stage
     uint32_t osTid;         ///< carrier OS thread id of the emitting carrier thread, 0 if unavailable
     uint32_t reserved;      ///< keeps 8-byte tail padding; reuse for future fields
 };

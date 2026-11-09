@@ -10,8 +10,8 @@
  * See the Mulan PSL v2 for more details.
  * Author: Wu
  * Create: 2026-04-27
- * Description: ASM ClassVisitor that chains trace (TraceMethodVisitor) and virtual-thread phase
- * (VTPhaseMethodVisitor) instrumentation for matching methods
+ * Description: ASM ClassVisitor that chains trace (TraceMethodVisitor) and virtual-thread stage
+ * (VTStageMethodVisitor) instrumentation for matching methods
  ******************************************************************************/
 package com.libkperf.tracex.agent.asm;
 
@@ -59,11 +59,11 @@ public final class TraceClassVisitor extends ClassVisitor {
             mv = new VirtualThreadMethodVisitor(api, mv);
         }
 
-        int vtType = config.enableVtPhase
-        ? VTPhaseInstrumentation.getInstrumentationType(owner, name, desc)
-        : VTPhaseInstrumentation.TYPE_NONE;
-        if (vtType != VTPhaseInstrumentation.TYPE_NONE) {
-            mv = new VTPhaseMethodVisitor(api, mv, access, name, desc, vtType);
+        int vtType = config.enableVTStage
+        ? VTStageInstrumentation.getInstrumentationType(owner, name, desc)
+        : VTStageInstrumentation.TYPE_NONE;
+        if (vtType != VTStageInstrumentation.TYPE_NONE) {
+            mv = new VTStageMethodVisitor(api, mv, access, name, desc, vtType);
         }
 
         if (mv != next) {

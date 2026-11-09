@@ -102,10 +102,10 @@ static constexpr size_t K_SLOT_METHOD_CPU = 36;
 static constexpr size_t K_SLOT_METHOD_TIMESTAMP = 40;
 static constexpr size_t K_SLOT_METHOD_GPTR = 48;
 
-// VT_PHASE record field group (K_DATA_TYPE_VT_PHASE): only the lifecycle fields are written.
+// VT_STAGE record field group (K_DATA_TYPE_VT_STAGE): only the lifecycle fields are written.
 static constexpr size_t K_SLOT_VT_CARRIER_TID = 16;
 static constexpr size_t K_SLOT_VT_VT_ID = 24;
-static constexpr size_t K_SLOT_VT_PHASE_ID = 32;
+static constexpr size_t K_SLOT_VT_STAGE_ID = 32;
 static constexpr size_t K_SLOT_VT_CPU = 36;
 static constexpr size_t K_SLOT_VT_TIMESTAMP = 40;
 static constexpr size_t K_SLOT_VT_FD = 48;
@@ -113,10 +113,10 @@ static constexpr size_t K_SLOT_VT_BYTES = 52;
 static constexpr size_t K_SLOT_VT_OS_TID = 60;
 static constexpr size_t K_SLOT_VT_COMM_ID = 12;
 
-///< Java agent wire record kind (SharedEventSink SLOT_DATA_TYPE): 0=method, 1=vt-phase.
+///< Java agent wire record kind (SharedEventSink SLOT_DATA_TYPE): 0=method, 1=vt-stage.
 ///< Kept separate from enum UTraceFormat so the wire protocol can evolve independently.
 static constexpr int16_t K_DATA_TYPE_METHOD = 0;
-static constexpr int16_t K_DATA_TYPE_VT_PHASE = 1;
+static constexpr int16_t K_DATA_TYPE_VT_STAGE = 1;
 
 
 static constexpr size_t K_METHOD_BYTES = static_cast<size_t>(K_METHOD_CAPACITY) * K_METHOD_ENTRY_SIZE;
@@ -268,7 +268,7 @@ static void ResolveTraceDataStrings(std::string &comm, std::string &module, std:
     }
 }
 
-// Resolve the carrier thread name from the thread dictionary for VT_PHASE events.
+// Resolve the carrier thread name from the thread dictionary for VT_STAGE events.
 // commId < 0 means the event carries no carrier name (not a mismatch); empty string on mismatch.
 static std::string ResolveCarrierComm(const uint8_t *mem, int32_t commId, int32_t namespaceTid,
                                       bool &metadataMismatch)
@@ -475,7 +475,7 @@ static void CleanupFailedStorage(JavaBackendImpl *impl, bool removeShmFile)
     JavaTraceCleanupTargetAssets(impl);
 }
 
-static int PrepareJavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules, bool enableVtPhase)
+static int PrepareJavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules, bool enableVTStage)
 {
     impl->pid = pid;
     impl->runtimeStopped = true;
@@ -491,7 +491,7 @@ static int PrepareJavaBackendOpen(JavaBackendImpl *impl, int pid, const char *in
     }
     impl->slotsPerRing = localConfig.slotsPerRing;
     impl->consumerThreads = localConfig.consumerThreads;
-    impl->enableVtPhase = localConfig.enableVtPhase || enableVtPhase;
+    impl->enableVTStage = localConfig.enableVTStage || enableVTStage;
     impl->shmName = "utrace_java_" + std::to_string(pid) + "_" + TimestampSuffix();
     // One ring per usable CPU of the target, matching the agent's availableProcessors().
     impl->ringCount = CountTargetCpus(pid);
@@ -595,11 +595,11 @@ static bool DecodeSlotRecord(RingReadShard *shard, const uint8_t *slot, UTraceDa
     unsigned format = UTRACE_FMT_METHOD;
     unsigned payloadSize = 0;
     void *payload = nullptr;
-    if (dataType == K_DATA_TYPE_VT_PHASE) {
-        // VT_PHASE field group: only the lifecycle fields are present.
+    if (dataType == K_DATA_TYPE_VT_STAGE) {
+        // VT_STAGE field group: only the lifecycle fields are present.
         const uint64_t carrierTid = LoadAt<uint64_t>(slot, K_SLOT_VT_CARRIER_TID);
         const uint64_t vtId = LoadAt<uint64_t>(slot, K_SLOT_VT_VT_ID);
-        const uint32_t phaseId = LoadAt<uint32_t>(slot, K_SLOT_VT_PHASE_ID);
+        const uint32_t stageId = LoadAt<uint32_t>(slot, K_SLOT_VT_STAGE_ID);
         const int cpu = LoadAt<int32_t>(slot, K_SLOT_VT_CPU);
         const int64_t timestamp = LoadAt<int64_t>(slot, K_SLOT_VT_TIMESTAMP);
         const int fd = LoadAt<int32_t>(slot, K_SLOT_VT_FD);
@@ -612,8 +612,8 @@ static bool DecodeSlotRecord(RingReadShard *shard, const uint8_t *slot, UTraceDa
         if (vtMismatched) {
             ++shard->metadataMismatch;
         }
-        format = UTRACE_FMT_VT_PHASE;
-        payload = BuildVtPhasePayload(timestamp, carrierTid, vtId, phaseId, cpu, fd, bytes, osTid,
+        format = UTRACE_FMT_VT_STAGE;
+        payload = BuildVTStagePayload(timestamp, carrierTid, vtId, stageId, cpu, fd, bytes, osTid,
                                       carrierComm.c_str(), &payloadSize);
         *outTs = timestamp;
     } else {
@@ -722,12 +722,12 @@ static void FreeShardRecords(RingReadShard *shard)
 }
 } // namespace
 
-int JavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules, bool enableVtPhase)
+int JavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules, bool enableVTStage)
 {
     if (impl == nullptr) {
         return -1;
     }
-    if (PrepareJavaBackendOpen(impl, pid, includeRules, enableVtPhase) != 0) {
+    if (PrepareJavaBackendOpen(impl, pid, includeRules, enableVTStage) != 0) {
         return -1;
     }
     return OpenJavaTraceStorage(impl);

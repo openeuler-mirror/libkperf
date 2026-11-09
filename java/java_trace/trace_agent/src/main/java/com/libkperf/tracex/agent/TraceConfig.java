@@ -24,7 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import com.libkperf.tracex.agent.asm.VTPhaseInstrumentation;
+import com.libkperf.tracex.agent.asm.VTStageInstrumentation;
 
 public final class TraceConfig {
     // Must match SharedEventSink and the pmu/trace java backend defaults.
@@ -40,7 +40,7 @@ public final class TraceConfig {
     public final String error;
     public final int contextDepth;
     public final int contextMaxMethods;
-    public final boolean enableVtPhase;
+    public final boolean enableVTStage;
 
     public final List<FilterRule> requiredIncludeRules;
     public final List<FilterRule> includeRules;
@@ -71,15 +71,15 @@ public final class TraceConfig {
         int configuredContextDepth = filterFile.contextDepth >= 0 ? filterFile.contextDepth : 1;
         this.contextDepth = configuredContextDepth;
 
-        String vtPhaseArg = Util.get(args, "enableVtPhase", "");
-        boolean configuredVtPhase = vtPhaseArg.length() > 0
-                ? Boolean.parseBoolean(vtPhaseArg)
-                : filterFile.enableVtPhase;
+        String vtStageArg = Util.get(args, "enableVTStage", "");
+        boolean configuredVTStage = vtStageArg.length() > 0
+                ? Boolean.parseBoolean(vtStageArg)
+                : filterFile.enableVTStage;
         int jdkMajor = jdkMajorVersion();
-        this.enableVtPhase = configuredVtPhase && jdkMajor == 21;
-        if (configuredVtPhase && jdkMajor != 21) {
-            TraceLog.warn("[trace-java-agent] enableVtPhase requested but JDK major version is "
-                    + jdkMajor + ", virtual thread phase instrumentation requires exactly JDK 21, skipped");
+        this.enableVTStage = configuredVTStage && jdkMajor == 21;
+        if (configuredVTStage && jdkMajor != 21) {
+            TraceLog.warn("[trace-java-agent] enableVTStage requested but JDK major version is "
+                    + jdkMajor + ", virtual thread stage instrumentation requires exactly JDK 21, skipped");
         }
 
         List<FilterRule> required = new ArrayList<FilterRule>();
@@ -116,7 +116,7 @@ public final class TraceConfig {
     }
 
     public boolean shouldTransformClass(String classNameInternal) {
-        if (enableVtPhase && VTPhaseInstrumentation.isTargetClass(classNameInternal)) {
+        if (enableVTStage && VTStageInstrumentation.isTargetClass(classNameInternal)) {
             return true;
         }
         if (isExcludedClass(classNameInternal)) {

@@ -451,16 +451,16 @@ class UTraceAttr(_libkperf.UTraceAttr):
         int *pidList;
         unsigned numPid;
         unsigned fetchG;
-        unsigned vtPhase;
+        unsigned vtStage;
     };
     """
-    def __init__(self, symSrc=None, pidList=None, fetchG=0, vtPhase=0):
-        super(UTraceAttr, self).__init__(symSrc=symSrc, pidList=pidList, fetchG=fetchG, vtPhase=vtPhase)
+    def __init__(self, symSrc=None, pidList=None, fetchG=0, vtStage=0):
+        super(UTraceAttr, self).__init__(symSrc=symSrc, pidList=pidList, fetchG=fetchG, vtStage=vtStage)
 
 class UTraceMethodData(_libkperf.UTraceMethodData):
     pass
 
-class UTraceVtPhaseData(_libkperf.UTraceVtPhaseData):
+class UTraceVTStageData(_libkperf.UTraceVTStageData):
     pass
 
 class UTraceData(_libkperf.UTraceData):
@@ -800,7 +800,7 @@ __all__ = [
     'pmu_open_with_hw_metric',
     'UTraceAttr',
     'UTraceMethodData',
-    'UTraceVtPhaseData',
+    'UTraceVTStageData',
     'UTraceData',
     'UTraceDataList',
     'u_trace_open',

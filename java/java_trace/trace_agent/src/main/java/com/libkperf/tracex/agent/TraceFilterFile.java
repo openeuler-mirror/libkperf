@@ -41,7 +41,7 @@ public final class TraceFilterFile {
     public long slotCount = -1;
     public int contextDepth = -1;
     public int contextMaxMethods = -1;
-    public boolean enableVtPhase = false;
+    public boolean enableVTStage = false;
     public long slotsPerRing = -1;
     public String logLevel = "info";
     public boolean valid = false;
@@ -116,8 +116,8 @@ public final class TraceFilterFile {
                             return invalid(out, path, lineNo, "invalid context_max_methods", v);
                         }
                         out.contextMaxMethods = parsed.intValue();
-                    } else if ("vt_phase".equals(k)) {
-                        out.enableVtPhase = parseBooleanValue(v);
+                    } else if ("vt_stage".equals(k)) {
+                        out.enableVTStage = parseBooleanValue(v);
                     } else if ("slots_per_ring".equals(k)) {
                         Long parsed = parsePositiveLong(v);
                         if (parsed == null || parsed.longValue() > MAX_SLOTS_PER_RING) {
