@@ -2678,6 +2678,7 @@ class CtypesUTraceVtPhasePayload(ctypes.Structure):
         uint32_t commOff;
         int32_t fd;
         int64_t bytesRead;
+        uint32_t osTid;
         uint32_t reserved;
     };
     """
@@ -2690,6 +2691,7 @@ class CtypesUTraceVtPhasePayload(ctypes.Structure):
         ('commOff',     ctypes.c_uint32),
         ('fd',          ctypes.c_int32),
         ('bytesRead',   ctypes.c_int64),
+        ('osTid',       ctypes.c_uint32),
         ('reserved',    ctypes.c_uint32),
     ]
 
@@ -2734,9 +2736,11 @@ class UTraceMethodData:
         self.func = func
 
 class UTraceVtPhaseData:
-    __slots__ = ['timestamp', 'carrierTid', 'vtId', 'phaseId', 'cpu', 'fd', 'bytesRead']
+    __slots__ = ['timestamp', 'carrierTid', 'vtId', 'phaseId', 'cpu', 'fd', 'bytesRead', 'osTid',
+                 'comm']
 
-    def __init__(self, timestamp=0, carrierTid=0, vtId=0, phaseId=0, cpu=0, fd=0, bytesRead=0):
+    def __init__(self, timestamp=0, carrierTid=0, vtId=0, phaseId=0, cpu=0, fd=0, bytesRead=0,
+                 osTid=0, comm=''):
         self.timestamp = timestamp
         self.carrierTid = carrierTid
         self.vtId = vtId
@@ -2744,6 +2748,8 @@ class UTraceVtPhaseData:
         self.cpu = cpu
         self.fd = fd
         self.bytesRead = bytesRead
+        self.osTid = osTid
+        self.comm = comm
 
 class UTraceData:
     __slots__ = ['__c_u_trace_data', '__payload_blob']
@@ -2754,9 +2760,11 @@ class UTraceData:
         if format == UTRACE_FMT_VT_PHASE:
             fd = kw.pop('fd', 0)
             bytesRead = kw.pop('bytesRead', 0)
+            osTid = kw.pop('osTid', 0)
             fixed = CtypesUTraceVtPhasePayload(timestamp=timestamp, carrierTid=carrierTid,
                                                vtId=vtId, phaseId=phaseId, cpu=cpu,
-                                               commOff=0, fd=fd, bytesRead=bytesRead, reserved=0)
+                                               commOff=0, fd=fd, bytesRead=bytesRead,
+                                               osTid=osTid, reserved=0)
             blob = ctypes.create_string_buffer(bytes(fixed), ctypes.sizeof(fixed))
         else:
             strings = [_encode_blob_string(comm), _encode_blob_string(module), _encode_blob_string(func)]
@@ -2821,7 +2829,8 @@ class UTraceData:
         view = ctypes.cast(base, ctypes.POINTER(CtypesUTraceVtPhasePayload)).contents
         return UTraceVtPhaseData(timestamp=int(view.timestamp), carrierTid=int(view.carrierTid),
                                  vtId=int(view.vtId), phaseId=int(view.phaseId), cpu=int(view.cpu),
-                                 fd=int(view.fd), bytesRead=int(view.bytesRead))
+                                 fd=int(view.fd), bytesRead=int(view.bytesRead),
+                                 osTid=int(view.osTid), comm=_blob_string_at(base, view.commOff))
 
     @classmethod
     def from_c_u_trace_data(cls, c_u_trace_data):

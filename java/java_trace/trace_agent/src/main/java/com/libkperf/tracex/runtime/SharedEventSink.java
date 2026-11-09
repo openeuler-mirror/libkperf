@@ -34,7 +34,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -111,6 +111,10 @@ final class SharedEventSink implements AutoCloseable {
     // to carry the socket fd and the byte count returned by SocketChannelImpl.read.
     static final int SLOT_VT_FD = 48;
     static final int SLOT_VT_BYTES = 52;
+    // Carrier OS tid (NativeThreadInfo.currentTidSafe) of the thread that emitted the event.
+    static final int SLOT_VT_OS_TID = 60;
+    // Thread dictionary id of the carrier (see registerCarrierThread); -1 = absent.
+    static final int SLOT_VT_COMM_ID = 12;
 
     // SLOT_DATA_TYPE: coarse record kind, drives the consumer's payload dispatch.
     static final short DATA_TYPE_METHOD = 0;
@@ -147,14 +151,17 @@ final class SharedEventSink implements AutoCloseable {
     private final AtomicInteger nextThreadId = new AtomicInteger(0);
     private final AtomicInteger threadCount = new AtomicInteger(0);
     private final AtomicInteger methodCount = new AtomicInteger(0);
-    // thread meta data --> thread ID in Shared Memory. Plain HashMap on purpose: these maps
-    // are caches, not the source of truth. A registration race may allocate two dictionary
-    // ids for the same (tid, comm), but every entry is fully published and the consumer
-    // resolves each commId independently, so duplicate ids are harmless.
-    private final HashMap<ThreadMetadataKey, Integer> threadIds = new HashMap<ThreadMetadataKey, Integer>();
+    // thread meta data --> thread ID in Shared Memory. These maps are caches, not the
+    // source of truth. Concurrent first-time registrations of the same key may allocate
+    // two dictionary ids, but every entry is fully published and the consumer resolves
+    // each commId independently, so duplicate ids are harmless. ConcurrentHashMap keeps
+    // the concurrent put/resize safe.
+    private final ConcurrentHashMap<ThreadMetadataKey, Integer> threadIds =
+            new ConcurrentHashMap<ThreadMetadataKey, Integer>();
     // A virtual thread may migrate between carriers. Keep one metadata id per carrier TID
     // instead of creating a (carrier TID, virtual-thread name) entry for every migration.
-    private final HashMap<Integer, Integer> carrierThreadIds = new HashMap<Integer, Integer>();
+    private final ConcurrentHashMap<Integer, Integer> carrierThreadIds =
+            new ConcurrentHashMap<Integer, Integer>();
     private final AtomicLong droppedEvents = new AtomicLong(0L);
     private volatile boolean closed;
 
@@ -484,7 +491,8 @@ final class SharedEventSink implements AutoCloseable {
 
     // VT_PHASE record: writes DATA_TYPE_VT_PHASE and only the VT_PHASE field group,
     // so no method/comm/tid/isRet bytes are produced for lifecycle events.
-    boolean recordVtPhase(long carrierTid, long vtId, int phaseId, int cpu, long timestamp) {
+    boolean recordVtPhase(long carrierTid, long vtId, int phaseId, int cpu, long timestamp,
+                          int osTid, int commId) {
         if (!isActive()) {
             return false;
         }
@@ -494,11 +502,13 @@ final class SharedEventSink implements AutoCloseable {
         MappedByteBuffer slotBuffer = ring.data;
 
         slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_PHASE);
+        slotBuffer.putInt(base + SLOT_VT_COMM_ID, commId);
         slotBuffer.putLong(base + SLOT_VT_CARRIER_TID, carrierTid);
         slotBuffer.putLong(base + SLOT_VT_VT_ID, vtId);
         slotBuffer.putInt(base + SLOT_VT_PHASE_ID, phaseId);
         slotBuffer.putInt(base + SLOT_VT_CPU, cpu);
         slotBuffer.putLong(base + SLOT_VT_TIMESTAMP, timestamp);
+        slotBuffer.putInt(base + SLOT_VT_OS_TID, osTid);
 
         // Publish this slot after all field groups are written.
         putLongRelease(slotBuffer, base + SLOT_SEQ, seq);
@@ -506,7 +516,7 @@ final class SharedEventSink implements AutoCloseable {
         return true;
     }
 
-    boolean recordVtSocketRead(long vtId, int fd, long bytes, int cpu, long timestamp) {
+    boolean recordVtSocketRead(long vtId, int fd, long bytes, int cpu, long timestamp, int osTid) {
         if (!isActive()) {
             return false;
         }
@@ -516,6 +526,7 @@ final class SharedEventSink implements AutoCloseable {
         MappedByteBuffer slotBuffer = ring.data;
 
         slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_PHASE);
+        slotBuffer.putInt(base + SLOT_VT_COMM_ID, -1);
         slotBuffer.putLong(base + SLOT_VT_CARRIER_TID, 0L);
         slotBuffer.putLong(base + SLOT_VT_VT_ID, vtId);
         slotBuffer.putInt(base + SLOT_VT_PHASE_ID, VT_PHASE_SOCKET_READ_ID);
@@ -523,13 +534,14 @@ final class SharedEventSink implements AutoCloseable {
         slotBuffer.putLong(base + SLOT_VT_TIMESTAMP, timestamp);
         slotBuffer.putInt(base + SLOT_VT_FD, fd);
         slotBuffer.putLong(base + SLOT_VT_BYTES, bytes);
+        slotBuffer.putInt(base + SLOT_VT_OS_TID, osTid);
 
         putLongRelease(slotBuffer, base + SLOT_SEQ, seq);
         publishSequence(ring, seq);
         return true;
     }
 
-    boolean recordVtSocketWrite(long vtId, int fd, long bytes, int cpu, long timestamp) {
+    boolean recordVtSocketWrite(long vtId, int fd, long bytes, int cpu, long timestamp, int osTid) {
         if (!isActive()) {
             return false;
         }
@@ -539,6 +551,7 @@ final class SharedEventSink implements AutoCloseable {
         MappedByteBuffer slotBuffer = ring.data;
 
         slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_PHASE);
+        slotBuffer.putInt(base + SLOT_VT_COMM_ID, -1);
         slotBuffer.putLong(base + SLOT_VT_CARRIER_TID, 0L);
         slotBuffer.putLong(base + SLOT_VT_VT_ID, vtId);
         slotBuffer.putInt(base + SLOT_VT_PHASE_ID, VT_PHASE_SOCKET_WRITE_ID);
@@ -546,6 +559,7 @@ final class SharedEventSink implements AutoCloseable {
         slotBuffer.putLong(base + SLOT_VT_TIMESTAMP, timestamp);
         slotBuffer.putInt(base + SLOT_VT_FD, fd);
         slotBuffer.putLong(base + SLOT_VT_BYTES, bytes);
+        slotBuffer.putInt(base + SLOT_VT_OS_TID, osTid);
 
         putLongRelease(slotBuffer, base + SLOT_SEQ, seq);
         publishSequence(ring, seq);

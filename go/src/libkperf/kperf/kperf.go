@@ -627,6 +627,8 @@ type UTraceVtPhaseData struct {
 	Cpu        int
 	Fd         int32
 	BytesRead  int64
+	OsTid      uint32
+	Comm       string
 }
 
 // UTraceData is a fixed-size header; event fields live in format-specific
@@ -1787,6 +1789,8 @@ func UTraceRead(pd int) ([]UTraceData, *C.struct_UTraceData, error) {
 					Cpu:        int(v.cpu),
 					Fd:         int32(v.fd),
 					BytesRead:  int64(v.bytesRead),
+					OsTid:      uint32(v.osTid),
+					Comm:       goStringInBlob(elem.payload, v.commOff),
 				}
 			}
 		}

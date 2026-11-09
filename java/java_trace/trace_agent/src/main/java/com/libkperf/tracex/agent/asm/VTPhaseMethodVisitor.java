@@ -11,7 +11,8 @@
  * Author: Zou
  * Create: 2026-10-20
  * Description: ASM AdviceAdapter that injects VTPhaseCollector calls at the virtual-thread phase
- * instrumentation points: runContinuation entry, topLevelExec dequeue, poll exit, wakeup around unpark
+ * instrumentation points: runContinuation entry, topLevelExec dequeue, socket read/write exit,
+ * park/parkNanos enter and exit, unpark exit
  ******************************************************************************/
 package com.libkperf.tracex.agent.asm;
 
@@ -22,14 +23,10 @@ import org.objectweb.asm.commons.AdviceAdapter;
 
 public final class VTPhaseMethodVisitor extends AdviceAdapter {
 
-    private static final String LOCKSUPPORT_OWNER = "java/util/concurrent/locks/LockSupport";
-    private static final String LOCKSUPPORT_UNPARK = "unpark";
-    private static final String LOCKSUPPORT_UNPARK_DESC = "(Ljava/lang/Thread;)V";
-
     private final int instrumentationType;
     private final int taskLocal;
 
-    private int savedThreadLocal = -1;
+    private int carrierThreadLocal = -1;
     private int socketBytesLocal = -1;
     private boolean injecting;
 
@@ -60,10 +57,7 @@ public final class VTPhaseMethodVisitor extends AdviceAdapter {
 
     @Override
     protected void onMethodExit(int opcode) {
-        if (instrumentationType == VTPhaseInstrumentation.TYPE_POLL_RETURN
-                && opcode == RETURN) {
-            emitOnPollReturn();
-        } else if (instrumentationType == VTPhaseInstrumentation.TYPE_SOCKET_READ
+        if (instrumentationType == VTPhaseInstrumentation.TYPE_SOCKET_READ
                 && opcode == IRETURN) {
             emitOnSocketReadExit();
         } else if (instrumentationType == VTPhaseInstrumentation.TYPE_NIO_SOCKET_READ
@@ -89,20 +83,6 @@ public final class VTPhaseMethodVisitor extends AdviceAdapter {
                 && opcode == ASTORE && var == taskLocal && !injecting) {
             emitOnDequeue();
         }
-    }
-
-    @Override
-    public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
-        if (instrumentationType == VTPhaseInstrumentation.TYPE_WAKEUP
-                && opcode == INVOKESTATIC
-                && LOCKSUPPORT_OWNER.equals(owner)
-                && LOCKSUPPORT_UNPARK.equals(name)
-                && LOCKSUPPORT_UNPARK_DESC.equals(descriptor)
-                && !injecting) {
-            emitWakeupAroundUnpark();
-            return;
-        }
-        super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
     }
 
     private void emitCarrierThreadGuard(Label skip) {
@@ -169,45 +149,39 @@ public final class VTPhaseMethodVisitor extends AdviceAdapter {
     }
 
     private void emitOnParkEnter() {
-        emitThisThreadId("onParkEnter");
+        emitParkCallback("onParkEnter");
     }
 
     private void emitOnParkReturn() {
-        emitThisThreadId("onParkReturn");
+        emitParkCallback("onParkReturn");
+    }
+
+    // args: (long vtId, long carrierId, String carrierName)
+    private void emitParkCallback(String collectorMethod) {
+        injecting = true;
+        if (carrierThreadLocal < 0) {
+            carrierThreadLocal = newLocal(Type.getType("Ljava/lang/Thread;"));
+        }
+        loadThis();
+        visitMethodInsn(INVOKEVIRTUAL, VTPhaseInstrumentation.THREAD_OWNER,
+                VTPhaseInstrumentation.THREAD_ID, VTPhaseInstrumentation.THREAD_ID_DESC, false);
+        visitMethodInsn(INVOKESTATIC, VTPhaseInstrumentation.THREAD_OWNER,
+                VTPhaseInstrumentation.THREAD_CURRENT_CARRIER,
+                VTPhaseInstrumentation.THREAD_CURRENT_CARRIER_DESC, false);
+        dup();
+        visitVarInsn(ASTORE, carrierThreadLocal);
+        visitMethodInsn(INVOKEVIRTUAL, VTPhaseInstrumentation.THREAD_OWNER,
+                VTPhaseInstrumentation.THREAD_ID, VTPhaseInstrumentation.THREAD_ID_DESC, false);
+        visitVarInsn(ALOAD, carrierThreadLocal);
+        visitMethodInsn(INVOKEVIRTUAL, VTPhaseInstrumentation.THREAD_OWNER,
+                VTPhaseInstrumentation.THREAD_GET_NAME, VTPhaseInstrumentation.THREAD_GET_NAME_DESC, false);
+        visitMethodInsn(INVOKESTATIC, VTPhaseInstrumentation.VT_PHASE_COLLECTOR_OWNER,
+                collectorMethod, "(JJLjava/lang/String;)V", false);
+        injecting = false;
     }
 
     private void emitOnUnparkReturn() {
         emitThisThreadId("onUnparkReturn");
-    }
-
-    private void emitOnPollReturn() {
-        injecting = true;
-        emitCurrentThreadThreadId();
-        visitMethodInsn(INVOKESTATIC, VTPhaseInstrumentation.VT_PHASE_COLLECTOR_OWNER,
-                "onPollReturn", "(J)V", false);
-        injecting = false;
-    }
-
-    private void emitWakeupAroundUnpark() {
-        injecting = true;
-        if (savedThreadLocal < 0) {
-            savedThreadLocal = newLocal(Type.getType("Ljava/lang/Thread;"));
-        }
-        dup();
-        storeLocal(savedThreadLocal);
-        dup();
-        visitMethodInsn(INVOKEVIRTUAL, VTPhaseInstrumentation.THREAD_OWNER,
-                VTPhaseInstrumentation.THREAD_ID, VTPhaseInstrumentation.THREAD_ID_DESC, false);
-        visitMethodInsn(INVOKESTATIC, VTPhaseInstrumentation.VT_PHASE_COLLECTOR_OWNER,
-                "onCreateRegistration", "(J)V", false);
-        super.visitMethodInsn(INVOKESTATIC, LOCKSUPPORT_OWNER, LOCKSUPPORT_UNPARK,
-                LOCKSUPPORT_UNPARK_DESC, false);
-        loadLocal(savedThreadLocal);
-        visitMethodInsn(INVOKEVIRTUAL, VTPhaseInstrumentation.THREAD_OWNER,
-                VTPhaseInstrumentation.THREAD_ID, VTPhaseInstrumentation.THREAD_ID_DESC, false);
-        visitMethodInsn(INVOKESTATIC, VTPhaseInstrumentation.VT_PHASE_COLLECTOR_OWNER,
-                "onUnparkReturn", "(J)V", false);
-        injecting = false;
     }
 
     private void emitOnSocketReadExit() {

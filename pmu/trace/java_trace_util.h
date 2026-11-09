@@ -79,7 +79,8 @@ void *BuildMethodPayload(int64_t timestamp, unsigned long addr, uint64_t gPtr, i
                          unsigned isRet, const char *comm, const char *module, const char *func,
                          unsigned *outSize);
 void *BuildVtPhasePayload(int64_t timestamp, uint64_t carrierTid, uint64_t vtId,
-                          uint32_t phaseId, int cpu, int fd, int64_t bytes, unsigned *outSize);
+                          uint32_t phaseId, int cpu, int fd, int64_t bytes, uint32_t osTid,
+                          const char *comm, unsigned *outSize);
 
 UTraceData DeepCopyTraceData(const UTraceData &src);
 void FreeTraceDataFields(UTraceData &data);

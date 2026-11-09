@@ -883,6 +883,7 @@ struct UTraceVtPhasePayload {
     uint32_t commOff;       ///< offset to thread name string, 0 = absent
     int32_t fd;             ///< socket fd for SOCKET_READ/SOCKET_WRITE phase, 0 otherwise
     int64_t bytesRead;      ///< bytes returned by read/write for SOCKET_READ/SOCKET_WRITE phase
+    uint32_t osTid;         ///< carrier OS thread id of the emitting carrier thread, 0 if unavailable
     uint32_t reserved;      ///< keeps 8-byte tail padding; reuse for future fields
 };
 

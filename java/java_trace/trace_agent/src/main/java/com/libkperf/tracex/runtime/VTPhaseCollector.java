@@ -11,7 +11,7 @@
  * Author: Wu
  * Create: 2026-04-27
  * Description: Virtual thread phase collector: records lifecycle phases (run, dequeue,
- * poll, wakeup) into the shared memory ring buffer via SharedEventSink.
+ * park, unpark, socket io) into the shared memory ring buffer via SharedEventSink.
  ******************************************************************************/
 package com.libkperf.tracex.runtime;
 
@@ -21,9 +21,7 @@ public final class VTPhaseCollector {
 
     public static final int PHASE_RUN = 0;
     public static final int PHASE_DEQUEUE = 1;
-    public static final int PHASE_CREATE_REGISTRATION = 2;
     public static final int PHASE_UNPARK_RETURN = 3;
-    public static final int PHASE_POLL_RETURN = 4;
     public static final int PHASE_SOCKET_READ = 5;
     public static final int PHASE_SOCKET_WRITE = 6;
     public static final int PHASE_PARK_ENTER = 7;
@@ -47,31 +45,31 @@ public final class VTPhaseCollector {
     }
 
     public static void onRun(long vtId, long carrierId) {
-        emit(PHASE_RUN, vtId, carrierId);
+        emit(PHASE_RUN, vtId, carrierId, NativeThreadInfo.currentTidSafe(), -1);
     }
 
     public static void onDequeue(long carrierId) {
-        emit(PHASE_DEQUEUE, 0L, carrierId);
-    }
-
-    public static void onCreateRegistration(long vtId) {
-        emit(PHASE_CREATE_REGISTRATION, vtId, 0L);
+        emit(PHASE_DEQUEUE, 0L, carrierId, NativeThreadInfo.currentTidSafe(), -1);
     }
 
     public static void onUnparkReturn(long vtId) {
-        emit(PHASE_UNPARK_RETURN, vtId, 0L);
+        emit(PHASE_UNPARK_RETURN, vtId, 0L, NativeThreadInfo.currentTidSafe(), -1);
     }
 
-    public static void onPollReturn(long vtId) {
-        emit(PHASE_POLL_RETURN, vtId, 0L);
+    public static void onParkEnter(long vtId, long carrierId, String carrierName) {
+        int osTid = NativeThreadInfo.currentTidSafe();
+        SharedEventSink sink = enabled ? TraceRuntime.sink() : null;
+        int commId = sink != null && sink.isActive() && osTid > 0
+                ? sink.registerCarrierThread(osTid, SharedEventSink.utf8(carrierName)) : -1;
+        emit(PHASE_PARK_ENTER, vtId, carrierId, osTid, commId);
     }
 
-    public static void onParkEnter(long vtId) {
-        emit(PHASE_PARK_ENTER, vtId, 0L);
-    }
-
-    public static void onParkReturn(long vtId) {
-        emit(PHASE_PARK_RETURN, vtId, 0L);
+    public static void onParkReturn(long vtId, long carrierId, String carrierName) {
+        int osTid = NativeThreadInfo.currentTidSafe();
+        SharedEventSink sink = enabled ? TraceRuntime.sink() : null;
+        int commId = sink != null && sink.isActive() && osTid > 0
+                ? sink.registerCarrierThread(osTid, SharedEventSink.utf8(carrierName)) : -1;
+        emit(PHASE_PARK_RETURN, vtId, carrierId, osTid, commId);
     }
 
     public static void onSocketRead(long vtId, int fd, int bytes) {
@@ -87,7 +85,8 @@ public final class VTPhaseCollector {
             }
             long ts = NativeThreadInfo.currentTimeNanosSafe();
             int cpu = NativeThreadInfo.currentCpuSafe();
-            boolean recorded = sink.recordVtSocketRead(vtId, fd, bytes, cpu, ts);
+            boolean recorded = sink.recordVtSocketRead(vtId, fd, bytes, cpu, ts,
+                                                       NativeThreadInfo.currentTidSafe());
             TraceLog.debug(TAG + "onSocketRead: vtId=" + vtId + ", fd=" + fd
                                + ", bytes=" + bytes + ", cpu=" + cpu + ", ts=" + ts
                                + ", recorded=" + recorded);
@@ -112,7 +111,8 @@ public final class VTPhaseCollector {
             }
             long ts = System.nanoTime();
             int cpu = NativeThreadInfo.currentCpuSafe();
-            boolean recorded = sink.recordVtSocketWrite(vtId, fd, bytes, cpu, ts);
+            boolean recorded = sink.recordVtSocketWrite(vtId, fd, bytes, cpu, ts,
+                                                        NativeThreadInfo.currentTidSafe());
             TraceLog.debug(TAG + "onSocketWrite: vtId=" + vtId + ", fd=" + fd
                                + ", bytes=" + bytes + ", cpu=" + cpu + ", ts=" + ts
                                + ", recorded=" + recorded);
@@ -124,7 +124,7 @@ public final class VTPhaseCollector {
         }
     }
 
-    private static void emit(int phase, long vtId, long carrierId) {
+    private static void emit(int phase, long vtId, long carrierId, int osTid, int commId) {
         if (!enabled) {
             TraceLog.debug(TAG + "emit skipped (disabled): phase=" + phaseName(phase)
                                + ", vtId=" + vtId + ", carrierId=" + carrierId);
@@ -140,7 +140,7 @@ public final class VTPhaseCollector {
             }
             long ts = System.nanoTime();
             int cpu = NativeThreadInfo.currentCpuSafe();
-            boolean recorded = sink.recordVtPhase(carrierId, vtId, phase, cpu, ts);
+            boolean recorded = sink.recordVtPhase(carrierId, vtId, phase, cpu, ts, osTid, commId);
             TraceLog.debug(TAG + "emit: phase=" + phaseName(phase)
                                + ", vtId=" + vtId + ", carrierId=" + carrierId
                                + ", cpu=" + cpu + ", ts=" + ts + ", recorded=" + recorded);
@@ -159,12 +159,8 @@ public final class VTPhaseCollector {
                 return "RUN";
             case PHASE_DEQUEUE:
                 return "DEQUEUE";
-            case PHASE_CREATE_REGISTRATION:
-                return "CREATE_REGISTRATION";
             case PHASE_UNPARK_RETURN:
                 return "UNPARK_RETURN";
-            case PHASE_POLL_RETURN:
-                return "POLL_RETURN";
             case PHASE_SOCKET_READ:
                 return "SOCKET_READ";
             case PHASE_SOCKET_WRITE:

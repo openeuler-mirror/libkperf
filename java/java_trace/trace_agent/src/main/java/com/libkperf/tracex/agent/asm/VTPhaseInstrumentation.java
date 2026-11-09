@@ -10,7 +10,7 @@
  * See the Mulan PSL v2 for more details.
  * Author: Zou
  * Create: 2026-10-20
- * Description: Defines the 5 virtual-thread phase instrumentation target methods and their types
+ * Description: Defines virtual-thread phase instrumentation target methods and their types
  ******************************************************************************/
 package com.libkperf.tracex.agent.asm;
 
@@ -19,8 +19,6 @@ public final class VTPhaseInstrumentation {
     public static final int TYPE_NONE = 0;
     public static final int TYPE_RUN = 1;
     public static final int TYPE_DEQUEUE = 2;
-    public static final int TYPE_POLL_RETURN = 3;
-    public static final int TYPE_WAKEUP = 4;
     public static final int TYPE_SOCKET_READ = 5;
     public static final int TYPE_NIO_SOCKET_READ = 6;
     public static final int TYPE_NIO_SOCKET_WRITE = 7;
@@ -37,20 +35,21 @@ public final class VTPhaseInstrumentation {
     static final String THREAD_ID_DESC = "()J";
     static final String THREAD_IS_VIRTUAL = "isVirtual";
     static final String THREAD_IS_VIRTUAL_DESC = "()Z";
+    static final String THREAD_CURRENT_CARRIER = "currentCarrierThread";
+    static final String THREAD_CURRENT_CARRIER_DESC = "()Ljava/lang/Thread;";
+    static final String THREAD_GET_NAME = "getName";
+    static final String THREAD_GET_NAME_DESC = "()Ljava/lang/String;";
 
     static final String CARRIER_THREAD = "jdk/internal/misc/CarrierThread";
 
     static final String VIRTUAL_THREAD = "java/lang/VirtualThread";
     private static final String FJP_WORK_QUEUE = "java/util/concurrent/ForkJoinPool$WorkQueue";
-    private static final String POLLER = "sun/nio/ch/Poller";
     private static final String SOCKET_CHANNEL = "sun/nio/ch/SocketChannelImpl";
     private static final String NIO_SOCKET_IMPL = "sun/nio/ch/NioSocketImpl";
 
     private static final String DESC_RUN_CONTINUATION = "()V";
     private static final String DESC_TOP_LEVEL_EXEC =
             "(Ljava/util/concurrent/ForkJoinTask;Ljava/util/concurrent/ForkJoinPool$WorkQueue;)V";
-    private static final String DESC_POLL = "(IJLjava/util/function/BooleanSupplier;)V";
-    private static final String DESC_WAKEUP = "(I)V";
     private static final String DESC_SOCKET_READ = "(Ljava/nio/ByteBuffer;)I";
     private static final String DESC_NIO_SOCKET_READ = "([BII)I";
     private static final String DESC_NIO_SOCKET_WRITE = "([BII)I";
@@ -74,13 +73,12 @@ public final class VTPhaseInstrumentation {
     public static boolean isTargetClass(String classNameInternal) {
         return VIRTUAL_THREAD.equals(classNameInternal)
                 || FJP_WORK_QUEUE.equals(classNameInternal)
-                || POLLER.equals(classNameInternal)
                 || SOCKET_CHANNEL.equals(classNameInternal)
                 || NIO_SOCKET_IMPL.equals(classNameInternal);
     }
 
     public static String[] targetClassInternalNames() {
-        return new String[] { VIRTUAL_THREAD, FJP_WORK_QUEUE, POLLER, SOCKET_CHANNEL, NIO_SOCKET_IMPL };
+        return new String[] { VIRTUAL_THREAD, FJP_WORK_QUEUE, SOCKET_CHANNEL, NIO_SOCKET_IMPL };
     }
 
     public static int getInstrumentationType(String owner, String name, String desc) {
@@ -93,16 +91,6 @@ public final class VTPhaseInstrumentation {
                 && "topLevelExec".equals(name)
                 && DESC_TOP_LEVEL_EXEC.equals(desc)) {
             return TYPE_DEQUEUE;
-        }
-        if (POLLER.equals(owner)
-                && "poll".equals(name)
-                && DESC_POLL.equals(desc)) {
-            return TYPE_POLL_RETURN;
-        }
-        if (POLLER.equals(owner)
-                && "wakeup".equals(name)
-                && DESC_WAKEUP.equals(desc)) {
-            return TYPE_WAKEUP;
         }
         if (SOCKET_CHANNEL.equals(owner)
                 && "read".equals(name)

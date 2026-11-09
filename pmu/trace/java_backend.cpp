@@ -106,6 +106,8 @@ static constexpr size_t K_SLOT_VT_CPU = 36;
 static constexpr size_t K_SLOT_VT_TIMESTAMP = 40;
 static constexpr size_t K_SLOT_VT_FD = 48;
 static constexpr size_t K_SLOT_VT_BYTES = 52;
+static constexpr size_t K_SLOT_VT_OS_TID = 60;
+static constexpr size_t K_SLOT_VT_COMM_ID = 12;
 
 ///< Java agent wire record kind (SharedEventSink SLOT_DATA_TYPE): 0=method, 1=vt-phase.
 ///< Kept separate from enum UTraceFormat so the wire protocol can evolve independently.
@@ -260,6 +262,27 @@ static void ResolveTraceDataStrings(std::string &comm, std::string &module, std:
     } else {
         metadataMismatch = true;
     }
+}
+
+// Resolve the carrier thread name from the thread dictionary for VT_PHASE events.
+// commId < 0 means the event carries no carrier name (not a mismatch); empty string on mismatch.
+static std::string ResolveCarrierComm(const uint8_t *mem, int32_t commId, int32_t namespaceTid,
+                                      bool &metadataMismatch)
+{
+    if (commId < 0) {
+        return std::string();
+    }
+    if (static_cast<uint32_t>(commId) < K_THREAD_CAPACITY) {
+        const uint32_t threadId = static_cast<uint32_t>(commId);
+        const uint8_t *thread = mem + K_HEADER_SIZE + K_METHOD_BYTES +
+                                static_cast<size_t>(threadId) * K_THREAD_ENTRY_SIZE;
+        if (LoadAtAcquire<uint32_t>(thread, K_THREAD_SEQ) == threadId + 1 &&
+            LoadAt<int32_t>(thread, K_THREAD_TID) == namespaceTid) {
+            return ReadFixedString(thread, K_THREAD_COMM, K_THREAD_COMM_LEN);
+        }
+    }
+    metadataMismatch = true;
+    return std::string();
 }
 
 // Counts the CPUs the target process may actually run on, mirroring the JVM's
@@ -577,8 +600,17 @@ static bool DecodeSlotRecord(RingReadShard *shard, const uint8_t *slot, UTraceDa
         const int64_t timestamp = LoadAt<int64_t>(slot, K_SLOT_VT_TIMESTAMP);
         const int fd = LoadAt<int32_t>(slot, K_SLOT_VT_FD);
         const int64_t bytes = LoadAt<int64_t>(slot, K_SLOT_VT_BYTES);
+        const uint32_t osTid = LoadAt<uint32_t>(slot, K_SLOT_VT_OS_TID);
+        const int32_t commId = LoadAt<int32_t>(slot, K_SLOT_VT_COMM_ID);
+        bool vtMismatched = false;
+        const std::string carrierComm = ResolveCarrierComm(mem, commId, static_cast<int32_t>(osTid),
+                                                           vtMismatched);
+        if (vtMismatched) {
+            ++shard->metadataMismatch;
+        }
         format = UTRACE_FMT_VT_PHASE;
-        payload = BuildVtPhasePayload(timestamp, carrierTid, vtId, phaseId, cpu, fd, bytes, &payloadSize);
+        payload = BuildVtPhasePayload(timestamp, carrierTid, vtId, phaseId, cpu, fd, bytes, osTid,
+                                      carrierComm.c_str(), &payloadSize);
         *outTs = timestamp;
     } else {
         // METHOD field group.
