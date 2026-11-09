@@ -15,16 +15,16 @@
 package com.libkperf.tracex.runtime;
 
 import java.lang.reflect.Method;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class TraceRuntime {
 
         private static final byte[] UNKNOWN_CARRIER_COMM = SharedEventSink.utf8("carrier");
     // Ids are dense from 0, so the lookup map doubles as the registration count.
     // Writes happen under the registerMethod monitor during transform time only;
-    // lock-free readers run after registration, see getMethodId.
-    private static final Map<String, Integer> METHOD_IDS = new HashMap<String, Integer>();
+    // ConcurrentHashMap keeps the lock-free getMethodId readers safe against them.
+    private static final Map<String, Integer> METHOD_IDS = new ConcurrentHashMap<String, Integer>();
     // Volatile reference: registerMethod stores the element then republishes the array,
     // giving lock-free enter(int) readers a happens-before edge to the element.
     private static volatile MethodMetadata[] methodTable = new MethodMetadata[SharedEventSink.METHOD_CAPACITY];
