@@ -10,7 +10,7 @@
  * See the Mulan PSL v2 for more details.
  * Author: Wu
  * Create: 2026-04-27
- * Description: ASM AdviceAdapter that injects TraceRuntime enter/exit probes into method bodies
+ * Description: ASM AdviceAdapter that injects TraceRuntime enter/exit probes into method bodies.
  ******************************************************************************/
 package com.libkperf.tracex.agent.asm;
 
@@ -26,27 +26,23 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Example:
- * public int add(int a, int b)
- * {
- *     return a + b;
+ * Wraps the method body with {@code TraceRuntime.enter}/{@code exit} probes and a
+ * try/catch that guarantees {@code exit} fires on every non-{@link Error} exception path:
+ *
+ * <pre>{@code
+ * TraceRuntime.Context ctx = TraceRuntime.enter(methodId);
+ * try {
+ *     // user code
+ *     TraceRuntime.exit(ctx);
+ *     return ...;
+ * } catch (Throwable t) {
+ *     TraceRuntime.exit(ctx);
+ *     throw t;
  * }
- * 
- * After transformation:
- * public int add(int a, int b)
- * {
- *     TraceRuntime.Context context = TraceRuntime.enter(methodId);
- *     try {
- *         int result = a + b;
- *         TraceRuntime.exit(context);
- *         return result;
- *     } catch (Throwable t) {
- *         TraceRuntime.exit(context);
- *         throw t;
- *     }
- * }
+ * }</pre>
  */
 public final class TraceMethodVisitor extends AdviceAdapter {
+
     private static final Type CONTEXT_TYPE = Type.getObjectType("com/libkperf/tracex/runtime/TraceRuntime$Context");
     private static final Type THROWABLE_TYPE = Type.getType(Throwable.class);
     private static final Type ERROR_TYPE = Type.getType(Error.class);
@@ -57,6 +53,8 @@ public final class TraceMethodVisitor extends AdviceAdapter {
     private int contextLocal = -1;
     private Label currentTryStart;
     private boolean currentTryHasCode;
+
+    // guard so injected probe instructions are not treated as user code
     private boolean injectingProbe;
 
     public TraceMethodVisitor(int api, MethodVisitor mv, int access, String name, String descriptor, String owner) {
@@ -65,6 +63,10 @@ public final class TraceMethodVisitor extends AdviceAdapter {
         this.functionName = name + descriptor;
         this.methodId = TraceRuntime.registerMethod(moduleName, functionName);
     }
+
+    /* ==================================================================
+     * AdviceAdapter hooks
+     * ================================================================== */
 
     @Override
     protected void onMethodEnter() {
@@ -194,6 +196,10 @@ public final class TraceMethodVisitor extends AdviceAdapter {
         }
         super.visitMaxs(maxStack, maxLocals);
     }
+
+    /* ==================================================================
+     * Trace try-range helpers
+     * ================================================================== */
 
     private void beginTryRange() {
         currentTryStart = new Label();

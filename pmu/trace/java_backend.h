@@ -45,6 +45,7 @@ struct JavaBackendImpl {
     size_t shmSize{0};
     void *mapped{nullptr};
     uint64_t readSeq{0};
+    bool enableVtPhase{false};
     // Avoid repeating the same empty-read diagnostic when UTraceRead is polled.
     uint64_t lastEmptyReadSeq{0};
     bool hasLoggedEmptyRead = false;
@@ -55,7 +56,7 @@ struct JavaBackendImpl {
     bool runtimePrepared = false;
 };
 
-int JavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules);
+int JavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules, bool enableVtPhase);
 int JavaBackendPrepare(JavaBackendImpl *impl);
 int JavaBackendEnable(JavaBackendImpl *impl);
 int JavaBackendDisable(JavaBackendImpl *impl);

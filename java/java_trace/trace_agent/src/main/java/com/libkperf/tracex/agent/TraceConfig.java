@@ -24,6 +24,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import com.libkperf.tracex.agent.asm.VTPhaseInstrumentation;
+
 public final class TraceConfig {
     private static final int DEFAULT_SLOT_COUNT = 2097152;
     private static final int MAX_SLOT_COUNT = 67108864;
@@ -38,6 +40,7 @@ public final class TraceConfig {
     public final String error;
     public final int contextDepth;
     public final int contextMaxMethods;
+    public final boolean enableVtPhase;
 
     public final List<FilterRule> requiredIncludeRules;
     public final List<FilterRule> includeRules;
@@ -56,6 +59,7 @@ public final class TraceConfig {
         TraceLog.init(Util.get(args, "logFile", ""));
 
         TraceFilterFile filterFile = isControlAction() ? new TraceFilterFile() : TraceFilterFile.load(configFile);
+        TraceLog.setLevelByName(filterFile.logLevel);
         this.valid = isControlAction() || filterFile.valid;
         this.error = filterFile.error;
         this.slotCount = clampSlotCount(filterFile.slotCount > 0 ? filterFile.slotCount : DEFAULT_SLOT_COUNT);
@@ -63,6 +67,17 @@ public final class TraceConfig {
 
         int configuredContextDepth = filterFile.contextDepth >= 0 ? filterFile.contextDepth : 1;
         this.contextDepth = configuredContextDepth;
+
+        String vtPhaseArg = Util.get(args, "enableVtPhase", "");
+        boolean configuredVtPhase = vtPhaseArg.length() > 0
+                ? Boolean.parseBoolean(vtPhaseArg)
+                : filterFile.enableVtPhase;
+        int jdkMajor = jdkMajorVersion();
+        this.enableVtPhase = configuredVtPhase && jdkMajor == 21;
+        if (configuredVtPhase && jdkMajor != 21) {
+            TraceLog.warn("[trace-java-agent] enableVtPhase requested but JDK major version is "
+                    + jdkMajor + ", virtual thread phase instrumentation requires exactly JDK 21, skipped");
+        }
 
         List<FilterRule> required = new ArrayList<FilterRule>();
         Util.addRules(required, Util.readTextFile(includeFile, "[trace-java-agent] read include file failed: "));
@@ -98,6 +113,9 @@ public final class TraceConfig {
     }
 
     public boolean shouldTransformClass(String classNameInternal) {
+        if (enableVtPhase && VTPhaseInstrumentation.isTargetClass(classNameInternal)) {
+            return true;
+        }
         if (isExcludedClass(classNameInternal)) {
             return false;
         }
@@ -271,6 +289,26 @@ public final class TraceConfig {
             }
         }
         return out;
+    }
+
+    private static int jdkMajorVersion() {
+        String spec = System.getProperty("java.specification.version", "");
+        if (spec == null || spec.length() == 0) {
+            return 0;
+        }
+        String trimmed = spec.trim();
+        try {
+            int dot = trimmed.indexOf('.');
+            if (dot < 0) {
+                return Integer.parseInt(trimmed);
+            }
+            if (trimmed.startsWith("1.")) {
+                return Integer.parseInt(trimmed.substring(2).trim());
+            }
+            return Integer.parseInt(trimmed.substring(0, dot).trim());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
     private static int clampSlotCount(long value) {

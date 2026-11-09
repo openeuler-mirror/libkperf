@@ -537,7 +537,10 @@ static int OpenPrivateTraceLog()
     return fd;
 }
 
-void TraceLog(const std::string &message)
+namespace {
+TraceLogLevel g_traceLogLevel = TraceLogLevel::INFO;
+
+void WriteTraceLogMessage(const std::string &message)
 {
     if (message.empty()) {
         return;
@@ -565,6 +568,59 @@ void TraceLog(const std::string &message)
         remaining -= static_cast<size_t>(written);
     }
     (void)close(fd);
+}
+} // namespace
+
+void SetTraceLogLevel(TraceLogLevel level)
+{
+    g_traceLogLevel = level;
+}
+
+TraceLogLevel GetTraceLogLevel()
+{
+    return g_traceLogLevel;
+}
+
+bool TraceLogLevelFromString(const std::string &name, TraceLogLevel *level)
+{
+    if (level == nullptr) {
+        return false;
+    }
+    std::string lower;
+    lower.reserve(name.size());
+    for (unsigned char c : name) {
+        lower.push_back(static_cast<char>(std::tolower(c)));
+    }
+    if (lower == "error") {
+        *level = TraceLogLevel::ERROR;
+        return true;
+    }
+    if (lower == "warning" || lower == "warn") {
+        *level = TraceLogLevel::WARNING;
+        return true;
+    }
+    if (lower == "info") {
+        *level = TraceLogLevel::INFO;
+        return true;
+    }
+    if (lower == "debug") {
+        *level = TraceLogLevel::DEBUG;
+        return true;
+    }
+    return false;
+}
+
+void TraceLog(TraceLogLevel level, const std::string &message)
+{
+    if (level > g_traceLogLevel) {
+        return;
+    }
+    WriteTraceLogMessage(message);
+}
+
+void TraceLog(const std::string &message)
+{
+    TraceLog(TraceLogLevel::INFO, message);
 }
 
 void JavaTraceLog(const std::string &message)
@@ -818,6 +874,12 @@ static constexpr const char *K_DIGITS = "0123456789";
 static constexpr const char *K_SLOT_COUNT_KEY = "slot_count";
 static constexpr const char *K_CONTEXT_DEPTH_KEY = "context_depth";
 static constexpr const char *K_CONTEXT_MAX_METHODS_KEY = "context_max_methods";
+static constexpr const char *K_VT_PHASE_KEY = "vt_phase";
+// Shared with the native trace pipeline (trace_filter_config.cpp). The Java
+// backend does not consume it; the runtime TraceLog threshold is already set
+// from UTraceSymbolFilterConfig by the time Java assets are prepared. Keep the
+// key in the rewritten java-only config so the Java agent can apply it.
+static constexpr const char *K_LOG_LEVEL_KEY = "log_level";
 
 static bool IsJavaTraceSection(const std::string &section)
 {
@@ -913,6 +975,13 @@ static bool ParseLocalConfigKeyValue(LocalConfigParseContext *context, const std
     if (key == K_CONTEXT_MAX_METHODS_KEY) {
         return ParseBoundedUnsignedValue(*context, K_CONTEXT_MAX_METHODS_KEY, value, K_MAX_CONTEXT_METHODS);
     }
+    if (key == K_VT_PHASE_KEY) {
+        context->config->enableVtPhase = (value == "true" || value == "1");
+        return true;
+    }
+    if (key == K_LOG_LEVEL_KEY) {
+        return true;
+    }
     JavaTraceLog(MakeLogMessage("[trace-java] unknown trace filter key at ", context->path, ":",
                                 context->lineNo, ": ", key, "\n"));
     return false;
@@ -1003,7 +1072,7 @@ static bool ParseLocalConfigStream(std::ifstream &input, LocalConfigParseContext
 
 JavaTraceLocalConfig LoadLocalConfig(const std::string &path)
 {
-    JavaTraceLocalConfig out{K_DEFAULT_SLOT_COUNT, false};
+    JavaTraceLocalConfig out{K_DEFAULT_SLOT_COUNT, false, false};
     if (path.empty()) {
         JavaTraceLog("[trace-java] filter config path is empty, skip java trace\n");
         return out;
@@ -1018,6 +1087,7 @@ JavaTraceLocalConfig LoadLocalConfig(const std::string &path)
 
     LocalConfigParseContext context(path, &out);
     out.valid = ParseLocalConfigStream(input, &context);
+    out.enableVtPhase = context.config->enableVtPhase;
     return out;
 }
 
@@ -1066,7 +1136,7 @@ bool WriteJavaOnlyFilterConfig(const std::string &sourcePath, const std::string 
         return false;
     }
 
-    JavaTraceLocalConfig parsed{K_DEFAULT_SLOT_COUNT, false};
+    JavaTraceLocalConfig parsed{K_DEFAULT_SLOT_COUNT, false, false};
     LocalConfigParseContext context(sourcePath, &parsed);
     JavaOnlyFilterConfigContent content;
     std::string line;
@@ -1164,6 +1234,9 @@ std::string BuildEnableCommand(const JavaBackendImpl &impl)
         cmd += " --include-file ";
         cmd += EscapeShell(targetIncludeFile);
     }
+    if (impl.enableVtPhase) {
+        cmd += " --vt-phase true";
+    }
     return cmd;
 }
 
@@ -1238,20 +1311,22 @@ char *TraceDupString(const std::string &s)
 UTraceData DeepCopyTraceData(const UTraceData &src)
 {
     UTraceData dst = src;
-    dst.comm = TraceDupCString(src.comm);
-    dst.module = TraceDupCString(src.module);
-    dst.func = TraceDupCString(src.func);
+    dst.payload = nullptr;
+    if (src.payload != nullptr && src.size > 0) {
+        void *copy = std::malloc(src.size);
+        if (copy != nullptr) {
+            std::memcpy(copy, src.payload, src.size);
+        }
+        dst.payload = copy;
+    }
     return dst;
 }
 
 void FreeTraceDataFields(UTraceData &data)
 {
-    std::free(const_cast<char *>(data.comm));
-    std::free(const_cast<char *>(data.module));
-    std::free(const_cast<char *>(data.func));
-    data.comm = nullptr;
-    data.module = nullptr;
-    data.func = nullptr;
+    std::free(data.payload);
+    data.payload = nullptr;
+    data.size = 0;
 }
 
 void SortTraceDataByTimestamp(UTraceData *data, size_t count)
@@ -1260,6 +1335,64 @@ void SortTraceDataByTimestamp(UTraceData *data, size_t count)
         return;
     }
     std::stable_sort(data, data + count, [](const UTraceData &left, const UTraceData &right) {
-        return left.timestamp < right.timestamp;
+        return UTraceDataTimestamp(&left) < UTraceDataTimestamp(&right);
     });
+}
+
+static uint32_t AppendBlobString(std::vector<char> &blob, const char *s)
+{
+    if (s == nullptr || s[0] == '\0') {
+        return 0;
+    }
+    uint32_t offset = static_cast<uint32_t>(blob.size());
+    size_t len = std::strlen(s) + 1;
+    blob.insert(blob.end(), s, s + len);
+    return offset;
+}
+
+static void *FinishBlob(std::vector<char> &blob, unsigned *outSize)
+{
+    void *payload = std::malloc(blob.size());
+    if (payload == nullptr) {
+        return nullptr;
+    }
+    std::memcpy(payload, blob.data(), blob.size());
+    if (outSize != nullptr) {
+        *outSize = static_cast<unsigned>(blob.size());
+    }
+    return payload;
+}
+
+void *BuildMethodPayload(int64_t timestamp, unsigned long addr, uint64_t gPtr, int tid, int cpu,
+                         unsigned isRet, const char *comm, const char *module, const char *func,
+                         unsigned *outSize)
+{
+    std::vector<char> blob(sizeof(UTraceMethodPayload), '\0');
+    UTraceMethodPayload *p = reinterpret_cast<UTraceMethodPayload *>(blob.data());
+    p->timestamp = timestamp;
+    p->addr = addr;
+    p->gPtr = gPtr;
+    p->tid = tid;
+    p->cpu = cpu;
+    p->isRet = isRet;
+    p->commOff = AppendBlobString(blob, comm);
+    p->moduleOff = AppendBlobString(blob, module);
+    p->funcOff = AppendBlobString(blob, func);
+    return FinishBlob(blob, outSize);
+}
+
+void *BuildVtPhasePayload(int64_t timestamp, uint64_t carrierTid, uint64_t vtId,
+                          uint32_t phaseId, int cpu, int fd, int64_t bytes, unsigned *outSize)
+{
+    std::vector<char> blob(sizeof(UTraceVtPhasePayload), '\0');
+    UTraceVtPhasePayload *p = reinterpret_cast<UTraceVtPhasePayload *>(blob.data());
+    p->timestamp = timestamp;
+    p->carrierTid = carrierTid;
+    p->vtId = vtId;
+    p->phaseId = phaseId;
+    p->cpu = cpu;
+    p->fd = fd;
+    p->bytesRead = bytes;
+    p->commOff = 0;
+    return FinishBlob(blob, outSize);
 }

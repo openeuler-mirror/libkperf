@@ -39,6 +39,8 @@ public final class TraceFilterFile {
     public long slotCount = -1;
     public int contextDepth = -1;
     public int contextMaxMethods = -1;
+    public boolean enableVtPhase = false;
+    public String logLevel = "info";
     public boolean valid = false;
     public String error = "";
 
@@ -111,6 +113,13 @@ public final class TraceFilterFile {
                             return invalid(out, path, lineNo, "invalid context_max_methods", v);
                         }
                         out.contextMaxMethods = parsed.intValue();
+                    } else if ("vt_phase".equals(k)) {
+                        out.enableVtPhase = parseBooleanValue(v);
+                    } else if ("log_level".equals(k)) {
+                        if (!isValidLogLevel(v)) {
+                            return invalid(out, path, lineNo, "invalid log_level", v);
+                        }
+                        out.logLevel = v;
                     } else {
                         return invalid(out, path, lineNo, "unknown key", k);
                     }
@@ -251,5 +260,18 @@ public final class TraceFilterFile {
             return "0".equals(value) ? Integer.valueOf(0) : null;
         }
         return parsed.longValue() <= Integer.MAX_VALUE ? Integer.valueOf(parsed.intValue()) : null;
+    }
+
+    private static boolean parseBooleanValue(String value) {
+        return "true".equalsIgnoreCase(value) || "1".equals(value);
+    }
+
+    private static boolean isValidLogLevel(String value) {
+        if (value == null || value.length() == 0) {
+            return false;
+        }
+        String v = value.trim().toLowerCase();
+        return "error".equals(v) || "warning".equals(v) || "warn".equals(v)
+                || "info".equals(v) || "debug".equals(v);
     }
 }

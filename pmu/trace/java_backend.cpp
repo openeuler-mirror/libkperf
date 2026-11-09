@@ -39,7 +39,7 @@
 
 namespace {
 static constexpr uint64_t K_MAGIC = 0x5554524356415731ULL; // UTRCVAW1
-static constexpr uint32_t K_VERSION = 2;
+static constexpr uint32_t K_VERSION = 3;
 static constexpr size_t K_HEADER_SIZE = 128;
 static constexpr size_t K_HEADER_MAGIC = 0;
 static constexpr size_t K_HEADER_VERSION = 8;
@@ -74,14 +74,32 @@ static constexpr size_t K_THREAD_COMM_LEN = 32;
 
 static constexpr size_t K_SLOT_SIZE = 64;
 static constexpr size_t K_SLOT_SEQ = 0;
-static constexpr size_t K_SLOT_ADDR = 8;
-static constexpr size_t K_SLOT_METHOD_ID = 16;
-static constexpr size_t K_SLOT_COMM_ID = 20;
-static constexpr size_t K_SLOT_TID = 24;
-static constexpr size_t K_SLOT_CPU = 28;
-static constexpr size_t K_SLOT_TIMESTAMP = 32;
-static constexpr size_t K_SLOT_GPTR = 40;
-static constexpr size_t K_SLOT_IS_RET = 48;
+static constexpr size_t K_SLOT_DATA_TYPE = 8;
+
+// METHOD record field group (K_DATA_TYPE_METHOD).
+static constexpr size_t K_SLOT_METHOD_IS_RET = 12;
+static constexpr size_t K_SLOT_METHOD_ADDR = 16;
+static constexpr size_t K_SLOT_METHOD_METHOD_ID = 24;
+static constexpr size_t K_SLOT_METHOD_COMM_ID = 28;
+static constexpr size_t K_SLOT_METHOD_TID = 32;
+static constexpr size_t K_SLOT_METHOD_CPU = 36;
+static constexpr size_t K_SLOT_METHOD_TIMESTAMP = 40;
+static constexpr size_t K_SLOT_METHOD_GPTR = 48;
+
+// VT_PHASE record field group (K_DATA_TYPE_VT_PHASE): only the lifecycle fields are written.
+static constexpr size_t K_SLOT_VT_CARRIER_TID = 16;
+static constexpr size_t K_SLOT_VT_VT_ID = 24;
+static constexpr size_t K_SLOT_VT_PHASE_ID = 32;
+static constexpr size_t K_SLOT_VT_CPU = 36;
+static constexpr size_t K_SLOT_VT_TIMESTAMP = 40;
+static constexpr size_t K_SLOT_VT_FD = 48;
+static constexpr size_t K_SLOT_VT_BYTES = 52;
+
+///< Java agent wire record kind (SharedEventSink SLOT_DATA_TYPE): 0=method, 1=vt-phase.
+///< Kept separate from enum UTraceFormat so the wire protocol can evolve independently.
+static constexpr int16_t K_DATA_TYPE_METHOD = 0;
+static constexpr int16_t K_DATA_TYPE_VT_PHASE = 1;
+
 
 static constexpr size_t K_METHOD_BYTES = static_cast<size_t>(K_METHOD_CAPACITY) * K_METHOD_ENTRY_SIZE;
 static constexpr size_t K_THREAD_BYTES = static_cast<size_t>(K_THREAD_CAPACITY) * K_THREAD_ENTRY_SIZE;
@@ -194,18 +212,19 @@ static void FreeJavaTraceBlockRaw(uint8_t *raw, UTraceData *block, size_t count)
     std::free(raw);
 }
 
-static bool FillTraceDataStrings(UTraceData &data, const uint8_t *mem,
-                                 uint32_t methodId, int32_t commId,
-                                 bool &metadataMismatch)
+static void ResolveTraceDataStrings(std::string &comm, std::string &module, std::string &func,
+                                    const uint8_t *mem, uint64_t addr, int32_t namespaceTid,
+                                    uint32_t methodId, int32_t commId,
+                                    bool &metadataMismatch)
 {
-    std::string module = "<unknown>";
-    std::string func = "<unknown>";
-    std::string comm = "unknown";
+    module = "<unknown>";
+    func = "<unknown>";
+    comm = "unknown";
 
     if (methodId < K_METHOD_CAPACITY) {
         const uint8_t *method = mem + K_HEADER_SIZE + static_cast<size_t>(methodId) * K_METHOD_ENTRY_SIZE;
         if (LoadAtAcquire<uint32_t>(method, K_METHOD_SEQ) == methodId + 1 &&
-            LoadAt<uint64_t>(method, K_METHOD_ADDR) == static_cast<uint64_t>(data.addr)) {
+            LoadAt<uint64_t>(method, K_METHOD_ADDR) == addr) {
             module = ReadFixedString(method, K_METHOD_MODULE, K_METHOD_MODULE_LEN);
             func = ReadFixedString(method, K_METHOD_FUNC, K_METHOD_FUNC_LEN);
         } else {
@@ -220,7 +239,7 @@ static bool FillTraceDataStrings(UTraceData &data, const uint8_t *mem,
         const uint8_t *thread = mem + K_HEADER_SIZE + K_METHOD_BYTES +
                                 static_cast<size_t>(threadId) * K_THREAD_ENTRY_SIZE;
         if (LoadAtAcquire<uint32_t>(thread, K_THREAD_SEQ) == threadId + 1 &&
-            LoadAt<int32_t>(thread, K_THREAD_TID) == data.tid) {
+            LoadAt<int32_t>(thread, K_THREAD_TID) == namespaceTid) {
             comm = ReadFixedString(thread, K_THREAD_COMM, K_THREAD_COMM_LEN);
         } else {
             metadataMismatch = true;
@@ -228,22 +247,6 @@ static bool FillTraceDataStrings(UTraceData &data, const uint8_t *mem,
     } else {
         metadataMismatch = true;
     }
-
-    data.comm = TraceDupString(comm);
-    if (data.comm == nullptr) {
-        return false;
-    }
-    data.module = TraceDupString(module);
-    if (data.module == nullptr) {
-        FreeTraceDataFields(data);
-        return false;
-    }
-    data.func = TraceDupString(func);
-    if (data.func == nullptr) {
-        FreeTraceDataFields(data);
-        return false;
-    }
-    return true;
 }
 
 static bool HasAvailableSpace(const std::string &path, size_t bytes)
@@ -355,7 +358,7 @@ static void CleanupFailedStorage(JavaBackendImpl *impl, bool removeShmFile)
     JavaTraceCleanupTargetAssets(impl);
 }
 
-static int PrepareJavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules)
+static int PrepareJavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules, bool enableVtPhase)
 {
     impl->pid = pid;
     impl->runtimeStopped = true;
@@ -370,6 +373,7 @@ static int PrepareJavaBackendOpen(JavaBackendImpl *impl, int pid, const char *in
         return -1;
     }
     impl->slotCount = localConfig.slotCount;
+    impl->enableVtPhase = localConfig.enableVtPhase || enableVtPhase;
     impl->shmName = "utrace_java_" + std::to_string(pid) + "_" + TimestampSuffix();
     impl->shmSize = K_EVENT_OFFSET + static_cast<size_t>(impl->slotCount) * K_SLOT_SIZE;
 
@@ -425,12 +429,12 @@ static int OpenJavaTraceStorage(JavaBackendImpl *impl)
 }
 } // namespace
 
-int JavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules)
+int JavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules, bool enableVtPhase)
 {
     if (impl == nullptr) {
         return -1;
     }
-    if (PrepareJavaBackendOpen(impl, pid, includeRules) != 0) {
+    if (PrepareJavaBackendOpen(impl, pid, includeRules, enableVtPhase) != 0) {
         return -1;
     }
     return OpenJavaTraceStorage(impl);
@@ -572,31 +576,59 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
             ++seqMismatch;
             continue;
         }
-        block[outIdx].addr = static_cast<unsigned long>(LoadAt<uint64_t>(slot, K_SLOT_ADDR));
-        const int32_t namespaceTid = LoadAt<int32_t>(slot, K_SLOT_TID);
-        block[outIdx].tid = namespaceTid;
-        block[outIdx].cpu = LoadAt<int32_t>(slot, K_SLOT_CPU);
-        block[outIdx].timestamp = LoadAt<int64_t>(slot, K_SLOT_TIMESTAMP);
-        block[outIdx].gPtr = LoadAt<uint64_t>(slot, K_SLOT_GPTR);
-        block[outIdx].isRet = LoadAt<uint32_t>(slot, K_SLOT_IS_RET);
-        const uint32_t methodId = LoadAt<uint32_t>(slot, K_SLOT_METHOD_ID);
-        const int32_t commId = LoadAt<int32_t>(slot, K_SLOT_COMM_ID);
-        bool mismatched = false;
-        if (!FillTraceDataStrings(block[outIdx], mem, methodId, commId, mismatched)) {
+        const int16_t dataType = LoadAt<int16_t>(slot, K_SLOT_DATA_TYPE);
+
+        unsigned format = UTRACE_FMT_METHOD;
+        unsigned payloadSize = 0;
+        void *payload = nullptr;
+        if (dataType == K_DATA_TYPE_VT_PHASE) {
+            // VT_PHASE field group: only the lifecycle fields are present.
+            const uint64_t carrierTid = LoadAt<uint64_t>(slot, K_SLOT_VT_CARRIER_TID);
+            const uint64_t vtId = LoadAt<uint64_t>(slot, K_SLOT_VT_VT_ID);
+            const uint32_t phaseId = LoadAt<uint32_t>(slot, K_SLOT_VT_PHASE_ID);
+            const int cpu = LoadAt<int32_t>(slot, K_SLOT_VT_CPU);
+            const int64_t timestamp = LoadAt<int64_t>(slot, K_SLOT_VT_TIMESTAMP);
+            const int fd = LoadAt<int32_t>(slot, K_SLOT_VT_FD);
+            const int64_t bytes = LoadAt<int64_t>(slot, K_SLOT_VT_BYTES);
+            format = UTRACE_FMT_VT_PHASE;
+            payload = BuildVtPhasePayload(timestamp, carrierTid, vtId, phaseId, cpu, fd, bytes, &payloadSize);
+        } else {
+            // METHOD field group.
+            const uint64_t addr = LoadAt<uint64_t>(slot, K_SLOT_METHOD_ADDR);
+            const int32_t namespaceTid = LoadAt<int32_t>(slot, K_SLOT_METHOD_TID);
+            const int cpu = LoadAt<int32_t>(slot, K_SLOT_METHOD_CPU);
+            const int64_t timestamp = LoadAt<int64_t>(slot, K_SLOT_METHOD_TIMESTAMP);
+            const uint64_t gPtr = LoadAt<uint64_t>(slot, K_SLOT_METHOD_GPTR);
+            const int32_t isRet = LoadAt<int32_t>(slot, K_SLOT_METHOD_IS_RET);
+            const uint32_t methodId = LoadAt<uint32_t>(slot, K_SLOT_METHOD_METHOD_ID);
+            const int32_t commId = LoadAt<int32_t>(slot, K_SLOT_METHOD_COMM_ID);
+            std::string comm;
+            std::string module;
+            std::string func;
+            bool mismatched = false;
+            ResolveTraceDataStrings(comm, module, func, mem, addr, namespaceTid, methodId, commId, mismatched);
+            if (mismatched) {
+                ++metadataMismatch;
+            }
+            int tid = -1;
+            auto hostTid = impl->hostTidByNamespaceTid.find(namespaceTid);
+            if (hostTid != impl->hostTidByNamespaceTid.end()) {
+                tid = hostTid->second;
+            }
+            // DATA_TYPE_METHOD: METHOD_IS_RET is the enter/exit or vthread-transition marker.
+            payload = BuildMethodPayload(timestamp, static_cast<unsigned long>(addr), gPtr, tid, cpu,
+                                         static_cast<unsigned>(isRet), comm.c_str(), module.c_str(), func.c_str(),
+                                         &payloadSize);
+        }
+        if (payload == nullptr) {
             JavaTraceLog(MakeLogMessage(
-                "[trace-java] JavaBackendRead failed: duplicate string failed, outIdx=", outIdx, "\n"));
+                "[trace-java] JavaBackendRead failed: payload alloc failed, outIdx=", outIdx, "\n"));
             FreeJavaTraceBlockRaw(raw, block, outIdx + 1);
             return -7;
         }
-        if (mismatched) {
-            ++metadataMismatch;
-        }
-        auto hostTid = impl->hostTidByNamespaceTid.find(namespaceTid);
-        if (hostTid != impl->hostTidByNamespaceTid.end()) {
-            block[outIdx].tid = hostTid->second;
-        } else {
-            block[outIdx].tid = -1;
-        }
+        block[outIdx].format = format;
+        block[outIdx].size = payloadSize;
+        block[outIdx].payload = payload;
         ++outIdx;
     }
 

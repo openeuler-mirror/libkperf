@@ -14,6 +14,7 @@
  ******************************************************************************/
 
 #include "trace_data_manager.h"
+#include "java_trace_util.h"
 #include "probe_alias_manager.h"
 #include "symbol.h"
 #include <cstring>
@@ -40,8 +41,18 @@ UTraceData *TraceDataManager::ConvertToTraceData(int pd, PmuData *data, int len,
         const char *colon = std::strchr(data[i].evt, ':');
         if (colon && *(colon + 1)) {
             const auto &binding = ProbeAliasManager::GetInstance().GetBinding(std::string(colon + 1));
-            traceData.push_back({data[i].stack->symbol->addr, data[i].comm, data[i].tid, data[i].cpu, data[i].ts, gPtr,
-                data[i].stack->symbol->module, binding.originalSymRef->c_str(), binding.isRet});
+            unsigned payloadSize = 0;
+            void *payload = BuildMethodPayload(data[i].ts, data[i].stack->symbol->addr, gPtr,
+                data[i].tid, data[i].cpu, binding.isRet ? 1U : 0U, data[i].comm,
+                data[i].stack->symbol->module, binding.originalSymRef->c_str(), &payloadSize);
+            if (payload == nullptr) {
+                continue;
+            }
+            UTraceData entry = {};
+            entry.format = UTRACE_FMT_METHOD;
+            entry.size = payloadSize;
+            entry.payload = payload;
+            traceData.push_back(entry);
         }
     }
 
@@ -73,6 +84,16 @@ void TraceDataManager::FreeTraceData(UTraceData *traceData)
     }
 
     PmuData *pmuData = it->second;
+
+    // payloads are self-contained malloc'd blobs owned by the stored records
+    auto blobIt = pmu2trace_.find(pmuData);
+    if (blobIt != pmu2trace_.end()) {
+        for (UTraceData &entry : blobIt->second) {
+            std::free(entry.payload);
+            entry.payload = nullptr;
+        }
+    }
+
     PmuDataFree(pmuData);
 
     pmu2trace_.erase(pmuData);

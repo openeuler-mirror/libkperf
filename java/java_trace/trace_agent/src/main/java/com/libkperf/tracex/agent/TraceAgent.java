@@ -15,9 +15,11 @@
 package com.libkperf.tracex.agent;
 
 import com.libkperf.tracex.agent.asm.TraceClassFileTransformer;
+import com.libkperf.tracex.agent.asm.VTPhaseInstrumentation;
 import com.libkperf.tracex.runtime.NativeThreadInfo;
 import com.libkperf.tracex.runtime.TraceLog;
 import com.libkperf.tracex.runtime.TraceRuntime;
+import com.libkperf.tracex.runtime.VTPhaseCollector;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -29,6 +31,7 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -65,6 +68,7 @@ public final class TraceAgent {
             start(config, inst);
         } catch (Throwable t) {
             TraceRuntime.stop();
+            VTPhaseCollector.setEnabled(false);
             try {
                 removeActiveTransformer();
             } catch (Throwable removeError) {
@@ -91,6 +95,7 @@ public final class TraceAgent {
     private static void runControlAction(String action, Instrumentation inst) {
         try {
             TraceRuntime.stop();
+            VTPhaseCollector.setEnabled(false);
             if ("stop".equalsIgnoreCase(action)) {
                 removeActiveTransformer();
                 return;
@@ -312,6 +317,7 @@ public final class TraceAgent {
         }
 
         TraceRuntime.setEnabled(false);
+        VTPhaseCollector.setEnabled(false);
         if (!removeActiveTransformer()) {
             throw new IllegalStateException("failed to remove previous trace transformer");
         }
@@ -335,17 +341,22 @@ public final class TraceAgent {
                 + ", depth=" + config.contextDepth + ", max=" + config.contextMaxMethods);
         }
 
-        List<Class<?>> candidates = collectCandidates(inst, transformer);
+        // Register the transformer before collecting candidates: collectCandidates
+        // proactively loads not-yet-loaded VT phase target classes via Class.forName,
+        // which only instruments them if this transformer is already installed.
+        inst.addTransformer(transformer, true);
+        activeTransformer = transformer;
+        activeInstrumentation = inst;
+
+        List<Class<?>> candidates = collectCandidates(inst, transformer, config);
         TraceLog.info("[trace-java-agent] retransform candidates=" + candidates.size()
             + ", requiredIncludeRules=" + config.requiredIncludeRules.size()
             + ", configIncludeRules=" + config.includeRules.size()
             + ", excludeRules=" + config.excludeRules.size());
 
-        inst.addTransformer(transformer, true);
-        activeTransformer = transformer;
-        activeInstrumentation = inst;
         retransformSafely(inst, candidates, transformer);
         TraceRuntime.configureVirtualThreadCarrierHooks(transformer.hasVirtualThreadCarrierHooks());
+        VTPhaseCollector.setEnabled(config.enableVtPhase);
         TraceLog.info("[trace-java-agent] instrumentation complete: carrierHooks="
                 + transformer.hasVirtualThreadCarrierHooks());
         TraceRuntime.setEnabled(true);
@@ -353,8 +364,10 @@ public final class TraceAgent {
     }
 
     // Collects all classes that are candidates for retransformation.
-    private static List<Class<?>> collectCandidates(Instrumentation inst, TraceClassFileTransformer transformer) {
+    private static List<Class<?>> collectCandidates(Instrumentation inst, TraceClassFileTransformer transformer,
+                                                    TraceConfig config) {
         List<Class<?>> out = new ArrayList<Class<?>>();
+        Set<String> seen = new HashSet<String>();
         for (Class<?> c : inst.getAllLoadedClasses()) {
             try {
                 if (c == null || !inst.isModifiableClass(c)) {
@@ -365,6 +378,7 @@ public final class TraceAgent {
                     continue;
                 }
                 String internal = Util.internalName(c);
+                seen.add(internal);
                 if (transformer.shouldTransformInternalName(internal)) {
                     out.add(c);
                 }
@@ -372,6 +386,25 @@ public final class TraceAgent {
                 TraceLog.warn("[trace-java-agent] skip candidate " + c + ": " + t, t);
             }
         }
+
+        if (config.enableVtPhase) {
+            for (String internal : VTPhaseInstrumentation.targetClassInternalNames()) {
+                if (seen.contains(internal)) {
+                    continue;
+                }
+                try {
+                    String binary = internal.replace('/', '.');
+                    Class.forName(binary, false, null);
+                    // Class.forName triggers the already-registered transformer at load time,
+                    // so the class is instrumented here and must not be queued for retransform.
+                    TraceLog.info("[trace-java-agent] proactively loaded VT phase target class: " + binary);
+                } catch (Throwable t) {
+                    TraceLog.warn("[trace-java-agent] failed to proactively load VT phase target class: "
+                            + internal + ", error=" + t, t);
+                }
+            }
+        }
+
         return out;
     }
 }

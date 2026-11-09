@@ -52,7 +52,8 @@ final class VirtualThreadMethodVisitor extends MethodVisitor {
         }
         super.visitMethodInsn(opcode, callOwner, methodName, methodDescriptor, isInterface);
         super.visitMethodInsn(Opcodes.INVOKESTATIC, TraceClassFileTransformer.TRACE_RUNTIME_OWNER,
-                "virtualThreadAfterUnmount", THREAD_DESCRIPTOR, false);
+        "virtualThreadAfterUnmount", THREAD_DESCRIPTOR, false);
+
         TraceLog.info("[trace-java-agent] virtual-thread afterUnmount hook injected, callSite="
                 + callOwner + "." + methodName + methodDescriptor);
     }

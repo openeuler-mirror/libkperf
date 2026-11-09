@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include "trace_log.h"
 
 enum class TraceSymbolDomain {
     KERNEL,
@@ -30,6 +31,9 @@ struct UTraceSymbolFilterConfig {
     uint32_t kernelFtraceBufferSizeKb = 1024;
     // Include selected functions that execute in interrupt context.
     bool kernelFtraceIrqs = true;
+    // Runtime TraceLog threshold. Default INFO; set to DEBUG to surface
+    // verbose diagnostics emitted by TraceLog(TraceLogLevel::DEBUG, ...).
+    TraceLogLevel logLevel = TraceLogLevel::INFO;
     bool valid = true;
     std::string error;
     std::vector<std::string> kernelIncludes;

@@ -585,18 +585,58 @@ type UTraceAttr struct {
 	SymSrc  []SymbolSource
 	PidList []int
 	FetchG  bool
+	VtPhase bool
 }
 
-type UTraceData struct {
-	Addr	  uint64
-	Comm	  string
-	Tid 	  int
-	Cpu       int
+// UTraceFormat mirrors enum UTraceFormat in pmu.h.
+const (
+	UTraceFormatMethod   = 0
+	UTraceFormatVtPhase  = 1
+)
+
+// UTraceVtPhase mirrors enum UTraceVtPhase in pmu.h.
+const (
+	UTraceVtPhaseRun                = 0
+	UTraceVtPhaseDequeue            = 1
+	UTraceVtPhaseCreateRegistration = 2
+	UTraceVtPhaseUnparkReturn       = 3
+	UTraceVtPhasePollReturn         = 4
+	UTraceVtPhaseSocketRead         = 5
+	UTraceVtPhaseSocketWrite        = 6
+	UTraceVtPhaseParkEnter          = 7
+	UTraceVtPhaseParkReturn         = 8
+)
+
+type UTraceMethodData struct {
 	Timestamp int64
+	Addr      uint64
 	GPtr      uint64
+	Tid       int
+	Cpu       int
+	IsRet     uint32 // 0 = method enter, 1 = method exit
+	Comm      string
 	Module    string
 	Func      string
-	IsRet     bool
+}
+
+type UTraceVtPhaseData struct {
+	Timestamp  int64
+	CarrierTid uint64
+	VtId       uint64
+	PhaseId    uint32
+	Cpu        int
+	Fd         int32
+	BytesRead  int64
+}
+
+// UTraceData is a fixed-size header; event fields live in format-specific
+// payload structs. Check Format, then use Method or VtPhase. Size gates
+// forward-compatible access when payload structs grow new fields.
+type UTraceData struct {
+	Format  uint32
+	Size    uint32
+	Method  *UTraceMethodData  // non-nil when Format is UTraceFormatMethod
+	VtPhase *UTraceVtPhaseData // non-nil when Format is UTraceFormatVtPhase
 }
 
 func FreePmuAttr(attr *C.struct_PmuAttr) {
@@ -1667,6 +1707,10 @@ func UTraceOpen(attr UTraceAttr) (int, error) {
 		cAttr.fetchG = C.uint(1)
 	}
 
+	if attr.VtPhase {
+		cAttr.vtPhase = C.uint(1)
+	}
+
 	pd := C.UTraceOpen(cAttr)
 	if int(pd) == -1 {
 		return -1, errors.New(C.GoString(C.Perror()))
@@ -1690,6 +1734,15 @@ func UTraceDisable(pd int) error {
 	return nil
 }
 
+// goStringInBlob resolves a uint32 string offset stored inside a self-contained
+// UTraceData payload blob (see payload ABI rules in pmu.h). 0 means absent.
+func goStringInBlob(payload unsafe.Pointer, off C.uint32_t) string {
+	if off == 0 {
+		return ""
+	}
+	return C.GoString((*C.char)(unsafe.Pointer(uintptr(payload) + uintptr(off))))
+}
+
 func UTraceRead(pd int) ([]UTraceData, *C.struct_UTraceData, error) {
 	var cTraceData *C.struct_UTraceData
 	length := int(C.UTraceRead(C.int(pd), &cTraceData))
@@ -1705,17 +1758,39 @@ func UTraceRead(pd int) ([]UTraceData, *C.struct_UTraceData, error) {
 		elem := (*C.struct_UTraceData)(unsafe.Pointer(
 			uintptr(unsafe.Pointer(cTraceData)) + uintptr(i)*unsafe.Sizeof(*cTraceData),
 		))
-		result[i] = UTraceData{
-			Addr: 	   uint64(elem.addr),
-			Comm:      C.GoString(elem.comm),
-			Tid:       int(elem.tid),
-			Cpu:       int(elem.cpu),
-			Timestamp: int64(elem.timestamp),
-			GPtr:      uint64(elem.gPtr),
-			Module:    C.GoString(elem.module),
-			Func:      C.GoString(elem._func),
-			IsRet:     elem.isRet != 0,
+		item := UTraceData{
+			Format: uint32(elem.format),
+			Size:   uint32(elem.size),
 		}
+		if elem.payload != nil {
+			switch item.Format {
+			case UTraceFormatMethod:
+				m := (*C.struct_UTraceMethodPayload)(elem.payload)
+				item.Method = &UTraceMethodData{
+					Timestamp: int64(m.timestamp),
+					Addr:      uint64(m.addr),
+					GPtr:      uint64(m.gPtr),
+					Tid:       int(m.tid),
+					Cpu:       int(m.cpu),
+					IsRet:     uint32(m.isRet),
+					Comm:      goStringInBlob(elem.payload, m.commOff),
+					Module:    goStringInBlob(elem.payload, m.moduleOff),
+					Func:      goStringInBlob(elem.payload, m.funcOff),
+				}
+			case UTraceFormatVtPhase:
+				v := (*C.struct_UTraceVtPhasePayload)(elem.payload)
+				item.VtPhase = &UTraceVtPhaseData{
+					Timestamp:  int64(v.timestamp),
+					CarrierTid: uint64(v.carrierTid),
+					VtId:       uint64(v.vtId),
+					PhaseId:    uint32(v.phaseId),
+					Cpu:        int(v.cpu),
+					Fd:         int32(v.fd),
+					BytesRead:  int64(v.bytesRead),
+				}
+			}
+		}
+		result[i] = item
 	}
 
 	return result, cTraceData, nil

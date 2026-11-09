@@ -38,7 +38,7 @@ final class SharedEventSink implements AutoCloseable {
 
     // Shared memory ABI v2. Strings live in dictionaries and compact event slots contain ids
     static final long MAGIC = 0x5554524356415731L; // UTRCVAW1
-    static final int VERSION = 2;
+    static final int VERSION = 3;
 
     static final int HEADER_SIZE = 128;
     static final int HEADER_MAGIC = 0;
@@ -72,17 +72,43 @@ final class SharedEventSink implements AutoCloseable {
     static final int THREAD_COMM = 8;
     static final int THREAD_COMM_LEN = 32;
 
+    // Record layout: SLOT_SEQ is the publish marker (first field, written last) and
+    // SLOT_DATA_TYPE (second field) selects which per-type field group decodes the rest.
     static final int SLOT_SIZE = 64;
     static final int SLOT_SEQ = 0;
-    static final int SLOT_ADDR = 8;
-    static final int SLOT_METHOD_ID = 16;
-    static final int SLOT_COMM_ID = 20;
-    static final int SLOT_TID = 24;
-    static final int SLOT_CPU = 28;
-    static final int SLOT_TIMESTAMP = 32;
-    static final int SLOT_GPTR = 40;
-    static final int SLOT_IS_RET = 48;
+    static final int SLOT_DATA_TYPE = 8;
 
+    // METHOD record field group (DATA_TYPE_METHOD).
+    static final int SLOT_METHOD_IS_RET = 12;
+    static final int SLOT_METHOD_ADDR = 16;
+    static final int SLOT_METHOD_METHOD_ID = 24;
+    static final int SLOT_METHOD_COMM_ID = 28;
+    static final int SLOT_METHOD_TID = 32;
+    static final int SLOT_METHOD_CPU = 36;
+    static final int SLOT_METHOD_TIMESTAMP = 40;
+    static final int SLOT_METHOD_GPTR = 48;
+
+    // VT_PHASE record field group (DATA_TYPE_VT_PHASE): only the lifecycle fields are written.
+    static final int SLOT_VT_CARRIER_TID = 16;
+    static final int SLOT_VT_VT_ID = 24;
+    static final int SLOT_VT_PHASE_ID = 32;
+    static final int SLOT_VT_CPU = 36;
+    static final int SLOT_VT_TIMESTAMP = 40;
+    // SOCKET_READ phase reuses the reserved tail of the VT_PHASE field group (bytes 48..63)
+    // to carry the socket fd and the byte count returned by SocketChannelImpl.read.
+    static final int SLOT_VT_FD = 48;
+    static final int SLOT_VT_BYTES = 52;
+
+    // SLOT_DATA_TYPE: coarse record kind, drives the consumer's payload dispatch.
+    static final short DATA_TYPE_METHOD = 0;
+    static final short DATA_TYPE_VT_PHASE = 1;
+
+    // VT_PHASE phaseId value for SocketChannelImpl.read completion events.
+    static final int VT_PHASE_SOCKET_READ_ID = 5;
+    // VT_PHASE phaseId value for NioSocketImpl.implWrite completion events.
+    static final int VT_PHASE_SOCKET_WRITE_ID = 6;
+
+    // METHOD records carry the enter/exit or virtual-thread transition marker in SLOT_METHOD_IS_RET.
     static final int EVENT_METHOD_ENTER = 0;
     static final int EVENT_METHOD_EXIT = 1;
     static final int EVENT_VTHREAD_MOUNT = 2;
@@ -290,8 +316,17 @@ final class SharedEventSink implements AutoCloseable {
         return getIntAcquire(HEADER_ACTIVE) != 0;
     }
 
-    boolean record(long addr, int methodId, int commId, int tid, int cpu,
-                   long timestamp, long gPtr, int isRet) {
+    // METHOD record: writes DATA_TYPE_METHOD and the METHOD field group.
+    boolean recordMethod(long addr, int methodId, int commId, int tid, int cpu,
+                         long timestamp, long gPtr, int isRet) {
+        if (TraceLog.isDebugEnabled()) {
+            TraceLog.debug("[trace-java-sink] recordMethod methodId=" + methodId
+                    + ", method=" + readMethodDictionary(methodId)
+                    + ", event=" + eventTypeName(isRet) + "(" + isRet + ")"
+                    + ", addr=0x" + Long.toHexString(addr)
+                    + ", commId=" + commId + ", tid=" + tid + ", cpu=" + cpu
+                    + ", timestamp=" + timestamp + ", gPtr=0x" + Long.toHexString(gPtr));
+        }
         if (!enterWriter()) {
             return false;
         }
@@ -308,16 +343,168 @@ final class SharedEventSink implements AutoCloseable {
             MappedByteBuffer slotBuffer = slotBuffer(slotIndex);
             int base = slotOffset(slotIndex);
 
-            slotBuffer.putLong(base + SLOT_ADDR, addr);
-            slotBuffer.putInt(base + SLOT_METHOD_ID, methodId);
-            slotBuffer.putInt(base + SLOT_COMM_ID, commId);
-            slotBuffer.putInt(base + SLOT_TID, tid);
-            slotBuffer.putInt(base + SLOT_CPU, cpu);
-            slotBuffer.putLong(base + SLOT_TIMESTAMP, timestamp);
-            slotBuffer.putLong(base + SLOT_GPTR, gPtr);
-            slotBuffer.putInt(base + SLOT_IS_RET, isRet);
+            slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_METHOD);
+            slotBuffer.putLong(base + SLOT_METHOD_ADDR, addr);
+            slotBuffer.putInt(base + SLOT_METHOD_METHOD_ID, methodId);
+            slotBuffer.putInt(base + SLOT_METHOD_COMM_ID, commId);
+            slotBuffer.putInt(base + SLOT_METHOD_TID, tid);
+            slotBuffer.putInt(base + SLOT_METHOD_CPU, cpu);
+            slotBuffer.putLong(base + SLOT_METHOD_TIMESTAMP, timestamp);
+            slotBuffer.putLong(base + SLOT_METHOD_GPTR, gPtr);
+            slotBuffer.putInt(base + SLOT_METHOD_IS_RET, isRet);
 
             // Publish this slot after all slot fields are written.
+            putLongRelease(slotBuffer, base + SLOT_SEQ, seq);
+            drainPublished();
+            return true;
+        } finally {
+            writerState.decrementAndGet();
+        }
+    }
+
+    private String readMethodDictionary(int methodId) {
+        if (methodId < 0 || methodId >= METHOD_CAPACITY) {
+            return "unknown(methodId=" + methodId + ")";
+        }
+        try {
+            if (closed) {
+                return "unknown(methodId=" + methodId + ")";
+            }
+            int base = methodId * METHOD_ENTRY_SIZE;
+            String module = readDictString(methodBuffer, base + METHOD_MODULE, METHOD_MODULE_LEN);
+            String func = readDictString(methodBuffer, base + METHOD_FUNC, METHOD_FUNC_LEN);
+            return module + "." + func;
+        } catch (Throwable t) {
+            return "unknown(methodId=" + methodId + ")";
+        }
+    }
+
+    private static String readDictString(ByteBuffer source, int offset, int cap) {
+        byte[] bytes = new byte[cap];
+        for (int i = 0; i < cap; i++) {
+            byte b = source.get(offset + i);
+            if (b == 0) {
+                return new String(bytes, 0, i, StandardCharsets.UTF_8);
+            }
+            bytes[i] = b;
+        }
+        return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    private static String eventTypeName(int isRet) {
+        switch (isRet) {
+            case EVENT_METHOD_ENTER:
+                return "METHOD_ENTER";
+            case EVENT_METHOD_EXIT:
+                return "METHOD_EXIT";
+            case EVENT_VTHREAD_MOUNT:
+                return "VTHREAD_MOUNT";
+            case EVENT_VTHREAD_UNMOUNT:
+                return "VTHREAD_UNMOUNT";
+            case EVENT_VTHREAD_MOUNT_DEGRADED:
+                return "VTHREAD_MOUNT_DEGRADED";
+            case EVENT_VTHREAD_UNMOUNT_DEGRADED:
+                return "VTHREAD_UNMOUNT_DEGRADED";
+            default:
+                return "UNKNOWN";
+        }
+    }
+
+    // VT_PHASE record: writes DATA_TYPE_VT_PHASE and only the VT_PHASE field group,
+    // so no method/comm/tid/isRet bytes are produced for lifecycle events.
+    boolean recordVtPhase(long carrierTid, long vtId, int phaseId, int cpu, long timestamp) {
+        if (!enterWriter()) {
+            return false;
+        }
+        try {
+            if (!isActive()) {
+                return false;
+            }
+            long seq = claimSequence();
+            if (seq <= 0L) {
+                return false;
+            }
+
+            int slotIndex = slotIndex(seq);
+            MappedByteBuffer slotBuffer = slotBuffer(slotIndex);
+            int base = slotOffset(slotIndex);
+
+            slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_PHASE);
+            slotBuffer.putLong(base + SLOT_VT_CARRIER_TID, carrierTid);
+            slotBuffer.putLong(base + SLOT_VT_VT_ID, vtId);
+            slotBuffer.putInt(base + SLOT_VT_PHASE_ID, phaseId);
+            slotBuffer.putInt(base + SLOT_VT_CPU, cpu);
+            slotBuffer.putLong(base + SLOT_VT_TIMESTAMP, timestamp);
+
+            // Publish this slot after all field groups are written.
+            putLongRelease(slotBuffer, base + SLOT_SEQ, seq);
+            drainPublished();
+            return true;
+        } finally {
+            writerState.decrementAndGet();
+        }
+    }
+
+    boolean recordVtSocketRead(long vtId, int fd, long bytes, int cpu, long timestamp) {
+        if (!enterWriter()) {
+            return false;
+        }
+        try {
+            if (!isActive()) {
+                return false;
+            }
+            long seq = claimSequence();
+            if (seq <= 0L) {
+                return false;
+            }
+
+            int slotIndex = slotIndex(seq);
+            MappedByteBuffer slotBuffer = slotBuffer(slotIndex);
+            int base = slotOffset(slotIndex);
+
+            slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_PHASE);
+            slotBuffer.putLong(base + SLOT_VT_CARRIER_TID, 0L);
+            slotBuffer.putLong(base + SLOT_VT_VT_ID, vtId);
+            slotBuffer.putInt(base + SLOT_VT_PHASE_ID, VT_PHASE_SOCKET_READ_ID);
+            slotBuffer.putInt(base + SLOT_VT_CPU, cpu);
+            slotBuffer.putLong(base + SLOT_VT_TIMESTAMP, timestamp);
+            slotBuffer.putInt(base + SLOT_VT_FD, fd);
+            slotBuffer.putLong(base + SLOT_VT_BYTES, bytes);
+
+            putLongRelease(slotBuffer, base + SLOT_SEQ, seq);
+            drainPublished();
+            return true;
+        } finally {
+            writerState.decrementAndGet();
+        }
+    }
+
+    boolean recordVtSocketWrite(long vtId, int fd, long bytes, int cpu, long timestamp) {
+        if (!enterWriter()) {
+            return false;
+        }
+        try {
+            if (!isActive()) {
+                return false;
+            }
+            long seq = claimSequence();
+            if (seq <= 0L) {
+                return false;
+            }
+
+            int slotIndex = slotIndex(seq);
+            MappedByteBuffer slotBuffer = slotBuffer(slotIndex);
+            int base = slotOffset(slotIndex);
+
+            slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_PHASE);
+            slotBuffer.putLong(base + SLOT_VT_CARRIER_TID, 0L);
+            slotBuffer.putLong(base + SLOT_VT_VT_ID, vtId);
+            slotBuffer.putInt(base + SLOT_VT_PHASE_ID, VT_PHASE_SOCKET_WRITE_ID);
+            slotBuffer.putInt(base + SLOT_VT_CPU, cpu);
+            slotBuffer.putLong(base + SLOT_VT_TIMESTAMP, timestamp);
+            slotBuffer.putInt(base + SLOT_VT_FD, fd);
+            slotBuffer.putLong(base + SLOT_VT_BYTES, bytes);
+
             putLongRelease(slotBuffer, base + SLOT_SEQ, seq);
             drainPublished();
             return true;

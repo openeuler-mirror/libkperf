@@ -42,6 +42,10 @@ public final class TraceRuntime {
     private TraceRuntime() {
     }
 
+    static SharedEventSink sink() {
+        return sink;
+    }
+
     public static int registerMethod(String module, String func) {
         long addr = fnv1a64(module + "!" + func) & 0x0000FFFFFFFFFFFFL;
         return registerMethod(addr, module, func);
@@ -185,7 +189,7 @@ public final class TraceRuntime {
             long timestamp = NativeThreadInfo.currentTimeNanosSafe();
             int cpu = NativeThreadInfo.currentCpuSafe();
             long contextId = VirtualThreadSupport.contextId(virtualThread);
-            s.record(method.addr, method.id, commId, tid, cpu, timestamp, contextId, eventType);
+            s.recordMethod(method.addr, method.id, commId, tid, cpu, timestamp, contextId, eventType);
         } catch (ThreadDeath t) {
             throw t;
         } catch (VirtualMachineError e) {
@@ -252,7 +256,8 @@ public final class TraceRuntime {
                 long ts = NativeThreadInfo.currentTimeNanosSafe();
                 int cpu = NativeThreadInfo.currentCpuSafe();
                 long gPtr = state.contextId();
-                if (!s.record(method.addr, method.id, commId, tid, cpu, ts, gPtr, SharedEventSink.EVENT_METHOD_ENTER)) {
+                if (!s.recordMethod(method.addr, method.id, commId, tid, cpu, ts, gPtr,
+                                    SharedEventSink.EVENT_METHOD_ENTER)) {
                     return Context.SKIPPED;
                 }
                 state.callDepth = depth + 1;
@@ -290,7 +295,7 @@ public final class TraceRuntime {
                 int commId = state.commId(s, tid);
                 int cpu = NativeThreadInfo.currentCpuSafe();
                 MethodMetadata method = context.method;
-                s.record(method.addr, method.id, commId, tid, cpu, ts, context.gPtr,
+                s.recordMethod(method.addr, method.id, commId, tid, cpu, ts, context.gPtr,
                         SharedEventSink.EVENT_METHOD_EXIT);
             } finally {
                 state.runtimeDepth--;
@@ -312,7 +317,7 @@ public final class TraceRuntime {
         long timestamp = NativeThreadInfo.currentTimeNanosSafe();
         int commId = state.commId(s, tid);
         int cpu = NativeThreadInfo.currentCpuSafe();
-        return s.record(method.addr, method.id, commId, tid, cpu, timestamp, state.contextId(), eventType);
+        return s.recordMethod(method.addr, method.id, commId, tid, cpu, timestamp, state.contextId(), eventType);
     }
 
     private static String currentThreadName() {

@@ -17,10 +17,10 @@
 #include "pcerr.h"
 #include <cstring>
 
-int JavaTraceManager::Open(int pd, int pid, const char *includeRules)
+int JavaTraceManager::Open(int pd, int pid, const char *includeRules, bool enableVtPhase)
 {
     auto *backend = new JavaBackendImpl();
-    int ret = JavaBackendOpen(backend, pid, includeRules);
+    int ret = JavaBackendOpen(backend, pid, includeRules, enableVtPhase);
     if (ret != 0) {
         delete backend;
         pcerr::New(LIBPERF_ERR_UTRACE_JAVA_PROCESS_FAILED, "Java backend open failed, ret=" + std::to_string(ret));
