@@ -81,9 +81,15 @@ final class SharedEventSink implements AutoCloseable {
     // Ring descriptor table: one cache-line padded 128-byte entry per ring.
     static final int DESC_SIZE = 128;
     static final int DESC_WRITE_SEQ = 0;
+    // Per-ring watermark of events the consumer's lag let a wrap overwrite (recordWrapLoss).
     static final int DESC_DROPPED = 8;
     static final int DESC_TID = 16;
     static final int DESC_RING_IDX = 20;
+    // Consumer writeback: highest sequence the backend has committed to its read cursor.
+    static final int DESC_CONSUMED_SEQ = 24;
+    // Per-ring count of events a late writer self-rejected because its slot was reused
+    // after a full wrap (claimSlot); distinct cause from DESC_DROPPED.
+    static final int DESC_LATE_DROPS = 32;
 
     // Record layout: SLOT_SEQ is the publish marker (first field, written last) and
     // SLOT_DATA_TYPE (second field) selects which per-type field group decodes the rest.
@@ -113,6 +119,8 @@ final class SharedEventSink implements AutoCloseable {
     static final int SLOT_VT_BYTES = 52;
     // Carrier OS tid (NativeThreadInfo.currentTidSafe) of the thread that emitted the event.
     static final int SLOT_VT_OS_TID = 60;
+    // Thread dictionary id of the carrier (see registerCarrierThread); -1 = absent.
+    static final int SLOT_VT_COMM_ID = 12;
 
     // SLOT_DATA_TYPE: coarse record kind, drives the consumer's payload dispatch.
     static final short DATA_TYPE_METHOD = 0;
@@ -202,6 +210,10 @@ final class SharedEventSink implements AutoCloseable {
         final MappedByteBuffer data;
         final AtomicLong claim = new AtomicLong(0L);
         final AtomicLong publish = new AtomicLong(0L);
+        // Highest lost-event count ever observed on this ring (see recordWrapLoss).
+        final AtomicLong lossFloor = new AtomicLong(0L);
+        // Events rejected by late writers (slot already reused after a full wrap).
+        final AtomicLong lateDrops = new AtomicLong(0L);
 
         Ring(int index, MappedByteBuffer data) {
             this.index = index;
@@ -311,7 +323,11 @@ final class SharedEventSink implements AutoCloseable {
         headerBuffer.putLong(HEADER_EVENT_OFFSET, eventOffset);
         // Reset every ring publish marker so a reused file never exposes stale sequences.
         for (int i = 0; i < ringCount; i++) {
-            descBuffer.putLong(i * DESC_SIZE + DESC_WRITE_SEQ, 0L);
+            int base = i * DESC_SIZE;
+            descBuffer.putLong(base + DESC_WRITE_SEQ, 0L);
+            descBuffer.putLong(base + DESC_CONSUMED_SEQ, 0L);
+            descBuffer.putLong(base + DESC_DROPPED, 0L);
+            descBuffer.putLong(base + DESC_LATE_DROPS, 0L);
         }
         putIntRelease(HEADER_ACTIVE, 1);
     }
@@ -419,7 +435,10 @@ final class SharedEventSink implements AutoCloseable {
             return false;
         }
         Ring ring = ringFor(cpu);
-        long seq = ring.claim.incrementAndGet();
+        long seq = claimSlot(ring);
+        if (seq < 0) {
+            return false;
+        }
         int base = slotIndex(seq) * SLOT_SIZE;
         MappedByteBuffer slotBuffer = ring.data;
 
@@ -489,16 +508,21 @@ final class SharedEventSink implements AutoCloseable {
 
     // VT_PHASE record: writes DATA_TYPE_VT_PHASE and only the VT_PHASE field group,
     // so no method/comm/tid/isRet bytes are produced for lifecycle events.
-    boolean recordVtPhase(long carrierTid, long vtId, int phaseId, int cpu, long timestamp, int osTid) {
+    boolean recordVtPhase(long carrierTid, long vtId, int phaseId, int cpu, long timestamp,
+                          int osTid, int commId) {
         if (!isActive()) {
             return false;
         }
         Ring ring = ringFor(cpu);
-        long seq = ring.claim.incrementAndGet();
+        long seq = claimSlot(ring);
+        if (seq < 0) {
+            return false;
+        }
         int base = slotIndex(seq) * SLOT_SIZE;
         MappedByteBuffer slotBuffer = ring.data;
 
         slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_PHASE);
+        slotBuffer.putInt(base + SLOT_VT_COMM_ID, commId);
         slotBuffer.putLong(base + SLOT_VT_CARRIER_TID, carrierTid);
         slotBuffer.putLong(base + SLOT_VT_VT_ID, vtId);
         slotBuffer.putInt(base + SLOT_VT_PHASE_ID, phaseId);
@@ -517,11 +541,15 @@ final class SharedEventSink implements AutoCloseable {
             return false;
         }
         Ring ring = ringFor(cpu);
-        long seq = ring.claim.incrementAndGet();
+        long seq = claimSlot(ring);
+        if (seq < 0) {
+            return false;
+        }
         int base = slotIndex(seq) * SLOT_SIZE;
         MappedByteBuffer slotBuffer = ring.data;
 
         slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_PHASE);
+        slotBuffer.putInt(base + SLOT_VT_COMM_ID, -1);
         slotBuffer.putLong(base + SLOT_VT_CARRIER_TID, 0L);
         slotBuffer.putLong(base + SLOT_VT_VT_ID, vtId);
         slotBuffer.putInt(base + SLOT_VT_PHASE_ID, VT_PHASE_SOCKET_READ_ID);
@@ -541,11 +569,15 @@ final class SharedEventSink implements AutoCloseable {
             return false;
         }
         Ring ring = ringFor(cpu);
-        long seq = ring.claim.incrementAndGet();
+        long seq = claimSlot(ring);
+        if (seq < 0) {
+            return false;
+        }
         int base = slotIndex(seq) * SLOT_SIZE;
         MappedByteBuffer slotBuffer = ring.data;
 
         slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_PHASE);
+        slotBuffer.putInt(base + SLOT_VT_COMM_ID, -1);
         slotBuffer.putLong(base + SLOT_VT_CARRIER_TID, 0L);
         slotBuffer.putLong(base + SLOT_VT_VT_ID, vtId);
         slotBuffer.putInt(base + SLOT_VT_PHASE_ID, VT_PHASE_SOCKET_WRITE_ID);
@@ -573,13 +605,48 @@ final class SharedEventSink implements AutoCloseable {
         for (;;) {
             long current = ring.publish.get();
             if (current >= seq) {
-                return;
+                break;
             }
             if (ring.publish.compareAndSet(current, seq)) {
                 putLongRelease(descBuffer, ring.descBase + DESC_WRITE_SEQ, seq);
-                return;
+                break;
             }
         }
+        recordWrapLoss(ring, seq);
+    }
+
+    // SharedEventSink claim entry: reject writers that lag the published watermark by a full
+    // ring, because their slot index has already been reused by sequence + slotsPerRing and
+    // writing the payload would corrupt that published event.
+    private long claimSlot(Ring ring) {
+        long seq = ring.claim.incrementAndGet();
+        if (ring.publish.get() - seq >= (long) slotsPerRing) {
+            putLongRelease(descBuffer, ring.descBase + DESC_LATE_DROPS,
+                           ring.lateDrops.incrementAndGet());
+            return -1L;
+        }
+        return seq;
+    }
+
+    // The consumer writes its committed read cursor back into the ring descriptor. A sequence
+    // more than one ring capacity ahead of that cursor has already overwritten an unconsumed
+    // slot, i.e. the consumer fell behind and events were lost. The count stays per-ring in
+    // DESC_DROPPED (no global aggregation); lossFloor keeps it monotonic so the same lost
+    // event is never counted by two racing writers.
+    private void recordWrapLoss(Ring ring, long seq) {
+        long consumed = readLongAcquire(descBuffer, ring.descBase + DESC_CONSUMED_SEQ);
+        long lost = seq - (long) slotsPerRing - consumed;
+        if (lost <= 0) {
+            return;
+        }
+        long prev;
+        do {
+            prev = ring.lossFloor.get();
+        } while (prev < lost && !ring.lossFloor.compareAndSet(prev, lost));
+        if (prev >= lost) {
+            return;
+        }
+        putLongRelease(descBuffer, ring.descBase + DESC_DROPPED, ring.lossFloor.get());
     }
 
     private int slotIndex(long sequence) {
@@ -625,6 +692,12 @@ final class SharedEventSink implements AutoCloseable {
 
     private int getIntAcquire(int offset) {
         int value = headerBuffer.getInt(offset);
+        MemoryFence.acquireFence();
+        return value;
+    }
+
+    private long readLongAcquire(ByteBuffer source, int offset) {
+        long value = source.getLong(offset);
         MemoryFence.acquireFence();
         return value;
     }

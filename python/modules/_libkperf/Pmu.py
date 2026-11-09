@@ -2736,9 +2736,11 @@ class UTraceMethodData:
         self.func = func
 
 class UTraceVtPhaseData:
-    __slots__ = ['timestamp', 'carrierTid', 'vtId', 'phaseId', 'cpu', 'fd', 'bytesRead', 'osTid']
+    __slots__ = ['timestamp', 'carrierTid', 'vtId', 'phaseId', 'cpu', 'fd', 'bytesRead', 'osTid',
+                 'comm']
 
-    def __init__(self, timestamp=0, carrierTid=0, vtId=0, phaseId=0, cpu=0, fd=0, bytesRead=0, osTid=0):
+    def __init__(self, timestamp=0, carrierTid=0, vtId=0, phaseId=0, cpu=0, fd=0, bytesRead=0,
+                 osTid=0, comm=''):
         self.timestamp = timestamp
         self.carrierTid = carrierTid
         self.vtId = vtId
@@ -2747,6 +2749,7 @@ class UTraceVtPhaseData:
         self.fd = fd
         self.bytesRead = bytesRead
         self.osTid = osTid
+        self.comm = comm
 
 class UTraceData:
     __slots__ = ['__c_u_trace_data', '__payload_blob']
@@ -2827,7 +2830,7 @@ class UTraceData:
         return UTraceVtPhaseData(timestamp=int(view.timestamp), carrierTid=int(view.carrierTid),
                                  vtId=int(view.vtId), phaseId=int(view.phaseId), cpu=int(view.cpu),
                                  fd=int(view.fd), bytesRead=int(view.bytesRead),
-                                 osTid=int(view.osTid))
+                                 osTid=int(view.osTid), comm=_blob_string_at(base, view.commOff))
 
     @classmethod
     def from_c_u_trace_data(cls, c_u_trace_data):

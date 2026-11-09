@@ -79,7 +79,12 @@ static constexpr size_t K_THREAD_COMM_LEN = 32;
 // ABI v4 ring descriptor table (one padded 128-byte entry per ring).
 static constexpr size_t K_DESC_SIZE = 128;
 static constexpr size_t K_DESC_WRITE_SEQ = 0;
+// Per-ring watermark of consumer-lag wrap overwrites.
 static constexpr size_t K_DESC_DROPPED = 8;
+// Read-cursor writeback consumed by the producer's wrap-loss detection.
+static constexpr size_t K_DESC_CONSUMED_SEQ = 24;
+// Per-ring count of events a late writer self-rejected (slot reused after a full wrap).
+static constexpr size_t K_DESC_LATE_DROPS = 32;
 static constexpr uint32_t K_MAX_RING_COUNT = 65536;
 static constexpr uint32_t K_MAX_SLOTS_PER_RING = 1U << 22;
 static constexpr uint64_t K_MAX_SHM_SIZE = 64ULL << 30;
@@ -107,6 +112,7 @@ static constexpr size_t K_SLOT_VT_TIMESTAMP = 40;
 static constexpr size_t K_SLOT_VT_FD = 48;
 static constexpr size_t K_SLOT_VT_BYTES = 52;
 static constexpr size_t K_SLOT_VT_OS_TID = 60;
+static constexpr size_t K_SLOT_VT_COMM_ID = 12;
 
 ///< Java agent wire record kind (SharedEventSink SLOT_DATA_TYPE): 0=method, 1=vt-phase.
 ///< Kept separate from enum UTraceFormat so the wire protocol can evolve independently.
@@ -261,6 +267,27 @@ static void ResolveTraceDataStrings(std::string &comm, std::string &module, std:
     } else {
         metadataMismatch = true;
     }
+}
+
+// Resolve the carrier thread name from the thread dictionary for VT_PHASE events.
+// commId < 0 means the event carries no carrier name (not a mismatch); empty string on mismatch.
+static std::string ResolveCarrierComm(const uint8_t *mem, int32_t commId, int32_t namespaceTid,
+                                      bool &metadataMismatch)
+{
+    if (commId < 0) {
+        return std::string();
+    }
+    if (static_cast<uint32_t>(commId) < K_THREAD_CAPACITY) {
+        const uint32_t threadId = static_cast<uint32_t>(commId);
+        const uint8_t *thread = mem + K_HEADER_SIZE + K_METHOD_BYTES +
+                                static_cast<size_t>(threadId) * K_THREAD_ENTRY_SIZE;
+        if (LoadAtAcquire<uint32_t>(thread, K_THREAD_SEQ) == threadId + 1 &&
+            LoadAt<int32_t>(thread, K_THREAD_TID) == namespaceTid) {
+            return ReadFixedString(thread, K_THREAD_COMM, K_THREAD_COMM_LEN);
+        }
+    }
+    metadataMismatch = true;
+    return std::string();
 }
 
 // Counts the CPUs the target process may actually run on, mirroring the JVM's
@@ -579,9 +606,16 @@ static bool DecodeSlotRecord(RingReadShard *shard, const uint8_t *slot, UTraceDa
         const int fd = LoadAt<int32_t>(slot, K_SLOT_VT_FD);
         const int64_t bytes = LoadAt<int64_t>(slot, K_SLOT_VT_BYTES);
         const uint32_t osTid = LoadAt<uint32_t>(slot, K_SLOT_VT_OS_TID);
+        const int32_t commId = LoadAt<int32_t>(slot, K_SLOT_VT_COMM_ID);
+        bool vtMismatched = false;
+        const std::string carrierComm = ResolveCarrierComm(mem, commId, static_cast<int32_t>(osTid),
+                                                           vtMismatched);
+        if (vtMismatched) {
+            ++shard->metadataMismatch;
+        }
         format = UTRACE_FMT_VT_PHASE;
         payload = BuildVtPhasePayload(timestamp, carrierTid, vtId, phaseId, cpu, fd, bytes, osTid,
-                                      &payloadSize);
+                                      carrierComm.c_str(), &payloadSize);
         *outTs = timestamp;
     } else {
         // METHOD field group.
@@ -658,6 +692,22 @@ static void DecodeRingRange(RingReadShard *shard)
             shard->records.push_back(record);
         }
         shard->cursors.emplace_back(ring, writeSeq);
+    }
+}
+
+// Commit per-ring read cursors and publish the progress into DESC_CONSUMED_SEQ so the
+// producer can count events overwritten while the consumer lagged beyond one ring capacity.
+// Shards own disjoint ring ranges, so every descriptor field keeps a single writer.
+static void CommitRingCursors(JavaBackendImpl *impl, uint64_t descOffset,
+                              const std::vector<RingReadShard> &shards)
+{
+    uint8_t *mem = static_cast<uint8_t *>(impl->mapped);
+    for (const auto &shard : shards) {
+        for (const auto &cursor : shard.cursors) {
+            impl->ringReadSeq[cursor.first] = cursor.second;
+            StoreAtRelease<uint64_t>(mem + descOffset + static_cast<size_t>(cursor.first) * K_DESC_SIZE,
+                                     K_DESC_CONSUMED_SEQ, cursor.second);
+        }
     }
 }
 
@@ -830,8 +880,15 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
     uint64_t overwritten = 0;
     uint64_t seqMismatch = 0;
     uint64_t metadataMismatch = 0;
+    uint64_t wrapDropped = 0;
+    uint64_t lateDropped = 0;
     size_t total = 0;
     bool allocFailed = false;
+    for (uint32_t r = 0; r < scanRings; ++r) {
+        const uint8_t *desc = mem + descOffset + static_cast<size_t>(r) * K_DESC_SIZE;
+        wrapDropped += LoadAtAcquire<uint64_t>(desc, K_DESC_DROPPED);
+        lateDropped += LoadAtAcquire<uint64_t>(desc, K_DESC_LATE_DROPS);
+    }
     for (auto &shard : shards) {
         totalWrite += shard.totalWrite;
         overwritten += shard.overwritten;
@@ -854,14 +911,11 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
 
     // No new events in any ring yet: keep the original single-shot empty diagnostic.
     if (total == 0) {
-        for (auto &shard : shards) {
-            for (const auto &cursor : shard.cursors) {
-                impl->ringReadSeq[cursor.first] = cursor.second;
-            }
-        }
+        CommitRingCursors(impl, descOffset, shards);
         if (impl->lastEmptyReadTotalSeq != totalWrite) {
             JavaTraceLog(MakeLogMessage("[trace-java] collected: events=0", ", methods=", methodCount,
-                ", threads=", threadCount, ", dropped=", dropped, "\n"));
+                ", threads=", threadCount, ", dropped=", dropped,
+                ", wrap_dropped=", wrapDropped, ", late_dropped=", lateDropped, "\n"));
             impl->lastEmptyReadTotalSeq = totalWrite;
         }
         return 0;
@@ -897,11 +951,7 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
 
     // Advance per-ring cursors only after the output block exists; alloc failures above
     // keep the old cursors so the next poll re-reads the same range.
-    for (auto &shard : shards) {
-        for (const auto &cursor : shard.cursors) {
-            impl->ringReadSeq[cursor.first] = cursor.second;
-        }
-    }
+    CommitRingCursors(impl, descOffset, shards);
 
     size_t stored = flat.size();
     std::memcpy(raw, &stored, sizeof(size_t));
@@ -913,6 +963,8 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
                                 ", threads=", threadCount,
                                 ", rings=", scanRings,
                                 ", dropped=", dropped,
+                                ", wrap_dropped=", wrapDropped,
+                                ", late_dropped=", lateDropped,
                                 ", overwritten=", overwritten,
                                 ", seqMismatch=", seqMismatch,
                                 ", metadataMismatch=", metadataMismatch, "\n"));
