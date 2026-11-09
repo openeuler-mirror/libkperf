@@ -20,7 +20,7 @@ using namespace std;
 class TestSPE : public testing::Test {
 public:
     void SetUp() {
-        if (!HasSpeDevice()) {
+        if (!SpeCollectSupported()) {
             GTEST_SKIP();
         }
     }

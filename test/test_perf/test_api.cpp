@@ -14,6 +14,7 @@
  ******************************************************************************/
 #include <thread>
 #include <fstream>
+#include <cstdlib>
 #include <sys/resource.h>
 #include <linux/version.h>
 #include "util_time.h"
@@ -224,7 +225,7 @@ TEST_F(TestAPI, SampleOnlyElf)
 
 TEST_F(TestAPI, SpeNoSymbol)
 {
-    if (!HasSpeDevice()) {
+    if (!SpeCollectSupported()) {
         GTEST_SKIP();
     }
     auto attr = GetSpeAttribute();
@@ -241,7 +242,7 @@ TEST_F(TestAPI, SpeNoSymbol)
 
 TEST_F(TestAPI, SpeInitSuccess)
 {
-    if (!HasSpeDevice()) {
+    if (!SpeCollectSupported()) {
         GTEST_SKIP();
     }
     auto attr = GetSpeAttribute();
@@ -251,7 +252,7 @@ TEST_F(TestAPI, SpeInitSuccess)
 
 TEST_F(TestAPI, SpeCollectSuccess)
 {
-    if (!HasSpeDevice()) {
+    if (!SpeCollectSupported()) {
         GTEST_SKIP();
     }
     auto attr = GetSpeAttribute();
@@ -264,7 +265,7 @@ TEST_F(TestAPI, SpeCollectSuccess)
 
 TEST_F(TestAPI, SpeReadSuccess)
 {
-    if (!HasSpeDevice()) {
+    if (!SpeCollectSupported()) {
         GTEST_SKIP();
     }
     auto attr = GetSpeAttribute();
@@ -332,7 +333,7 @@ TEST_F(TestAPI, SampleCollectBadPd)
 
 TEST_F(TestAPI, SpeInitBusy)
 {
-    if (!HasSpeDevice()) {
+    if (!SpeCollectSupported()) {
         GTEST_SKIP();
     }
     auto attr = GetSpeAttribute();
@@ -358,7 +359,7 @@ TEST_F(TestAPI, SampleSystem)
 
 TEST_F(TestAPI, SpeSystem)
 {
-    if (!HasSpeDevice()) {
+    if (!SpeCollectSupported()) {
         GTEST_SKIP();
     }
     auto attr = GetSpeAttribute();
@@ -597,7 +598,7 @@ TEST_F(TestAPI, TestShortChild)
 
 TEST_F(TestAPI, TestSPEEventGroup)
 {
-    if (!HasSpeDevice()) {
+    if (!SpeCollectSupported()) {
         GTEST_SKIP();
     }
     auto attr = GetSpeAttribute();
@@ -733,6 +734,36 @@ TEST_F(TestAPI, InvalidCgroupNameListSPE)
     attr.numCgroup = 2;
     auto pd = PmuOpen(SPE_SAMPLING, &attr);
     ASSERT_EQ(pd, -1);
+}
+
+TEST_F(TestAPI, SpeUnsupportedInContainer)
+{
+    const char* originalContainerEnv = getenv("container");
+    const bool hadContainerEnv = originalContainerEnv != nullptr;
+    const string savedContainerEnv = hadContainerEnv ? originalContainerEnv : "";
+    ASSERT_EQ(setenv("container", "libkperf-test", 1), 0);
+
+    auto attr = GetSpeAttribute();
+    pd = PmuOpen(SPE_SAMPLING, &attr);
+    const int err = Perrorno();
+    const string errMsg = Perror();
+
+    auto samplingAttr = GetPmuAttribute();
+    char* invalidEventList[1] = {(char*)"container-test-invalid-event"};
+    samplingAttr.evtList = invalidEventList;
+    const int samplingPd = PmuOpen(SAMPLING, &samplingAttr);
+    const int samplingErr = Perrorno();
+
+    if (hadContainerEnv) {
+        ASSERT_EQ(setenv("container", savedContainerEnv.c_str(), 1), 0);
+    } else {
+        ASSERT_EQ(unsetenv("container"), 0);
+    }
+    ASSERT_EQ(pd, -1);
+    ASSERT_EQ(err, LIBPERF_ERR_SPE_CONTAINER_UNSUPPORTED);
+    ASSERT_NE(errMsg.find("Run the SPE collection on the host"), string::npos);
+    ASSERT_EQ(samplingPd, -1);
+    ASSERT_EQ(samplingErr, LIBPERF_ERR_INVALID_EVENT);
 }
 
 TEST_F(TestAPI, InvalidUserAccessAttr)

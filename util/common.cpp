@@ -193,6 +193,72 @@ std::string GetCgroupPath(const std::string& cgroupName) {
     return cgroupRootPath;
 }
 
+bool IsInContainer()
+{
+    if (ExistPath("/.dockerenv") || ExistPath("/run/.containerenv")) {
+        return true;
+    }
+
+    const char* containerEnv = std::getenv("container");
+    if (containerEnv != nullptr && containerEnv[0] != '\0') {
+        return true;
+    }
+
+    std::ifstream cgroupFile("/proc/self/cgroup");
+    std::ostringstream cgroupBuffer;
+    cgroupBuffer << cgroupFile.rdbuf();
+    const std::string cgroupInfo = cgroupBuffer.str();
+    const std::vector<std::string> containerCgroupMarkers = {
+        "docker", "kubepods", "containerd", "libpod", "lxc"
+    };
+    for (const auto& marker : containerCgroupMarkers) {
+        if (cgroupInfo.find(marker) != std::string::npos) {
+            return true;
+        }
+    }
+
+    // A private cgroup namespace may hide the runtime name from /proc/self/cgroup. In that case,
+    // inspect the root mount for the common Docker, containerd, and Podman storage paths.
+    std::ifstream mountInfoFile(MOUNT_INFO_PATH);
+    std::string mountInfoLine;
+    const std::vector<std::string> containerRootMarkers = {
+        "/docker/", "/containerd/", "/containers/storage/", "kubepods"
+    };
+    while (std::getline(mountInfoFile, mountInfoLine)) {
+        std::istringstream mountInfoStream(mountInfoLine);
+        std::string mountId;
+        std::string parentId;
+        std::string device;
+        std::string root;
+        std::string mountPoint;
+        if (!(mountInfoStream >> mountId >> parentId >> device >> root >> mountPoint) || mountPoint != "/") {
+            continue;
+        }
+        for (const auto& marker : containerRootMarkers) {
+            if (mountInfoLine.find(marker) != std::string::npos) {
+                return true;
+            }
+        }
+    }
+
+    // A process in a nested PID namespace can expose both the host and namespace PIDs.
+    std::ifstream statusFile("/proc/self/status");
+    std::string line;
+    while (std::getline(statusFile, line)) {
+        if (line.compare(0, 6, "NSpid:") != 0) {
+            continue;
+        }
+        std::istringstream pidStream(line.substr(6));
+        int pid = 0;
+        unsigned pidCount = 0;
+        while (pidStream >> pid) {
+            ++pidCount;
+        }
+        return pidCount > 1;
+    }
+    return false;
+}
+
 bool CheckCurKernelConfig(const std::string& configName)
 {
     std::string configPath;

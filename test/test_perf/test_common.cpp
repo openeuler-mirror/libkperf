@@ -257,6 +257,11 @@ bool HasSpeDevice()
     return false;
 }
 
+bool SpeCollectSupported()
+{
+    return HasSpeDevice() && !IsInContainer();
+}
+
 std::string GetTestBinaryPath(const std::string &name)
 {
     char myDir[PATH_MAX] = {0};

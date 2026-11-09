@@ -81,7 +81,9 @@ namespace pcerr {
             {LIBPERF_ERR_PROC_FILE_NOT_FOUND, "proc file not found"},
             {LIBPERF_ERR_PROC_READ_FAILED, "failed to read proc file"},
             {LIBPERF_ERR_PROC_PARSE_FAILED, "failed to parse proc file"},
-            {LIBPERF_ERR_PROC_DATA_NULL, "output data pointer is null"}
+            {LIBPERF_ERR_PROC_DATA_NULL, "output data pointer is null"},
+            {LIBPERF_ERR_SPE_CONTAINER_UNSUPPORTED,
+             "SPE collection is not supported inside a container; run the collection on the host"}
     };
     static std::unordered_map<int, std::string> warnMsgs = {
             {LIBPERF_WARN_CTXID_LOST, "Some SPE context packets are not found in the traces."},

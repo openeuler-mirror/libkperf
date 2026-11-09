@@ -58,6 +58,7 @@ std::string GetTraceEventDir();
 bool ConvertStrToInt(const std::string& intValStr, int32_t& val);
 int GetParanoidVal();
 std::string GetCgroupPath(const std::string& cgroupName);
+bool IsInContainer();
 bool CheckCurKernelConfig(const std::string& configName);
 std::string GetMntPoint(int pid);
 bool IsJvmProcess(int pid);

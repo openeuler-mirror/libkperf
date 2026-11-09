@@ -48,6 +48,9 @@ bool HasEvent(PmuData *data, int len, std::string evt);
 // Check whether there is arm_spe_0 device.
 bool HasSpeDevice();
 
+// Check whether SPE collection is available in the current environment.
+bool SpeCollectSupported();
+
 std::string GetTestBinaryPath(const std::string &name);
 
 #endif
