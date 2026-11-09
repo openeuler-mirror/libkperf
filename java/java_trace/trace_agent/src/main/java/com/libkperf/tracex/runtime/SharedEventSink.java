@@ -113,8 +113,6 @@ final class SharedEventSink implements AutoCloseable {
     static final int SLOT_VT_BYTES = 52;
     // Carrier OS tid (NativeThreadInfo.currentTidSafe) of the thread that emitted the event.
     static final int SLOT_VT_OS_TID = 60;
-    // Thread dictionary id of the carrier (see registerCarrierThread); -1 = absent.
-    static final int SLOT_VT_COMM_ID = 12;
 
     // SLOT_DATA_TYPE: coarse record kind, drives the consumer's payload dispatch.
     static final short DATA_TYPE_METHOD = 0;
@@ -491,8 +489,7 @@ final class SharedEventSink implements AutoCloseable {
 
     // VT_PHASE record: writes DATA_TYPE_VT_PHASE and only the VT_PHASE field group,
     // so no method/comm/tid/isRet bytes are produced for lifecycle events.
-    boolean recordVtPhase(long carrierTid, long vtId, int phaseId, int cpu, long timestamp,
-                          int osTid, int commId) {
+    boolean recordVtPhase(long carrierTid, long vtId, int phaseId, int cpu, long timestamp, int osTid) {
         if (!isActive()) {
             return false;
         }
@@ -502,7 +499,6 @@ final class SharedEventSink implements AutoCloseable {
         MappedByteBuffer slotBuffer = ring.data;
 
         slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_PHASE);
-        slotBuffer.putInt(base + SLOT_VT_COMM_ID, commId);
         slotBuffer.putLong(base + SLOT_VT_CARRIER_TID, carrierTid);
         slotBuffer.putLong(base + SLOT_VT_VT_ID, vtId);
         slotBuffer.putInt(base + SLOT_VT_PHASE_ID, phaseId);
@@ -526,7 +522,6 @@ final class SharedEventSink implements AutoCloseable {
         MappedByteBuffer slotBuffer = ring.data;
 
         slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_PHASE);
-        slotBuffer.putInt(base + SLOT_VT_COMM_ID, -1);
         slotBuffer.putLong(base + SLOT_VT_CARRIER_TID, 0L);
         slotBuffer.putLong(base + SLOT_VT_VT_ID, vtId);
         slotBuffer.putInt(base + SLOT_VT_PHASE_ID, VT_PHASE_SOCKET_READ_ID);
@@ -551,7 +546,6 @@ final class SharedEventSink implements AutoCloseable {
         MappedByteBuffer slotBuffer = ring.data;
 
         slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_PHASE);
-        slotBuffer.putInt(base + SLOT_VT_COMM_ID, -1);
         slotBuffer.putLong(base + SLOT_VT_CARRIER_TID, 0L);
         slotBuffer.putLong(base + SLOT_VT_VT_ID, vtId);
         slotBuffer.putInt(base + SLOT_VT_PHASE_ID, VT_PHASE_SOCKET_WRITE_ID);

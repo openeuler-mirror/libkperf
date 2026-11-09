@@ -1425,12 +1425,9 @@ void *BuildMethodPayload(int64_t timestamp, unsigned long addr, uint64_t gPtr, i
 
 void *BuildVtPhasePayload(int64_t timestamp, uint64_t carrierTid, uint64_t vtId,
                           uint32_t phaseId, int cpu, int fd, int64_t bytes, uint32_t osTid,
-                          const char *comm, unsigned *outSize)
+                          unsigned *outSize)
 {
     std::vector<char> blob(sizeof(UTraceVtPhasePayload), '\0');
-    // See BuildMethodPayload: reserve string bytes so AppendBlobString cannot reallocate.
-    size_t stringsLen = (comm != nullptr && comm[0] != '\0') ? std::strlen(comm) + 1 : 0;
-    blob.reserve(blob.size() + stringsLen);
     UTraceVtPhasePayload *p = reinterpret_cast<UTraceVtPhasePayload *>(blob.data());
     p->timestamp = timestamp;
     p->carrierTid = carrierTid;
@@ -1440,6 +1437,6 @@ void *BuildVtPhasePayload(int64_t timestamp, uint64_t carrierTid, uint64_t vtId,
     p->fd = fd;
     p->bytesRead = bytes;
     p->osTid = osTid;
-    p->commOff = AppendBlobString(blob, comm);
+    p->commOff = 0;
     return FinishBlob(blob, outSize);
 }
