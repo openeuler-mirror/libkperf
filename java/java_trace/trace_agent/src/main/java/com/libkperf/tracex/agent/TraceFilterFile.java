@@ -38,7 +38,6 @@ public final class TraceFilterFile {
 
     public final List<FilterRule> includes = new ArrayList<FilterRule>();
     public final List<FilterRule> excludes = new ArrayList<FilterRule>();
-    public long slotCount = -1;
     public int contextDepth = -1;
     public int contextMaxMethods = -1;
     public boolean enableVTStage = false;
@@ -94,17 +93,12 @@ public final class TraceFilterFile {
                 int eq = s.indexOf('=');
                 if (eq >= 0) {
                     String k = s.substring(0, eq).trim();
-                    if (isNonJavaKey(k)) {
+                    // "slot_count": deprecated ABI v3 knob, accepted and ignored for old configs.
+                    if (isNonJavaKey(k) || "slot_count".equals(k)) {
                         continue;
                     }
                     String v = s.substring(eq + 1).trim();
-                    if ("slot_count".equals(k)) {
-                        Long parsed = parsePositiveLong(v);
-                        if (parsed == null) {
-                            return invalid(out, path, lineNo, "invalid slot_count", v);
-                        }
-                        out.slotCount = parsed.longValue();
-                    } else if ("context_depth".equals(k)) {
+                    if ("context_depth".equals(k)) {
                         Integer parsed = parseNonNegativeInt(v);
                         if (parsed == null || parsed.intValue() > MAX_CONTEXT_DEPTH) {
                             return invalid(out, path, lineNo, "invalid context_depth", v);
@@ -117,6 +111,9 @@ public final class TraceFilterFile {
                         }
                         out.contextMaxMethods = parsed.intValue();
                     } else if ("vt_stage".equals(k)) {
+                        if (!isBooleanValue(v)) {
+                            return invalid(out, path, lineNo, "invalid vt_stage", v);
+                        }
                         out.enableVTStage = parseBooleanValue(v);
                     } else if ("slots_per_ring".equals(k)) {
                         Long parsed = parsePositiveLong(v);
@@ -276,6 +273,11 @@ public final class TraceFilterFile {
             return "0".equals(value) ? Integer.valueOf(0) : null;
         }
         return parsed.longValue() <= Integer.MAX_VALUE ? Integer.valueOf(parsed.intValue()) : null;
+    }
+
+    private static boolean isBooleanValue(String value) {
+        return "true".equalsIgnoreCase(value) || "false".equalsIgnoreCase(value)
+                || "1".equals(value) || "0".equals(value);
     }
 
     private static boolean parseBooleanValue(String value) {

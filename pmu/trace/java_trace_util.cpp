@@ -52,7 +52,6 @@ static constexpr const char *K_JAVA_NATIVE_LIB_NAME = "libtracex_threadinfo.so";
 static constexpr const char *K_JAVA_FILTER_CONFIG_NAME = "trace_filter.conf";
 static constexpr const char *K_LOG_REL_DIR = "logs";
 static constexpr const char *K_TRACE_LOG_NAME = "trace.log";
-static constexpr uint32_t K_MAX_SLOT_COUNT = 67108864U;
 // ABI v4 ring defaults, must match SharedEventSink.java and TraceConfig.java.
 // ringCount is derived at open time from the target process's usable CPUs.
 static constexpr uint32_t K_DEFAULT_SLOTS_PER_RING = 327680;
@@ -911,29 +910,6 @@ static void LogInvalidConfigValue(const LocalConfigParseContext &context, const 
                                 context.lineNo, ": ", value, "\n"));
 }
 
-// Deprecated ABI v3 knob: validated so old configs still parse, but not consumed.
-static bool ParseSlotCountValue(const LocalConfigParseContext &context, const std::string &value)
-{
-    if (!IsUnsignedInteger(value)) {
-        LogInvalidConfigValue(context, K_SLOT_COUNT_KEY, value);
-        return false;
-    }
-
-    unsigned long long parsed = 0;
-    try {
-        parsed = std::stoull(value, nullptr, K_NUMBER_BASE_DECIMAL);
-    } catch (const std::exception &) {
-        LogInvalidConfigValue(context, K_SLOT_COUNT_KEY, value);
-        return false;
-    }
-
-    if (parsed == 0 || parsed > K_MAX_SLOT_COUNT) {
-        LogInvalidConfigValue(context, K_SLOT_COUNT_KEY, value);
-        return false;
-    }
-    return true;
-}
-
 static bool ParseBoundedUnsignedValue(const LocalConfigParseContext &context, const char *key,
                                       const std::string &value, unsigned long long maxValue)
 {
@@ -995,7 +971,8 @@ static bool ParseLocalConfigKeyValue(LocalConfigParseContext *context, const std
         return true;
     }
     if (key == K_SLOT_COUNT_KEY) {
-        return ParseSlotCountValue(*context, value);
+        // Deprecated ABI v3 knob: accepted and ignored so old configs still parse.
+        return true;
     }
     if (key == K_CONTEXT_DEPTH_KEY) {
         return ParseBoundedUnsignedValue(*context, K_CONTEXT_DEPTH_KEY, value, K_MAX_CONTEXT_DEPTH);
