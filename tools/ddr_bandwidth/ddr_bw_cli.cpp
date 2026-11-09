@@ -1,7 +1,7 @@
 #include <algorithm>
-#include <cerrno>
 #include <cctype>
-#include <climits>
+#include <cerrno>
+#include <limits>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -10,7 +10,6 @@
 #include <iostream>
 #include <map>
 #include <signal.h>
-#include <sstream>
 #include <string>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -21,8 +20,9 @@ using namespace std;
 
 static constexpr double BYTES_PER_MIB_LOCAL = 1024.0 * 1024.0;
 static constexpr double OPS_PER_MILLION = 1000.0 * 1000.0;
-static const char* SHORT_OPS = "p:d:i:h";
+static const char* SHORT_OPS = "ap:d:i:h";
 static const struct option LONG_OPS[] = {
+    {"all", no_argument, nullptr, 'a'},
     {"pid", required_argument, nullptr, 'p'},
     {"duration", required_argument, nullptr, 'd'},
     {"interval", required_argument, nullptr, 'i'},
@@ -31,11 +31,14 @@ static const struct option LONG_OPS[] = {
     {"top", required_argument, nullptr, 1003},
     {"pcie-bdf", required_argument, nullptr, 1004},
     {"debug", no_argument, nullptr, 1005},
+    {"spe-read-interval", required_argument, nullptr, 1006},
+    {"min-samples", required_argument, nullptr, 1007},
     {"help", no_argument, nullptr, 'h'},
     {nullptr, 0, nullptr, 0}
 };
 
-static bool ParseUnsigned(const char* arg, const char* name, unsigned long& out)
+static bool ParseUnsigned(const char* arg, const char* name, unsigned long& out,
+                          unsigned long maximum = std::numeric_limits<unsigned long>::max())
 {
     if (arg == nullptr || *arg == '\0') {
         cerr << "Error: parameter '" << name << "' is empty.\n";
@@ -51,12 +54,25 @@ static bool ParseUnsigned(const char* arg, const char* name, unsigned long& out)
     char* end = nullptr;
     errno = 0;
     unsigned long val = strtoul(arg, &end, 10);
-    if (end == arg || *end != '\0' || errno == ERANGE) {
-        cerr << "Error: parameter '" << name
-             << "' is invalid or out of range: '" << arg << "'.\n";
+    if (errno == ERANGE || val > maximum || end == arg || *end != '\0') {
+        cerr << "Error: parameter '" << name << "' is invalid: '" << arg << "'.\n";
         return false;
     }
     out = val;
+    return true;
+}
+
+static bool ParsePositiveUnsigned(
+    const char* arg, const char* name, unsigned long& out,
+    unsigned long maximum = std::numeric_limits<unsigned long>::max())
+{
+    if (!ParseUnsigned(arg, name, out, maximum)) {
+        return false;
+    }
+    if (out == 0) {
+        cerr << "Error: parameter '" << name << "' must be greater than zero.\n";
+        return false;
+    }
     return true;
 }
 
@@ -81,8 +97,8 @@ static bool AppendPidList(const char* arg, vector<int>& pids)
         char* tail = nullptr;
         errno = 0;
         long value = strtol(token.c_str(), &tail, 10);
-        if (tail == token.c_str() || *tail != '\0' || errno == ERANGE ||
-            value <= 0 || value > INT_MAX) {
+        if (errno == ERANGE || value > numeric_limits<int>::max() ||
+            tail == token.c_str() || *tail != '\0' || value <= 0) {
             cerr << "Error: invalid pid '" << token << "'.\n";
             return false;
         }
@@ -93,6 +109,7 @@ static bool AppendPidList(const char* arg, vector<int>& pids)
 
         if (endPos == string::npos) break;
         begin = endPos + 1;
+        if (begin == text.size()) return false;
     }
     return !pids.empty();
 }
@@ -100,20 +117,24 @@ static bool AppendPidList(const char* arg, vector<int>& pids)
 void PrintHelp()
 {
     cerr <<
-        "Usage: ddr_bandwidth [options] -p <pid[,pid...]> [-p <pid> ...]\n"
+        "Usage: ddr_bandwidth [options] [-a | -p <pid[,pid...]> ...]\n"
         "       ddr_bandwidth [options] -- <command> [args...]\n\n"
         "Attribute physical DDR bandwidth with DDRC + SPE + PCIe PMUs.\n"
         "Options:\n"
+        "  -a, --all                 Attribute all user-space processes (default without -p)\n"
         "  -p, --pid <pid[,pid...]> Target process ID(s); repeatable\n"
         "  -d, --duration <sec>      Collection duration in seconds (default: 10)\n"
         "  -i, --interval <ms>       Attribution window in ms (default: 100)\n"
-        "      --period <n>          SPE sampling period\n"
+        "      --spe-read-interval <ms> SPE drain interval (default: 50; capped by window)\n"
+        "      --min-samples <n>     Minimum target-user samples per direction (default: 1)\n"
+        "      --period <n>          SPE sampling period (default: 2048; not milliseconds)\n"
         "      --min-latency <n>     Minimum latency filter in cycles\n"
         "      --top <n>             Show top N functions (default: 20)\n"
         "      --pcie-bdf <bdf>      Collect only this PCIe BDF (repeatable; default: all)\n"
-        "      --debug               Print timing, SPE/window health and store-PC diagnostics\n"
+        "      --debug               Print aggregate timing, SPE pipeline and health diagnostics\n"
         "  -h, --help                Show this help\n\n"
         "Examples:\n"
+        "  ddr_bandwidth -a -d 10\n"
         "  ddr_bandwidth -p 12345 -d 10\n"
         "  ddr_bandwidth -p 12345,12346 --debug -d 10\n"
         "  ddr_bandwidth -p 12345 -p 12346 -d 10\n"
@@ -126,36 +147,27 @@ bool ParseArgs(int argc, char** argv, ArgsContext& act)
     int longIndex = 0;
     while ((opt = getopt_long(argc, argv, SHORT_OPS, LONG_OPS, &longIndex)) != -1) {
         switch (opt) {
+            case 'a':
+                act.systemWide = true;
+                break;
             case 'p':
                 if (!AppendPidList(optarg, act.pids)) return false;
                 break;
             case 'd': {
                 unsigned long val = 0;
-                if (!ParseUnsigned(optarg, "duration", val)) return false;
-                if (val == 0 || val > static_cast<unsigned long>(INT_MAX)) {
-                    cerr << "Error: duration must be in 1.." << INT_MAX << " seconds.\n";
-                    return false;
-                }
+                if (!ParsePositiveUnsigned(optarg, "duration", val, numeric_limits<int>::max())) return false;
                 act.duration = static_cast<int>(val);
                 break;
             }
             case 'i': {
                 unsigned long val = 0;
-                if (!ParseUnsigned(optarg, "interval", val)) return false;
-                if (val == 0 || val > static_cast<unsigned long>(INT_MAX)) {
-                    cerr << "Error: interval must be in 1.." << INT_MAX << " ms.\n";
-                    return false;
-                }
+                if (!ParsePositiveUnsigned(optarg, "interval", val, numeric_limits<int>::max())) return false;
                 act.interval = static_cast<int>(val);
                 break;
             }
             case 1001: {
                 unsigned long val = 0;
-                if (!ParseUnsigned(optarg, "period", val)) return false;
-                if (val == 0 || val > static_cast<unsigned long>(UINT_MAX)) {
-                    cerr << "Error: period must be in 1.." << UINT_MAX << ".\n";
-                    return false;
-                }
+                if (!ParsePositiveUnsigned(optarg, "period", val, numeric_limits<unsigned>::max())) return false;
                 act.period = static_cast<unsigned>(val);
                 break;
             }
@@ -167,11 +179,7 @@ bool ParseArgs(int argc, char** argv, ArgsContext& act)
             }
             case 1003: {
                 unsigned long val = 0;
-                if (!ParseUnsigned(optarg, "top", val)) return false;
-                if (val == 0 || val > static_cast<unsigned long>(INT_MAX)) {
-                    cerr << "Error: top must be in 1.." << INT_MAX << ".\n";
-                    return false;
-                }
+                if (!ParsePositiveUnsigned(optarg, "top", val, numeric_limits<int>::max())) return false;
                 act.topN = static_cast<int>(val);
                 break;
             }
@@ -185,6 +193,19 @@ bool ParseArgs(int argc, char** argv, ArgsContext& act)
             case 1005:
                 act.debug = true;
                 break;
+            case 1006: {
+                unsigned long val = 0;
+                if (!ParsePositiveUnsigned(optarg, "spe-read-interval", val,
+                                           numeric_limits<int>::max())) return false;
+                act.speReadInterval = static_cast<int>(val);
+                break;
+            }
+            case 1007: {
+                unsigned long val = 0;
+                if (!ParsePositiveUnsigned(optarg, "min-samples", val)) return false;
+                act.minSamples = val;
+                break;
+            }
             case 'h':
                 PrintHelp();
                 return false;
@@ -194,25 +215,46 @@ bool ParseArgs(int argc, char** argv, ArgsContext& act)
         }
     }
 
-    if (!act.pids.empty() && optind < argc) {
-        cerr << "Error: cannot combine -p/--pid with a launch command.\n";
+    if (act.systemWide && !act.pids.empty()) {
+        cerr << "Error: cannot combine -a/--all with -p/--pid.\n";
         return false;
     }
 
-    if (act.pids.empty() && optind < argc) {
+    if ((!act.pids.empty() || act.systemWide) && optind < argc) {
+        cerr << "Error: cannot combine PID/system-wide selection with a launch command.\n";
+        return false;
+    }
+
+    if (act.pids.empty() && !act.systemWide && optind < argc) {
         for (int i = optind; i < argc; ++i) act.command.push_back(argv[i]);
         act.isLaunch = true;
     }
 
     if (act.pids.empty() && !act.isLaunch) {
-        cerr << "Error: must specify -p <pid> or a command to launch.\n";
-        PrintHelp();
-        return false;
+        act.systemWide = true;
     }
 
     if (!act.pids.empty()) {
         // Keep the legacy primary-PID field valid for code paths that need one PID.
         act.pid = act.pids.front();
+    }
+    return true;
+}
+
+static bool ValidateTargetPids(const vector<int>& pids)
+{
+    for (int pid : pids) {
+        errno = 0;
+        if (kill(pid, 0) == 0 || errno == EPERM) {
+            continue;
+        }
+        if (errno == ESRCH) {
+            cerr << "Error: target pid " << pid << " does not exist.\n";
+        } else {
+            cerr << "Error: unable to validate target pid " << pid
+                 << ": " << strerror(errno) << "\n";
+        }
+        return false;
     }
     return true;
 }
@@ -251,8 +293,10 @@ static void PrintFunctionTable(BwContext& ctx, bool calibrated,
                 stat.readRate = stat.attributedReadBytes / durationSec;
                 stat.writeRate = stat.attributedWriteBytes / durationSec;
             } else {
-                stat.readRate = static_cast<double>(stat.readWeight) * act.period / durationSec;
-                stat.writeRate = static_cast<double>(stat.writeWeight) * act.period / durationSec;
+                stat.readRate = static_cast<double>(stat.readWeight) *
+                    act.period / durationSec;
+                stat.writeRate = static_cast<double>(stat.writeWeight) *
+                    act.period / durationSec;
             }
         }
         stat.totalRate = stat.readRate + stat.writeRate;
@@ -260,24 +304,35 @@ static void PrintFunctionTable(BwContext& ctx, bool calibrated,
     }
 
     sort(stats.begin(), stats.end(), [](const FuncBwStat& lhs, const FuncBwStat& rhs) {
-        return lhs.totalRate > rhs.totalRate;
+        if (lhs.totalRate != rhs.totalRate) return lhs.totalRate > rhs.totalRate;
+        const uint64_t lhsSamples = lhs.readSamples + lhs.writeSamples;
+        const uint64_t rhsSamples = rhs.readSamples + rhs.writeSamples;
+        if (lhsSamples != rhsSamples) return lhsSamples > rhsSamples;
+        return lhs.funcKey < rhs.funcKey;
     });
 
     constexpr int FUNC_WIDTH = 72;
     constexpr int MODULE_WIDTH = 45;
-    const int tableWidth = FUNC_WIDTH + MODULE_WIDTH + 14 + 14 + 14 + 10;
+    constexpr int PID_WIDTH = 12;
+    const int tableWidth = PID_WIDTH + FUNC_WIDTH + MODULE_WIDTH +
+        14 + 14 + 14 + 14 + 14;
 
     cout << string(tableWidth, '=') << "\n"
-         << (calibrated ? "CPU DDR BANDWIDTH BY FUNCTION"
-                        : "SPE MEMORY OPERATION ESTIMATES BY FUNCTION") << "\n"
+         << (calibrated
+                ? (act.systemWide ? "SYSTEM-WIDE CPU DDR BANDWIDTH BY USER FUNCTION"
+                                  : "CPU DDR BANDWIDTH BY USER FUNCTION")
+                : (act.systemWide ? "SYSTEM-WIDE SPE MEMORY OPERATION ESTIMATES BY USER FUNCTION"
+                                  : "SPE MEMORY OPERATION ESTIMATES BY USER FUNCTION")) << "\n"
          << string(tableWidth, '=') << "\n"
-         << left << setw(FUNC_WIDTH) << "Function"
+         << left << setw(PID_WIDTH) << "PID"
+         << setw(FUNC_WIDTH) << "Function"
          << setw(MODULE_WIDTH) << "Module"
-         << right << setw(14) << (calibrated ? "Read BW" : "DRAM loads")
+         << right << setw(14) << (calibrated ? "Read BW" : "Read loads")
          << setw(14) << (calibrated ? "Write BW(est*)" : "Stores(est*)")
          << setw(14) << (calibrated ? "Total BW" : "Total(est*)")
-         << setw(10) << "Samples" << "\n"
-         << left << setw(FUNC_WIDTH) << ""
+         << setw(14) << "Read samples" << setw(14) << "Store samples" << "\n"
+         << left << setw(PID_WIDTH) << ""
+         << setw(FUNC_WIDTH) << ""
          << setw(MODULE_WIDTH) << ""
          << right << setw(14) << (calibrated ? "(MiB/s)" : "(Mops/s)")
          << setw(14) << (calibrated ? "(MiB/s)" : "(Mops/s)")
@@ -290,14 +345,15 @@ static void PrintFunctionTable(BwContext& ctx, bool calibrated,
         if (shown >= act.topN) break;
         if (stat.totalRate <= 0.0 && stat.readSamples == 0 && stat.writeSamples == 0) continue;
 
-        cout << left << setw(FUNC_WIDTH) << ShortenLeft(stat.funcName, FUNC_WIDTH - 2)
+        cout << left << setw(PID_WIDTH) << stat.pid
+             << setw(FUNC_WIDTH) << ShortenLeft(stat.funcName, FUNC_WIDTH - 2)
              << setw(MODULE_WIDTH) << ShortenRight(stat.moduleName, MODULE_WIDTH - 2)
              << right << fixed << setprecision(2);
         PrintRateCell(stat.readRate, calibrated);
         PrintRateCell(stat.writeRate, calibrated);
         cout << setw(14) << stat.totalRate /
-                (calibrated ? BYTES_PER_MIB_LOCAL : OPS_PER_MILLION)
-             << setw(10) << (stat.readSamples + stat.writeSamples) << "\n";
+            (calibrated ? BYTES_PER_MIB_LOCAL : OPS_PER_MILLION);
+        cout << setw(14) << stat.readSamples << setw(14) << stat.writeSamples << "\n";
         ++shown;
     }
     if (shown == 0) cout << "No eligible SPE load/store samples.\n";
@@ -316,7 +372,7 @@ struct ProcessBwStat {
 static void PrintProcessTable(const BwContext& ctx, bool calibrated,
                               double durationSec, const ArgsContext& act)
 {
-    if (act.pids.size() <= 1) return;
+    if (!act.systemWide && act.pids.size() <= 1) return;
 
     map<int, ProcessBwStat> processes;
     for (const auto& entry : ctx.funcStats) {
@@ -331,11 +387,11 @@ static void PrintProcessTable(const BwContext& ctx, bool calibrated,
     }
 
     cout << "\n" << string(78, '=') << "\n"
-         << (calibrated ? "CPU DDR BANDWIDTH BY PROCESS"
-                        : "SPE MEMORY OPERATION ESTIMATES BY PROCESS") << "\n"
+         << (calibrated ? "CPU DDR BANDWIDTH BY PROCESS (USER-SPACE)"
+                        : "SPE MEMORY OPERATION ESTIMATES BY PROCESS (USER-SPACE)") << "\n"
          << string(78, '=') << "\n"
          << left << setw(12) << "PID"
-         << right << setw(16) << (calibrated ? "Read BW" : "DRAM loads")
+         << right << setw(16) << (calibrated ? "Read BW" : "Read loads")
          << setw(16) << (calibrated ? "Write BW(est*)" : "Stores(est*)")
          << setw(16) << (calibrated ? "Total BW" : "Total(est*)")
          << setw(14) << "Samples" << "\n"
@@ -346,8 +402,25 @@ static void PrintProcessTable(const BwContext& ctx, bool calibrated,
          << setw(14) << "" << "\n"
          << string(78, '-') << "\n";
 
-    for (const auto& entry : processes) {
-        const ProcessBwStat& p = entry.second;
+    vector<ProcessBwStat> rows;
+    rows.reserve(processes.size());
+    for (const auto& entry : processes) rows.push_back(entry.second);
+    sort(rows.begin(), rows.end(), [calibrated](const ProcessBwStat& lhs,
+                                                const ProcessBwStat& rhs) {
+        const double lhsScore = calibrated
+            ? lhs.readBytes + lhs.writeBytes
+            : static_cast<double>(lhs.readWeight + lhs.writeWeight);
+        const double rhsScore = calibrated
+            ? rhs.readBytes + rhs.writeBytes
+            : static_cast<double>(rhs.readWeight + rhs.writeWeight);
+        if (lhsScore != rhsScore) return lhsScore > rhsScore;
+        return lhs.pid < rhs.pid;
+    });
+
+    const size_t rowLimit = act.systemWide
+        ? min(rows.size(), static_cast<size_t>(act.topN)) : rows.size();
+    for (size_t i = 0; i < rowLimit; ++i) {
+        const ProcessBwStat& p = rows[i];
         double readRate = 0.0;
         double writeRate = 0.0;
         if (durationSec > 0.0) {
@@ -355,8 +428,10 @@ static void PrintProcessTable(const BwContext& ctx, bool calibrated,
                 readRate = p.readBytes / durationSec;
                 writeRate = p.writeBytes / durationSec;
             } else {
-                readRate = static_cast<double>(p.readWeight) * act.period / durationSec;
-                writeRate = static_cast<double>(p.writeWeight) * act.period / durationSec;
+                readRate = static_cast<double>(p.readWeight) *
+                    act.period / durationSec;
+                writeRate = static_cast<double>(p.writeWeight) *
+                    act.period / durationSec;
             }
         }
 
@@ -402,7 +477,9 @@ void PrintSummary(BwContext& ctx, bool ddrcOpened, bool pcieOpened,
                   const CollectionTiming& timing, const ArgsContext& act)
 {
     const double durationSec = timing.durationSec;
-    const bool calibrated = ctx.traffic.ddrcWindows > 0;
+    const bool calibrated = any_of(
+        ctx.windows.begin(), ctx.windows.end(),
+        [](const WindowRecord& window) { return window.ddrcValid; });
     const double calibratedDurationSec = ctx.traffic.ddrcElapsedSec > 0.0
         ? ctx.traffic.ddrcElapsedSec : durationSec;
 
@@ -415,8 +492,6 @@ void PrintSummary(BwContext& ctx, bool ddrcOpened, bool pcieOpened,
             ctx.traffic.ddrcReadBytes - ctx.traffic.deductedDmaReadBytes);
         const double residualWrite = max(0.0,
             ctx.traffic.ddrcWriteBytes - ctx.traffic.deductedDmaWriteBytes);
-        const double unattributedRead = max(0.0, residualRead - ctx.attribution.readBytes);
-        const double unattributedWrite = max(0.0, residualWrite - ctx.attribution.writeBytes);
 
         cout << "\n" << string(80, '=') << "\nDDR BANDWIDTH SUMMARY\n"
              << string(80, '=') << "\n"
@@ -441,19 +516,31 @@ void PrintSummary(BwContext& ctx, bool ddrcOpened, bool pcieOpened,
         printBw("Observed PCIe DMA", ctx.traffic.observedDmaReadBytes, ctx.traffic.observedDmaWriteBytes);
         printBw("PCIe DMA deducted", ctx.traffic.deductedDmaReadBytes, ctx.traffic.deductedDmaWriteBytes);
         printBw("System residual (DDRC - DMA)", residualRead, residualWrite);
-        printBw(act.pids.size() > 1 ? "Target PID(s) attributed" : "Target PID attributed",
+        printBw(act.systemWide ? "All user-space (SPE-attributed)" :
+                (act.pids.size() > 1 ? "Target PID(s) user (SPE-attributed)" :
+                                       "Target PID user (SPE-attributed)"),
                 ctx.attribution.readBytes, ctx.attribution.writeBytes);
-        printBw("Unattributed/system", unattributedRead, unattributedWrite);
+        printBw("Other user (SPE-attributed)",
+                ctx.attribution.otherReadBytes, ctx.attribution.otherWriteBytes);
+        printBw("Kernel (SPE-attributed)",
+                ctx.attribution.kernelReadBytes, ctx.attribution.kernelWriteBytes);
+        printBw("Unattributed",
+                ctx.attribution.unattributedReadBytes,
+                ctx.attribution.unattributedWriteBytes);
         cout << string(80, '-') << "\n";
 
         const double residualTotal = residualRead + residualWrite;
-        const double attributedTotal = ctx.attribution.readBytes + ctx.attribution.writeBytes;
+        const double unattributedTotal =
+            ctx.attribution.unattributedReadBytes +
+            ctx.attribution.unattributedWriteBytes;
+        const double attributedTotal = max(0.0,
+            residualTotal - unattributedTotal);
         const double coverage = residualTotal > 0.0
             ? 100.0 * attributedTotal / residualTotal : 0.0;
-        cout << "Attribution coverage: " << coverage << "%    Windows: read "
-             << ctx.attribution.readWindows << "/" << ctx.traffic.ddrcWindows
-             << ", write " << ctx.attribution.writeWindows << "/"
-             << ctx.traffic.ddrcWindows << "\n";
+        cout << "System partition coverage: " << coverage
+             << "%    User function windows: read "
+             << ctx.attribution.readWindows << "/" << ctx.windows.size()
+             << ", write " << ctx.attribution.writeWindows << "/" << ctx.windows.size() << "\n";
 
         if (!pcieOpened) {
             cout << "PCIe: unavailable; DMA is included in system residual.\n";
@@ -479,7 +566,7 @@ void PrintSummary(BwContext& ctx, bool ddrcOpened, bool pcieOpened,
             static_cast<double>(ctx.spe.readWeight) * act.period;
         const double estimatedWriteOps =
             static_cast<double>(ctx.spe.writeWeight) * act.period;
-        cout << "Estimated SPE operation rates: DRAM loads="
+        cout << "Estimated SPE operation rates: read loads="
              << estimatedReadOps / durationSec / OPS_PER_MILLION
              << " stores=" << estimatedWriteOps / durationSec / OPS_PER_MILLION
              << " total=" << (estimatedReadOps + estimatedWriteOps) /
@@ -490,21 +577,39 @@ void PrintSummary(BwContext& ctx, bool ddrcOpened, bool pcieOpened,
              << "; physical DDR bandwidth is not available.\n";
     }
 
-    cout << "\nSPE samples: DRAM loads=" << ctx.spe.readSamples
-         << "  stores=" << ctx.spe.writeSamples
-         << "  filtered=" << ctx.spe.filteredSamples
-         << "  duration=" << durationSec << "s\n";
-    if (calibrated) {
-        cout << "* Write BW(est*) distributes DDRC write bytes using store sample counts. "
-                "Store retirement and later dirty-line DRAM writeback are not one-to-one.\n";
-    } else {
-        cout << "* SPE-only Mops/s values estimate sampled operation rates, not bytes or "
-                "physical DDR bandwidth; store sampling density can depend on opcode.\n";
-    }
-
     if (act.debug) {
+        cout << "\nSPE samples: read_mode="
+             << (IsSpeDataSourceSupported() ? "dram-source" : "all-load-fallback")
+             << "  attribution_scope="
+             << (act.systemWide ? "all-users" : "target-pids")
+             << "  selected_read_samples=" << ctx.spe.readSamples
+             << "  selected_stores=" << ctx.spe.writeSamples
+             << "  system_read_samples=" << ctx.spe.systemReadSamples
+             << "  system_stores=" << ctx.spe.systemWriteSamples
+             << "  kernel_read_samples=" << ctx.spe.kernelReadSamples
+             << "  kernel_stores=" << ctx.spe.kernelWriteSamples
+             << "  source_filtered=" << ctx.spe.filteredSamples
+             << "  duration=" << durationSec << "s\n";
+        cout << "Attribution windows:"
+             << " invalid=" << ctx.attribution.invalidWindows
+             << " read_sparse=" << ctx.attribution.sparseReadWindows
+             << " read_no_denominator=" << ctx.attribution.noDenominatorReadWindows
+             << " write_sparse=" << ctx.attribution.sparseWriteWindows
+             << " write_no_denominator=" << ctx.attribution.noDenominatorWriteWindows
+             << "\n";
+        if (calibrated) {
+            cout << "* Write BW(est*) partitions residual DDRC write bytes using system-wide "
+                    "store sample shares. Store retirement and later dirty-line DRAM "
+                    "writeback are not one-to-one.\n";
+        } else {
+            cout << "* SPE-only Mops/s values estimate sampled operation rates, not bytes or "
+                    "physical DDR bandwidth; store sampling density can depend on opcode.\n";
+        }
+
         cout << fixed << setprecision(6) << "DEBUG TIMING\n"
              << "  requested_duration=" << timing.requestedSec << "\n"
+             << "  start_ns=" << timing.startNs << "\n"
+             << "  end_ns=" << timing.endNs << "\n"
              << "  startSec=" << timing.startSec << "\n"
              << "  lastCollectSec=" << timing.lastCollectSec << "\n"
              << "  endSec=" << timing.endSec << "\n"
@@ -598,6 +703,7 @@ int ddr_bw_run(int argc, char** argv)
     g_stopRequested = 0;
 
     if (!ParseArgs(argc, argv, act)) return 1;
+    if (!act.isLaunch && !act.systemWide && !ValidateTargetPids(act.pids)) return 1;
 
     struct sigaction saInt{};
     saInt.sa_handler = StopCollectSignal;

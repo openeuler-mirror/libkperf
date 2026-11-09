@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "pmu.h"
+#include "ddr_bw_types.h"
 
 struct BwContext;
 struct IntervalWeights;
@@ -19,22 +20,17 @@ struct SampleInfo {
     bool isLoad = false;
     bool isStore = false;
     unsigned short source = 0;
+    unsigned long event = 0;
     unsigned long pc = 0;
     int pid = 0;
     Symbol* sym = nullptr;
 };
 
-struct PcieBytes {
-    double rxMwr = 0.0;
-    double txCpl = 0.0;
-    double elapsedSec = 0.0;
-    double minRunningRatio = 1.0;
-    bool hasRunningRatio = false;
-};
-
 struct PcieCollector {
     int pd = -1;
     std::string bdf;
+    std::string rxMwrEvent;
+    std::string txCplEvent;
     std::vector<std::unique_ptr<char[]>> eventStorage;
     std::vector<char*> eventList;
     double lastReadSec = 0.0;
@@ -56,13 +52,19 @@ struct PcieReadResult {
 };
 
 double NowSec();
+int64_t NowNs();
+bool IsSpeDataSourceSupported();
+void ConfigureSpeDebug(bool enabled);
+void PrintSpeEventDebug();
 void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
-                     const std::vector<int>& targetPids, IntervalWeights& weights);
+                     const std::vector<int>& targetPids, SpeWindowState& windows,
+                     int64_t readEndNs);
 bool ReadDdrcInterval(int pd, PmuDeviceAttr* attrs, unsigned attrLen, double& readBytes, double& writeBytes);
 bool IsPciBridge(const std::string& bdf);
 bool PrimePmuRead(int pd, double& readSec, std::string& error);
 bool OpenPcieCollector(const std::string& bdf, PcieCollector& collector, std::string& error);
 PcieReadResult ReadPcieInterval(std::vector<PcieCollector>& collectors,
-                                BwContext& ctx, PcieBytes& total);
+                                BwContext& ctx, PcieBytes& total,
+                                double stoppedSec = 0.0);
 
 #endif

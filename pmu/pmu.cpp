@@ -501,6 +501,13 @@ int CheckAttr(enum PmuTaskType collectType, struct PmuAttr *attr)
         return err;
     }
 
+    if (collectType == SPE_SAMPLING && IsInContainer()) {
+        New(LIBPERF_ERR_SPE_CONTAINER_UNSUPPORTED,
+            "SPE collection is not supported when libkperf is running inside a container due to hardware limitations. "
+            "Run the SPE collection on the host instead.");
+        return LIBPERF_ERR_SPE_CONTAINER_UNSUPPORTED;
+    }
+
     err = CheckBpfMode(collectType, attr);
     if (err != SUCCESS) {
         return err;

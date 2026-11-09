@@ -556,7 +556,7 @@ perf record -e arm_spe_0/load_filter=1/
 ```
 该命令是对系统进行spe采样，关于linux spe采样的详细介绍，可以参考[这里](https://www.man7.org/linux/man-pages/man1/perf-arm-spe.1.html)。
 
-> **注意：** 容器内使用SPE采集指定进程时，若未使用宿主机PID namespace，可能因无法匹配到目标PID导致无数据。建议在宿主机进行采集。
+> **注意：** 受SPE硬件机制限制，libkperf运行在容器中时不支持SPE采集。此场景下`PmuOpen`会返回`LIBPERF_ERR_SPE_CONTAINER_UNSUPPORTED`并提示改在宿主机上采集；COUNTING和普通SAMPLING模式不受影响。
 
 对于libkperf，可以这样设置PmuAttr：
 ```c++

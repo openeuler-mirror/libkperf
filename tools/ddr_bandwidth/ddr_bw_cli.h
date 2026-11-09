@@ -13,11 +13,14 @@ struct ArgsContext {
     std::vector<int> pids;
     int duration = 10;
     int interval = 100;
-    unsigned period = 256;
+    int speReadInterval = 50;
+    unsigned long minSamples = 1;
+    unsigned period = 2048;
     unsigned long minLatency = 0;
     int topN = 20;
     bool debug = false;
     bool isLaunch = false;
+    bool systemWide = false;
     int fd[2] = {-1, -1};
     std::vector<std::string> pcieBdfs;
     std::vector<std::string> command;

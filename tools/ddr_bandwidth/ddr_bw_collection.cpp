@@ -6,11 +6,12 @@
 #include <iomanip>
 #include <limits>
 #include <signal.h>
+#include <sstream>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <vector>
 #include "pcerrc.h"
 #include "ddr_bw_collection.h"
+#include "ddr_bw_schedule.h"
 using namespace std;
 
 static bool ExactStoreSyncEnabled()
@@ -36,10 +37,9 @@ static unsigned SignalTargets(const vector<int>& pids, int signo, const char* na
     return signaled;
 }
 
-void ConfigureSpeDebug(bool enabled);
-void PrintSpeStorePcDebug();
-
 struct CollectionHealth {
+    double speReadCostSec = 0.0;
+    double maxSpeReadCostSec = 0.0;
     uint64_t speDrains = 0;
     uint64_t speEmptyDrains = 0;
     uint64_t speFailedDrains = 0;
@@ -57,12 +57,9 @@ struct CollectionHealth {
 
     uint64_t readEvidenceWindows = 0;
     uint64_t writeEvidenceWindows = 0;
-    uint64_t insufficientReadWindows = 0;
-    uint64_t insufficientWriteWindows = 0;
-    uint64_t noUsableEvidenceWindows = 0;
     uint64_t zeroEvidenceWindows = 0;
-    uint64_t totalReadSamples = 0;
-    uint64_t totalWriteSamples = 0;
+    uint64_t targetReadSamples = 0;
+    uint64_t targetWriteSamples = 0;
     uint64_t minReadSamples = numeric_limits<uint64_t>::max();
     uint64_t maxReadSamples = 0;
     uint64_t minWriteSamples = numeric_limits<uint64_t>::max();
@@ -70,7 +67,6 @@ struct CollectionHealth {
 };
 
 static void AccountWindowHealth(CollectionHealth* health,
-                                const IntervalWeights& weights,
                                 bool ddrcAttempted, bool ddrcOk,
                                 bool pcieAttempted,
                                 const PcieReadResult& pcieResult)
@@ -93,47 +89,57 @@ static void AccountWindowHealth(CollectionHealth* health,
         health->pcieResynchronizedReads += pcieResult.resynchronized;
     }
 
-    const bool readUsable =
-        weights.totalReadSamples >= MIN_READ_SAMPLES_PER_WINDOW;
-    const bool writeUsable =
-        weights.totalWriteSamples >= MIN_WRITE_SAMPLES_PER_WINDOW;
-    if (readUsable) {
-        ++health->readEvidenceWindows;
-    } else if (weights.totalReadSamples > 0) {
-        ++health->insufficientReadWindows;
-    }
-    if (writeUsable) {
-        ++health->writeEvidenceWindows;
-    } else if (weights.totalWriteSamples > 0) {
-        ++health->insufficientWriteWindows;
-    }
-    if (!readUsable && !writeUsable) ++health->noUsableEvidenceWindows;
-    if (weights.totalReadSamples == 0 && weights.totalWriteSamples == 0) {
-        ++health->zeroEvidenceWindows;
-    }
-
-    health->totalReadSamples += weights.totalReadSamples;
-    health->totalWriteSamples += weights.totalWriteSamples;
-    health->minReadSamples = min(health->minReadSamples, weights.totalReadSamples);
-    health->maxReadSamples = max(health->maxReadSamples, weights.totalReadSamples);
-    health->minWriteSamples = min(health->minWriteSamples, weights.totalWriteSamples);
-    health->maxWriteSamples = max(health->maxWriteSamples, weights.totalWriteSamples);
 }
 
-static void PrintCollectionHealth(const CollectionHealth& health)
+static void RefreshSpeWindowHealth(CollectionHealth& health, const BwContext& ctx)
+{
+    health.readEvidenceWindows = 0;
+    health.writeEvidenceWindows = 0;
+    health.zeroEvidenceWindows = 0;
+    health.targetReadSamples = 0;
+    health.targetWriteSamples = 0;
+    health.minReadSamples = numeric_limits<uint64_t>::max();
+    health.maxReadSamples = 0;
+    health.minWriteSamples = numeric_limits<uint64_t>::max();
+    health.maxWriteSamples = 0;
+    for (const auto& window : ctx.windows) {
+        if (window.targetReadSamples > 0) ++health.readEvidenceWindows;
+        if (window.effectiveTargetWriteSamples > 0) ++health.writeEvidenceWindows;
+        if (window.targetReadSamples == 0 &&
+            window.effectiveTargetWriteSamples == 0) {
+            ++health.zeroEvidenceWindows;
+        }
+        health.targetReadSamples += window.targetReadSamples;
+        health.targetWriteSamples += window.effectiveTargetWriteSamples;
+        health.minReadSamples = min(health.minReadSamples, window.targetReadSamples);
+        health.maxReadSamples = max(health.maxReadSamples, window.targetReadSamples);
+        health.minWriteSamples = min(
+            health.minWriteSamples, window.effectiveTargetWriteSamples);
+        health.maxWriteSamples = max(
+            health.maxWriteSamples, window.effectiveTargetWriteSamples);
+    }
+}
+
+static void PrintCollectionHealth(const CollectionHealth& health,
+                                  const ArgsContext& act, double durationSec)
 {
     const double avgDrain = health.speDrains > 0
         ? static_cast<double>(health.speRecords) / static_cast<double>(health.speDrains)
         : 0.0;
     const double avgRead = health.counterWindows > 0
-        ? static_cast<double>(health.totalReadSamples) / static_cast<double>(health.counterWindows)
+        ? static_cast<double>(health.targetReadSamples) / static_cast<double>(health.counterWindows)
         : 0.0;
     const double avgWrite = health.counterWindows > 0
-        ? static_cast<double>(health.totalWriteSamples) / static_cast<double>(health.counterWindows)
+        ? static_cast<double>(health.targetWriteSamples) / static_cast<double>(health.counterWindows)
         : 0.0;
 
     const uint64_t minRead = health.counterWindows > 0 ? health.minReadSamples : 0;
     const uint64_t minWrite = health.counterWindows > 0 ? health.minWriteSamples : 0;
+    const uint64_t expectedWindows = act.interval > 0
+        ? static_cast<uint64_t>(durationSec * 1000.0 / act.interval + 0.5)
+        : 0;
+    const double speReadRatio = durationSec > 0.0
+        ? health.speReadCostSec / durationSec * 100.0 : 0.0;
 
     cout << "\n" << string(80, '=') << "\n"
          << "DEBUG SPE / WINDOW HEALTH\n"
@@ -144,7 +150,12 @@ static void PrintCollectionHealth(const CollectionHealth& health)
          << " records=" << health.speRecords
          << " avg_records/drain=" << fixed << setprecision(2) << avgDrain
          << " max_records/drain=" << health.maxSpeRecordsPerDrain << "\n"
+         << "SPE PmuRead wall time: total=" << health.speReadCostSec
+         << "s max=" << health.maxSpeReadCostSec
+         << "s share=" << speReadRatio
+         << "% (includes decode/symbol work; not exact SPE pause time)\n"
          << "Counter windows: total=" << health.counterWindows
+         << " expected~=" << expectedWindows
          << " DDRC=" << health.ddrcValidWindows << "/" << health.ddrcAttemptedWindows
          << " PCIe=" << health.pcieValidWindows << "/" << health.pcieAttemptedWindows << "\n"
          << "PCIe incomplete windows=" << health.pcieIncompleteWindows
@@ -152,14 +163,14 @@ static void PrintCollectionHealth(const CollectionHealth& health)
          << " resynchronized_reads=" << health.pcieResynchronizedReads << "\n"
          << "SPE evidence windows: read=" << health.readEvidenceWindows
          << " write=" << health.writeEvidenceWindows
-         << " no-usable=" << health.noUsableEvidenceWindows
          << " zero=" << health.zeroEvidenceWindows << "\n"
-         << "Insufficient-sample windows: read=" << health.insufficientReadWindows
-         << " write=" << health.insufficientWriteWindows << "\n"
-         << "Read samples/window: min=" << minRead
+         << (act.systemWide ? "All-user" : "Target")
+         << " read samples/window: min=" << minRead
          << " avg=" << avgRead
          << " max=" << health.maxReadSamples << "\n"
-         << "Write samples/window: min=" << minWrite
+         << (act.systemWide ? "All-user" : "Target")
+         << " effective write samples/window (current+2 history): min="
+         << minWrite
          << " avg=" << avgWrite
          << " max=" << health.maxWriteSamples << "\n";
 
@@ -167,92 +178,126 @@ static void PrintCollectionHealth(const CollectionHealth& health)
         health.ddrcValidWindows < health.ddrcAttemptedWindows ||
         health.pcieValidWindows < health.pcieAttemptedWindows) {
         cout << "Health status: WARN (collector read failures detected)\n";
+    } else if (expectedWindows > 0 &&
+               health.counterWindows * 10 < expectedWindows * 8) {
+        cout << "Health status: WARN (fewer than 80% of scheduled windows were collected; "
+                "increase --period)\n";
+    } else if (speReadRatio > 20.0) {
+        cout << "Health status: WARN (SPE read/decode consumed more than 20% of "
+                "collection time; increase --period)\n";
     } else if (health.speDrains > 0 &&
                health.speEmptyDrains * 10 > health.speDrains) {
         cout << "Health status: WARN (>10% SPE drains were empty)\n";
     } else if (health.counterWindows > 0 &&
-               health.noUsableEvidenceWindows * 2 > health.counterWindows) {
+               health.zeroEvidenceWindows * 2 > health.counterWindows) {
         cout << "Health status: WARN (>50% windows had no usable SPE attribution evidence)\n";
     } else {
         cout << "Health status: OK\n";
     }
-    cout << "Note: this health block detects empty/failed reads and evidence gaps; "
+    cout << "Note: this health block detects empty/failed reads, evidence gaps, and "
+            "scheduling overload; "
             "it does not claim hardware AUX-loss detection.\n"
          << string(80, '=') << "\n";
 }
 
 
-static void AttributeReadWindow(BwContext& ctx, const IntervalWeights& weights,
-                                double residualRead)
+static void PrintSpePipelineDiagnostics(const CollectionHealth& health,
+                                        const BwContext& ctx,
+                                        const ArgsContext& act)
 {
-    if (residualRead <= 0.0 ||
-        weights.totalReadSamples < MIN_READ_SAMPLES_PER_WINDOW) {
-        return;
+    const SpeDecodeStats& decode = ctx.speDecode;
+    const uint64_t targetSamples = ctx.spe.readSamples + ctx.spe.writeSamples;
+
+    cout << "\n" << string(80, '=') << "\n"
+         << "DEBUG SPE SAMPLE PIPELINE DIAGNOSTICS\n"
+         << string(80, '=') << "\n"
+         << "collector: drains=" << health.speDrains
+         << " empty=" << health.speEmptyDrains
+         << " failed=" << health.speFailedDrains
+         << " records_returned=" << health.speRecords << "\n"
+         << "decode: seen=" << decode.recordsSeen
+         << " after_read=" << decode.afterRead
+         << " missing_ext=" << decode.missingExt
+         << " non_load_store=" << decode.nonLoadStore << "\n"
+         << "scope: attribution=" << (act.systemWide ? "all-users" : "target-pids")
+         << " selected_user=" << decode.targetUserRecords
+         << " other_user=" << decode.otherUserRecords
+         << " kernel=" << decode.kernelRecords << "\n"
+         << "read mode: "
+         << (IsSpeDataSourceSupported() ? "dram-source" : "all-load-fallback")
+         << " fallback_loads=" << decode.fallbackModeLoads << "\n"
+         << "operation: eligible_read_loads=" << decode.eligibleReadLoads
+         << " stores=" << decode.eligibleStores
+         << " excluded_read_loads=" << decode.excludedReadLoads << "\n"
+         << "windowing: bucketed=" << decode.bucketedRecords
+         << " selected_bucketed=" << decode.targetBucketedRecords
+         << " rejected=" << decode.bucketRejected << "\n"
+         << "timestamp rejects: missing=" << ctx.speTimestamps.missing
+         << " before_start=" << ctx.speTimestamps.beforeStart
+         << " after_stop=" << ctx.speTimestamps.afterStop
+         << " after_read=" << ctx.speTimestamps.afterRead
+         << " late=" << ctx.speTimestamps.late
+         << " unbucketed=" << ctx.speTimestamps.unbucketed << "\n"
+         << "result: selected_read_samples=" << ctx.spe.readSamples
+         << " selected_stores=" << ctx.spe.writeSamples
+         << " function_rows=" << ctx.funcStats.size() << "\n";
+
+    cout << "Diagnosis: ";
+    if (health.speFailedDrains > 0 && health.speRecords == 0) {
+        cout << "SPE reads failed before any record was collected; check the backend error above.\n";
+    } else if (health.speRecords == 0) {
+        cout << "the collector returned no SPE records; check SPE support/permissions, sampling period, and whether the workload ran.\n";
+    } else if (decode.recordsSeen == 0) {
+        cout << "records were returned by PmuRead but none reached processing; inspect the collector/read handoff.\n";
+    } else if (decode.eligibleReadLoads == 0 && decode.eligibleStores == 0) {
+        cout << "collection worked, but decoding/filtering found no eligible read-load or store records.\n";
+    } else if (decode.targetUserRecords == 0) {
+        cout << "eligible system SPE traffic exists, but no user record matched the attribution scope; check PID selection and process lifetime.\n";
+    } else if (decode.targetBucketedRecords == 0) {
+        cout << "selected records exist, but none survived operation and timestamp-window filtering; inspect operation/window counters above.\n";
+    } else if (targetSamples == 0) {
+        cout << "selected records reached a window but produced no eligible read-load/store sample; inspect excluded_read_loads and timestamp counters.\n";
+    } else if (ctx.funcStats.empty()) {
+        cout << "selected samples were counted, but function statistics were not created; this indicates a post-processing defect.\n";
+    } else {
+        cout << "the SPE pipeline produced selected user-function samples.\n";
     }
-
-    double attributedInWindow = 0.0;
-    for (const auto& entry : weights.funcReadSamples) {
-        if (entry.second == 0) continue;
-
-        const double bytes = residualRead * static_cast<double>(entry.second) /
-            static_cast<double>(weights.totalReadSamples);
-        ctx.funcStats[entry.first].attributedReadBytes += bytes;
-        ctx.attribution.readBytes += bytes;
-        attributedInWindow += bytes;
-    }
-
-    if (attributedInWindow > 0.0) ++ctx.attribution.readWindows;
+    cout << string(80, '=') << "\n";
 }
 
-static void AttributeWriteWindow(BwContext& ctx, const IntervalWeights& weights,
-                                 double residualWrite)
+static size_t SealWindow(BwContext& ctx, SpeWindowState& windows,
+                         int64_t startNs, int64_t endNs,
+                         double ddrcRead, double ddrcWrite,
+                         const PcieBytes& pcie, bool ddrcReadOk,
+                         bool ddrcContinuous, bool pcieAttempted,
+                         bool pcieReadOk)
 {
-    if (residualWrite <= 0.0 ||
-        weights.totalWriteSamples < MIN_WRITE_SAMPLES_PER_WINDOW) {
-        return;
+    WindowRecord window;
+    window.startNs = startNs;
+    window.endNs = endNs;
+    window.ddrcValid = ddrcReadOk && ddrcContinuous;
+    window.speValid = windows.open.valid;
+    window.pcieValid = pcieReadOk;
+    const bool pcieIncomplete = pcieAttempted && !pcieReadOk;
+    window.valid = window.ddrcValid && window.speValid && !pcieIncomplete;
+    window.ddrcReadBytes = ddrcRead;
+    window.ddrcWriteBytes = ddrcWrite;
+
+    if (ddrcReadOk) {
+        ctx.traffic.ddrcReadBytes += ddrcRead;
+        ctx.traffic.ddrcWriteBytes += ddrcWrite;
     }
-
-    double attributedInWindow = 0.0;
-    for (const auto& entry : weights.funcWriteSamples) {
-        if (entry.second == 0) continue;
-
-        const double bytes = residualWrite * static_cast<double>(entry.second) /
-            static_cast<double>(weights.totalWriteSamples);
-        ctx.funcStats[entry.first].attributedWriteBytes += bytes;
-        ctx.attribution.writeBytes += bytes;
-        attributedInWindow += bytes;
-    }
-
-    if (attributedInWindow > 0.0) ++ctx.attribution.writeWindows;
-}
-
-static void AccountWindow(BwContext& ctx, const IntervalWeights& weights,
-                          double ddrcRead, double ddrcWrite,
-                          const PcieBytes& pcie, bool ddrcReadOk,
-                          bool pcieAttempted, bool pcieReadOk)
-{
-    if (!ddrcReadOk) {
-        return;
-    }
-
-    ctx.traffic.ddrcReadBytes += ddrcRead;
-    ctx.traffic.ddrcWriteBytes += ddrcWrite;
-    ++ctx.traffic.ddrcWindows;
-
-    // Keep the physical DDRC total, but do not calibrate functions with a
-    // partial PCIe snapshot: its unknown DMA component would be assigned to CPU
-    // functions. The skipped bytes remain visible as unattributed/system data.
-    if (pcieAttempted && !pcieReadOk) {
+    // An incomplete PCIe snapshot has an unknown DMA component. Keep the DDRC
+    // physical total, but do not deduct DMA or attribute that window to functions.
+    if (ddrcReadOk && pcieIncomplete) {
         ++ctx.traffic.pcieIncompleteWindows;
-        return;
     }
+    const double observedDmaRead = ddrcReadOk && pcieReadOk ? pcie.txCpl : 0.0;
+    const double observedDmaWrite = ddrcReadOk && pcieReadOk ? pcie.rxMwr : 0.0;
+    window.observedDmaReadBytes = observedDmaRead;
+    window.observedDmaWriteBytes = observedDmaWrite;
 
-    // Running-ratio handling remains informational; window completeness is
-    // enforced above before any DMA bytes are deducted.
-    const double observedDmaRead = pcieReadOk ? pcie.txCpl : 0.0;
-    const double observedDmaWrite = pcieReadOk ? pcie.rxMwr : 0.0;
-
-    if (pcieReadOk) {
+    if (ddrcReadOk && pcieReadOk) {
         ++ctx.traffic.pcieWindows;
         ctx.traffic.observedDmaReadBytes += observedDmaRead;
         ctx.traffic.observedDmaWriteBytes += observedDmaWrite;
@@ -262,6 +307,8 @@ static void AccountWindow(BwContext& ctx, const IntervalWeights& weights,
     // interval. Cap only the amount deducted so the residual cannot become negative.
     const double deductedDmaRead = min(ddrcRead, observedDmaRead);
     const double deductedDmaWrite = min(ddrcWrite, observedDmaWrite);
+    window.deductedDmaReadBytes = deductedDmaRead;
+    window.deductedDmaWriteBytes = deductedDmaWrite;
 
     ctx.traffic.deductedDmaReadBytes += deductedDmaRead;
     ctx.traffic.deductedDmaWriteBytes += deductedDmaWrite;
@@ -273,24 +320,93 @@ static void AccountWindow(BwContext& ctx, const IntervalWeights& weights,
 
     const double residualRead = ddrcRead - deductedDmaRead;
     const double residualWrite = ddrcWrite - deductedDmaWrite;
+    window.residualReadBytes = ddrcReadOk ? residualRead : 0.0;
+    window.residualWriteBytes = ddrcReadOk ? residualWrite : 0.0;
 
-    // Attribute immediately while the DDRC, PCIe and SPE data still refer to
-    // the same interval. This keeps memory bounded regardless of run length.
-    AttributeReadWindow(ctx, weights, residualRead);
-    AttributeWriteWindow(ctx, weights, residualWrite);
+    window.funcReadSamples = move(windows.open.funcReadSamples);
+    window.funcWriteSamples = move(windows.open.funcWriteSamples);
+    window.targetReadSamples = windows.open.targetReadSamples;
+    window.targetWriteSamples = windows.open.targetWriteSamples;
+    window.kernelReadSamples = windows.open.kernelReadSamples;
+    window.kernelWriteSamples = windows.open.kernelWriteSamples;
+    window.systemReadSamples = windows.open.systemReadSamples;
+    window.systemWriteSamples = windows.open.systemWriteSamples;
+    window.speReadCostNs = windows.openSpeReadCostNs;
+    window.speDrains = windows.openSpeDrains;
+    ctx.windows.emplace_back(move(window));
+    const size_t index = ctx.windows.size() - 1;
+    windows.open = {};
+    windows.openSpeReadCostNs = 0;
+    windows.openSpeDrains = 0;
+    windows.openStartNs = endNs;
+    return index;
 }
 
 struct CollectorSet {
     int spePd = -1;
     int ddrcPd = -1;
-    vector<int> spePids;
     bool ddrcOpened = false;
     bool pcieOpened = false;
     PmuDeviceAttr ddrcAttrs[2] = {};
     vector<PcieCollector> pcieCollectors;
     double ddrcLastReadSec = 0.0;
+    bool ddrcPreviousReadOk = true;
     bool pcieIncompleteWarningPrinted = false;
 };
+
+static string HexValue(unsigned long value)
+{
+    ostringstream out;
+    out << "0x" << hex << value;
+    return out.str();
+}
+
+static string SpeDataFilterNames(unsigned long filter)
+{
+    string result;
+    unsigned long known = 0;
+    auto append = [&](unsigned long flag, const char* name) {
+        known |= flag;
+        if ((filter & flag) == 0) return;
+        if (!result.empty()) result += '|';
+        result += name;
+    };
+    append(TS_ENABLE, "TS_ENABLE");
+    append(PA_ENABLE, "PA_ENABLE");
+    append(PCT_ENABLE, "PCT_ENABLE");
+    append(JITTER, "JITTER");
+    append(BRANCH_FILTER, "BRANCH_FILTER");
+    append(LOAD_FILTER, "LOAD_FILTER");
+    append(STORE_FILTER, "STORE_FILTER");
+    const unsigned long unknown = filter & ~known;
+    if (unknown != 0) {
+        if (!result.empty()) result += '|';
+        result += "UNKNOWN(" + HexValue(unknown) + ')';
+    }
+    return result.empty() ? "NONE" : result;
+}
+
+static string SpeEventFilterNames(unsigned long filter)
+{
+    string result;
+    unsigned long known = 0;
+    auto append = [&](unsigned long flag, const char* name) {
+        known |= flag;
+        if ((filter & flag) == 0) return;
+        if (!result.empty()) result += '|';
+        result += name;
+    };
+    append(SPE_EVENT_RETIRED, "SPE_EVENT_RETIRED");
+    append(SPE_EVENT_L1DMISS, "SPE_EVENT_L1DMISS");
+    append(SPE_EVENT_TLB_WALK, "SPE_EVENT_TLB_WALK");
+    append(SPE_EVENT_MISPREDICTED, "SPE_EVENT_MISPREDICTED");
+    const unsigned long unknown = filter & ~known;
+    if (unknown != 0) {
+        if (!result.empty()) result += '|';
+        result += "UNKNOWN(" + HexValue(unknown) + ')';
+    }
+    return result.empty() ? "SPE_EVENT_NONE" : result;
+}
 
 static void CleanupCollectors(CollectorSet& set)
 {
@@ -302,19 +418,35 @@ static void CleanupCollectors(CollectorSet& set)
     set.spePd = set.ddrcPd = -1;
 }
 
+static void ClosePcieCollectors(CollectorSet& set, bool disableFirst)
+{
+    for (auto& collector : set.pcieCollectors) {
+        if (collector.pd == -1) {
+            continue;
+        }
+        if (disableFirst) {
+            PmuDisable(collector.pd);
+        }
+        PmuClose(collector.pd);
+        collector.pd = -1;
+    }
+    set.pcieOpened = false;
+}
+
 static bool OpenSpeCollector(const ArgsContext& act, CollectorSet& set)
 {
     PmuAttr attr = {};
-    set.spePids = act.pids;
     attr.period = act.period;
     attr.dataFilter = static_cast<SpeFilter>(LOAD_FILTER | STORE_FILTER | TS_ENABLE | JITTER);
     attr.evFilter = SPE_EVENT_RETIRED;
     attr.minLatency = act.minLatency;
     attr.symbolMode = RESOLVE_ELF;
-    attr.excludeKernel = true;
-    attr.pidList = set.spePids.data();
-    attr.numPid = set.spePids.size();
-    attr.enableOnExec = act.isLaunch ? 1 : 0;
+    attr.excludeKernel = false;
+    attr.pidList = nullptr;
+    attr.numPid = 0;
+    // System-wide collection cannot use target-bound enable_on_exec. The child
+    // remains blocked until all collectors are enabled and baselined below.
+    attr.enableOnExec = 0;
     set.spePd = PmuOpen(SPE_SAMPLING, &attr);
     if (set.spePd == -1) {
         cerr << "PmuOpen SPE_SAMPLING failed: " << Perror() << "\n";
@@ -351,7 +483,7 @@ static void OpenHardwareCollectors(const ArgsContext& act, CollectorSet& set)
     set.ddrcPd = PmuDeviceOpen(set.ddrcAttrs, 2);
     set.ddrcOpened = set.ddrcPd != -1;
     if (!set.ddrcOpened) {
-        cerr << "Warning: DDRC PMU unavailable (" << Perror() << "); using SPE-only statistical estimation.\n";
+        cerr << "Warning: DDRC PMU unavailable (" << Perror() << "); only SPE sample counts will be available.\n";
     }
 
     vector<string> bdfs = ResolvePcieBdfs(act);
@@ -364,49 +496,60 @@ static void OpenHardwareCollectors(const ArgsContext& act, CollectorSet& set)
             cerr << "Warning: unable to open raw PCIe payload events for BDF " << bdf << ": " << error << ".\n";
         }
     }
-    set.pcieOpened = !set.pcieCollectors.empty();
     if (bdfs.empty()) {
         cerr << "Warning: no PCIe endpoint BDF was discovered; DMA traffic will not be deducted.\n";
-    } else if (!set.pcieOpened) {
+    } else if (set.pcieCollectors.empty()) {
         cerr << "Warning: no PCIe BDF is collectable; DMA traffic will not be deducted.\n";
     } else if (set.pcieCollectors.size() != bdfs.size()) {
-        cerr << "Warning: PCIe PMU is partially available; only " << set.pcieCollectors.size() << " of " << bdfs.size()
-             << " requested BDFs will be deducted.\n";
+        cerr << "Warning: PCIe PMU is available for only " << set.pcieCollectors.size()
+             << " of " << bdfs.size() << " requested BDFs; partial DMA data will not be deducted.\n";
+        ClosePcieCollectors(set, false);
+    } else {
+        set.pcieOpened = true;
     }
 }
 
-static bool EnableCollectors(const ArgsContext& act, CollectorSet& set)
+static bool EnableCollectors(CollectorSet& set)
 {
     if (set.ddrcOpened && PmuEnable(set.ddrcPd) != 0) {
-        cerr << "Warning: failed to enable DDRC PMU (" << Perror() << "); using SPE-only statistical estimation.\n";
+        cerr << "Warning: failed to enable DDRC PMU (" << Perror() << "); only SPE sample counts will be available.\n";
         PmuClose(set.ddrcPd);
         set.ddrcPd = -1;
         set.ddrcOpened = false;
     }
     unsigned enabled = 0;
-    for (auto& collector : set.pcieCollectors) {
-        if (PmuEnable(collector.pd) != 0) {
-            cerr << "Warning: failed to enable PCIe PMU for BDF " << collector.bdf << " (" << Perror() << ").\n";
-            PmuClose(collector.pd);
-            collector.pd = -1;
-        } else {
-            ++enabled;
+    if (set.pcieOpened) {
+        for (auto& collector : set.pcieCollectors) {
+            if (PmuEnable(collector.pd) != 0) {
+                cerr << "Warning: failed to enable PCIe PMU for BDF " << collector.bdf << " (" << Perror() << ").\n";
+                PmuClose(collector.pd);
+                collector.pd = -1;
+            } else {
+                ++enabled;
+            }
+        }
+        if (enabled != set.pcieCollectors.size()) {
+            ClosePcieCollectors(set, true);
+            cerr << "Warning: not all PCIe PMUs could be enabled; partial DMA data will not be deducted.\n";
         }
     }
-    set.pcieOpened = enabled > 0;
-    if (!set.pcieCollectors.empty() && !set.pcieOpened) {
-        cerr << "Warning: no PCIe PMU could be enabled; DMA traffic will not be deducted.\n";
-    }
-    if (!act.isLaunch && PmuEnable(set.spePd) != 0) {
+    if (PmuEnable(set.spePd) != 0) {
         cerr << "PmuEnable SPE_SAMPLING failed: " << Perror() << "\n";
         return false;
     }
     return true;
 }
 
-static bool PrimeCollectors(const ArgsContext& act, CollectorSet& set)
+static bool PrimeCollectors(CollectorSet& set)
 {
     string error;
+    double baselineSec = 0.0;
+    if (!PrimePmuRead(set.spePd, baselineSec, error)) {
+        cerr << "SPE baseline read failed: " << error << "\n";
+        return false;
+    }
+    error.clear();
+
     unsigned primed = 0;
     for (auto& collector : set.pcieCollectors) {
         if (collector.pd == -1) continue;
@@ -420,25 +563,17 @@ static bool PrimeCollectors(const ArgsContext& act, CollectorSet& set)
         }
         error.clear();
     }
-    if (set.pcieOpened) set.pcieOpened = primed > 0;
-    if (!set.pcieCollectors.empty() && !set.pcieOpened) {
-        cerr << "Warning: no PCIe PMU passed the baseline read; DMA traffic will not be deducted.\n";
+    if (set.pcieOpened && primed != set.pcieCollectors.size()) {
+        ClosePcieCollectors(set, true);
+        cerr << "Warning: not all PCIe PMUs passed the baseline read; partial DMA data will not be deducted.\n";
     }
 
     if (set.ddrcOpened &&
         !PrimePmuRead(set.ddrcPd, set.ddrcLastReadSec, error)) {
-        cerr << "Warning: DDRC baseline read failed (" << error << "); using SPE-only statistical estimation.\n";
+        cerr << "Warning: DDRC baseline read failed (" << error << "); only SPE sample counts will be available.\n";
         PmuClose(set.ddrcPd);
         set.ddrcPd = -1;
         set.ddrcOpened = false;
-    }
-    if (!act.isLaunch) {
-        double baselineSec = 0.0;
-        error.clear();
-        if (!PrimePmuRead(set.spePd, baselineSec, error)) {
-            cerr << "SPE baseline read failed: " << error << "\n";
-            return false;
-        }
     }
     return true;
 }
@@ -449,7 +584,7 @@ static bool InitializeCollectors(const ArgsContext& act, CollectorSet& set)
         return false;
     }
     OpenHardwareCollectors(act, set);
-    return EnableCollectors(act, set) && PrimeCollectors(act, set);
+    return EnableCollectors(set) && PrimeCollectors(set);
 }
 
 static bool ReleaseTarget(ArgsContext& act)
@@ -465,13 +600,57 @@ static bool ReleaseTarget(ArgsContext& act)
     return true;
 }
 
+static void InvalidateSpeRange(BwContext& ctx, SpeWindowState& windows,
+                               int64_t beginNs, int64_t endNs)
+{
+    for (auto& window : ctx.windows) {
+        if (window.endNs > beginNs && window.startNs < endNs) {
+            window.speValid = false;
+            window.valid = false;
+        }
+    }
+    if (endNs > windows.openStartNs) {
+        windows.open.valid = false;
+    }
+}
+
 static void CollectSpeSlice(const ArgsContext& act, CollectorSet& set, BwContext& ctx,
-                            IntervalWeights& weights, CollectionHealth* health)
+                            SpeWindowState& windows, CollectionHealth* health,
+                            WindowRecord* drainWindow = nullptr)
 {
     PmuData* speData = nullptr;
+    const int64_t readStartNs = NowNs();
     int speLen = PmuRead(set.spePd, &speData);
+    const int64_t readEndNs = NowNs();
+    const double readCost = static_cast<double>(readEndNs - readStartNs) / 1e9;
+    const uint64_t readCostNs = static_cast<uint64_t>(
+        max<int64_t>(0, readEndNs - readStartNs));
+    if (drainWindow != nullptr) {
+        drainWindow->speReadCostNs += readCostNs;
+        ++drainWindow->speDrains;
+    } else {
+        windows.openSpeReadCostNs += readCostNs;
+        ++windows.openSpeDrains;
+    }
+    // PmuRead may return zero while Perrorno still reports a backend failure.
+    if (speLen < 0 || Perrorno() != 0) {
+        speLen = -1;
+        if (windows.failedReadStartNs == 0) {
+            windows.failedReadStartNs = windows.lastReadEndNs > 0
+                ? windows.lastReadEndNs : windows.collectionStartNs;
+        }
+        InvalidateSpeRange(ctx, windows, windows.failedReadStartNs, readEndNs);
+    } else {
+        if (windows.failedReadStartNs > 0) {
+            InvalidateSpeRange(ctx, windows, windows.failedReadStartNs, readEndNs);
+            windows.failedReadStartNs = 0;
+        }
+        windows.lastReadEndNs = readEndNs;
+    }
 
     if (health != nullptr) {
+        health->speReadCostSec += readCost;
+        health->maxSpeReadCostSec = max(health->maxSpeReadCostSec, readCost);
         ++health->speDrains;
         if (speLen > 0 && speData != nullptr) {
             health->speRecords += static_cast<uint64_t>(speLen);
@@ -485,7 +664,7 @@ static void CollectSpeSlice(const ArgsContext& act, CollectorSet& set, BwContext
     }
 
     if (speLen > 0 && speData != nullptr) {
-        ProcessSpeChunk(speData, speLen, ctx, act.pids, weights);
+        ProcessSpeChunk(speData, speLen, ctx, act.pids, windows, readEndNs);
     } else if (speLen < 0) {
         cerr << "Warning: SPE read failed: " << Perror() << "\n";
     }
@@ -495,29 +674,39 @@ static void CollectSpeSlice(const ArgsContext& act, CollectorSet& set, BwContext
     }
 }
 
-static void CollectCounterWindow(CollectorSet& set, BwContext& ctx,
-                                 const IntervalWeights& weights,
-                                 double& lastCollectSec,
-                                 CollectionHealth* health)
+static void CollectCounterWindow(const ArgsContext& act, CollectorSet& set, BwContext& ctx,
+                                 SpeWindowState& windows, int64_t& lastCollectNs,
+                                 CollectionHealth* health, bool finalWindow = false)
 {
+    // Snapshot counters before expensive SPE decoding/symbol resolution. This
+    // reduces boundary skew; the independent PMUs still are not atomic snapshots.
     double ddrcRead = 0.0;
     double ddrcWrite = 0.0;
     const bool ddrcAttempted = set.ddrcOpened;
+    const int64_t ddrcReadStartNs = NowNs();
     bool ddrcOk = set.ddrcOpened &&
         ReadDdrcInterval(set.ddrcPd, set.ddrcAttrs, 2, ddrcRead, ddrcWrite);
+    const int64_t ddrcReadEndNs = NowNs();
+    int64_t boundaryNs = ddrcReadStartNs +
+        (ddrcReadEndNs - ddrcReadStartNs) / 2;
+    boundaryNs = max(boundaryNs, lastCollectNs + 1);
+    const double boundarySec = static_cast<double>(boundaryNs) / 1e9;
     if (ddrcOk) {
-        double readSec = NowSec();
-        if (set.ddrcLastReadSec > 0.0 && readSec > set.ddrcLastReadSec) {
-            ctx.traffic.ddrcElapsedSec += readSec - set.ddrcLastReadSec;
+        if (set.ddrcLastReadSec > 0.0 && boundarySec > set.ddrcLastReadSec) {
+            ctx.traffic.ddrcElapsedSec += boundarySec - set.ddrcLastReadSec;
         }
-        set.ddrcLastReadSec = readSec;
+        set.ddrcLastReadSec = boundarySec;
     }
+    // A recovered cumulative counter cannot be matched to only this window's SPE.
+    const bool ddrcContinuous = set.ddrcPreviousReadOk;
+    set.ddrcPreviousReadOk = ddrcOk;
 
     PcieBytes pcie;
     const bool pcieAttempted = set.pcieOpened;
     PcieReadResult pcieResult;
     if (pcieAttempted) {
-        pcieResult = ReadPcieInterval(set.pcieCollectors, ctx, pcie);
+        pcieResult = ReadPcieInterval(
+            set.pcieCollectors, ctx, pcie, finalWindow ? boundarySec : 0.0);
         if (!pcieResult.Complete() && !set.pcieIncompleteWarningPrinted) {
             cerr << "Warning: incomplete PCIe counter window (successful="
                  << pcieResult.succeeded << ", failed=" << pcieResult.failed
@@ -534,16 +723,28 @@ static void CollectCounterWindow(CollectorSet& set, BwContext& ctx,
         }
     }
     const bool pcieOk = pcieAttempted && pcieResult.Complete();
+    if (finalWindow) {
+        windows.finalEndNs = boundaryNs;
+        PmuDisable(set.spePd);
+    }
 
-    AccountWindowHealth(health, weights, ddrcAttempted, ddrcOk,
+    const size_t windowIndex = SealWindow(
+        ctx, windows, lastCollectNs, boundaryNs, ddrcRead, ddrcWrite,
+        pcie, ddrcOk, ddrcContinuous, pcieAttempted, pcieOk);
+    CollectSpeSlice(act, set, ctx, windows, health, &ctx.windows[windowIndex]);
+    if (finalWindow) {
+        // SPE EndRead enables sampling, even when the caller disabled it first.
+        PmuDisable(set.spePd);
+    }
+    AccountWindowHealth(health, ddrcAttempted,
+                        ctx.windows[windowIndex].ddrcValid,
                         pcieAttempted, pcieResult);
-    AccountWindow(ctx, weights, ddrcRead, ddrcWrite, pcie, ddrcOk,
-                  pcieAttempted, pcieOk);
-    lastCollectSec = NowSec();
+    lastCollectNs = boundaryNs;
 }
 
 static bool TargetExited(const ArgsContext& act)
 {
+    if (act.systemWide) return false;
     if (act.isLaunch) {
         int status = 0;
         return waitpid(act.pid, &status, WNOHANG) == act.pid;
@@ -574,25 +775,18 @@ static bool SleepUntil(double targetSec, volatile sig_atomic_t* stopRequested)
         if (remainingSec <= 0.0) {
             return true;
         }
-        // Keep the conversion within useconds_t and re-check stopRequested at
-        // least once per second, even for a very large --interval value.
-        const double sleepSec = min(remainingSec, 1.0);
-        usleep(static_cast<useconds_t>(max(1.0, sleepSec * 1e6)));
+        usleep(static_cast<useconds_t>(min(500000.0, max(1.0, remainingSec * 1e6))));
     }
 }
 
 int RunDdrBandwidthCollection(ArgsContext& act, volatile sig_atomic_t* stopRequested, volatile int* execErrNo)
 {
-    constexpr uint64_t SPE_READ_INTERVAL_MS = 10;
-    constexpr double MIN_FINAL_WINDOW_SEC = 0.01;
-
-    // ParseArgs validates CLI input, but this function is also a public entry
-    // point and must not rely on every caller going through the CLI parser.
-    if (act.duration <= 0 || act.interval <= 0) {
-        cerr << "Error: collection duration and interval must be positive.\n";
+    if (act.duration <= 0 || act.interval <= 0 || act.speReadInterval <= 0) {
+        cerr << "Error: collection duration, interval, and SPE read interval must be positive.\n";
         return 1;
     }
 
+    ConfigureSpeDebug(act.debug);
     CollectorSet collectors;
     if (!InitializeCollectors(act, collectors)) {
         CleanupCollectors(collectors);
@@ -601,16 +795,16 @@ int RunDdrBandwidthCollection(ArgsContext& act, volatile sig_atomic_t* stopReque
 
     BwContext ctx;
     CollectionHealth health;
-    CollectionHealth* healthPtr = act.debug ? &health : nullptr;
-    ConfigureSpeDebug(act.debug);
+    CollectionHealth* healthPtr = &health;
 
     // The synchronization protocol is opt-in and used only by the dedicated
     // exact-window validation demo. Do not tie this to --debug: sending
     // SIGUSR1/SIGUSR2 to an arbitrary application would be unsafe.
-    const bool exactStoreSync = ExactStoreSyncEnabled() && !act.isLaunch;
-    bool exactStoreStopped = false;
+    const bool exactStoreSync = ExactStoreSyncEnabled() &&
+        !act.isLaunch && !act.systemWide;
 
-    const double startSec = NowSec();
+    const int64_t startNs = NowNs();
+    const double startSec = static_cast<double>(startNs) / 1e9;
     if (exactStoreSync) {
         const unsigned signaled =
             SignalTargets(act.pids, SIGUSR1, "SIGUSR1(start)");
@@ -620,101 +814,69 @@ int RunDdrBandwidthCollection(ArgsContext& act, volatile sig_atomic_t* stopReque
         }
     }
 
-    double lastCollectSec = startSec;
-    const uint64_t durationMs = static_cast<uint64_t>(act.duration) * 1000;
-    const uint64_t intervalMs = static_cast<uint64_t>(act.interval);
-    const uint64_t scheduledWindows = (durationMs + intervalMs - 1) / intervalMs;
-    uint64_t windowIndex = 1;
-    bool completedSchedule = false;
-    IntervalWeights windowWeights;
+    int64_t lastCollectNs = startNs;
+    const double endSec = startSec + act.duration;
+    const double intervalSec = act.interval / 1000.0;
+    const double speIntervalSec = min(act.speReadInterval, act.interval) / 1000.0;
+    double nextWindowSec = min(startSec + intervalSec, endSec);
+    double nextSpeReadSec = min(startSec + speIntervalSec, nextWindowSec);
+    SpeWindowState speWindows;
+    speWindows.collectionStartNs = startNs;
+    speWindows.openStartNs = startNs;
+    speWindows.lastReadEndNs = startNs;
     if (!ReleaseTarget(act)) {
         CleanupCollectors(collectors);
         return 1;
     }
 
-    while (windowIndex <= scheduledWindows &&
-           (stopRequested == nullptr || !*stopRequested)) {
-        const uint64_t windowStartMs = (windowIndex - 1) * intervalMs;
-        const uint64_t windowEndMs = min(windowIndex * intervalMs, durationMs);
-        uint64_t nextSpeReadMs = min(windowStartMs + SPE_READ_INTERVAL_MS, windowEndMs);
-        bool windowInterrupted = false;
-
-        while (true) {
-            const double nextSpeReadSec =
-                startSec + static_cast<double>(nextSpeReadMs) / 1000.0;
-            if (!SleepUntil(nextSpeReadSec, stopRequested)) {
-                windowInterrupted = true;
-                break;
-            }
-            if (execErrNo != nullptr && *execErrNo != 0) {
-                cerr << "exec failed: " << strerror(*execErrNo) << "\n";
-                CleanupCollectors(collectors);
-                return 1;
-            }
-
-            CollectSpeSlice(act, collectors, ctx, windowWeights, healthPtr);
-
-            if (exactStoreSync && !exactStoreStopped &&
-                windowIndex >= scheduledWindows &&
-                nextSpeReadMs >= durationMs) {
-                SignalTargets(act.pids, SIGUSR2, "SIGUSR2(stop)");
-                exactStoreStopped = true;
-            }
-
-            if (nextSpeReadMs >= windowEndMs) {
-                break;
-            }
-            if (TargetExited(act)) {
-                windowInterrupted = true;
-                break;
-            }
-            nextSpeReadMs = min(nextSpeReadMs + SPE_READ_INTERVAL_MS, windowEndMs);
+    while (stopRequested == nullptr || !*stopRequested) {
+        if (!SleepUntil(nextSpeReadSec, stopRequested)) break;
+        if (execErrNo != nullptr && *execErrNo != 0) {
+            cerr << "exec failed: " << strerror(*execErrNo) << "\n";
+            CleanupCollectors(collectors);
+            return 1;
         }
-
-        if (windowInterrupted) {
-            break;
+        const double now = NowSec();
+        if (now >= endSec || TargetExited(act)) break;
+        if (now >= nextWindowSec) {
+            CollectCounterWindow(act, collectors, ctx, speWindows, lastCollectNs, healthPtr);
+            // Skip deadlines missed during collection: never manufacture a burst
+            // of tiny catch-up windows from an already drained SPE buffer.
+            nextWindowSec = min(NextCollectionDeadline(startSec, intervalSec, NowSec()), endSec);
+        } else {
+            CollectSpeSlice(act, collectors, ctx, speWindows, healthPtr);
         }
-
-        CollectCounterWindow(collectors, ctx, windowWeights, lastCollectSec, healthPtr);
-        windowWeights = {};
-
-        if (windowIndex >= scheduledWindows) {
-            completedSchedule = true;
-            break;
-        }
-        if (TargetExited(act)) {
-            break;
-        }
-        ++windowIndex;
+        nextSpeReadSec = min(NextCollectionDeadline(startSec, speIntervalSec, NowSec()), nextWindowSec);
     }
 
-    if (!completedSchedule && NowSec() - lastCollectSec > MIN_FINAL_WINDOW_SEC) {
-        CollectSpeSlice(act, collectors, ctx, windowWeights, healthPtr);
-        CollectCounterWindow(collectors, ctx, windowWeights, lastCollectSec, healthPtr);
-    }
-
-    if (exactStoreSync && !exactStoreStopped) {
+    if (exactStoreSync) {
         SignalTargets(act.pids, SIGUSR2, "SIGUSR2(stop)");
-        exactStoreStopped = true;
     }
-
-    double disableStartSec = NowSec();
+    // Snapshot DDRC first, then stop and drain SPE. Samples at or beyond the
+    // final DDRC boundary are rejected by the half-open window rule.
+    CollectCounterWindow(act, collectors, ctx, speWindows, lastCollectNs, healthPtr, true);
+    const double disableStartSec = NowSec();
     DisableCollectors(collectors);
+    const double disableCostSec = NowSec() - disableStartSec;
+    const int64_t stopNs = lastCollectNs;
+    const double stopSec = static_cast<double>(stopNs) / 1e9;
     CollectionTiming timing;
     timing.requestedSec = static_cast<double>(act.duration);
+    timing.startNs = startNs;
+    timing.endNs = stopNs;
     timing.startSec = startSec;
-    timing.lastCollectSec = lastCollectSec;
-    timing.endSec = lastCollectSec;
-    timing.durationSec = lastCollectSec - startSec;
-    timing.disableCostSec = NowSec() - disableStartSec;
-    if (timing.durationSec <= 0.0) {
-        timing.durationSec = static_cast<double>(act.duration);
-    }
+    timing.lastCollectSec = stopSec;
+    timing.endSec = stopSec;
+    timing.durationSec = max(stopSec - startSec, 1e-9);
+    timing.disableCostSec = disableCostSec;
 
+    if (!ctx.windows.empty()) FinalizeAttribution(ctx, act.minSamples);
+    RefreshSpeWindowHealth(health, ctx);
     PrintSummary(ctx, collectors.ddrcOpened, collectors.pcieOpened, timing, act);
     if (act.debug) {
-        PrintCollectionHealth(health);
-        PrintSpeStorePcDebug();
+        PrintSpePipelineDiagnostics(health, ctx, act);
+        PrintCollectionHealth(health, act, timing.durationSec);
+        PrintSpeEventDebug();
     }
     CleanupCollectors(collectors);
     return 0;
