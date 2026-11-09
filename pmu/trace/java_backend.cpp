@@ -291,16 +291,18 @@ static std::string ResolveCarrierComm(const uint8_t *mem, int32_t commId, int32_
 
 // Counts the CPUs the target process may actually run on, mirroring the JVM's
 // availableProcessors() affinity semantics. Falls back to online CPUs.
+static constexpr const char K_CPUS_KEY[] = "Cpus_allowed_list:";
+
 static uint32_t CountTargetCpus(int pid)
 {
     if (pid > 0) {
         std::ifstream status("/proc/" + std::to_string(pid) + "/status");
         std::string line;
         while (std::getline(status, line)) {
-            if (line.compare(0, 16, "Cpus_allowed_list:") != 0) {
+            if (line.rfind(K_CPUS_KEY, 0) != 0) {
                 continue;
             }
-            const std::string list = line.substr(16);
+            const std::string list = line.substr(sizeof(K_CPUS_KEY) - 1);
             size_t pos = list.find_first_of("0123456789");
             if (pos == std::string::npos) {
                 break;
