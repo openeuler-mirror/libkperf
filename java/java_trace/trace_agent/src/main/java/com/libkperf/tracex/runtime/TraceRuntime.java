@@ -88,7 +88,7 @@ public final class TraceRuntime {
         return id == null ? -1 : id.intValue();
     }
 
-    public static synchronized void reconfigure(String shmPath, int slotsPerRing) throws Exception {
+    public static synchronized void reconfigure(String shmPath, int slotsPerRing, int ringCount) throws Exception {
         enabled = false;
         virtualThreadCarrierHooksEnabled = false;
         virtualThreadFallbackLogged = false;
@@ -104,7 +104,7 @@ public final class TraceRuntime {
             }
         }
 
-        SharedEventSink next = new SharedEventSink(shmPath, slotsPerRing);
+        SharedEventSink next = new SharedEventSink(shmPath, slotsPerRing, ringCount);
         for (int i = 0; i < METHOD_IDS.size(); i++) {
             MethodMetadata metadata = methodTable[i];
             if (metadata == null) {

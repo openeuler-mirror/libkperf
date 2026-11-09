@@ -29,6 +29,7 @@ public final class TraceFilterFile {
     private static final int MAX_CONTEXT_METHODS = 4096;
     private static final long MAX_SLOTS_PER_RING = 1L << 22;
     private static final long MAX_CONSUMER_THREADS = 64L;
+    private static final long MAX_RING_COUNT = 65536L;
     private static final String JAVA_INCLUDE = "java_include";
     private static final String JAVA_EXCLUDE = "java_exclude";
     private static final String KERNEL_INCLUDE = "kernel_include";
@@ -42,6 +43,8 @@ public final class TraceFilterFile {
     public int contextMaxMethods = -1;
     public boolean enableVTStage = false;
     public long slotsPerRing = -1;
+    // -1: one ring per affinity CPU (auto); >0: min(configured, affinity CPUs).
+    public long ringCount = -1;
     public String logLevel = "info";
     public boolean valid = false;
     public String error = "";
@@ -121,6 +124,16 @@ public final class TraceFilterFile {
                             return invalid(out, path, lineNo, "invalid slots_per_ring", v);
                         }
                         out.slotsPerRing = parsed.longValue();
+                    } else if ("ring_count".equals(k)) {
+                        if ("-1".equals(v)) {
+                            out.ringCount = -1;
+                        } else {
+                            Long parsed = parsePositiveLong(v);
+                            if (parsed == null || parsed.longValue() > MAX_RING_COUNT) {
+                                return invalid(out, path, lineNo, "invalid ring_count", v);
+                            }
+                            out.ringCount = parsed.longValue();
+                        }
                     } else if ("consumer_threads".equals(k)) {
                         // Consumer-side knob, validated by the collector. The agent must accept
                         // the key because the same trace_filter.conf is shipped to the JVM.

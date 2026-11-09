@@ -53,11 +53,13 @@ static constexpr const char *K_JAVA_FILTER_CONFIG_NAME = "trace_filter.conf";
 static constexpr const char *K_LOG_REL_DIR = "logs";
 static constexpr const char *K_TRACE_LOG_NAME = "trace.log";
 // ABI v4 ring defaults, must match SharedEventSink.java and TraceConfig.java.
-// ringCount is derived at open time from the target process's usable CPUs.
+// ring_count=-1 derives the ring count from the target process's usable CPUs.
 static constexpr uint32_t K_DEFAULT_SLOTS_PER_RING = 327680;
 static constexpr uint32_t K_MAX_SLOTS_PER_RING = 1U << 22;
 static constexpr uint32_t K_DEFAULT_CONSUMER_THREADS = 1;
 static constexpr uint32_t K_MAX_CONSUMER_THREADS = 64;
+static constexpr int32_t K_DEFAULT_RING_COUNT = -1;
+static constexpr int64_t K_MAX_RING_COUNT = 65536;
 static constexpr const char *K_DEFAULT_JAVA_BIN = "java";
 static constexpr mode_t K_PRIVATE_DIR_MODE = 0700;
 static constexpr mode_t K_PRIVATE_FILE_MODE = 0600;
@@ -880,6 +882,7 @@ static constexpr const char *K_CONTEXT_DEPTH_KEY = "context_depth";
 static constexpr const char *K_CONTEXT_MAX_METHODS_KEY = "context_max_methods";
 static constexpr const char *K_VT_STAGE_KEY = "vt_stage";
 static constexpr const char *K_SLOTS_PER_RING_KEY = "slots_per_ring";
+static constexpr const char *K_RING_COUNT_KEY = "ring_count";
 static constexpr const char *K_CONSUMER_THREADS_KEY = "consumer_threads";
 // Shared with the native trace pipeline (trace_filter_config.cpp). The Java
 // backend does not consume it; the runtime TraceLog threshold is already set
@@ -958,6 +961,36 @@ static bool ParseRingBoundedValue(const LocalConfigParseContext &context, const 
     return true;
 }
 
+// ring_count accepts -1 (auto: one ring per target-affinity CPU) or 1-K_MAX_RING_COUNT.
+// Values above the affinity CPU count are clamped down at open time, never above.
+static bool ParseRingCountValue(const LocalConfigParseContext &context, const char *key,
+                                const std::string &value, int32_t *out)
+{
+    if (value == "-1") {
+        *out = -1;
+        return true;
+    }
+    if (!IsUnsignedInteger(value)) {
+        LogInvalidConfigValue(context, key, value);
+        return false;
+    }
+
+    unsigned long long parsed = 0;
+    try {
+        parsed = std::stoull(value, nullptr, K_NUMBER_BASE_DECIMAL);
+    } catch (const std::exception &) {
+        LogInvalidConfigValue(context, key, value);
+        return false;
+    }
+
+    if (parsed == 0 || parsed > static_cast<unsigned long long>(K_MAX_RING_COUNT)) {
+        LogInvalidConfigValue(context, key, value);
+        return false;
+    }
+    *out = static_cast<int32_t>(parsed);
+    return true;
+}
+
 static bool IsNonJavaTraceKey(const std::string &key)
 {
     return key.compare(0, sizeof("kernel_") - 1, "kernel_") == 0 ||
@@ -987,6 +1020,9 @@ static bool ParseLocalConfigKeyValue(LocalConfigParseContext *context, const std
     if (key == K_SLOTS_PER_RING_KEY) {
         return ParseRingBoundedValue(*context, K_SLOTS_PER_RING_KEY, value, K_MAX_SLOTS_PER_RING,
                                      &context->config->slotsPerRing);
+    }
+    if (key == K_RING_COUNT_KEY) {
+        return ParseRingCountValue(*context, K_RING_COUNT_KEY, value, &context->config->ringCount);
     }
     if (key == K_CONSUMER_THREADS_KEY) {
         return ParseRingBoundedValue(*context, K_CONSUMER_THREADS_KEY, value, K_MAX_CONSUMER_THREADS,
@@ -1085,7 +1121,7 @@ static bool ParseLocalConfigStream(std::ifstream &input, LocalConfigParseContext
 
 JavaTraceLocalConfig LoadLocalConfig(const std::string &path)
 {
-    JavaTraceLocalConfig out{K_DEFAULT_SLOTS_PER_RING, K_DEFAULT_CONSUMER_THREADS, false, false};
+    JavaTraceLocalConfig out{K_DEFAULT_SLOTS_PER_RING, K_DEFAULT_CONSUMER_THREADS, K_DEFAULT_RING_COUNT, false, false};
     if (path.empty()) {
         JavaTraceLog("[trace-java] filter config path is empty, skip java trace\n");
         return out;
@@ -1149,7 +1185,7 @@ bool WriteJavaOnlyFilterConfig(const std::string &sourcePath, const std::string 
         return false;
     }
 
-    JavaTraceLocalConfig parsed{K_DEFAULT_SLOTS_PER_RING, K_DEFAULT_CONSUMER_THREADS, false, false};
+    JavaTraceLocalConfig parsed{K_DEFAULT_SLOTS_PER_RING, K_DEFAULT_CONSUMER_THREADS, K_DEFAULT_RING_COUNT, false, false};
     LocalConfigParseContext context(sourcePath, &parsed);
     JavaOnlyFilterConfigContent content;
     std::string line;

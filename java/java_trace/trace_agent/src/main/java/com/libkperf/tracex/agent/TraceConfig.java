@@ -32,6 +32,8 @@ public final class TraceConfig {
 
     public final String shmPath;
     public final int slotsPerRing;
+    // -1: one ring per affinity CPU (auto); >0: min(configured, affinity CPUs).
+    public final int ringCount;
     public final String nativeLibPath;
     public final String action;
     public final String includeFile;
@@ -66,6 +68,8 @@ public final class TraceConfig {
         this.slotsPerRing = filterFile.slotsPerRing > 0
                 ? (int) filterFile.slotsPerRing
                 : DEFAULT_SLOTS_PER_RING;
+        // TraceFilterFile already validates ring_count as -1 or [1, 65536].
+        this.ringCount = filterFile.ringCount > 0 ? (int) filterFile.ringCount : -1;
         this.contextMaxMethods = filterFile.contextMaxMethods >= 0 ? filterFile.contextMaxMethods : 128;
 
         int configuredContextDepth = filterFile.contextDepth >= 0 ? filterFile.contextDepth : 1;

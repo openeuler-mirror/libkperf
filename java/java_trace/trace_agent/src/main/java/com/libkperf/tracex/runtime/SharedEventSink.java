@@ -230,10 +230,14 @@ final class SharedEventSink implements AutoCloseable {
         MemoryFence.releaseFence();
     }
 
-    SharedEventSink(String shmPath, int slotsPerRing) throws IOException {
+    SharedEventSink(String shmPath, int slotsPerRing, int ringCount) throws IOException {
         this.slotsPerRing = clampSlotsPerRing(slotsPerRing);
         this.slotMask = isPowerOfTwo(this.slotsPerRing) ? this.slotsPerRing - 1 : -1;
-        this.ringCount = clampRingCount(Runtime.getRuntime().availableProcessors());
+        // ringCount: -1 auto-sizes from the target affinity CPUs (availableProcessors);
+        // a configured positive value above the affinity count is clamped back down.
+        int affinityCpus = Runtime.getRuntime().availableProcessors();
+        int targetRings = ringCount > 0 && ringCount < affinityCpus ? ringCount : affinityCpus;
+        this.ringCount = clampRingCount(targetRings);
         long ringDataBytes = (long) this.slotsPerRing * SLOT_SIZE;
         long methodBytes = (long) METHOD_CAPACITY * METHOD_ENTRY_SIZE;
         long threadBytes = (long) THREAD_CAPACITY * THREAD_ENTRY_SIZE;

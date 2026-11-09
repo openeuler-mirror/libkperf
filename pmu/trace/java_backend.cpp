@@ -496,7 +496,12 @@ static int PrepareJavaBackendOpen(JavaBackendImpl *impl, int pid, const char *in
     impl->enableVTStage = localConfig.enableVTStage || enableVTStage;
     impl->shmName = "utrace_java_" + std::to_string(pid) + "_" + TimestampSuffix();
     // One ring per usable CPU of the target, matching the agent's availableProcessors().
+    // A configured ring_count only shrinks the range: values above the affinity CPU
+    // count are clamped back down so oversized configs cannot waste shared memory.
     impl->ringCount = CountTargetCpus(pid);
+    if (localConfig.ringCount > 0 && static_cast<uint32_t>(localConfig.ringCount) < impl->ringCount) {
+        impl->ringCount = static_cast<uint32_t>(localConfig.ringCount);
+    }
     impl->descOffset = K_DESC_OFFSET;
     impl->eventOffset = K_DESC_OFFSET + static_cast<size_t>(impl->ringCount) * K_DESC_SIZE;
     impl->ringDataBytes = static_cast<size_t>(impl->slotsPerRing) * K_SLOT_SIZE;

@@ -327,7 +327,7 @@ public final class TraceAgent {
         }
 
         NativeThreadInfo.load(config.nativeLibPath);
-        TraceRuntime.reconfigure(config.shmPath, config.slotsPerRing);
+        TraceRuntime.reconfigure(config.shmPath, config.slotsPerRing, config.ringCount);
         TraceRuntime.setEnabled(false);
         TraceRuntime.preloadVirtualThreadHelpers();
 
