@@ -55,7 +55,7 @@ static constexpr const char *K_TRACE_LOG_NAME = "trace.log";
 static constexpr uint32_t K_MAX_SLOT_COUNT = 67108864U;
 // ABI v4 ring defaults, must match SharedEventSink.java and TraceConfig.java.
 // ringCount is derived at open time from the target process's usable CPUs.
-static constexpr uint32_t K_DEFAULT_SLOTS_PER_RING = 65536;
+static constexpr uint32_t K_DEFAULT_SLOTS_PER_RING = 327680;
 static constexpr uint32_t K_MAX_SLOTS_PER_RING = 1U << 22;
 static constexpr uint32_t K_DEFAULT_CONSUMER_THREADS = 1;
 static constexpr uint32_t K_MAX_CONSUMER_THREADS = 64;

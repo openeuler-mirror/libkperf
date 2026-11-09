@@ -900,6 +900,12 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
         }
     }
 
+    if (overwritten > 0) {
+        JavaTraceLog(MakeLogMessage("[trace-java] warning: consumer lagged behind, ", overwritten,
+            " events overwritten this round (wrap_dropped=", wrapDropped,
+            "): increase slots_per_ring in trace_filter.conf or shorten the read interval\n"));
+    }
+
     if (allocFailed) {
         for (auto &shard : shards) {
             FreeShardRecords(&shard);

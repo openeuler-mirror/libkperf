@@ -28,7 +28,7 @@ import com.libkperf.tracex.agent.asm.VTPhaseInstrumentation;
 
 public final class TraceConfig {
     // Must match SharedEventSink and the pmu/trace java backend defaults.
-    private static final int DEFAULT_SLOTS_PER_RING = 65536;
+    private static final int DEFAULT_SLOTS_PER_RING = 327680;
 
     public final String shmPath;
     public final int slotsPerRing;

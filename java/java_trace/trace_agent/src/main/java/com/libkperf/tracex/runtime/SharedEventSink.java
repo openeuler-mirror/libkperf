@@ -140,7 +140,7 @@ final class SharedEventSink implements AutoCloseable {
     static final int EVENT_VTHREAD_MOUNT_DEGRADED = 4;
     static final int EVENT_VTHREAD_UNMOUNT_DEGRADED = 5;
 
-    static final int DEFAULT_SLOTS_PER_RING = 65536;
+    static final int DEFAULT_SLOTS_PER_RING = 327680;
     static final int MAX_SLOTS_PER_RING = 1 << 22;
     private static final long CLOSE_WAIT_NANOS = 1000000000L;
     private static final byte[] EMPTY_BYTES = new byte[0];

@@ -39,7 +39,7 @@ struct JavaBackendImpl {
     std::string includeRules;
     // ABI v4 ring configuration: one ring per target CPU, sized by slotsPerRing.
     unsigned ringCount{0};
-    unsigned slotsPerRing{65536};
+    unsigned slotsPerRing{327680};
     unsigned consumerThreads{1};
     size_t descOffset{0};
     size_t eventOffset{0};
