@@ -83,7 +83,7 @@ public final class VTStageCollector {
                                    + ", fd=" + fd + ", bytes=" + bytes);
                 return;
             }
-            long ts = NativeThreadInfo.currentTimeNanosSafe();
+            long ts = System.nanoTime();
             int cpu = NativeThreadInfo.currentCpuSafe();
             boolean recorded = sink.recordVtSocketRead(vtId, fd, bytes, cpu, ts,
                                                        NativeThreadInfo.currentTidSafe());
