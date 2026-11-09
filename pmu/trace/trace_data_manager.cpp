@@ -14,10 +14,10 @@
  ******************************************************************************/
 
 #include "trace_data_manager.h"
+#include <cstring>
 #include "java_trace_util.h"
 #include "probe_alias_manager.h"
 #include "symbol.h"
-#include <cstring>
 
 UTraceData *TraceDataManager::ConvertToTraceData(int pd, PmuData *data, int len, int *convertedLen)
 {
