@@ -501,8 +501,8 @@ static void LogTraceMergeInput(const TraceMergeInputStats &stats)
 static bool IsUsableJavaThreadName(const UTraceData &event)
 {
     const char *comm = TraceDataComm(event);
-    return TraceDataGPtr(event) == 0 && comm != nullptr && comm[0] != '\0'
-        && std::strcmp(comm, "unknown") != 0 && std::strcmp(comm, "carrier") != 0;
+    return TraceDataGPtr(event) == 0 && comm != nullptr && comm[0] != '\0' &&
+        std::strcmp(comm, "unknown") != 0 && std::strcmp(comm, "carrier") != 0;
 }
 
 static std::unordered_map<int, std::string> BuildJavaThreadNamesByTid(
@@ -534,8 +534,8 @@ static void PreferJavaThreadName(UTraceData &event,
     }
     auto name = javaThreadNames.find(TraceDataTid(event));
     const char *comm = TraceDataComm(event);
-    if (name == javaThreadNames.end()
-        || (comm != nullptr && std::strlen(comm) >= name->second.size())) {
+    if (name == javaThreadNames.end() ||
+        (comm != nullptr && std::strlen(comm) >= name->second.size())) {
         return;
     }
     SetMethodComm(event, name->second);
@@ -549,8 +549,8 @@ static void AssociateVirtualThreadContext(UTraceData *data, int len)
         const UTraceData &event = data[i];
         const char *comm = TraceDataComm(event);
         uint64_t gPtr = TraceDataGPtr(event);
-        if ((gPtr & K_JAVA_VTHREAD_CONTEXT_FLAG) == 0 || comm == nullptr || comm[0] == '\0'
-            || std::strcmp(comm, "unknown") == 0 || std::strcmp(comm, "carrier") == 0) {
+        if ((gPtr & K_JAVA_VTHREAD_CONTEXT_FLAG) == 0 || comm == nullptr || comm[0] == '\0' ||
+            std::strcmp(comm, "unknown") == 0 || std::strcmp(comm, "carrier") == 0) {
             continue;
         }
         std::string &contextComm = javaCommByContextTid[gPtr][TraceDataTid(event)];
@@ -600,8 +600,8 @@ static void AssociateVirtualThreadContext(UTraceData *data, int len)
         }
         auto thread = context->second.find(p->tid);
         const char *comm = UTracePayloadStringAt(event.payload, p->commOff);
-        if (thread == context->second.end()
-            || (comm != nullptr && thread->second == comm)) {
+        if (thread == context->second.end() ||
+            (comm != nullptr && thread->second == comm)) {
             continue;
         }
         SetMethodComm(event, thread->second);
