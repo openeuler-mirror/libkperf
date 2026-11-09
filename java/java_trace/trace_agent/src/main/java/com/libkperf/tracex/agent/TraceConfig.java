@@ -10,7 +10,7 @@
  * See the Mulan PSL v2 for more details.
  * Author: Wu
  * Create: 2026-04-27
- * Description: Parses and holds the trace configuration: shared memory path, slot count, filter rules, etc.
+ * Description: Parses and holds the trace configuration: shared memory path, ring sizing, filter rules, etc.
  ******************************************************************************/
 package com.libkperf.tracex.agent;
 
@@ -27,11 +27,11 @@ import java.util.Set;
 import com.libkperf.tracex.agent.asm.VTPhaseInstrumentation;
 
 public final class TraceConfig {
-    private static final int DEFAULT_SLOT_COUNT = 2097152;
-    private static final int MAX_SLOT_COUNT = 67108864;
+    // Must match SharedEventSink and the pmu/trace java backend defaults.
+    private static final int DEFAULT_SLOTS_PER_RING = 65536;
 
     public final String shmPath;
-    public final int slotCount;
+    public final int slotsPerRing;
     public final String nativeLibPath;
     public final String action;
     public final String includeFile;
@@ -62,7 +62,10 @@ public final class TraceConfig {
         TraceLog.setLevelByName(filterFile.logLevel);
         this.valid = isControlAction() || filterFile.valid;
         this.error = filterFile.error;
-        this.slotCount = clampSlotCount(filterFile.slotCount > 0 ? filterFile.slotCount : DEFAULT_SLOT_COUNT);
+        // TraceFilterFile already validates slots_per_ring in [1, 1 << 22].
+        this.slotsPerRing = filterFile.slotsPerRing > 0
+                ? (int) filterFile.slotsPerRing
+                : DEFAULT_SLOTS_PER_RING;
         this.contextMaxMethods = filterFile.contextMaxMethods >= 0 ? filterFile.contextMaxMethods : 128;
 
         int configuredContextDepth = filterFile.contextDepth >= 0 ? filterFile.contextDepth : 1;
@@ -311,13 +314,4 @@ public final class TraceConfig {
         }
     }
 
-    private static int clampSlotCount(long value) {
-        if (value <= 0) {
-            return DEFAULT_SLOT_COUNT;
-        }
-        if (value > MAX_SLOT_COUNT) {
-            return MAX_SLOT_COUNT;
-        }
-        return (int) value;
-    }
 }

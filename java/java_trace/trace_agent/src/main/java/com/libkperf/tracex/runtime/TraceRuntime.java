@@ -15,16 +15,19 @@
 package com.libkperf.tracex.runtime;
 
 import java.lang.reflect.Method;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
 public final class TraceRuntime {
 
-    private static final int INITIAL_METHOD_CAPACITY = 256;
-    private static final byte[] UNKNOWN_CARRIER_COMM = SharedEventSink.utf8("carrier");
+        private static final byte[] UNKNOWN_CARRIER_COMM = SharedEventSink.utf8("carrier");
+    // Ids are dense from 0, so the lookup map doubles as the registration count.
+    // Writes happen under the registerMethod monitor during transform time only;
+    // lock-free readers run after registration, see getMethodId.
     private static final Map<String, Integer> METHOD_IDS = new HashMap<String, Integer>();
-    private static volatile MethodMetadata[] methodTable = new MethodMetadata[INITIAL_METHOD_CAPACITY];
+    // Volatile reference: registerMethod stores the element then republishes the array,
+    // giving lock-free enter(int) readers a happens-before edge to the element.
+    private static volatile MethodMetadata[] methodTable = new MethodMetadata[SharedEventSink.METHOD_CAPACITY];
     private static final int VTHREAD_CARRIER_METHOD_ID = registerMethod("[java-vthread]", "carrier");
 
     private static volatile boolean enabled;
@@ -46,30 +49,27 @@ public final class TraceRuntime {
         return sink;
     }
 
-    public static int registerMethod(String module, String func) {
+    /**
+     * Idempotent registration, called from bytecode transform and setup paths only.
+     * The symbol address is a hash of module+func; the injected per-event hot path
+     * passes the precomputed id straight to enter(int) and never takes this lock.
+     */
+    public static synchronized int registerMethod(String module, String func) {
+        int existing = getMethodId(module, func);
+        if (existing >= 0) {
+            return existing;
+        }
+
         long addr = fnv1a64(module + "!" + func) & 0x0000FFFFFFFFFFFFL;
-        return registerMethod(addr, module, func);
-    }
-
-    public static synchronized int registerMethod(long addr, String module, String func) {
-        String key = module + '\u0000' + func;
-        Integer existing = METHOD_IDS.get(key);
-        if (existing != null) {
-            return existing.intValue();
-        }
-
-        int id = METHOD_IDS.size();
-        if (id >= SharedEventSink.METHOD_CAPACITY) {
-            throw new IllegalStateException("trace method dictionary is full: " + id);
-        }
         MethodMetadata[] table = methodTable;
+        int id = METHOD_IDS.size();
         if (id >= table.length) {
-            table = Arrays.copyOf(table, table.length << 1);
+            throw new IllegalStateException("trace method dictionary is full: " + id);
         }
         MethodMetadata metadata = new MethodMetadata(id, addr, SharedEventSink.utf8(module), SharedEventSink.utf8(func));
         table[id] = metadata;
-        methodTable = table;
-        METHOD_IDS.put(key, Integer.valueOf(id));
+        METHOD_IDS.put(module + '\u0000' + func, Integer.valueOf(id));
+        methodTable = table;  // volatile store publishes the element write to lock-free enter(int) readers
 
         SharedEventSink current = sink;
         if (current != null && !current.registerMethod(metadata.id, metadata.addr, metadata.module, metadata.func)) {
@@ -78,7 +78,17 @@ public final class TraceRuntime {
         return id;
     }
 
-    public static synchronized void reconfigure(String shmPath, int slotCount) throws Exception {
+    /**
+     * Lookup of an already registered method id, or -1 when unknown.
+     * No lock: instrumented code can only run after its registerMethod call, and a
+     * concurrent registration racing a lookup can at most cause one dropped event.
+     */
+    public static int getMethodId(String module, String func) {
+        Integer id = METHOD_IDS.get(module + '\u0000' + func);
+        return id == null ? -1 : id.intValue();
+    }
+
+    public static synchronized void reconfigure(String shmPath, int slotsPerRing) throws Exception {
         enabled = false;
         virtualThreadCarrierHooksEnabled = false;
         virtualThreadFallbackLogged = false;
@@ -94,9 +104,9 @@ public final class TraceRuntime {
             }
         }
 
-        SharedEventSink next = new SharedEventSink(shmPath, slotCount);
-        MethodMetadata[] table = methodTable;
-        for (MethodMetadata metadata : table) {
+        SharedEventSink next = new SharedEventSink(shmPath, slotsPerRing);
+        for (int i = 0; i < METHOD_IDS.size(); i++) {
+            MethodMetadata metadata = methodTable[i];
             if (metadata == null) {
                 continue;
             }
@@ -108,7 +118,9 @@ public final class TraceRuntime {
         sink = next;
 
         TraceLog.info("[trace-java-runtime] enabled: virtualThreads=" + VirtualThreadSupport.isSupported() +
-            ", carrierTid=" + NativeThreadInfo.isNativeTidAvailable() + ", bufferSlots=" + slotCount);
+            ", carrierTid=" + NativeThreadInfo.isNativeTidAvailable() +
+            ", ringCount=" + Runtime.getRuntime().availableProcessors() +
+            ", slotsPerRing=" + slotsPerRing);
 
         enabled = true;
     }
@@ -202,7 +214,7 @@ public final class TraceRuntime {
         try {
             String module = classNameInternal.replace('/', '.');
             String func = methodName + descriptor;
-            return enter(registerMethod(module, func));
+            return enter(getMethodId(module, func));
         } catch (ThreadDeath t) {
             throw t;
         } catch (VirtualMachineError e) {
@@ -212,9 +224,14 @@ public final class TraceRuntime {
         }
     }
 
+    /**
+     * Lookup variant for call sites that carry a precomputed address: the id is resolved
+     * purely by module+func (registration must have happened via registerMethod earlier),
+     * addr is kept for source compatibility only.
+     */
     public static Context enter(long addr, String module, String func) {
         try {
-            return enter(registerMethod(addr, module, func));
+            return enter(getMethodId(module, func));
         } catch (ThreadDeath t) {
             throw t;
         } catch (VirtualMachineError e) {

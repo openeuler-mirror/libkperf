@@ -28,6 +28,8 @@
 #include <dirent.h>
 #include <fstream>
 #include <sstream>
+#include <thread>
+#include <vector>
 #include <fcntl.h>
 #include <signal.h>
 #include <string>
@@ -39,14 +41,14 @@
 
 namespace {
 static constexpr uint64_t K_MAGIC = 0x5554524356415731ULL; // UTRCVAW1
-static constexpr uint32_t K_VERSION = 3;
+static constexpr uint32_t K_VERSION = 4;
 static constexpr size_t K_HEADER_SIZE = 128;
 static constexpr size_t K_HEADER_MAGIC = 0;
 static constexpr size_t K_HEADER_VERSION = 8;
 static constexpr size_t K_HEADER_ACTIVE = 12;
-static constexpr size_t K_HEADER_SLOT_COUNT = 16;
-static constexpr size_t K_HEADER_SLOT_SIZE = 20;
-static constexpr size_t K_HEADER_WRITE_SEQ = 24;
+// Offsets 16 and 20 are reserved (removed ring mode / group size fields).
+static constexpr size_t K_HEADER_RING_COUNT = 24;
+static constexpr size_t K_HEADER_SLOTS_PER_RING = 28;
 static constexpr size_t K_HEADER_DROPPED = 32;
 static constexpr size_t K_HEADER_METHOD_CAPACITY = 40;
 static constexpr size_t K_HEADER_METHOD_ENTRY_SIZE = 44;
@@ -55,6 +57,8 @@ static constexpr size_t K_HEADER_THREAD_ENTRY_SIZE = 52;
 static constexpr size_t K_HEADER_METHOD_COUNT = 56;
 static constexpr size_t K_HEADER_THREAD_COUNT = 60;
 static constexpr size_t K_HEADER_EVENT_OFFSET = 64;
+static constexpr size_t K_HEADER_DESC_OFFSET = 72;
+static constexpr size_t K_HEADER_RING_HIGH_WATER = 80;
 
 static constexpr uint32_t K_METHOD_CAPACITY = 131072;
 static constexpr size_t K_METHOD_ENTRY_SIZE = 448;
@@ -71,6 +75,14 @@ static constexpr size_t K_THREAD_SEQ = 0;
 static constexpr size_t K_THREAD_TID = 4;
 static constexpr size_t K_THREAD_COMM = 8;
 static constexpr size_t K_THREAD_COMM_LEN = 32;
+
+// ABI v4 ring descriptor table (one padded 128-byte entry per ring).
+static constexpr size_t K_DESC_SIZE = 128;
+static constexpr size_t K_DESC_WRITE_SEQ = 0;
+static constexpr size_t K_DESC_DROPPED = 8;
+static constexpr uint32_t K_MAX_RING_COUNT = 65536;
+static constexpr uint32_t K_MAX_SLOTS_PER_RING = 1U << 22;
+static constexpr uint64_t K_MAX_SHM_SIZE = 64ULL << 30;
 
 static constexpr size_t K_SLOT_SIZE = 64;
 static constexpr size_t K_SLOT_SEQ = 0;
@@ -103,7 +115,8 @@ static constexpr int16_t K_DATA_TYPE_VT_PHASE = 1;
 
 static constexpr size_t K_METHOD_BYTES = static_cast<size_t>(K_METHOD_CAPACITY) * K_METHOD_ENTRY_SIZE;
 static constexpr size_t K_THREAD_BYTES = static_cast<size_t>(K_THREAD_CAPACITY) * K_THREAD_ENTRY_SIZE;
-static constexpr size_t K_EVENT_OFFSET = K_HEADER_SIZE + K_METHOD_BYTES + K_THREAD_BYTES;
+// ABI v4: ring descriptor table right after the dictionaries, ring data after it.
+static constexpr size_t K_DESC_OFFSET = K_HEADER_SIZE + K_METHOD_BYTES + K_THREAD_BYTES;
 
 static constexpr mode_t K_TRACE_FILE_MODE = 0600;
 
@@ -249,6 +262,54 @@ static void ResolveTraceDataStrings(std::string &comm, std::string &module, std:
     }
 }
 
+// Counts the CPUs the target process may actually run on, mirroring the JVM's
+// availableProcessors() affinity semantics. Falls back to online CPUs.
+static uint32_t CountTargetCpus(int pid)
+{
+    if (pid > 0) {
+        std::ifstream status("/proc/" + std::to_string(pid) + "/status");
+        std::string line;
+        while (std::getline(status, line)) {
+            if (line.compare(0, 16, "Cpus_allowed_list:") != 0) {
+                continue;
+            }
+            const std::string list = line.substr(16);
+            size_t pos = list.find_first_of("0123456789");
+            if (pos == std::string::npos) {
+                break;
+            }
+            uint64_t count = 0;
+            while (pos < list.size()) {
+                char *end = nullptr;
+                unsigned long long lo = std::strtoull(list.c_str() + pos, &end, 10);
+                if (end == nullptr || end == list.c_str() + pos) {
+                    break;
+                }
+                unsigned long long hi = lo;
+                if (*end == '-') {
+                    hi = std::strtoull(end + 1, &end, 10);
+                }
+                if (hi >= lo) {
+                    count += hi - lo + 1;
+                }
+                if (*end != ',') {
+                    break;
+                }
+                pos = static_cast<size_t>(end - list.c_str()) + 1;
+            }
+            if (count > 0 && count <= K_MAX_RING_COUNT) {
+                return static_cast<uint32_t>(count);
+            }
+            break;
+        }
+    }
+    long online = sysconf(_SC_NPROCESSORS_ONLN);
+    if (online <= 0) {
+        return 1;
+    }
+    return static_cast<uint32_t>(std::min<long>(online, K_MAX_RING_COUNT));
+}
+
 static bool HasAvailableSpace(const std::string &path, size_t bytes)
 {
     std::string dir = path;
@@ -271,6 +332,35 @@ static bool HasAvailableSpace(const std::string &path, size_t bytes)
                                     ", available=", available, ", required=", required, "\n"));
         return false;
     }
+    return true;
+}
+
+// The agent sizes the file from its own availableProcessors(), which can exceed the
+// backend's CPU estimate when affinity changed between open and attach. Re-map over the
+// grown file once so consumers can still read every advertised ring.
+static bool TryExtendShmMapping(JavaBackendImpl *impl)
+{
+    if (impl->shmFd < 0) {
+        return false;
+    }
+    struct stat st {};
+    if (fstat(impl->shmFd, &st) != 0) {
+        return false;
+    }
+    size_t newSize = static_cast<size_t>(st.st_size);
+    if (newSize <= impl->shmSize || newSize > K_MAX_SHM_SIZE) {
+        return false;
+    }
+    void *base = mmap(nullptr, newSize, PROT_READ | PROT_WRITE, MAP_SHARED, impl->shmFd, 0);
+    if (base == MAP_FAILED) {
+        return false;
+    }
+    void *old = impl->mapped;
+    size_t oldSize = impl->shmSize;
+    impl->mapped = base;
+    impl->shmSize = newSize;
+    munmap(old, oldSize);
+    JavaTraceLog(MakeLogMessage("[trace-java] extended trace mapping: bytes=", newSize, "\n"));
     return true;
 }
 
@@ -372,10 +462,24 @@ static int PrepareJavaBackendOpen(JavaBackendImpl *impl, int pid, const char *in
     if (!localConfig.valid) {
         return -1;
     }
-    impl->slotCount = localConfig.slotCount;
+    impl->slotsPerRing = localConfig.slotsPerRing;
+    impl->consumerThreads = localConfig.consumerThreads;
     impl->enableVtPhase = localConfig.enableVtPhase || enableVtPhase;
     impl->shmName = "utrace_java_" + std::to_string(pid) + "_" + TimestampSuffix();
-    impl->shmSize = K_EVENT_OFFSET + static_cast<size_t>(impl->slotCount) * K_SLOT_SIZE;
+    // One ring per usable CPU of the target, matching the agent's availableProcessors().
+    impl->ringCount = CountTargetCpus(pid);
+    impl->descOffset = K_DESC_OFFSET;
+    impl->eventOffset = K_DESC_OFFSET + static_cast<size_t>(impl->ringCount) * K_DESC_SIZE;
+    impl->ringDataBytes = static_cast<size_t>(impl->slotsPerRing) * K_SLOT_SIZE;
+    impl->shmSize = impl->eventOffset + static_cast<size_t>(impl->ringCount) * impl->ringDataBytes;
+
+    if (impl->ringCount == 0 || impl->ringCount > K_MAX_RING_COUNT ||
+        impl->slotsPerRing == 0 || impl->slotsPerRing > K_MAX_SLOTS_PER_RING ||
+        impl->shmSize > K_MAX_SHM_SIZE) {
+        JavaTraceLog(MakeLogMessage("[trace-java] invalid ring config: ringCount=", impl->ringCount,
+            ", slotsPerRing=", impl->slotsPerRing, ", shmSize=", impl->shmSize, "\n"));
+        return -1;
+    }
 
     if (!JavaTracePrepareTargetFiles(*impl)) {
         JavaTraceCleanupTargetAssets(impl);
@@ -424,8 +528,142 @@ static int OpenJavaTraceStorage(JavaBackendImpl *impl)
     }
 
     std::memset(impl->mapped, 0, K_HEADER_SIZE);
-    impl->readSeq = 0;
+    impl->ringReadSeq.clear();
     return 0;
+}
+
+// One decoded event with its timestamp kept alongside for the cross-ring merge.
+struct DecodedRecord {
+    int64_t timestamp{0};
+    UTraceData data{};
+};
+
+// Per-shard state for parallel ring scanning. Shards own disjoint ring ranges and
+// disjoint ringReadSeq slots, so no additional synchronization is needed.
+struct RingReadShard {
+    const uint8_t *mem{nullptr};
+    JavaBackendImpl *impl{nullptr};
+    uint32_t beginRing{0};
+    uint32_t endRing{0};
+    uint64_t descOffset{0};
+    uint64_t eventOffset{0};
+    uint64_t ringDataBytes{0};
+    uint32_t slotsPerRing{0};
+    std::vector<DecodedRecord> records;
+    std::vector<std::pair<uint32_t, uint64_t>> cursors;
+    uint64_t totalWrite{0};
+    uint64_t overwritten{0};
+    uint64_t seqMismatch{0};
+    uint64_t metadataMismatch{0};
+    bool allocFailed{false};
+};
+
+// Decode one published slot into a UTraceData record. Returns false only when the
+// payload allocation failed; the caller frees already decoded records in that case.
+static bool DecodeSlotRecord(RingReadShard *shard, const uint8_t *slot, UTraceData *out, int64_t *outTs)
+{
+    const uint8_t *mem = shard->mem;
+    const int16_t dataType = LoadAt<int16_t>(slot, K_SLOT_DATA_TYPE);
+
+    unsigned format = UTRACE_FMT_METHOD;
+    unsigned payloadSize = 0;
+    void *payload = nullptr;
+    if (dataType == K_DATA_TYPE_VT_PHASE) {
+        // VT_PHASE field group: only the lifecycle fields are present.
+        const uint64_t carrierTid = LoadAt<uint64_t>(slot, K_SLOT_VT_CARRIER_TID);
+        const uint64_t vtId = LoadAt<uint64_t>(slot, K_SLOT_VT_VT_ID);
+        const uint32_t phaseId = LoadAt<uint32_t>(slot, K_SLOT_VT_PHASE_ID);
+        const int cpu = LoadAt<int32_t>(slot, K_SLOT_VT_CPU);
+        const int64_t timestamp = LoadAt<int64_t>(slot, K_SLOT_VT_TIMESTAMP);
+        const int fd = LoadAt<int32_t>(slot, K_SLOT_VT_FD);
+        const int64_t bytes = LoadAt<int64_t>(slot, K_SLOT_VT_BYTES);
+        format = UTRACE_FMT_VT_PHASE;
+        payload = BuildVtPhasePayload(timestamp, carrierTid, vtId, phaseId, cpu, fd, bytes, &payloadSize);
+        *outTs = timestamp;
+    } else {
+        // METHOD field group.
+        const uint64_t addr = LoadAt<uint64_t>(slot, K_SLOT_METHOD_ADDR);
+        const int32_t namespaceTid = LoadAt<int32_t>(slot, K_SLOT_METHOD_TID);
+        const int cpu = LoadAt<int32_t>(slot, K_SLOT_METHOD_CPU);
+        const int64_t timestamp = LoadAt<int64_t>(slot, K_SLOT_METHOD_TIMESTAMP);
+        const uint64_t gPtr = LoadAt<uint64_t>(slot, K_SLOT_METHOD_GPTR);
+        const int32_t isRet = LoadAt<int32_t>(slot, K_SLOT_METHOD_IS_RET);
+        const uint32_t methodId = LoadAt<uint32_t>(slot, K_SLOT_METHOD_METHOD_ID);
+        const int32_t commId = LoadAt<int32_t>(slot, K_SLOT_METHOD_COMM_ID);
+        std::string comm;
+        std::string module;
+        std::string func;
+        bool mismatched = false;
+        ResolveTraceDataStrings(comm, module, func, mem, addr, namespaceTid, methodId, commId, mismatched);
+        if (mismatched) {
+            ++shard->metadataMismatch;
+        }
+        int tid = -1;
+        auto hostTid = shard->impl->hostTidByNamespaceTid.find(namespaceTid);
+        if (hostTid != shard->impl->hostTidByNamespaceTid.end()) {
+            tid = hostTid->second;
+        }
+        // DATA_TYPE_METHOD: METHOD_IS_RET is the enter/exit or vthread-transition marker.
+        payload = BuildMethodPayload(timestamp, static_cast<unsigned long>(addr), gPtr, tid, cpu,
+                                     static_cast<unsigned>(isRet), comm.c_str(), module.c_str(), func.c_str(),
+                                     &payloadSize);
+        *outTs = timestamp;
+    }
+    if (payload == nullptr) {
+        shard->allocFailed = true;
+        return false;
+    }
+    out->format = format;
+    out->size = payloadSize;
+    out->payload = payload;
+    return true;
+}
+
+// Scan [beginRing, endRing) of the per-ring descriptor table and decode new events.
+static void DecodeRingRange(RingReadShard *shard)
+{
+    for (uint32_t ring = shard->beginRing; ring < shard->endRing; ++ring) {
+        const uint8_t *desc = shard->mem + shard->descOffset + static_cast<size_t>(ring) * K_DESC_SIZE;
+        const uint64_t writeSeq = LoadAtAcquire<uint64_t>(desc, K_DESC_WRITE_SEQ);
+        shard->totalWrite += writeSeq;
+        if (writeSeq == 0) {
+            continue;
+        }
+        const uint64_t read = shard->impl->ringReadSeq[ring];
+        if (writeSeq <= read) {
+            continue;
+        }
+        const uint64_t slotsPerRing = shard->slotsPerRing;
+        const uint64_t oldest = writeSeq > slotsPerRing ? writeSeq - slotsPerRing + 1 : 1;
+        const uint64_t startSeq = std::max<uint64_t>(read + 1, oldest);
+        if (oldest > read + 1) {
+            shard->overwritten += oldest - (read + 1);
+        }
+        const uint8_t *ringBase = shard->mem + static_cast<size_t>(shard->eventOffset) +
+                                  static_cast<size_t>(ring) * shard->ringDataBytes;
+        for (uint64_t seq = startSeq; seq <= writeSeq; ++seq) {
+            const uint8_t *slot = ringBase + static_cast<size_t>((seq - 1) % slotsPerRing) * K_SLOT_SIZE;
+            const uint64_t slotSeq = LoadAtAcquire<uint64_t>(slot, K_SLOT_SEQ);
+            if (slotSeq != seq) {
+                ++shard->seqMismatch;
+                continue;
+            }
+            DecodedRecord record;
+            if (!DecodeSlotRecord(shard, slot, &record.data, &record.timestamp)) {
+                return;
+            }
+            shard->records.push_back(record);
+        }
+        shard->cursors.emplace_back(ring, writeSeq);
+    }
+}
+
+static void FreeShardRecords(RingReadShard *shard)
+{
+    for (auto &record : shard->records) {
+        FreeTraceDataFields(record.data);
+    }
+    shard->records.clear();
 }
 } // namespace
 
@@ -513,8 +751,9 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
         return -4;
     }
 
-    const uint32_t slotCount = LoadAtAcquire<uint32_t>(mem, K_HEADER_SLOT_COUNT);
-    const uint32_t slotSize = LoadAtAcquire<uint32_t>(mem, K_HEADER_SLOT_SIZE);
+    const uint32_t ringCount = LoadAtAcquire<uint32_t>(mem, K_HEADER_RING_COUNT);
+    const uint32_t slotsPerRing = LoadAtAcquire<uint32_t>(mem, K_HEADER_SLOTS_PER_RING);
+    const uint64_t dropped = LoadAtAcquire<uint64_t>(mem, K_HEADER_DROPPED);
     const uint32_t methodCapacity = LoadAtAcquire<uint32_t>(mem, K_HEADER_METHOD_CAPACITY);
     const uint32_t methodEntrySize = LoadAtAcquire<uint32_t>(mem, K_HEADER_METHOD_ENTRY_SIZE);
     const uint32_t threadCapacity = LoadAtAcquire<uint32_t>(mem, K_HEADER_THREAD_CAPACITY);
@@ -522,134 +761,158 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
     const uint32_t methodCount = LoadAtAcquire<uint32_t>(mem, K_HEADER_METHOD_COUNT);
     const uint32_t threadCount = LoadAtAcquire<uint32_t>(mem, K_HEADER_THREAD_COUNT);
     const uint64_t eventOffset = LoadAtAcquire<uint64_t>(mem, K_HEADER_EVENT_OFFSET);
+    const uint64_t descOffset = LoadAtAcquire<uint64_t>(mem, K_HEADER_DESC_OFFSET);
     // shared memory layout is abnormal
-    if (slotCount == 0 || slotSize != K_SLOT_SIZE ||
+    if (ringCount == 0 || ringCount > K_MAX_RING_COUNT ||
+        slotsPerRing == 0 || slotsPerRing > K_MAX_SLOTS_PER_RING ||
         methodCapacity != K_METHOD_CAPACITY || methodEntrySize != K_METHOD_ENTRY_SIZE ||
         threadCapacity != K_THREAD_CAPACITY || threadEntrySize != K_THREAD_ENTRY_SIZE ||
         methodCount > methodCapacity || threadCount > threadCapacity ||
-        eventOffset != K_EVENT_OFFSET || eventOffset > impl->shmSize ||
-        slotCount > (impl->shmSize - static_cast<size_t>(eventOffset)) / K_SLOT_SIZE) {
+        descOffset != K_DESC_OFFSET ||
+        eventOffset != descOffset + static_cast<uint64_t>(ringCount) * K_DESC_SIZE) {
         return -5;
     }
 
-    const uint64_t writeSeq = LoadAtAcquire<uint64_t>(mem, K_HEADER_WRITE_SEQ);
-    const uint64_t dropped = LoadAtAcquire<uint64_t>(mem, K_HEADER_DROPPED);
-    // no new readSeq index to read
-    if (writeSeq <= impl->readSeq) {
-        if (!impl->hasLoggedEmptyRead || impl->lastEmptyReadSeq != writeSeq) {
+    // The agent sizes the file from its own CPU count; if it sees more CPUs than the
+    // backend did at open time, extend the mapping once before validating the range.
+    const uint64_t neededSize = eventOffset +
+        static_cast<uint64_t>(ringCount) * slotsPerRing * K_SLOT_SIZE;
+    if (neededSize > impl->shmSize && !TryExtendShmMapping(impl)) {
+        return -5;
+    }
+    if (mem != impl->mapped) {
+        mem = static_cast<const uint8_t *>(impl->mapped);
+    }
+
+    // Every ring owns a padded descriptor; unbound rings have writeSeq 0 and cost one
+    // acquire load, so scanning the whole configured range stays cheap and removes the
+    // need for a globally published ring high-water marker.
+    const uint32_t scanRings = ringCount;
+    if (impl->ringReadSeq.size() < ringCount) {
+        impl->ringReadSeq.resize(ringCount, 0);
+    }
+
+    // Split the active ring range over the configured consumer threads.
+    size_t shardCount = impl->consumerThreads > 0 ? impl->consumerThreads : 1;
+    if (shardCount > scanRings) {
+        shardCount = scanRings == 0 ? 1 : scanRings;
+    }
+    std::vector<RingReadShard> shards(shardCount);
+    for (size_t i = 0; i < shardCount; ++i) {
+        RingReadShard &shard = shards[i];
+        shard.mem = mem;
+        shard.impl = impl;
+        shard.beginRing = static_cast<uint32_t>(static_cast<uint64_t>(scanRings) * i / shardCount);
+        shard.endRing = static_cast<uint32_t>(static_cast<uint64_t>(scanRings) * (i + 1) / shardCount);
+        shard.descOffset = descOffset;
+        shard.eventOffset = eventOffset;
+        shard.ringDataBytes = static_cast<uint64_t>(slotsPerRing) * K_SLOT_SIZE;
+        shard.slotsPerRing = slotsPerRing;
+    }
+    if (shardCount == 1) {
+        DecodeRingRange(&shards[0]);
+    } else {
+        std::vector<std::thread> pool;
+        pool.reserve(shardCount - 1);
+        for (size_t i = 1; i < shardCount; ++i) {
+            pool.emplace_back(DecodeRingRange, &shards[i]);
+        }
+        DecodeRingRange(&shards[0]);
+        for (auto &worker : pool) {
+            worker.join();
+        }
+    }
+
+    uint64_t totalWrite = 0;
+    uint64_t overwritten = 0;
+    uint64_t seqMismatch = 0;
+    uint64_t metadataMismatch = 0;
+    size_t total = 0;
+    bool allocFailed = false;
+    for (auto &shard : shards) {
+        totalWrite += shard.totalWrite;
+        overwritten += shard.overwritten;
+        seqMismatch += shard.seqMismatch;
+        metadataMismatch += shard.metadataMismatch;
+        total += shard.records.size();
+        if (shard.allocFailed) {
+            allocFailed = true;
+        }
+    }
+
+    if (allocFailed) {
+        for (auto &shard : shards) {
+            FreeShardRecords(&shard);
+        }
+        JavaTraceLog(MakeLogMessage(
+            "[trace-java] JavaBackendRead failed: payload alloc failed, decoded=", total, "\n"));
+        return -7;
+    }
+
+    // No new events in any ring yet: keep the original single-shot empty diagnostic.
+    if (total == 0) {
+        for (auto &shard : shards) {
+            for (const auto &cursor : shard.cursors) {
+                impl->ringReadSeq[cursor.first] = cursor.second;
+            }
+        }
+        if (impl->lastEmptyReadTotalSeq != totalWrite) {
             JavaTraceLog(MakeLogMessage("[trace-java] collected: events=0", ", methods=", methodCount,
                 ", threads=", threadCount, ", dropped=", dropped, "\n"));
-            impl->lastEmptyReadSeq = writeSeq;
-            impl->hasLoggedEmptyRead = true;
+            impl->lastEmptyReadTotalSeq = totalWrite;
         }
         return 0;
     }
 
-    const uint64_t oldest = writeSeq > slotCount ? (writeSeq - slotCount + 1) : 1;
-    const uint64_t overwrittenSinceLastRead = oldest > impl->readSeq + 1 ? oldest - (impl->readSeq + 1) : 0;
-    const uint64_t startSeq = std::max<uint64_t>(impl->readSeq + 1, oldest);
-    if (startSeq > writeSeq) {
-        impl->readSeq = writeSeq;
-        return 0;
+    // Merge shards by timestamp: records inside one ring keep issue order and the
+    // final stable sort restores a globally time-ordered stream for the pipeline.
+    std::vector<DecodedRecord> flat;
+    flat.reserve(total);
+    for (auto &shard : shards) {
+        for (auto &record : shard.records) {
+            flat.push_back(record);
+        }
+        shard.records.clear();
     }
+    std::stable_sort(flat.begin(), flat.end(),
+                     [](const DecodedRecord &left, const DecodedRecord &right) {
+                         return left.timestamp < right.timestamp;
+                     });
 
-    // return data in [startSeq, writeSeq]
-    size_t n = static_cast<size_t>(writeSeq - startSeq + 1);
-    size_t allocSize = sizeof(size_t) + n * sizeof(UTraceData);
+    size_t allocSize = sizeof(size_t) + flat.size() * sizeof(UTraceData);
     uint8_t *raw = static_cast<uint8_t *>(std::calloc(1, allocSize));
-    if (!raw) {
+    if (raw == nullptr) {
+        for (auto &record : flat) {
+            FreeTraceDataFields(record.data);
+        }
         return -6;
     }
-
-    size_t storedCount = 0;
-    std::memcpy(raw, &storedCount, sizeof(size_t));
     UTraceData *block = reinterpret_cast<UTraceData *>(raw + sizeof(size_t));
-
-    size_t outIdx = 0;
-    size_t seqMismatch = 0;
-    size_t metadataMismatch = 0;
-    for (uint64_t seq = startSeq; seq <= writeSeq; ++seq) {
-        size_t slotIndex = static_cast<size_t>((seq - 1) % slotCount);
-        const uint8_t *slot = mem + static_cast<size_t>(eventOffset) + slotIndex * K_SLOT_SIZE;
-        uint64_t slotSeq = LoadAtAcquire<uint64_t>(slot, K_SLOT_SEQ);
-        if (slotSeq != seq) {
-            ++seqMismatch;
-            continue;
-        }
-        const int16_t dataType = LoadAt<int16_t>(slot, K_SLOT_DATA_TYPE);
-
-        unsigned format = UTRACE_FMT_METHOD;
-        unsigned payloadSize = 0;
-        void *payload = nullptr;
-        if (dataType == K_DATA_TYPE_VT_PHASE) {
-            // VT_PHASE field group: only the lifecycle fields are present.
-            const uint64_t carrierTid = LoadAt<uint64_t>(slot, K_SLOT_VT_CARRIER_TID);
-            const uint64_t vtId = LoadAt<uint64_t>(slot, K_SLOT_VT_VT_ID);
-            const uint32_t phaseId = LoadAt<uint32_t>(slot, K_SLOT_VT_PHASE_ID);
-            const int cpu = LoadAt<int32_t>(slot, K_SLOT_VT_CPU);
-            const int64_t timestamp = LoadAt<int64_t>(slot, K_SLOT_VT_TIMESTAMP);
-            const int fd = LoadAt<int32_t>(slot, K_SLOT_VT_FD);
-            const int64_t bytes = LoadAt<int64_t>(slot, K_SLOT_VT_BYTES);
-            format = UTRACE_FMT_VT_PHASE;
-            payload = BuildVtPhasePayload(timestamp, carrierTid, vtId, phaseId, cpu, fd, bytes, &payloadSize);
-        } else {
-            // METHOD field group.
-            const uint64_t addr = LoadAt<uint64_t>(slot, K_SLOT_METHOD_ADDR);
-            const int32_t namespaceTid = LoadAt<int32_t>(slot, K_SLOT_METHOD_TID);
-            const int cpu = LoadAt<int32_t>(slot, K_SLOT_METHOD_CPU);
-            const int64_t timestamp = LoadAt<int64_t>(slot, K_SLOT_METHOD_TIMESTAMP);
-            const uint64_t gPtr = LoadAt<uint64_t>(slot, K_SLOT_METHOD_GPTR);
-            const int32_t isRet = LoadAt<int32_t>(slot, K_SLOT_METHOD_IS_RET);
-            const uint32_t methodId = LoadAt<uint32_t>(slot, K_SLOT_METHOD_METHOD_ID);
-            const int32_t commId = LoadAt<int32_t>(slot, K_SLOT_METHOD_COMM_ID);
-            std::string comm;
-            std::string module;
-            std::string func;
-            bool mismatched = false;
-            ResolveTraceDataStrings(comm, module, func, mem, addr, namespaceTid, methodId, commId, mismatched);
-            if (mismatched) {
-                ++metadataMismatch;
-            }
-            int tid = -1;
-            auto hostTid = impl->hostTidByNamespaceTid.find(namespaceTid);
-            if (hostTid != impl->hostTidByNamespaceTid.end()) {
-                tid = hostTid->second;
-            }
-            // DATA_TYPE_METHOD: METHOD_IS_RET is the enter/exit or vthread-transition marker.
-            payload = BuildMethodPayload(timestamp, static_cast<unsigned long>(addr), gPtr, tid, cpu,
-                                         static_cast<unsigned>(isRet), comm.c_str(), module.c_str(), func.c_str(),
-                                         &payloadSize);
-        }
-        if (payload == nullptr) {
-            JavaTraceLog(MakeLogMessage(
-                "[trace-java] JavaBackendRead failed: payload alloc failed, outIdx=", outIdx, "\n"));
-            FreeJavaTraceBlockRaw(raw, block, outIdx + 1);
-            return -7;
-        }
-        block[outIdx].format = format;
-        block[outIdx].size = payloadSize;
-        block[outIdx].payload = payload;
-        ++outIdx;
+    for (size_t i = 0; i < flat.size(); ++i) {
+        block[i] = flat[i].data;
     }
 
-    // advance readSeq to the current writeSeq. Missed or overwritten records will not be attempted.
-    impl->readSeq = writeSeq;
-    impl->hasLoggedEmptyRead = false;
-    JavaTraceLog(MakeLogMessage("[trace-java] collected: events=", outIdx,
+    // Advance per-ring cursors only after the output block exists; alloc failures above
+    // keep the old cursors so the next poll re-reads the same range.
+    for (auto &shard : shards) {
+        for (const auto &cursor : shard.cursors) {
+            impl->ringReadSeq[cursor.first] = cursor.second;
+        }
+    }
+
+    size_t stored = flat.size();
+    std::memcpy(raw, &stored, sizeof(size_t));
+    *out_data = block;
+    *out_count = stored;
+    impl->lastEmptyReadTotalSeq = totalWrite;
+    JavaTraceLog(MakeLogMessage("[trace-java] collected: events=", stored,
                                 ", methods=", methodCount,
                                 ", threads=", threadCount,
+                                ", rings=", scanRings,
                                 ", dropped=", dropped,
-                                ", overwritten=", overwrittenSinceLastRead,
+                                ", overwritten=", overwritten,
                                 ", seqMismatch=", seqMismatch,
                                 ", metadataMismatch=", metadataMismatch, "\n"));
-    if (outIdx == 0) {
-        std::free(raw);
-        return 0;
-    }
-
-    std::memcpy(raw, &outIdx, sizeof(size_t));
-    *out_data = block;
-    *out_count = outIdx;
     return 0;
 }
 

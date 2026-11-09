@@ -36,7 +36,8 @@ struct SplitTraceAttr {
 };
 
 struct JavaTraceLocalConfig {
-    uint32_t slotCount;
+    uint32_t slotsPerRing;
+    uint32_t consumerThreads;
     bool enableVtPhase;
     bool valid;
 };

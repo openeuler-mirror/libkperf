@@ -52,8 +52,13 @@ static constexpr const char *K_JAVA_NATIVE_LIB_NAME = "libtracex_threadinfo.so";
 static constexpr const char *K_JAVA_FILTER_CONFIG_NAME = "trace_filter.conf";
 static constexpr const char *K_LOG_REL_DIR = "logs";
 static constexpr const char *K_TRACE_LOG_NAME = "trace.log";
-static constexpr uint32_t K_DEFAULT_SLOT_COUNT = 2097152U;
 static constexpr uint32_t K_MAX_SLOT_COUNT = 67108864U;
+// ABI v4 ring defaults, must match SharedEventSink.java and TraceConfig.java.
+// ringCount is derived at open time from the target process's usable CPUs.
+static constexpr uint32_t K_DEFAULT_SLOTS_PER_RING = 65536;
+static constexpr uint32_t K_MAX_SLOTS_PER_RING = 1U << 22;
+static constexpr uint32_t K_DEFAULT_CONSUMER_THREADS = 1;
+static constexpr uint32_t K_MAX_CONSUMER_THREADS = 64;
 static constexpr const char *K_DEFAULT_JAVA_BIN = "java";
 static constexpr mode_t K_PRIVATE_DIR_MODE = 0700;
 static constexpr mode_t K_PRIVATE_FILE_MODE = 0600;
@@ -875,6 +880,8 @@ static constexpr const char *K_SLOT_COUNT_KEY = "slot_count";
 static constexpr const char *K_CONTEXT_DEPTH_KEY = "context_depth";
 static constexpr const char *K_CONTEXT_MAX_METHODS_KEY = "context_max_methods";
 static constexpr const char *K_VT_PHASE_KEY = "vt_phase";
+static constexpr const char *K_SLOTS_PER_RING_KEY = "slots_per_ring";
+static constexpr const char *K_CONSUMER_THREADS_KEY = "consumer_threads";
 // Shared with the native trace pipeline (trace_filter_config.cpp). The Java
 // backend does not consume it; the runtime TraceLog threshold is already set
 // from UTraceSymbolFilterConfig by the time Java assets are prepared. Keep the
@@ -904,8 +911,8 @@ static void LogInvalidConfigValue(const LocalConfigParseContext &context, const 
                                 context.lineNo, ": ", value, "\n"));
 }
 
-static bool ParseSlotCountValue(const LocalConfigParseContext &context, const std::string &value,
-                                uint32_t *slotCount)
+// Deprecated ABI v3 knob: validated so old configs still parse, but not consumed.
+static bool ParseSlotCountValue(const LocalConfigParseContext &context, const std::string &value)
 {
     if (!IsUnsignedInteger(value)) {
         LogInvalidConfigValue(context, K_SLOT_COUNT_KEY, value);
@@ -924,7 +931,6 @@ static bool ParseSlotCountValue(const LocalConfigParseContext &context, const st
         LogInvalidConfigValue(context, K_SLOT_COUNT_KEY, value);
         return false;
     }
-    *slotCount = static_cast<uint32_t>(parsed);
     return true;
 }
 
@@ -951,6 +957,31 @@ static bool ParseBoundedUnsignedValue(const LocalConfigParseContext &context, co
     return true;
 }
 
+static bool ParseRingBoundedValue(const LocalConfigParseContext &context, const char *key,
+                                  const std::string &value, unsigned long long maxValue,
+                                  uint32_t *out)
+{
+    if (!IsUnsignedInteger(value)) {
+        LogInvalidConfigValue(context, key, value);
+        return false;
+    }
+
+    unsigned long long parsed = 0;
+    try {
+        parsed = std::stoull(value, nullptr, K_NUMBER_BASE_DECIMAL);
+    } catch (const std::exception &) {
+        LogInvalidConfigValue(context, key, value);
+        return false;
+    }
+
+    if (parsed == 0 || parsed > maxValue) {
+        LogInvalidConfigValue(context, key, value);
+        return false;
+    }
+    *out = static_cast<uint32_t>(parsed);
+    return true;
+}
+
 static bool IsNonJavaTraceKey(const std::string &key)
 {
     return key.compare(0, sizeof("kernel_") - 1, "kernel_") == 0 ||
@@ -964,10 +995,7 @@ static bool ParseLocalConfigKeyValue(LocalConfigParseContext *context, const std
         return true;
     }
     if (key == K_SLOT_COUNT_KEY) {
-        if (!ParseSlotCountValue(*context, value, &context->config->slotCount)) {
-            return false;
-        }
-        return true;
+        return ParseSlotCountValue(*context, value);
     }
     if (key == K_CONTEXT_DEPTH_KEY) {
         return ParseBoundedUnsignedValue(*context, K_CONTEXT_DEPTH_KEY, value, K_MAX_CONTEXT_DEPTH);
@@ -978,6 +1006,14 @@ static bool ParseLocalConfigKeyValue(LocalConfigParseContext *context, const std
     if (key == K_VT_PHASE_KEY) {
         context->config->enableVtPhase = (value == "true" || value == "1");
         return true;
+    }
+    if (key == K_SLOTS_PER_RING_KEY) {
+        return ParseRingBoundedValue(*context, K_SLOTS_PER_RING_KEY, value, K_MAX_SLOTS_PER_RING,
+                                     &context->config->slotsPerRing);
+    }
+    if (key == K_CONSUMER_THREADS_KEY) {
+        return ParseRingBoundedValue(*context, K_CONSUMER_THREADS_KEY, value, K_MAX_CONSUMER_THREADS,
+                                     &context->config->consumerThreads);
     }
     if (key == K_LOG_LEVEL_KEY) {
         return true;
@@ -1072,7 +1108,7 @@ static bool ParseLocalConfigStream(std::ifstream &input, LocalConfigParseContext
 
 JavaTraceLocalConfig LoadLocalConfig(const std::string &path)
 {
-    JavaTraceLocalConfig out{K_DEFAULT_SLOT_COUNT, false, false};
+    JavaTraceLocalConfig out{K_DEFAULT_SLOTS_PER_RING, K_DEFAULT_CONSUMER_THREADS, false, false};
     if (path.empty()) {
         JavaTraceLog("[trace-java] filter config path is empty, skip java trace\n");
         return out;
@@ -1136,7 +1172,7 @@ bool WriteJavaOnlyFilterConfig(const std::string &sourcePath, const std::string 
         return false;
     }
 
-    JavaTraceLocalConfig parsed{K_DEFAULT_SLOT_COUNT, false, false};
+    JavaTraceLocalConfig parsed{K_DEFAULT_SLOTS_PER_RING, K_DEFAULT_CONSUMER_THREADS, false, false};
     LocalConfigParseContext context(sourcePath, &parsed);
     JavaOnlyFilterConfigContent content;
     std::string line;
@@ -1368,6 +1404,12 @@ void *BuildMethodPayload(int64_t timestamp, unsigned long addr, uint64_t gPtr, i
                          unsigned *outSize)
 {
     std::vector<char> blob(sizeof(UTraceMethodPayload), '\0');
+    // Reserve the string bytes up front: p aliases blob.data() and AppendBlobString's insert
+    // must not reallocate the vector, otherwise writes through p would land on freed memory.
+    size_t stringsLen = (comm != nullptr && comm[0] != '\0' ? std::strlen(comm) + 1 : 0) +
+                        (module != nullptr && module[0] != '\0' ? std::strlen(module) + 1 : 0) +
+                        (func != nullptr && func[0] != '\0' ? std::strlen(func) + 1 : 0);
+    blob.reserve(blob.size() + stringsLen);
     UTraceMethodPayload *p = reinterpret_cast<UTraceMethodPayload *>(blob.data());
     p->timestamp = timestamp;
     p->addr = addr;
