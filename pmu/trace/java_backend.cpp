@@ -832,10 +832,15 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
 
     // The agent sizes the file from its own CPU count; if it sees more CPUs than the
     // backend did at open time, extend the mapping once before validating the range.
+    // Re-validate against the post-extension size: the file may have grown (or been
+    // truncated) yet still be smaller than neededSize, and decoding past the mapping
+    // end would take SIGBUS.
     const uint64_t neededSize = eventOffset +
         static_cast<uint64_t>(ringCount) * slotsPerRing * K_SLOT_SIZE;
-    if (neededSize > impl->shmSize && !TryExtendShmMapping(impl)) {
-        return -5;
+    if (neededSize > impl->shmSize) {
+        if (!TryExtendShmMapping(impl) || neededSize > impl->shmSize) {
+            return -5;
+        }
     }
     if (mem != impl->mapped) {
         mem = static_cast<const uint8_t *>(impl->mapped);
