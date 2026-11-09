@@ -456,10 +456,10 @@ static bool SetMethodComm(UTraceData &data, const std::string &comm)
 static bool IsVirtualThreadTransition(const UTraceData &data)
 {
     uint32_t isRet = TraceDataIsRet(data);
-    return isRet == K_VTHREAD_MOUNT_EVENT
-        || isRet == K_VTHREAD_UNMOUNT_EVENT
-        || isRet == K_VTHREAD_MOUNT_DEGRADED_EVENT
-        || isRet == K_VTHREAD_UNMOUNT_DEGRADED_EVENT;
+    return isRet == K_VTHREAD_MOUNT_EVENT ||
+        isRet == K_VTHREAD_UNMOUNT_EVENT ||
+        isRet == K_VTHREAD_MOUNT_DEGRADED_EVENT ||
+        isRet == K_VTHREAD_UNMOUNT_DEGRADED_EVENT;
 }
 
 static bool ShouldMergeTraceData(const UTraceData &data, int64_t windowStartNs, int64_t windowEndNs)
