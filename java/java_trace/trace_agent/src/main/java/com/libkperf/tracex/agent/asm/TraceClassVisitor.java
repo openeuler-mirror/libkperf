@@ -24,24 +24,41 @@ public final class TraceClassVisitor extends ClassVisitor {
 
     private final TraceConfig config;
     private final String owner;
+    private final boolean virtualThreadMode;
     private int instrumented;
 
     public TraceClassVisitor(ClassVisitor cv, TraceConfig config, String owner) {
+        this(cv, config, owner, false);
+    }
+
+    public TraceClassVisitor(ClassVisitor cv, TraceConfig config, String owner, boolean virtualThreadMode) {
         super(Opcodes.ASM9, cv);
         this.config = config;
         this.owner = owner;
+        this.virtualThreadMode = virtualThreadMode;
     }
 
     @Override
     public MethodVisitor visitMethod(int access, String name, String desc,
                                     String signature, String[] exceptions) {
         MethodVisitor next = super.visitMethod(access, name, desc, signature, exceptions);
-        if (!needTrace(next, access, name, desc)) {
-            return next;
+        boolean isRunContinuation = virtualThreadMode
+                && next != null
+                && VirtualThreadMethodVisitor.isRunContinuation(access, name, desc);
+        // Layered chain: TraceMethodVisitor emits enter/exit probes only when the
+        // method matches the trace config; VirtualThreadMethodVisitor wraps the
+        // result to inject carrier-side hooks around the mount/unmount call sites.
+        MethodVisitor mv = next;
+        if (needTrace(mv, access, name, desc)) {
+            mv = new TraceMethodVisitor(api, mv, access, name, desc, owner);
         }
-
-        instrumented++;
-        return new TraceMethodVisitor(api, next, access, name, desc, owner);
+        if (isRunContinuation) {
+            mv = new VirtualThreadMethodVisitor(api, mv);
+        }
+        if (mv != next) {
+            instrumented++;
+        }
+        return mv;
     }
 
     private boolean needTrace(MethodVisitor mv, int access, String name, String desc) {

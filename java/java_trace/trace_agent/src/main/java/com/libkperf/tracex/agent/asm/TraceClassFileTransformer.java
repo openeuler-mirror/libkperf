@@ -25,7 +25,6 @@ import java.lang.instrument.IllegalClassFormatException;
 import java.lang.instrument.Instrumentation;
 import java.security.ProtectionDomain;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -86,46 +85,18 @@ public final class TraceClassFileTransformer implements ClassFileTransformer {
                 return null;
             }
             ClassKey key = new ClassKey(loader, className);
-
             ClassReader cr = new ClassReader(classfileBuffer);
-            int instrumentedMethodCount;
-            if (VIRTUAL_THREAD_CLASS.equals(className)) {
-                // Pass 1: verify that runContinuation contains both carrier-side call sites.
-                if (!TraceMethodVisitor.supportsVirtualThreadCarrierCallSites(cr)) {
-                    TraceLog.warn("[trace-java-agent] virtual-thread carrier hooks unavailable"
-                            + ", runContinuation mount/unmount call sites not found", null);
-                    return null;
-                }
-            }
-
+            boolean virtualThread = VIRTUAL_THREAD_CLASS.equals(className);
             ClassWriter cw = new SafeClassWriter(cr, ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS, loader);
-            if (VIRTUAL_THREAD_CLASS.equals(className)) {
-                // Pass 2: instrument the verified call sites, never mount/unmount method bodies.
-                TraceMethodVisitor.VirtualThreadInstrumentation vt =
-                        TraceMethodVisitor.instrumentVirtualThread(cr, cw);
-                if (vt.instrumentedMethodCount() != 1 || vt.mountCallSiteCount() == 0 || vt.unmountCallSiteCount() == 0) {
-                    TraceLog.warn("[trace-java-agent] virtual-thread carrier hooks unavailable"
-                            + ", runContinuationMethods=" + vt.instrumentedMethodCount()
-                            + ", mountCallSites=" + vt.mountCallSiteCount()
-                            + ", unmountCallSites=" + vt.unmountCallSiteCount(), null);
-                    return null;
-                }
-                instrumentedMethodCount = vt.instrumentedMethodCount();
-            } else {
-                TraceClassVisitor cv = new TraceClassVisitor(cw, config, className);
-                cr.accept(cv, ClassReader.EXPAND_FRAMES);
-                if (cv.instrumentedMethodCount() == 0) {
-                    return null;
-                }
-                instrumentedMethodCount = cv.instrumentedMethodCount();
-            }
+            TraceClassVisitor cv = new TraceClassVisitor(cw, config, className, virtualThread);
+            cr.accept(cv, ClassReader.EXPAND_FRAMES);
             byte[] transformed = cw.toByteArray();
             INSTRUMENTED.add(key);
-            if (VIRTUAL_THREAD_CLASS.equals(className)) {
+            if (virtualThread) {
                 virtualThreadCarrierHooksEmitted = true;
             }
             TraceLog.info("[trace-java-agent] instrumented class=" + className.replace('/', '.')
-                    + ", methodCount=" + instrumentedMethodCount);
+                    + ", methodCount=" + cv.instrumentedMethodCount());
             return transformed;
         } catch (Throwable t) {
             TraceLog.warn("[trace-java-agent] transform failed for " + className + ": " + t, t);
