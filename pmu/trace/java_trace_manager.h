@@ -31,7 +31,7 @@ public:
     JavaTraceManager(const JavaTraceManager &) = delete;
     JavaTraceManager &operator=(const JavaTraceManager &) = delete;
 
-    int Open(int pd, int pid, const char *includeRules);
+    int Open(int pd, int pid, const char *includeRules, bool enableVTStage);
 
     int Prepare(int pd);
 

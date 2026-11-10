@@ -2,3 +2,9 @@
 cmake-build*
 .vscode
 .trae
+*.class
+output
+target
+.build
+/_build
+/third_party/local

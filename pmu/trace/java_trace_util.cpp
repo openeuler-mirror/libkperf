@@ -52,8 +52,14 @@ static constexpr const char *K_JAVA_NATIVE_LIB_NAME = "libtracex_threadinfo.so";
 static constexpr const char *K_JAVA_FILTER_CONFIG_NAME = "trace_filter.conf";
 static constexpr const char *K_LOG_REL_DIR = "logs";
 static constexpr const char *K_TRACE_LOG_NAME = "trace.log";
-static constexpr uint32_t K_DEFAULT_SLOT_COUNT = 2097152U;
-static constexpr uint32_t K_MAX_SLOT_COUNT = 67108864U;
+// ABI v4 ring defaults, must match SharedEventSink.java and TraceConfig.java.
+// ring_count=-1 derives the ring count from the target process's usable CPUs.
+static constexpr uint32_t K_DEFAULT_SLOTS_PER_RING = 327680;
+static constexpr uint32_t K_MAX_SLOTS_PER_RING = 1U << 22;
+static constexpr uint32_t K_DEFAULT_CONSUMER_THREADS = 1;
+static constexpr uint32_t K_MAX_CONSUMER_THREADS = 64;
+static constexpr int32_t K_DEFAULT_RING_COUNT = -1;
+static constexpr int64_t K_MAX_RING_COUNT = 65536;
 static constexpr const char *K_DEFAULT_JAVA_BIN = "java";
 static constexpr mode_t K_PRIVATE_DIR_MODE = 0700;
 static constexpr mode_t K_PRIVATE_FILE_MODE = 0600;
@@ -537,7 +543,10 @@ static int OpenPrivateTraceLog()
     return fd;
 }
 
-void TraceLog(const std::string &message)
+namespace {
+TraceLogLevel g_traceLogLevel = TraceLogLevel::INFO;
+
+void WriteTraceLogMessage(const std::string &message)
 {
     if (message.empty()) {
         return;
@@ -565,6 +574,59 @@ void TraceLog(const std::string &message)
         remaining -= static_cast<size_t>(written);
     }
     (void)close(fd);
+}
+} // namespace
+
+void SetTraceLogLevel(TraceLogLevel level)
+{
+    g_traceLogLevel = level;
+}
+
+TraceLogLevel GetTraceLogLevel()
+{
+    return g_traceLogLevel;
+}
+
+bool TraceLogLevelFromString(const std::string &name, TraceLogLevel *level)
+{
+    if (level == nullptr) {
+        return false;
+    }
+    std::string lower;
+    lower.reserve(name.size());
+    for (unsigned char c : name) {
+        lower.push_back(static_cast<char>(std::tolower(c)));
+    }
+    if (lower == "error") {
+        *level = TraceLogLevel::ERROR;
+        return true;
+    }
+    if (lower == "warning" || lower == "warn") {
+        *level = TraceLogLevel::WARNING;
+        return true;
+    }
+    if (lower == "info") {
+        *level = TraceLogLevel::INFO;
+        return true;
+    }
+    if (lower == "debug") {
+        *level = TraceLogLevel::DEBUG;
+        return true;
+    }
+    return false;
+}
+
+void TraceLog(TraceLogLevel level, const std::string &message)
+{
+    if (level > g_traceLogLevel) {
+        return;
+    }
+    WriteTraceLogMessage(message);
+}
+
+void TraceLog(const std::string &message)
+{
+    TraceLog(TraceLogLevel::INFO, message);
 }
 
 void JavaTraceLog(const std::string &message)
@@ -818,6 +880,15 @@ static constexpr const char *K_DIGITS = "0123456789";
 static constexpr const char *K_SLOT_COUNT_KEY = "slot_count";
 static constexpr const char *K_CONTEXT_DEPTH_KEY = "context_depth";
 static constexpr const char *K_CONTEXT_MAX_METHODS_KEY = "context_max_methods";
+static constexpr const char *K_VT_STAGE_KEY = "vt_stage";
+static constexpr const char *K_SLOTS_PER_RING_KEY = "slots_per_ring";
+static constexpr const char *K_RING_COUNT_KEY = "ring_count";
+static constexpr const char *K_CONSUMER_THREADS_KEY = "consumer_threads";
+// Shared with the native trace pipeline (trace_filter_config.cpp). The Java
+// backend does not consume it; the runtime TraceLog threshold is already set
+// from UTraceSymbolFilterConfig by the time Java assets are prepared. Keep the
+// key in the rewritten java-only config so the Java agent can apply it.
+static constexpr const char *K_LOG_LEVEL_KEY = "log_level";
 
 static bool IsJavaTraceSection(const std::string &section)
 {
@@ -840,30 +911,6 @@ static void LogInvalidConfigValue(const LocalConfigParseContext &context, const 
 {
     JavaTraceLog(MakeLogMessage("[trace-java] invalid ", name, " at ", context.path, ":",
                                 context.lineNo, ": ", value, "\n"));
-}
-
-static bool ParseSlotCountValue(const LocalConfigParseContext &context, const std::string &value,
-                                uint32_t *slotCount)
-{
-    if (!IsUnsignedInteger(value)) {
-        LogInvalidConfigValue(context, K_SLOT_COUNT_KEY, value);
-        return false;
-    }
-
-    unsigned long long parsed = 0;
-    try {
-        parsed = std::stoull(value, nullptr, K_NUMBER_BASE_DECIMAL);
-    } catch (const std::exception &) {
-        LogInvalidConfigValue(context, K_SLOT_COUNT_KEY, value);
-        return false;
-    }
-
-    if (parsed == 0 || parsed > K_MAX_SLOT_COUNT) {
-        LogInvalidConfigValue(context, K_SLOT_COUNT_KEY, value);
-        return false;
-    }
-    *slotCount = static_cast<uint32_t>(parsed);
-    return true;
 }
 
 static bool ParseBoundedUnsignedValue(const LocalConfigParseContext &context, const char *key,
@@ -889,6 +936,61 @@ static bool ParseBoundedUnsignedValue(const LocalConfigParseContext &context, co
     return true;
 }
 
+static bool ParseRingBoundedValue(const LocalConfigParseContext &context, const char *key,
+                                  const std::string &value, unsigned long long maxValue,
+                                  uint32_t *out)
+{
+    if (!IsUnsignedInteger(value)) {
+        LogInvalidConfigValue(context, key, value);
+        return false;
+    }
+
+    unsigned long long parsed = 0;
+    try {
+        parsed = std::stoull(value, nullptr, K_NUMBER_BASE_DECIMAL);
+    } catch (const std::exception &) {
+        LogInvalidConfigValue(context, key, value);
+        return false;
+    }
+
+    if (parsed == 0 || parsed > maxValue) {
+        LogInvalidConfigValue(context, key, value);
+        return false;
+    }
+    *out = static_cast<uint32_t>(parsed);
+    return true;
+}
+
+// ring_count accepts -1 (auto: one ring per target-affinity CPU) or 1-K_MAX_RING_COUNT.
+// Values above the affinity CPU count are clamped down at open time, never above.
+static bool ParseRingCountValue(const LocalConfigParseContext &context, const char *key,
+                                const std::string &value, int32_t *out)
+{
+    if (value == "-1") {
+        *out = -1;
+        return true;
+    }
+    if (!IsUnsignedInteger(value)) {
+        LogInvalidConfigValue(context, key, value);
+        return false;
+    }
+
+    unsigned long long parsed = 0;
+    try {
+        parsed = std::stoull(value, nullptr, K_NUMBER_BASE_DECIMAL);
+    } catch (const std::exception &) {
+        LogInvalidConfigValue(context, key, value);
+        return false;
+    }
+
+    if (parsed == 0 || parsed > static_cast<unsigned long long>(K_MAX_RING_COUNT)) {
+        LogInvalidConfigValue(context, key, value);
+        return false;
+    }
+    *out = static_cast<int32_t>(parsed);
+    return true;
+}
+
 static bool IsNonJavaTraceKey(const std::string &key)
 {
     return key.compare(0, sizeof("kernel_") - 1, "kernel_") == 0 ||
@@ -902,9 +1004,7 @@ static bool ParseLocalConfigKeyValue(LocalConfigParseContext *context, const std
         return true;
     }
     if (key == K_SLOT_COUNT_KEY) {
-        if (!ParseSlotCountValue(*context, value, &context->config->slotCount)) {
-            return false;
-        }
+        // Deprecated ABI v3 knob: accepted and ignored so old configs still parse.
         return true;
     }
     if (key == K_CONTEXT_DEPTH_KEY) {
@@ -912,6 +1012,24 @@ static bool ParseLocalConfigKeyValue(LocalConfigParseContext *context, const std
     }
     if (key == K_CONTEXT_MAX_METHODS_KEY) {
         return ParseBoundedUnsignedValue(*context, K_CONTEXT_MAX_METHODS_KEY, value, K_MAX_CONTEXT_METHODS);
+    }
+    if (key == K_VT_STAGE_KEY) {
+        context->config->enableVTStage = (value == "true" || value == "1");
+        return true;
+    }
+    if (key == K_SLOTS_PER_RING_KEY) {
+        return ParseRingBoundedValue(*context, K_SLOTS_PER_RING_KEY, value, K_MAX_SLOTS_PER_RING,
+                                     &context->config->slotsPerRing);
+    }
+    if (key == K_RING_COUNT_KEY) {
+        return ParseRingCountValue(*context, K_RING_COUNT_KEY, value, &context->config->ringCount);
+    }
+    if (key == K_CONSUMER_THREADS_KEY) {
+        return ParseRingBoundedValue(*context, K_CONSUMER_THREADS_KEY, value, K_MAX_CONSUMER_THREADS,
+                                     &context->config->consumerThreads);
+    }
+    if (key == K_LOG_LEVEL_KEY) {
+        return true;
     }
     JavaTraceLog(MakeLogMessage("[trace-java] unknown trace filter key at ", context->path, ":",
                                 context->lineNo, ": ", key, "\n"));
@@ -1003,7 +1121,7 @@ static bool ParseLocalConfigStream(std::ifstream &input, LocalConfigParseContext
 
 JavaTraceLocalConfig LoadLocalConfig(const std::string &path)
 {
-    JavaTraceLocalConfig out{K_DEFAULT_SLOT_COUNT, false};
+    JavaTraceLocalConfig out{K_DEFAULT_SLOTS_PER_RING, K_DEFAULT_CONSUMER_THREADS, K_DEFAULT_RING_COUNT, false, false};
     if (path.empty()) {
         JavaTraceLog("[trace-java] filter config path is empty, skip java trace\n");
         return out;
@@ -1018,6 +1136,7 @@ JavaTraceLocalConfig LoadLocalConfig(const std::string &path)
 
     LocalConfigParseContext context(path, &out);
     out.valid = ParseLocalConfigStream(input, &context);
+    out.enableVTStage = context.config->enableVTStage;
     return out;
 }
 
@@ -1066,7 +1185,7 @@ bool WriteJavaOnlyFilterConfig(const std::string &sourcePath, const std::string 
         return false;
     }
 
-    JavaTraceLocalConfig parsed{K_DEFAULT_SLOT_COUNT, false};
+    JavaTraceLocalConfig parsed{K_DEFAULT_SLOTS_PER_RING, K_DEFAULT_CONSUMER_THREADS, K_DEFAULT_RING_COUNT, false, false};
     LocalConfigParseContext context(sourcePath, &parsed);
     JavaOnlyFilterConfigContent content;
     std::string line;
@@ -1164,6 +1283,9 @@ std::string BuildEnableCommand(const JavaBackendImpl &impl)
         cmd += " --include-file ";
         cmd += EscapeShell(targetIncludeFile);
     }
+    if (impl.enableVTStage) {
+        cmd += " --vt-stage true";
+    }
     return cmd;
 }
 
@@ -1238,20 +1360,22 @@ char *TraceDupString(const std::string &s)
 UTraceData DeepCopyTraceData(const UTraceData &src)
 {
     UTraceData dst = src;
-    dst.comm = TraceDupCString(src.comm);
-    dst.module = TraceDupCString(src.module);
-    dst.func = TraceDupCString(src.func);
+    dst.payload = nullptr;
+    if (src.payload != nullptr && src.size > 0) {
+        void *copy = std::malloc(src.size);
+        if (copy != nullptr) {
+            std::memcpy(copy, src.payload, src.size);
+        }
+        dst.payload = copy;
+    }
     return dst;
 }
 
 void FreeTraceDataFields(UTraceData &data)
 {
-    std::free(const_cast<char *>(data.comm));
-    std::free(const_cast<char *>(data.module));
-    std::free(const_cast<char *>(data.func));
-    data.comm = nullptr;
-    data.module = nullptr;
-    data.func = nullptr;
+    std::free(data.payload);
+    data.payload = nullptr;
+    data.size = 0;
 }
 
 void SortTraceDataByTimestamp(UTraceData *data, size_t count)
@@ -1260,6 +1384,75 @@ void SortTraceDataByTimestamp(UTraceData *data, size_t count)
         return;
     }
     std::stable_sort(data, data + count, [](const UTraceData &left, const UTraceData &right) {
-        return left.timestamp < right.timestamp;
+        return UTraceDataTimestamp(&left) < UTraceDataTimestamp(&right);
     });
+}
+
+static uint32_t AppendBlobString(std::vector<char> &blob, const char *s)
+{
+    if (s == nullptr || s[0] == '\0') {
+        return 0;
+    }
+    uint32_t offset = static_cast<uint32_t>(blob.size());
+    size_t len = std::strlen(s) + 1;
+    blob.insert(blob.end(), s, s + len);
+    return offset;
+}
+
+static void *FinishBlob(std::vector<char> &blob, unsigned *outSize)
+{
+    void *payload = std::malloc(blob.size());
+    if (payload == nullptr) {
+        return nullptr;
+    }
+    std::memcpy(payload, blob.data(), blob.size());
+    if (outSize != nullptr) {
+        *outSize = static_cast<unsigned>(blob.size());
+    }
+    return payload;
+}
+
+void *BuildMethodPayload(int64_t timestamp, unsigned long addr, uint64_t gPtr, int tid, int cpu,
+                         unsigned isRet, const char *comm, const char *module, const char *func,
+                         unsigned *outSize)
+{
+    std::vector<char> blob(sizeof(UTraceMethodPayload), '\0');
+    // Reserve the string bytes up front: p aliases blob.data() and AppendBlobString's insert
+    // must not reallocate the vector, otherwise writes through p would land on freed memory.
+    size_t stringsLen = (comm != nullptr && comm[0] != '\0' ? std::strlen(comm) + 1 : 0) +
+                        (module != nullptr && module[0] != '\0' ? std::strlen(module) + 1 : 0) +
+                        (func != nullptr && func[0] != '\0' ? std::strlen(func) + 1 : 0);
+    blob.reserve(blob.size() + stringsLen);
+    UTraceMethodPayload *p = reinterpret_cast<UTraceMethodPayload *>(blob.data());
+    p->timestamp = timestamp;
+    p->addr = addr;
+    p->gPtr = gPtr;
+    p->tid = tid;
+    p->cpu = cpu;
+    p->isRet = isRet;
+    p->commOff = AppendBlobString(blob, comm);
+    p->moduleOff = AppendBlobString(blob, module);
+    p->funcOff = AppendBlobString(blob, func);
+    return FinishBlob(blob, outSize);
+}
+
+void *BuildVTStagePayload(int64_t timestamp, uint64_t carrierTid, uint64_t vtId,
+                          uint32_t stageId, int cpu, int fd, int64_t bytes, uint32_t osTid,
+                          const char *comm, unsigned *outSize)
+{
+    std::vector<char> blob(sizeof(UTraceVTStagePayload), '\0');
+    // See BuildMethodPayload: reserve string bytes so AppendBlobString cannot reallocate.
+    size_t stringsLen = (comm != nullptr && comm[0] != '\0') ? std::strlen(comm) + 1 : 0;
+    blob.reserve(blob.size() + stringsLen);
+    UTraceVTStagePayload *p = reinterpret_cast<UTraceVTStagePayload *>(blob.data());
+    p->timestamp = timestamp;
+    p->carrierTid = carrierTid;
+    p->vtId = vtId;
+    p->stageId = stageId;
+    p->cpu = cpu;
+    p->fd = fd;
+    p->bytesRead = bytes;
+    p->osTid = osTid;
+    p->commOff = AppendBlobString(blob, comm);
+    return FinishBlob(blob, outSize);
 }

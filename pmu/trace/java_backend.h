@@ -20,6 +20,7 @@
 #include <string>
 #include <sys/types.h>
 #include <unordered_map>
+#include <vector>
 
 struct JavaBackendTarget {
     std::string filterConfigPath;
@@ -36,7 +37,13 @@ struct JavaBackendTarget {
 struct JavaBackendImpl {
     int pid{};
     std::string includeRules;
-    unsigned slotCount{524288};
+    // ABI v4 ring configuration: one ring per target CPU, sized by slotsPerRing.
+    unsigned ringCount{0};
+    unsigned slotsPerRing{327680};
+    unsigned consumerThreads{1};
+    size_t descOffset{0};
+    size_t eventOffset{0};
+    size_t ringDataBytes{0};
     std::string filterConfigPath;
     std::string shmName;
     std::string shmPath;
@@ -44,10 +51,11 @@ struct JavaBackendImpl {
     int shmFd{-1};
     size_t shmSize{0};
     void *mapped{nullptr};
-    uint64_t readSeq{0};
+    // Per-ring consumer cursors, sized from the header ring count.
+    std::vector<uint64_t> ringReadSeq;
+    bool enableVTStage{false};
     // Avoid repeating the same empty-read diagnostic when UTraceRead is polled.
-    uint64_t lastEmptyReadSeq{0};
-    bool hasLoggedEmptyRead = false;
+    uint64_t lastEmptyReadTotalSeq{0};
     // java records contain the tid visible in the target's pid namespace, translate it to the host TID
     std::unordered_map<int, int> hostTidByNamespaceTid;
     bool runtimeStopped = false;
@@ -55,7 +63,7 @@ struct JavaBackendImpl {
     bool runtimePrepared = false;
 };
 
-int JavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules);
+int JavaBackendOpen(JavaBackendImpl *impl, int pid, const char *includeRules, bool enableVTStage);
 int JavaBackendPrepare(JavaBackendImpl *impl);
 int JavaBackendEnable(JavaBackendImpl *impl);
 int JavaBackendDisable(JavaBackendImpl *impl);

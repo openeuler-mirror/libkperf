@@ -10,7 +10,11 @@
  * See the Mulan PSL v2 for more details.
  * Author: Wu
  * Create: 2026-04-27
- * Description: Writes trace events (pc, tid, timestamp, etc.) into the shared memory ring buffer
+ * Description: Writes trace events (pc, tid, timestamp, etc.) into shared memory ring buffers.
+ * The sink owns one ring per available CPU, mapped eagerly at startup. Threads bind at their
+ * first event to the ring of the CPU they are running on and keep that ring for life, so the
+ * claim CAS is only contended by threads sharing one CPU bucket. There is no global sequence,
+ * drain thread, or registration lock anywhere on the hot path.
  ******************************************************************************/
 package com.libkperf.tracex.runtime;
 
@@ -28,25 +32,26 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 final class SharedEventSink implements AutoCloseable {
 
-    // Shared memory ABI v2. Strings live in dictionaries and compact event slots contain ids
+    // Shared memory ABI v4. Strings live in dictionaries, events live in per-ring slot buffers
+    // and every ring publishes its own monotonic sequence through a cache-line padded descriptor.
     static final long MAGIC = 0x5554524356415731L; // UTRCVAW1
-    static final int VERSION = 2;
+    static final int VERSION = 4;
 
     static final int HEADER_SIZE = 128;
     static final int HEADER_MAGIC = 0;
     static final int HEADER_VERSION = 8;
     static final int HEADER_ACTIVE = 12;
-    static final int HEADER_SLOT_COUNT = 16;
-    static final int HEADER_SLOT_SIZE = 20;
-    static final int HEADER_WRITE_SEQ = 24;
+    // Offsets 16 and 20 are reserved (removed ring mode / group size fields).
+    static final int HEADER_RING_COUNT = 24;
+    static final int HEADER_SLOTS_PER_RING = 28;
     static final int HEADER_DROPPED = 32;
     static final int HEADER_METHOD_CAPACITY = 40;
     static final int HEADER_METHOD_ENTRY_SIZE = 44;
@@ -55,6 +60,7 @@ final class SharedEventSink implements AutoCloseable {
     static final int HEADER_METHOD_COUNT = 56;
     static final int HEADER_THREAD_COUNT = 60;
     static final int HEADER_EVENT_OFFSET = 64;
+    static final int HEADER_DESC_OFFSET = 72;
 
     static final int METHOD_CAPACITY = 131072;
     static final int METHOD_ENTRY_SIZE = 448;
@@ -72,17 +78,61 @@ final class SharedEventSink implements AutoCloseable {
     static final int THREAD_COMM = 8;
     static final int THREAD_COMM_LEN = 32;
 
+    // Ring descriptor table: one cache-line padded 128-byte entry per ring.
+    static final int DESC_SIZE = 128;
+    static final int DESC_WRITE_SEQ = 0;
+    static final int DESC_TID = 16;
+    static final int DESC_RING_IDX = 20;
+    // Per-ring count of events a late writer self-rejected because its slot was reused
+    // after a full wrap (claimSlot).
+    static final int DESC_LATE_DROPS = 32;
+
+    // Record layout: SLOT_SEQ is a seqlock marker. A writer stamps seq | WRITE_BIT before
+    // touching the payload and stores the plain seq after the last field write, so a reader
+    // that brackets its payload access with marker checks can never deliver torn data: an
+    // overwrite in progress shows the flagged value and a completed one shows the next
+    // lap's seq, neither of which equals the expected seq. SLOT_DATA_TYPE (second field)
+    // selects which per-type field group decodes the rest.
+    static final long WRITE_BIT = Long.MIN_VALUE;
     static final int SLOT_SIZE = 64;
     static final int SLOT_SEQ = 0;
-    static final int SLOT_ADDR = 8;
-    static final int SLOT_METHOD_ID = 16;
-    static final int SLOT_COMM_ID = 20;
-    static final int SLOT_TID = 24;
-    static final int SLOT_CPU = 28;
-    static final int SLOT_TIMESTAMP = 32;
-    static final int SLOT_GPTR = 40;
-    static final int SLOT_IS_RET = 48;
+    static final int SLOT_DATA_TYPE = 8;
 
+    // METHOD record field group (DATA_TYPE_METHOD).
+    static final int SLOT_METHOD_IS_RET = 12;
+    static final int SLOT_METHOD_ADDR = 16;
+    static final int SLOT_METHOD_METHOD_ID = 24;
+    static final int SLOT_METHOD_COMM_ID = 28;
+    static final int SLOT_METHOD_TID = 32;
+    static final int SLOT_METHOD_CPU = 36;
+    static final int SLOT_METHOD_TIMESTAMP = 40;
+    static final int SLOT_METHOD_GPTR = 48;
+
+    // VT_STAGE record field group (DATA_TYPE_VT_STAGE): only the lifecycle fields are written.
+    static final int SLOT_VT_CARRIER_TID = 16;
+    static final int SLOT_VT_VT_ID = 24;
+    static final int SLOT_VT_STAGE_ID = 32;
+    static final int SLOT_VT_CPU = 36;
+    static final int SLOT_VT_TIMESTAMP = 40;
+    // SOCKET_READ stage reuses the reserved tail of the VT_STAGE field group (bytes 48..63)
+    // to carry the socket fd and the byte count returned by SocketChannelImpl.read.
+    static final int SLOT_VT_FD = 48;
+    static final int SLOT_VT_BYTES = 52;
+    // Carrier OS tid (NativeThreadInfo.currentTidSafe) of the thread that emitted the event.
+    static final int SLOT_VT_OS_TID = 60;
+    // Thread dictionary id of the carrier (see registerCarrierThread); -1 = absent.
+    static final int SLOT_VT_COMM_ID = 12;
+
+    // SLOT_DATA_TYPE: coarse record kind, drives the consumer's payload dispatch.
+    static final short DATA_TYPE_METHOD = 0;
+    static final short DATA_TYPE_VT_STAGE = 1;
+
+    // VT_STAGE stageId value for SocketChannelImpl.read completion events.
+    static final int VT_STAGE_SOCKET_READ_ID = 5;
+    // VT_STAGE stageId value for NioSocketImpl.implWrite completion events.
+    static final int VT_STAGE_SOCKET_WRITE_ID = 6;
+
+    // METHOD records carry the enter/exit or virtual-thread transition marker in SLOT_METHOD_IS_RET.
     static final int EVENT_METHOD_ENTER = 0;
     static final int EVENT_METHOD_EXIT = 1;
     static final int EVENT_VTHREAD_MOUNT = 2;
@@ -91,35 +141,35 @@ final class SharedEventSink implements AutoCloseable {
     static final int EVENT_VTHREAD_MOUNT_DEGRADED = 4;
     static final int EVENT_VTHREAD_UNMOUNT_DEGRADED = 5;
 
-    private static final int DEFAULT_SLOT_COUNT = 2097152;
-    private static final int MAX_SLOT_COUNT = 67108864;
-    private static final int SLOTS_PER_SEGMENT = 2097152;
-    private static final int SEGMENT_SHIFT = 21;
-    private static final int SEGMENT_SLOT_MASK = SLOTS_PER_SEGMENT - 1;
+    static final int DEFAULT_SLOTS_PER_RING = 327680;
+    static final int MAX_SLOTS_PER_RING = 1 << 22;
     private static final long CLOSE_WAIT_NANOS = 1000000000L;
-    private static final long WRITER_CLOSED = Long.MIN_VALUE;
-    private static final long WRITER_COUNT_MASK = Long.MAX_VALUE;
     private static final byte[] EMPTY_BYTES = new byte[0];
 
     private final MappedByteBuffer headerBuffer;
     private final MappedByteBuffer methodBuffer;
     private final MappedByteBuffer threadBuffer;
-    private final MappedByteBuffer[] slotBuffers;
-    private final int slotCount;
+    private final MappedByteBuffer descBuffer;
+    private final Ring[] rings;
+    private final int ringCount;
+    private final int slotsPerRing;
     private final int slotMask;
     private final long eventOffset;
     private final AtomicInteger nextThreadId = new AtomicInteger(0);
     private final AtomicInteger threadCount = new AtomicInteger(0);
-    // thread meta data --> thread ID in Shared Memory
-    private final Map<ThreadMetadataKey, Integer> threadIds = new HashMap<ThreadMetadataKey, Integer>();
+    private final AtomicInteger methodCount = new AtomicInteger(0);
+    // thread meta data --> thread ID in Shared Memory. These maps are caches, not the
+    // source of truth. Concurrent first-time registrations of the same key may allocate
+    // two dictionary ids, but every entry is fully published and the consumer resolves
+    // each commId independently, so duplicate ids are harmless. ConcurrentHashMap keeps
+    // the concurrent put/resize safe.
+    private final ConcurrentHashMap<ThreadMetadataKey, Integer> threadIds =
+            new ConcurrentHashMap<ThreadMetadataKey, Integer>();
     // A virtual thread may migrate between carriers. Keep one metadata id per carrier TID
     // instead of creating a (carrier TID, virtual-thread name) entry for every migration.
-    private final Map<Integer, Integer> carrierThreadIds = new HashMap<Integer, Integer>();
-    private final AtomicLong nextSequence = new AtomicLong(1L);
-    private final AtomicLong publishedSequence = new AtomicLong(0L);
+    private final ConcurrentHashMap<Integer, Integer> carrierThreadIds =
+            new ConcurrentHashMap<Integer, Integer>();
     private final AtomicLong droppedEvents = new AtomicLong(0L);
-    private final AtomicLong writerState = new AtomicLong(0L);
-    private final AtomicInteger publishWip = new AtomicInteger(0);
     private volatile boolean closed;
 
     private static final class ThreadMetadataKey {
@@ -153,57 +203,118 @@ final class SharedEventSink implements AutoCloseable {
         }
     }
 
+    // One ring buffer plus its descriptor location and ring-local sequence machinery.
+    // Threads bound to the same CPU bucket share the claim CAS; nothing here is global.
+    private static final class Ring {
+        final int index;
+        final int descBase;
+        final MappedByteBuffer data;
+        final AtomicLong claim = new AtomicLong(0L);
+        final AtomicLong publish = new AtomicLong(0L);
+        // Events rejected by late writers (slot already reused after a full wrap).
+        final AtomicLong lateDrops = new AtomicLong(0L);
+
+        Ring(int index, MappedByteBuffer data) {
+            this.index = index;
+            this.descBase = index * DESC_SIZE;
+            this.data = data;
+        }
+    }
+
     static void preloadHelpers() {
         // Force resolution/initialization outside a HotSpot VTMS transition.
         new ThreadMetadataKey(0, EMPTY_BYTES).hashCode();
+        new AtomicLong(0L).incrementAndGet();
+        new AtomicInteger(0).incrementAndGet();
         MemoryFence.acquireFence();
         MemoryFence.releaseFence();
     }
 
-    SharedEventSink(String shmPath, int slotCount) throws IOException {
-        this.slotCount = clampSlotCount(slotCount);
-        this.slotMask = isPowerOfTwo(this.slotCount) ? this.slotCount - 1 : -1;
+    SharedEventSink(String shmPath, int slotsPerRing, int ringCount) throws IOException {
+        this.slotsPerRing = clampSlotsPerRing(slotsPerRing);
+        this.slotMask = isPowerOfTwo(this.slotsPerRing) ? this.slotsPerRing - 1 : -1;
+        // ringCount: -1 auto-sizes from the target affinity CPUs (availableProcessors);
+        // a configured positive value above the affinity count is clamped back down.
+        int affinityCpus = Runtime.getRuntime().availableProcessors();
+        int targetRings = ringCount > 0 && ringCount < affinityCpus ? ringCount : affinityCpus;
+        this.ringCount = clampRingCount(targetRings);
+        long ringDataBytes = (long) this.slotsPerRing * SLOT_SIZE;
         long methodBytes = (long) METHOD_CAPACITY * METHOD_ENTRY_SIZE;
         long threadBytes = (long) THREAD_CAPACITY * THREAD_ENTRY_SIZE;
-        this.eventOffset = HEADER_SIZE + methodBytes + threadBytes;
+        long descOffset = HEADER_SIZE + methodBytes + threadBytes;
+        this.eventOffset = descOffset + (long) this.ringCount * DESC_SIZE;
 
         Path p = Paths.get(shmPath).toAbsolutePath().normalize();
-        long size = eventOffset + (long) this.slotCount * SLOT_SIZE;
-        int segmentCount = (this.slotCount + SLOTS_PER_SEGMENT - 1) / SLOTS_PER_SEGMENT;
-
-        try (RandomAccessFile raf = new RandomAccessFile(p.toFile(), "rw");
-             FileChannel channel = raf.getChannel()) {
-            raf.setLength(size);
-            this.headerBuffer = channel.map(FileChannel.MapMode.READ_WRITE, 0, HEADER_SIZE);
-            this.headerBuffer.order(ByteOrder.nativeOrder());
-            this.methodBuffer = channel.map(FileChannel.MapMode.READ_WRITE, HEADER_SIZE, methodBytes);
-            this.methodBuffer.order(ByteOrder.nativeOrder());
-            this.threadBuffer = channel.map(FileChannel.MapMode.READ_WRITE,
-                    HEADER_SIZE + methodBytes, threadBytes);
-            this.threadBuffer.order(ByteOrder.nativeOrder());
-
-            MappedByteBuffer[] segments = new MappedByteBuffer[segmentCount];
-            for (int i = 0; i < segmentCount; i++) {
-                int firstSlot = i * SLOTS_PER_SEGMENT;
-                int slotsInSegment = Math.min(SLOTS_PER_SEGMENT, this.slotCount - firstSlot);
-                long segmentOffset = eventOffset + (long) firstSlot * SLOT_SIZE;
-                long segmentSize = (long) slotsInSegment * SLOT_SIZE;
-                MappedByteBuffer segment = channel.map(FileChannel.MapMode.READ_WRITE, segmentOffset, segmentSize);
-                segment.order(ByteOrder.nativeOrder());
-                segments[i] = segment;
+        long size = eventOffset + (long) this.ringCount * ringDataBytes;
+        // FileChannel.truncate cannot grow a file; RandomAccessFile.setLength matches the
+        // backend's ftruncate sizing semantics (production files are pre-created at the
+        // same size and this is a no-op then).
+        try (RandomAccessFile raf = new RandomAccessFile(p.toFile(), "rw")) {
+            if (raf.length() != size) {
+                raf.setLength(size);
             }
-            this.slotBuffers = segments;
         }
-        initHeader();
+
+        MappedByteBuffer header = null;
+        MappedByteBuffer method = null;
+        MappedByteBuffer thread = null;
+        MappedByteBuffer desc = null;
+        Ring[] mappedRings = null;
+        boolean complete = false;
+        try (FileChannel channel = FileChannel.open(p, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
+            header = channel.map(FileChannel.MapMode.READ_WRITE, 0, HEADER_SIZE);
+            header.order(ByteOrder.nativeOrder());
+            method = channel.map(FileChannel.MapMode.READ_WRITE, HEADER_SIZE, methodBytes);
+            method.order(ByteOrder.nativeOrder());
+            thread = channel.map(FileChannel.MapMode.READ_WRITE, HEADER_SIZE + methodBytes, threadBytes);
+            thread.order(ByteOrder.nativeOrder());
+            desc = channel.map(FileChannel.MapMode.READ_WRITE, descOffset, (long) this.ringCount * DESC_SIZE);
+            desc.order(ByteOrder.nativeOrder());
+            mappedRings = new Ring[this.ringCount];
+            for (int i = 0; i < this.ringCount; i++) {
+                MappedByteBuffer buf = channel.map(FileChannel.MapMode.READ_WRITE,
+                        eventOffset + (long) i * ringDataBytes, ringDataBytes);
+                buf.order(ByteOrder.nativeOrder());
+                mappedRings[i] = new Ring(i, buf);
+            }
+            this.headerBuffer = header;
+            this.methodBuffer = method;
+            this.threadBuffer = thread;
+            this.descBuffer = desc;
+            this.rings = mappedRings;
+            initHeader(descOffset);
+            complete = true;
+        } finally {
+            if (!complete) {
+                if (mappedRings != null) {
+                    for (Ring ring : mappedRings) {
+                        if (ring != null) {
+                            BufferCleaner.clean(ring.data);
+                        }
+                    }
+                }
+                if (desc != null) {
+                    BufferCleaner.clean(desc);
+                }
+                if (thread != null) {
+                    BufferCleaner.clean(thread);
+                }
+                if (method != null) {
+                    BufferCleaner.clean(method);
+                }
+                if (header != null) {
+                    BufferCleaner.clean(header);
+                }
+            }
+        }
     }
 
-    private void initHeader() {
+    private void initHeader(long descOffset) {
         headerBuffer.putLong(HEADER_MAGIC, MAGIC);
         headerBuffer.putInt(HEADER_VERSION, VERSION);
         headerBuffer.putInt(HEADER_ACTIVE, 0);
-        headerBuffer.putInt(HEADER_SLOT_COUNT, slotCount);
-        headerBuffer.putInt(HEADER_SLOT_SIZE, SLOT_SIZE);
-        headerBuffer.putLong(HEADER_WRITE_SEQ, 0L);
+        headerBuffer.putInt(HEADER_RING_COUNT, ringCount);
+        headerBuffer.putInt(HEADER_SLOTS_PER_RING, slotsPerRing);
         headerBuffer.putLong(HEADER_DROPPED, 0L);
         headerBuffer.putInt(HEADER_METHOD_CAPACITY, METHOD_CAPACITY);
         headerBuffer.putInt(HEADER_METHOD_ENTRY_SIZE, METHOD_ENTRY_SIZE);
@@ -211,27 +322,49 @@ final class SharedEventSink implements AutoCloseable {
         headerBuffer.putInt(HEADER_THREAD_ENTRY_SIZE, THREAD_ENTRY_SIZE);
         headerBuffer.putInt(HEADER_METHOD_COUNT, 0);
         headerBuffer.putInt(HEADER_THREAD_COUNT, 0);
+        headerBuffer.putLong(HEADER_DESC_OFFSET, descOffset);
         headerBuffer.putLong(HEADER_EVENT_OFFSET, eventOffset);
+        // Reset every ring publish marker so a reused file never exposes stale sequences.
+        for (int i = 0; i < ringCount; i++) {
+            int base = i * DESC_SIZE;
+            descBuffer.putLong(base + DESC_WRITE_SEQ, 0L);
+            descBuffer.putLong(base + DESC_LATE_DROPS, 0L);
+        }
         putIntRelease(HEADER_ACTIVE, 1);
     }
 
-    synchronized boolean registerMethod(int id, long addr, byte[] module, byte[] func) {
+    // Lock-free registration: ids are unique through nextThreadId.getAndIncrement(), so every
+    // dictionary slot has exactly one writer and publication needs only a release store.
+    boolean registerMethod(int id, long addr, byte[] module, byte[] func) {
         if (closed || id < 0 || id >= METHOD_CAPACITY) {
             return false;
         }
-        int base = id * METHOD_ENTRY_SIZE;
-        methodBuffer.putLong(base + METHOD_ADDR, addr);
-        writeBytesAbsolute(methodBuffer, base + METHOD_MODULE, METHOD_MODULE_LEN, module);
-        writeBytesAbsolute(methodBuffer, base + METHOD_FUNC, METHOD_FUNC_LEN, func);
-        putIntRelease(methodBuffer, base + METHOD_SEQ, id + 1);
-        int count = id + 1;
-        if (count > headerBuffer.getInt(HEADER_METHOD_COUNT)) {
-            putIntRelease(HEADER_METHOD_COUNT, count);
+        try {
+            int base = id * METHOD_ENTRY_SIZE;
+            methodBuffer.putLong(base + METHOD_ADDR, addr);
+            writeBytesAbsolute(methodBuffer, base + METHOD_MODULE, METHOD_MODULE_LEN, module);
+            writeBytesAbsolute(methodBuffer, base + METHOD_FUNC, METHOD_FUNC_LEN, func);
+            putIntRelease(methodBuffer, base + METHOD_SEQ, id + 1);
+            publishMethodCount(id + 1);
+            return true;
+        } catch (RuntimeException | LinkageError e) {
+            TraceLog.warn("[trace-java-sink] registerMethod failed: id=" + id + ", " + e, e);
+            return false;
         }
-        return true;
     }
 
-    synchronized int registerThread(int tid, byte[] comm) {
+    private void publishMethodCount(int value) {
+        int current;
+        do {
+            current = methodCount.get();
+            if (value <= current) {
+                return;
+            }
+        } while (!methodCount.compareAndSet(current, value));
+        putIntRelease(HEADER_METHOD_COUNT, value);
+    }
+
+    int registerThread(int tid, byte[] comm) {
         if (closed) {
             return -1;
         }
@@ -240,35 +373,33 @@ final class SharedEventSink implements AutoCloseable {
         if (existing != null) {
             return existing.intValue();
         }
-        if (!enterWriter()) {
+        int id = nextThreadId.getAndIncrement();
+        if (id < 0 || id >= THREAD_CAPACITY) {
+            incrementDropped();
             return -1;
         }
-        try {
-            int id = nextThreadId.getAndIncrement();
-            if (closed || id < 0 || id >= THREAD_CAPACITY) {
-                return -1;
-            }
-            int base = id * THREAD_ENTRY_SIZE;
-            threadBuffer.putInt(base + THREAD_TID, tid);
-            writeBytesAbsolute(threadBuffer, base + THREAD_COMM, THREAD_COMM_LEN, comm);
-            putIntRelease(threadBuffer, base + THREAD_SEQ, id + 1);
-            publishThreadCount(id + 1);
-            threadIds.put(key, Integer.valueOf(id));
-            return id;
-        } finally {
-            writerState.decrementAndGet();
-        }
+        int base = id * THREAD_ENTRY_SIZE;
+        threadBuffer.putInt(base + THREAD_TID, tid);
+        writeBytesAbsolute(threadBuffer, base + THREAD_COMM, THREAD_COMM_LEN, comm);
+        putIntRelease(threadBuffer, base + THREAD_SEQ, id + 1);
+        publishThreadCount(id + 1);
+        threadIds.put(key, Integer.valueOf(id));
+        return id;
     }
 
-    synchronized int registerCarrierThread(int tid, byte[] comm) {
+    int registerCarrierThread(int tid, byte[] comm) {
+        if (closed) {
+            return -1;
+        }
         Integer existing = carrierThreadIds.get(Integer.valueOf(tid));
         if (existing != null) {
             return existing.intValue();
         }
         int id = registerThread(tid, comm);
-        if (id >= 0) {
-            carrierThreadIds.put(Integer.valueOf(tid), Integer.valueOf(id));
+        if (id < 0) {
+            return -1;
         }
+        carrierThreadIds.put(Integer.valueOf(tid), Integer.valueOf(id));
         return id;
     }
 
@@ -290,126 +421,229 @@ final class SharedEventSink implements AutoCloseable {
         return getIntAcquire(HEADER_ACTIVE) != 0;
     }
 
-    boolean record(long addr, int methodId, int commId, int tid, int cpu,
-                   long timestamp, long gPtr, int isRet) {
-        if (!enterWriter()) {
+    // METHOD record: writes DATA_TYPE_METHOD and the METHOD field group.
+    boolean recordMethod(long addr, int methodId, int commId, int tid, int cpu,
+                         long timestamp, long gPtr, int isRet) {
+        if (TraceLog.isDebugEnabled()) {
+            TraceLog.debug("[trace-java-sink] recordMethod methodId=" + methodId
+                    + ", method=" + readMethodDictionary(methodId)
+                    + ", event=" + eventTypeName(isRet) + "(" + isRet + ")"
+                    + ", addr=0x" + Long.toHexString(addr)
+                    + ", commId=" + commId + ", tid=" + tid + ", cpu=" + cpu
+                    + ", timestamp=" + timestamp + ", gPtr=0x" + Long.toHexString(gPtr));
+        }
+        if (!isActive()) {
             return false;
         }
+        Ring ring = ringFor(cpu);
+        long seq = claimSlot(ring);
+        if (seq < 0) {
+            return false;
+        }
+        int base = slotIndex(seq) * SLOT_SIZE;
+        MappedByteBuffer slotBuffer = ring.data;
+        markSlotWriting(slotBuffer, base, seq);
+
+        slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_METHOD);
+        slotBuffer.putLong(base + SLOT_METHOD_ADDR, addr);
+        slotBuffer.putInt(base + SLOT_METHOD_METHOD_ID, methodId);
+        slotBuffer.putInt(base + SLOT_METHOD_COMM_ID, commId);
+        slotBuffer.putInt(base + SLOT_METHOD_TID, tid);
+        slotBuffer.putInt(base + SLOT_METHOD_CPU, cpu);
+        slotBuffer.putLong(base + SLOT_METHOD_TIMESTAMP, timestamp);
+        slotBuffer.putLong(base + SLOT_METHOD_GPTR, gPtr);
+        slotBuffer.putInt(base + SLOT_METHOD_IS_RET, isRet);
+
+        // Publish this slot after all slot fields are written.
+        putLongRelease(slotBuffer, base + SLOT_SEQ, seq);
+        publishSequence(ring, seq);
+        return true;
+    }
+
+    private String readMethodDictionary(int methodId) {
+        if (methodId < 0 || methodId >= METHOD_CAPACITY) {
+            return "unknown(methodId=" + methodId + ")";
+        }
         try {
-            if (!isActive()) {
-                return false;
+            if (closed) {
+                return "unknown(methodId=" + methodId + ")";
             }
-            long seq = claimSequence();
-            if (seq <= 0L) {
-                return false;
-            }
-
-            int slotIndex = slotIndex(seq);
-            MappedByteBuffer slotBuffer = slotBuffer(slotIndex);
-            int base = slotOffset(slotIndex);
-
-            slotBuffer.putLong(base + SLOT_ADDR, addr);
-            slotBuffer.putInt(base + SLOT_METHOD_ID, methodId);
-            slotBuffer.putInt(base + SLOT_COMM_ID, commId);
-            slotBuffer.putInt(base + SLOT_TID, tid);
-            slotBuffer.putInt(base + SLOT_CPU, cpu);
-            slotBuffer.putLong(base + SLOT_TIMESTAMP, timestamp);
-            slotBuffer.putLong(base + SLOT_GPTR, gPtr);
-            slotBuffer.putInt(base + SLOT_IS_RET, isRet);
-
-            // Publish this slot after all slot fields are written.
-            putLongRelease(slotBuffer, base + SLOT_SEQ, seq);
-            drainPublished();
-            return true;
-        } finally {
-            writerState.decrementAndGet();
+            int base = methodId * METHOD_ENTRY_SIZE;
+            String module = readDictString(methodBuffer, base + METHOD_MODULE, METHOD_MODULE_LEN);
+            String func = readDictString(methodBuffer, base + METHOD_FUNC, METHOD_FUNC_LEN);
+            return module + "." + func;
+        } catch (Throwable t) {
+            return "unknown(methodId=" + methodId + ")";
         }
     }
 
-    private boolean enterWriter() {
-        while (true) {
-            long state = writerState.get();
-            if ((state & WRITER_CLOSED) != 0L) {
-                return false;
+    private static String readDictString(ByteBuffer source, int offset, int cap) {
+        byte[] bytes = new byte[cap];
+        for (int i = 0; i < cap; i++) {
+            byte b = source.get(offset + i);
+            if (b == 0) {
+                return new String(bytes, 0, i, StandardCharsets.UTF_8);
             }
-            if (writerState.compareAndSet(state, state + 1L)) {
-                return true;
+            bytes[i] = b;
+        }
+        return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    private static String eventTypeName(int isRet) {
+        switch (isRet) {
+            case EVENT_METHOD_ENTER:
+                return "METHOD_ENTER";
+            case EVENT_METHOD_EXIT:
+                return "METHOD_EXIT";
+            case EVENT_VTHREAD_MOUNT:
+                return "VTHREAD_MOUNT";
+            case EVENT_VTHREAD_UNMOUNT:
+                return "VTHREAD_UNMOUNT";
+            case EVENT_VTHREAD_MOUNT_DEGRADED:
+                return "VTHREAD_MOUNT_DEGRADED";
+            case EVENT_VTHREAD_UNMOUNT_DEGRADED:
+                return "VTHREAD_UNMOUNT_DEGRADED";
+            default:
+                return "UNKNOWN";
+        }
+    }
+
+    // VT_STAGE record: writes DATA_TYPE_VT_STAGE and only the VT_STAGE field group,
+    // so no method/comm/tid/isRet bytes are produced for lifecycle events.
+    boolean recordVTStage(long carrierTid, long vtId, int stageId, int cpu, long timestamp,
+                          int osTid, int commId) {
+        if (!isActive()) {
+            return false;
+        }
+        Ring ring = ringFor(cpu);
+        long seq = claimSlot(ring);
+        if (seq < 0) {
+            return false;
+        }
+        int base = slotIndex(seq) * SLOT_SIZE;
+        MappedByteBuffer slotBuffer = ring.data;
+        markSlotWriting(slotBuffer, base, seq);
+
+        slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_STAGE);
+        slotBuffer.putInt(base + SLOT_VT_COMM_ID, commId);
+        slotBuffer.putLong(base + SLOT_VT_CARRIER_TID, carrierTid);
+        slotBuffer.putLong(base + SLOT_VT_VT_ID, vtId);
+        slotBuffer.putInt(base + SLOT_VT_STAGE_ID, stageId);
+        slotBuffer.putInt(base + SLOT_VT_CPU, cpu);
+        slotBuffer.putLong(base + SLOT_VT_TIMESTAMP, timestamp);
+        slotBuffer.putInt(base + SLOT_VT_OS_TID, osTid);
+
+        // Publish this slot after all field groups are written.
+        putLongRelease(slotBuffer, base + SLOT_SEQ, seq);
+        publishSequence(ring, seq);
+        return true;
+    }
+
+    boolean recordVtSocketRead(long vtId, int fd, long bytes, int cpu, long timestamp, int osTid) {
+        if (!isActive()) {
+            return false;
+        }
+        Ring ring = ringFor(cpu);
+        long seq = claimSlot(ring);
+        if (seq < 0) {
+            return false;
+        }
+        int base = slotIndex(seq) * SLOT_SIZE;
+        MappedByteBuffer slotBuffer = ring.data;
+        markSlotWriting(slotBuffer, base, seq);
+
+        slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_STAGE);
+        slotBuffer.putInt(base + SLOT_VT_COMM_ID, -1);
+        slotBuffer.putLong(base + SLOT_VT_CARRIER_TID, 0L);
+        slotBuffer.putLong(base + SLOT_VT_VT_ID, vtId);
+        slotBuffer.putInt(base + SLOT_VT_STAGE_ID, VT_STAGE_SOCKET_READ_ID);
+        slotBuffer.putInt(base + SLOT_VT_CPU, cpu);
+        slotBuffer.putLong(base + SLOT_VT_TIMESTAMP, timestamp);
+        slotBuffer.putInt(base + SLOT_VT_FD, fd);
+        slotBuffer.putLong(base + SLOT_VT_BYTES, bytes);
+        slotBuffer.putInt(base + SLOT_VT_OS_TID, osTid);
+
+        putLongRelease(slotBuffer, base + SLOT_SEQ, seq);
+        publishSequence(ring, seq);
+        return true;
+    }
+
+    boolean recordVtSocketWrite(long vtId, int fd, long bytes, int cpu, long timestamp, int osTid) {
+        if (!isActive()) {
+            return false;
+        }
+        Ring ring = ringFor(cpu);
+        long seq = claimSlot(ring);
+        if (seq < 0) {
+            return false;
+        }
+        int base = slotIndex(seq) * SLOT_SIZE;
+        MappedByteBuffer slotBuffer = ring.data;
+        markSlotWriting(slotBuffer, base, seq);
+
+        slotBuffer.putShort(base + SLOT_DATA_TYPE, DATA_TYPE_VT_STAGE);
+        slotBuffer.putInt(base + SLOT_VT_COMM_ID, -1);
+        slotBuffer.putLong(base + SLOT_VT_CARRIER_TID, 0L);
+        slotBuffer.putLong(base + SLOT_VT_VT_ID, vtId);
+        slotBuffer.putInt(base + SLOT_VT_STAGE_ID, VT_STAGE_SOCKET_WRITE_ID);
+        slotBuffer.putInt(base + SLOT_VT_CPU, cpu);
+        slotBuffer.putLong(base + SLOT_VT_TIMESTAMP, timestamp);
+        slotBuffer.putInt(base + SLOT_VT_FD, fd);
+        slotBuffer.putLong(base + SLOT_VT_BYTES, bytes);
+        slotBuffer.putInt(base + SLOT_VT_OS_TID, osTid);
+
+        putLongRelease(slotBuffer, base + SLOT_SEQ, seq);
+        publishSequence(ring, seq);
+        return true;
+    }
+
+    // One ring per CPU bucket; threads on the same CPU interleave through the ring-local
+    // claim CAS. Without native CPU resolution every event funnels into ring 0 (contention
+    // only, correctness still holds).
+    private Ring ringFor(int cpu) {
+        return cpu >= 0 ? rings[cpu % ringCount] : rings[0];
+    }
+
+    private void publishSequence(Ring ring, long seq) {
+        // Advance the published watermark to the highest completed sequence.
+        // A slow writer that lags behind is skipped by the consumer through slot-seq validation.
+        for (;;) {
+            long current = ring.publish.get();
+            if (current >= seq) {
+                break;
+            }
+            if (ring.publish.compareAndSet(current, seq)) {
+                putLongRelease(descBuffer, ring.descBase + DESC_WRITE_SEQ, seq);
+                break;
             }
         }
     }
 
-    private long claimSequence() {
-        while (!closed) {
-            long published = publishedSequence.get();
-            long next = nextSequence.get();
-            if (next - published > slotCount) {
-                incrementDropped();
-                return -1L;
-            }
-            if (nextSequence.compareAndSet(next, next + 1L)) {
-                return next;
-            }
+    // SharedEventSink claim entry: reject writers that lag the published watermark by a full
+    // ring, because their slot index has already been reused by sequence + slotsPerRing and
+    // writing the payload would corrupt that published event.
+    private long claimSlot(Ring ring) {
+        long seq = ring.claim.incrementAndGet();
+        if (ring.publish.get() - seq >= (long) slotsPerRing) {
+            putLongRelease(descBuffer, ring.descBase + DESC_LATE_DROPS,
+                           ring.lateDrops.incrementAndGet());
+            return -1L;
         }
-        return -1L;
+        return seq;
     }
 
-    private void drainPublished() {
-        // The writer changing WIP from 0 to 1 becomes the sole drainer.
-        // Contending writers only register pending work and return immediately.
-        if (publishWip.getAndIncrement() != 0) {
-            return;
-        }
-
-        int missed = 1;
-        boolean completed = false;
-        try {
-            for (;;) {
-                drainContiguousPublishedSlots();
-                missed = publishWip.addAndGet(-missed);
-                if (missed == 0) {
-                    completed = true;
-                    return;
-                }
-            }
-        } finally {
-            // Do not leave the WIP gate permanently owned if buffer access throws.
-            // A later writer can retry publishing the already committed slots.
-            if (!completed) {
-                publishWip.set(0);
-            }
-        }
-    }
-
-    private void drainContiguousPublishedSlots() {
-        long seq = publishedSequence.get();
-        while (!closed) {
-            long next = seq + 1L;
-            if (next >= nextSequence.get()) {
-                return;
-            }
-            int slotIndex = slotIndex(next);
-            MappedByteBuffer slotBuffer = slotBuffer(slotIndex);
-            int base = slotOffset(slotIndex);
-            if (getLongAcquire(slotBuffer, base + SLOT_SEQ) != next) {
-                return;
-            }
-            putLongRelease(HEADER_WRITE_SEQ, next);
-            publishedSequence.set(next);
-            seq = next;
-        }
+    // seqlock entry: stamp the in-progress marker on the slot and order it before every
+    // payload store. A consumer that re-reads the marker after decoding sees either this
+    // flagged value or the next lap's seq whenever the slot was touched mid-read, so torn
+    // data can never be delivered (late writers and wrap-overwrite races both covered).
+    private void markSlotWriting(MappedByteBuffer slotBuffer, int base, long seq) {
+        slotBuffer.putLong(base + SLOT_SEQ, seq | WRITE_BIT);
+        MemoryFence.releaseFence();
     }
 
     private int slotIndex(long sequence) {
         long zeroBased = sequence - 1L;
-        return slotMask >= 0 ? (int) (zeroBased & slotMask) : (int) (zeroBased % slotCount);
-    }
-
-    private MappedByteBuffer slotBuffer(int slotIndex) {
-        return slotBuffers[slotIndex >>> SEGMENT_SHIFT];
-    }
-
-    private int slotOffset(int slotIndex) {
-        return (slotIndex & SEGMENT_SLOT_MASK) * SLOT_SIZE;
+        return slotMask >= 0 ? (int) (zeroBased & slotMask) : (int) (zeroBased % slotsPerRing);
     }
 
     private void writeBytesAbsolute(ByteBuffer target, int offset, int cap, byte[] value) {
@@ -430,11 +664,18 @@ final class SharedEventSink implements AutoCloseable {
         putLongRelease(HEADER_DROPPED, dropped);
     }
 
-    private static int clampSlotCount(int value) {
+    private static int clampRingCount(int value) {
         if (value <= 0) {
-            return DEFAULT_SLOT_COUNT;
+            return 1;
         }
-        return Math.min(value, MAX_SLOT_COUNT);
+        return Math.min(value, THREAD_CAPACITY);
+    }
+
+    private static int clampSlotsPerRing(int value) {
+        if (value <= 0) {
+            return DEFAULT_SLOTS_PER_RING;
+        }
+        return Math.min(value, MAX_SLOTS_PER_RING);
     }
 
     private static boolean isPowerOfTwo(int value) {
@@ -443,16 +684,6 @@ final class SharedEventSink implements AutoCloseable {
 
     private int getIntAcquire(int offset) {
         int value = headerBuffer.getInt(offset);
-        MemoryFence.acquireFence();
-        return value;
-    }
-
-    private long getLongAcquire(int offset) {
-        return getLongAcquire(headerBuffer, offset);
-    }
-
-    private long getLongAcquire(ByteBuffer target, int offset) {
-        long value = target.getLong(offset);
         MemoryFence.acquireFence();
         return value;
     }
@@ -481,44 +712,26 @@ final class SharedEventSink implements AutoCloseable {
             return;
         }
         closed = true;
-        closeWriterGate();
-
         try {
             putIntRelease(HEADER_ACTIVE, 0);
         } catch (RuntimeException | LinkageError ignored) {
         }
 
+        // Fixed grace period replaces per-writer accounting: a writer that passed its
+        // isActive check finishes its stores within a few hundred nanoseconds, so unmapping
+        // after 1 s is safe for every interleaving except a multi-second OS preemption.
         long deadline = System.nanoTime() + CLOSE_WAIT_NANOS;
-        while (activeWriterCount() != 0L && System.nanoTime() - deadline < 0L) {
+        while (System.nanoTime() - deadline < 0L) {
             Thread.yield();
         }
 
-        // Never unmap while a writer may still hold a buffer reference.
-        // Removing TraceRuntime's sink reference lets GC clean it later.
-        if (activeWriterCount() != 0L) {
-            return;
+        for (Ring ring : rings) {
+            BufferCleaner.clean(ring.data);
         }
-
-        for (MappedByteBuffer slotBuffer : slotBuffers) {
-            BufferCleaner.clean(slotBuffer);
-        }
+        BufferCleaner.clean(descBuffer);
         BufferCleaner.clean(threadBuffer);
         BufferCleaner.clean(methodBuffer);
         BufferCleaner.clean(headerBuffer);
-    }
-
-    private void closeWriterGate() {
-        while (true) {
-            long state = writerState.get();
-            if ((state & WRITER_CLOSED) != 0L ||
-                    writerState.compareAndSet(state, state | WRITER_CLOSED)) {
-                return;
-            }
-        }
-    }
-
-    private long activeWriterCount() {
-        return writerState.get() & WRITER_COUNT_MASK;
     }
 
     private static final class BufferCleaner {

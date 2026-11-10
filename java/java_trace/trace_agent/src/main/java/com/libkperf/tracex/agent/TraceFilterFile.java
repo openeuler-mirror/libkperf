@@ -27,6 +27,9 @@ import java.util.List;
 public final class TraceFilterFile {
     private static final int MAX_CONTEXT_DEPTH = 5;
     private static final int MAX_CONTEXT_METHODS = 4096;
+    private static final long MAX_SLOTS_PER_RING = 1L << 22;
+    private static final long MAX_CONSUMER_THREADS = 64L;
+    private static final long MAX_RING_COUNT = 65536L;
     private static final String JAVA_INCLUDE = "java_include";
     private static final String JAVA_EXCLUDE = "java_exclude";
     private static final String KERNEL_INCLUDE = "kernel_include";
@@ -36,9 +39,13 @@ public final class TraceFilterFile {
 
     public final List<FilterRule> includes = new ArrayList<FilterRule>();
     public final List<FilterRule> excludes = new ArrayList<FilterRule>();
-    public long slotCount = -1;
     public int contextDepth = -1;
     public int contextMaxMethods = -1;
+    public boolean enableVTStage = false;
+    public long slotsPerRing = -1;
+    // -1: one ring per affinity CPU (auto); >0: min(configured, affinity CPUs).
+    public long ringCount = -1;
+    public String logLevel = "info";
     public boolean valid = false;
     public String error = "";
 
@@ -89,17 +96,12 @@ public final class TraceFilterFile {
                 int eq = s.indexOf('=');
                 if (eq >= 0) {
                     String k = s.substring(0, eq).trim();
-                    if (isNonJavaKey(k)) {
+                    // "slot_count": deprecated ABI v3 knob, accepted and ignored for old configs.
+                    if (isNonJavaKey(k) || "slot_count".equals(k)) {
                         continue;
                     }
                     String v = s.substring(eq + 1).trim();
-                    if ("slot_count".equals(k)) {
-                        Long parsed = parsePositiveLong(v);
-                        if (parsed == null) {
-                            return invalid(out, path, lineNo, "invalid slot_count", v);
-                        }
-                        out.slotCount = parsed.longValue();
-                    } else if ("context_depth".equals(k)) {
+                    if ("context_depth".equals(k)) {
                         Integer parsed = parseNonNegativeInt(v);
                         if (parsed == null || parsed.intValue() > MAX_CONTEXT_DEPTH) {
                             return invalid(out, path, lineNo, "invalid context_depth", v);
@@ -111,6 +113,39 @@ public final class TraceFilterFile {
                             return invalid(out, path, lineNo, "invalid context_max_methods", v);
                         }
                         out.contextMaxMethods = parsed.intValue();
+                    } else if ("vt_stage".equals(k)) {
+                        if (!isBooleanValue(v)) {
+                            return invalid(out, path, lineNo, "invalid vt_stage", v);
+                        }
+                        out.enableVTStage = parseBooleanValue(v);
+                    } else if ("slots_per_ring".equals(k)) {
+                        Long parsed = parsePositiveLong(v);
+                        if (parsed == null || parsed.longValue() > MAX_SLOTS_PER_RING) {
+                            return invalid(out, path, lineNo, "invalid slots_per_ring", v);
+                        }
+                        out.slotsPerRing = parsed.longValue();
+                    } else if ("ring_count".equals(k)) {
+                        if ("-1".equals(v)) {
+                            out.ringCount = -1;
+                        } else {
+                            Long parsed = parsePositiveLong(v);
+                            if (parsed == null || parsed.longValue() > MAX_RING_COUNT) {
+                                return invalid(out, path, lineNo, "invalid ring_count", v);
+                            }
+                            out.ringCount = parsed.longValue();
+                        }
+                    } else if ("consumer_threads".equals(k)) {
+                        // Consumer-side knob, validated by the collector. The agent must accept
+                        // the key because the same trace_filter.conf is shipped to the JVM.
+                        Long parsed = parsePositiveLong(v);
+                        if (parsed == null || parsed.longValue() > MAX_CONSUMER_THREADS) {
+                            return invalid(out, path, lineNo, "invalid consumer_threads", v);
+                        }
+                    } else if ("log_level".equals(k)) {
+                        if (!isValidLogLevel(v)) {
+                            return invalid(out, path, lineNo, "invalid log_level", v);
+                        }
+                        out.logLevel = v;
                     } else {
                         return invalid(out, path, lineNo, "unknown key", k);
                     }
@@ -251,5 +286,23 @@ public final class TraceFilterFile {
             return "0".equals(value) ? Integer.valueOf(0) : null;
         }
         return parsed.longValue() <= Integer.MAX_VALUE ? Integer.valueOf(parsed.intValue()) : null;
+    }
+
+    private static boolean isBooleanValue(String value) {
+        return "true".equalsIgnoreCase(value) || "false".equalsIgnoreCase(value)
+                || "1".equals(value) || "0".equals(value);
+    }
+
+    private static boolean parseBooleanValue(String value) {
+        return "true".equalsIgnoreCase(value) || "1".equals(value);
+    }
+
+    private static boolean isValidLogLevel(String value) {
+        if (value == null || value.length() == 0) {
+            return false;
+        }
+        String v = value.trim().toLowerCase();
+        return "error".equals(v) || "warning".equals(v) || "warn".equals(v)
+                || "info".equals(v) || "debug".equals(v);
     }
 }

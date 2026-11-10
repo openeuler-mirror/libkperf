@@ -10,7 +10,7 @@
  * See the Mulan PSL v2 for more details.
  * Author: Wu
  * Create: 2026-04-27
- * Description: Parses and holds the trace configuration: shared memory path, slot count, filter rules, etc.
+ * Description: Parses and holds the trace configuration: shared memory path, ring sizing, filter rules, etc.
  ******************************************************************************/
 package com.libkperf.tracex.agent;
 
@@ -24,12 +24,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import com.libkperf.tracex.agent.asm.VTStageInstrumentation;
+
 public final class TraceConfig {
-    private static final int DEFAULT_SLOT_COUNT = 2097152;
-    private static final int MAX_SLOT_COUNT = 67108864;
+    // Must match SharedEventSink and the pmu/trace java backend defaults.
+    private static final int DEFAULT_SLOTS_PER_RING = 327680;
 
     public final String shmPath;
-    public final int slotCount;
+    public final int slotsPerRing;
+    // -1: one ring per affinity CPU (auto); >0: min(configured, affinity CPUs).
+    public final int ringCount;
     public final String nativeLibPath;
     public final String action;
     public final String includeFile;
@@ -38,6 +42,7 @@ public final class TraceConfig {
     public final String error;
     public final int contextDepth;
     public final int contextMaxMethods;
+    public final boolean enableVTStage;
 
     public final List<FilterRule> requiredIncludeRules;
     public final List<FilterRule> includeRules;
@@ -56,13 +61,30 @@ public final class TraceConfig {
         TraceLog.init(Util.get(args, "logFile", ""));
 
         TraceFilterFile filterFile = isControlAction() ? new TraceFilterFile() : TraceFilterFile.load(configFile);
+        TraceLog.setLevelByName(filterFile.logLevel);
         this.valid = isControlAction() || filterFile.valid;
         this.error = filterFile.error;
-        this.slotCount = clampSlotCount(filterFile.slotCount > 0 ? filterFile.slotCount : DEFAULT_SLOT_COUNT);
+        // TraceFilterFile already validates slots_per_ring in [1, 1 << 22].
+        this.slotsPerRing = filterFile.slotsPerRing > 0
+                ? (int) filterFile.slotsPerRing
+                : DEFAULT_SLOTS_PER_RING;
+        // TraceFilterFile already validates ring_count as -1 or [1, 65536].
+        this.ringCount = filterFile.ringCount > 0 ? (int) filterFile.ringCount : -1;
         this.contextMaxMethods = filterFile.contextMaxMethods >= 0 ? filterFile.contextMaxMethods : 128;
 
         int configuredContextDepth = filterFile.contextDepth >= 0 ? filterFile.contextDepth : 1;
         this.contextDepth = configuredContextDepth;
+
+        String vtStageArg = Util.get(args, "enableVTStage", "");
+        boolean configuredVTStage = vtStageArg.length() > 0
+                ? Boolean.parseBoolean(vtStageArg)
+                : filterFile.enableVTStage;
+        int jdkMajor = jdkMajorVersion();
+        this.enableVTStage = configuredVTStage && jdkMajor == 21;
+        if (configuredVTStage && jdkMajor != 21) {
+            TraceLog.warn("[trace-java-agent] enableVTStage requested but JDK major version is "
+                    + jdkMajor + ", virtual thread stage instrumentation requires exactly JDK 21, skipped");
+        }
 
         List<FilterRule> required = new ArrayList<FilterRule>();
         Util.addRules(required, Util.readTextFile(includeFile, "[trace-java-agent] read include file failed: "));
@@ -98,6 +120,9 @@ public final class TraceConfig {
     }
 
     public boolean shouldTransformClass(String classNameInternal) {
+        if (enableVTStage && VTStageInstrumentation.isTargetClass(classNameInternal)) {
+            return true;
+        }
         if (isExcludedClass(classNameInternal)) {
             return false;
         }
@@ -273,13 +298,24 @@ public final class TraceConfig {
         return out;
     }
 
-    private static int clampSlotCount(long value) {
-        if (value <= 0) {
-            return DEFAULT_SLOT_COUNT;
+    private static int jdkMajorVersion() {
+        String spec = System.getProperty("java.specification.version", "");
+        if (spec == null || spec.length() == 0) {
+            return 0;
         }
-        if (value > MAX_SLOT_COUNT) {
-            return MAX_SLOT_COUNT;
+        String trimmed = spec.trim();
+        try {
+            int dot = trimmed.indexOf('.');
+            if (dot < 0) {
+                return Integer.parseInt(trimmed);
+            }
+            if (trimmed.startsWith("1.")) {
+                return Integer.parseInt(trimmed.substring(2).trim());
+            }
+            return Integer.parseInt(trimmed.substring(0, dot).trim());
+        } catch (NumberFormatException e) {
+            return 0;
         }
-        return (int) value;
     }
+
 }

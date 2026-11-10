@@ -40,9 +40,9 @@ const std::string KERNEL_CONFIG_BASE_PATH = "/boot/config-";
 
 inline bool IsValidIp(unsigned long ip)
 {
-    return (ip != PERF_CONTEXT_HV && ip != PERF_CONTEXT_KERNEL && ip != PERF_CONTEXT_USER
-        && ip != PERF_CONTEXT_GUEST && ip != PERF_CONTEXT_GUEST_KERNEL
-        && ip != PERF_CONTEXT_GUEST_USER && ip != PERF_CONTEXT_MAX);
+    return (ip != PERF_CONTEXT_HV && ip != PERF_CONTEXT_KERNEL && ip != PERF_CONTEXT_USER &&
+        ip != PERF_CONTEXT_GUEST && ip != PERF_CONTEXT_GUEST_KERNEL &&
+        ip != PERF_CONTEXT_GUEST_USER && ip != PERF_CONTEXT_MAX);
 }
 std::string GetRealPath(const std::string filePath);
 bool IsValidPath(const std::string& filePath);

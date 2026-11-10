@@ -5,7 +5,7 @@
  * You may obtain a copy of Mulan PSL v2 at:
  *     http://license.coscl.org.cn/MulanPSL2
  * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR
  * PURPOSE.
  * See the Mulan PSL v2 for more details.
  * Author: Wu
@@ -35,6 +35,15 @@ public final class TraceLog {
         EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE);
     private static volatile String logFile;
 
+    // Severity thresholds. Higher numeric value means more verbose. A message is
+    // emitted only when its level is <= the current threshold. Default INFO keeps
+    // debug diagnostics quiet until the user opts in via trace_filter.conf.
+    private static final int LEVEL_ERROR = 0;
+    private static final int LEVEL_WARNING = 1;
+    private static final int LEVEL_INFO = 2;
+    private static final int LEVEL_DEBUG = 3;
+    private static volatile int level = LEVEL_INFO;
+
     private TraceLog() {}
 
     public static void init(String path) {
@@ -47,6 +56,25 @@ public final class TraceLog {
         }
         if (ensurePrivateLogFile(path)) {
             logFile = path;
+        }
+    }
+
+    // Apply the TraceLog threshold from a trace_filter.conf log_level value
+    // ("error", "warning", "info", "debug"). Case-insensitive; unknown values
+    // fall back to INFO. Safe to call before/after init.
+    public static void setLevelByName(String name) {
+        if (name == null) {
+            return;
+        }
+        String v = name.trim().toLowerCase();
+        if ("error".equals(v)) {
+            level = LEVEL_ERROR;
+        } else if ("warning".equals(v) || "warn".equals(v)) {
+            level = LEVEL_WARNING;
+        } else if ("debug".equals(v)) {
+            level = LEVEL_DEBUG;
+        } else {
+            level = LEVEL_INFO;
         }
     }
 
@@ -64,15 +92,38 @@ public final class TraceLog {
         }
     }
 
-    public static void info(String message) {
-        write(message, null);
+    public static void error(String message) {
+        write(LEVEL_ERROR, message, null);
     }
 
     public static void warn(String message, Throwable t) {
-        write(message, t);
+        write(LEVEL_WARNING, message, t);
     }
 
-    private static synchronized void write(String message, Throwable t) {
+    public static void warn(String message) {
+        write(LEVEL_WARNING, message, null);
+    }
+
+    public static void info(String message) {
+        write(LEVEL_INFO, message, null);
+    }
+
+    public static void debug(String message) {
+        write(LEVEL_DEBUG, message, null);
+    }
+
+    public static boolean isDebugEnabled() {
+        return level >= LEVEL_DEBUG;
+    }
+
+    public static void debug(String message, Throwable t) {
+        write(LEVEL_DEBUG, message, t);
+    }
+
+    private static synchronized void write(int messageLevel, String message, Throwable t) {
+        if (messageLevel > level) {
+            return;
+        }
         String path = logFile;
         if (path == null) {
             return;

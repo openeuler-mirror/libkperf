@@ -2535,6 +2535,7 @@ class CtypesUTraceAttr(ctypes.Structure):
         int *pidList;
         unsigned numPid;
         unsigned fetchG;
+        unsigned vtStage;
     };
     """
     _fields_ = [
@@ -2543,9 +2544,10 @@ class CtypesUTraceAttr(ctypes.Structure):
         ('pidList', ctypes.POINTER(ctypes.c_int)),
         ('numPid',  ctypes.c_uint),
         ('fetchG',  ctypes.c_uint),
+        ('vtStage', ctypes.c_uint),
     ]
 
-    def __init__(self, symSrc=None, pidList=None, cpuList=None, fetchG=0, *args, **kw):
+    def __init__(self, symSrc=None, pidList=None, cpuList=None, fetchG=0, vtStage=0, *args, **kw):
         super(CtypesUTraceAttr, self).__init__(*args, **kw)
 
         if symSrc:
@@ -2565,12 +2567,13 @@ class CtypesUTraceAttr(ctypes.Structure):
             self.numPid = ctypes.c_uint(0)
         
         self.fetchG = ctypes.c_uint(fetchG)
+        self.vtStage = ctypes.c_uint(vtStage)
 
 class UTraceAttr(object):
     __slots__ = ['__c_u_trace_attr']
 
-    def __init__(self, symSrc=None, pidList=None, cpuList=None, fetchG=0):
-        self.__c_u_trace_attr = CtypesUTraceAttr(symSrc, pidList, cpuList, fetchG)
+    def __init__(self, symSrc=None, pidList=None, cpuList=None, fetchG=0, vtStage=0):
+        self.__c_u_trace_attr = CtypesUTraceAttr(symSrc, pidList, cpuList, fetchG, vtStage)
 
     @property
     def c_u_trace_attr(self):
@@ -2624,100 +2627,210 @@ class UTraceAttr(object):
     def fetchG(self, fetchG):
         self.c_u_trace_attr.fetchG = 1 if fetchG else 0
 
-class CtypesUTraceData(ctypes.Structure):
+UTRACE_FMT_METHOD = 0
+UTRACE_FMT_VT_STAGE = 1
+
+# Mirrors enum UTraceVTStage in pmu.h. Values for UTraceVTStagePayload.stageId.
+UTRACE_VT_STAGE_RUN = 0
+UTRACE_VT_STAGE_DEQUEUE = 1
+UTRACE_VT_STAGE_CREATE_REGISTRATION = 2
+UTRACE_VT_STAGE_UNPARK_RETURN = 3
+UTRACE_VT_STAGE_POLL_RETURN = 4
+UTRACE_VT_STAGE_SOCKET_READ = 5
+UTRACE_VT_STAGE_SOCKET_WRITE = 6
+UTRACE_VT_STAGE_PARK_ENTER = 7
+UTRACE_VT_STAGE_PARK_RETURN = 8
+
+class CtypesUTraceMethodPayload(ctypes.Structure):
     """
-    struct UTraceData {
+    struct UTraceMethodPayload {
+        int64_t timestamp;
         unsigned long addr;
-        const char *comm;
+        uint64_t gPtr;
         int tid;
         int cpu;
-        int64_t timestamp;
-        uint64_t gPtr;
-        const char* module;
-        const char* func;
-        unsigned isRet;
+        uint32_t commOff;
+        uint32_t moduleOff;
+        uint32_t funcOff;
+        uint32_t isRet;
     };
     """
     _fields_ = [
-        ('addr',      ctypes.c_ulong),
-        ('comm',      ctypes.c_char_p),
-        ('tid',       ctypes.c_int),
-        ('cpu',       ctypes.c_int),
-        ('timestamp', ctypes.c_int64),
-        ('gPtr',      ctypes.c_uint64),
-        ('module',    ctypes.c_char_p),
-        ('func',      ctypes.c_char_p),
-        ('isRet',     ctypes.c_uint),
+        ('timestamp',  ctypes.c_int64),
+        ('addr',       ctypes.c_ulong),
+        ('gPtr',       ctypes.c_uint64),
+        ('tid',        ctypes.c_int),
+        ('cpu',        ctypes.c_int),
+        ('commOff',    ctypes.c_uint32),
+        ('moduleOff',  ctypes.c_uint32),
+        ('funcOff',    ctypes.c_uint32),
+        ('isRet',      ctypes.c_uint32),
     ]
 
-    def __init__(self, addr=0, comm='', tid=0, cpu=0, timestamp=0, gPtr=0, module='', func='', isRet=0, *args, **kw):
-        super(CtypesUTraceData, self).__init__(*args, **kw)
+class CtypesUTraceVTStagePayload(ctypes.Structure):
+    """
+    struct UTraceVTStagePayload {
+        int64_t timestamp;
+        uint64_t carrierTid;
+        uint64_t vtId;
+        uint32_t stageId;
+        int cpu;
+        uint32_t commOff;
+        int32_t fd;
+        int64_t bytesRead;
+        uint32_t osTid;
+        uint32_t reserved;
+    };
+    """
+    _fields_ = [
+        ('timestamp',   ctypes.c_int64),
+        ('carrierTid',  ctypes.c_uint64),
+        ('vtId',        ctypes.c_uint64),
+        ('stageId',     ctypes.c_uint32),
+        ('cpu',         ctypes.c_int),
+        ('commOff',     ctypes.c_uint32),
+        ('fd',          ctypes.c_int32),
+        ('bytesRead',   ctypes.c_int64),
+        ('osTid',       ctypes.c_uint32),
+        ('reserved',    ctypes.c_uint32),
+    ]
 
-        self.addr = ctypes.c_ulong(addr)
-        self.comm = ctypes.c_char_p(comm.encode(UTF_8))
-        self.tid = ctypes.c_int(tid)
-        self.cpu = ctypes.c_int(cpu)
-        self.timestamp = ctypes.c_int64(timestamp)
-        self.gPtr = ctypes.c_uint64(gPtr)
-        self.module = ctypes.c_char_p(module.encode(UTF_8))
-        self.func = ctypes.c_char_p(func.encode(UTF_8))
-        self.isRet = ctypes.c_uint(isRet)
+class CtypesUTraceData(ctypes.Structure):
+    """
+    struct UTraceData {
+        unsigned format;
+        unsigned size;
+        void *payload;
+    };
+    """
+    _fields_ = [
+        ('format',  ctypes.c_uint),
+        ('size',    ctypes.c_uint),
+        ('payload', ctypes.c_void_p),
+    ]
+
+def _encode_blob_string(value):
+    if isinstance(value, bytes):
+        return value
+    if not value:
+        return b''
+    return str(value).encode(UTF_8)
+
+def _blob_string_at(base, offset):
+    if not base or offset == 0:
+        return ''
+    return ctypes.string_at(base + offset).decode(UTF_8)
+
+class UTraceMethodData:
+    __slots__ = ['timestamp', 'addr', 'gPtr', 'tid', 'cpu', 'isRet', 'comm', 'module', 'func']
+
+    def __init__(self, timestamp=0, addr=0, gPtr=0, tid=0, cpu=0, isRet=0, comm='', module='', func=''):
+        self.timestamp = timestamp
+        self.addr = addr
+        self.gPtr = gPtr
+        self.tid = tid
+        self.cpu = cpu
+        self.isRet = isRet
+        self.comm = comm
+        self.module = module
+        self.func = func
+
+class UTraceVTStageData:
+    __slots__ = ['timestamp', 'carrierTid', 'vtId', 'stageId', 'cpu', 'fd', 'bytesRead', 'osTid',
+                 'comm']
+
+    def __init__(self, timestamp=0, carrierTid=0, vtId=0, stageId=0, cpu=0, fd=0, bytesRead=0,
+                 osTid=0, comm=''):
+        self.timestamp = timestamp
+        self.carrierTid = carrierTid
+        self.vtId = vtId
+        self.stageId = stageId
+        self.cpu = cpu
+        self.fd = fd
+        self.bytesRead = bytesRead
+        self.osTid = osTid
+        self.comm = comm
 
 class UTraceData:
-    __slots__ = ['__c_u_trace_data']
+    __slots__ = ['__c_u_trace_data', '__payload_blob']
 
-    def __init__(self, addr=0, comm='', tid=0, cpu=0, timestamp=0, gPtr=0, module='', func='', isRet=0, *args, **kw):
-        self.__c_u_trace_data = CtypesUTraceData(
-            addr=addr,
-            comm=comm,
-            tid=tid,
-            cpu=cpu,
-            timestamp=timestamp,
-            gPtr=gPtr,
-            module=module,
-            func=func,
-            isRet=isRet
-        )
-    
+    def __init__(self, addr=0, comm='', tid=0, cpu=0, timestamp=0, format=0,
+                 module='', func='', gPtr=0, isRet=0, carrierTid=0, vtId=0, stageId=0, *args, **kw):
+        c_data = CtypesUTraceData()
+        if format == UTRACE_FMT_VT_STAGE:
+            fd = kw.pop('fd', 0)
+            bytesRead = kw.pop('bytesRead', 0)
+            osTid = kw.pop('osTid', 0)
+            fixed = CtypesUTraceVTStagePayload(timestamp=timestamp, carrierTid=carrierTid,
+                                               vtId=vtId, stageId=stageId, cpu=cpu,
+                                               commOff=0, fd=fd, bytesRead=bytesRead,
+                                               osTid=osTid, reserved=0)
+            blob = ctypes.create_string_buffer(bytes(fixed), ctypes.sizeof(fixed))
+        else:
+            strings = [_encode_blob_string(comm), _encode_blob_string(module), _encode_blob_string(func)]
+            fixed_size = ctypes.sizeof(CtypesUTraceMethodPayload)
+            offsets = []
+            pos = fixed_size
+            for s in strings:
+                if s:
+                    offsets.append(pos)
+                    pos += len(s) + 1
+                else:
+                    offsets.append(0)
+            fixed = CtypesUTraceMethodPayload(timestamp=timestamp, addr=addr, gPtr=gPtr,
+                                              tid=tid, cpu=cpu,
+                                              commOff=offsets[0], moduleOff=offsets[1],
+                                              funcOff=offsets[2], isRet=isRet)
+            data = bytes(fixed) + b''.join(s + b'\0' for s in strings if s)
+            blob = ctypes.create_string_buffer(data, len(data))
+        c_data.format = format
+        c_data.size = len(blob)
+        c_data.payload = ctypes.cast(blob, ctypes.c_void_p)
+        self.__payload_blob = blob
+        self.__c_u_trace_data = c_data
+
     @property
     def c_u_trace_data(self):
         return self.__c_u_trace_data
-    
-    @property
-    def addr(self):
-        return int(self.__c_u_trace_data.addr)
 
     @property
-    def comm(self):
-        return self.__c_u_trace_data.comm.decode(UTF_8)
+    def format(self):
+        return int(self.__c_u_trace_data.format)
 
     @property
-    def tid(self):
-        return int(self.__c_u_trace_data.tid)
-
-    @property
-    def cpu(self):
-        return int(self.__c_u_trace_data.cpu)
+    def size(self):
+        return int(self.__c_u_trace_data.size)
 
     @property
     def timestamp(self):
-        return int(self.__c_u_trace_data.timestamp)
-    
-    @property
-    def gPtr(self):
-        return int(self.__c_u_trace_data.gPtr)
+        base = self.__c_u_trace_data.payload
+        if not base:
+            return 0
+        return int(ctypes.cast(base, ctypes.POINTER(ctypes.c_int64)).contents.value)
 
     @property
-    def module(self):
-        return self.__c_u_trace_data.module.decode(UTF_8)
+    def method(self):
+        base = self.__c_u_trace_data.payload
+        if not base or self.format != UTRACE_FMT_METHOD:
+            return None
+        view = ctypes.cast(base, ctypes.POINTER(CtypesUTraceMethodPayload)).contents
+        return UTraceMethodData(timestamp=int(view.timestamp), addr=int(view.addr),
+                                gPtr=int(view.gPtr), tid=int(view.tid), cpu=int(view.cpu),
+                                isRet=int(view.isRet),
+                                comm=_blob_string_at(base, view.commOff),
+                                module=_blob_string_at(base, view.moduleOff),
+                                func=_blob_string_at(base, view.funcOff))
 
     @property
-    def func(self):
-        return self.__c_u_trace_data.func.decode(UTF_8)
-
-    @property
-    def isRet(self):
-        return bool(self.__c_u_trace_data.isRet)
+    def vt_stage(self):
+        base = self.__c_u_trace_data.payload
+        if not base or self.format != UTRACE_FMT_VT_STAGE:
+            return None
+        view = ctypes.cast(base, ctypes.POINTER(CtypesUTraceVTStagePayload)).contents
+        return UTraceVTStageData(timestamp=int(view.timestamp), carrierTid=int(view.carrierTid),
+                                 vtId=int(view.vtId), stageId=int(view.stageId), cpu=int(view.cpu),
+                                 fd=int(view.fd), bytesRead=int(view.bytesRead),
+                                 osTid=int(view.osTid), comm=_blob_string_at(base, view.commOff))
 
     @classmethod
     def from_c_u_trace_data(cls, c_u_trace_data):
@@ -2882,7 +2995,11 @@ __all__ = [
     'CtypesSymbolSource',
     'CtypesUTraceAttr',
     'UTraceAttr',
+    'CtypesUTraceMethodPayload',
+    'CtypesUTraceVTStagePayload',
     'CtypesUTraceData',
+    'UTraceMethodData',
+    'UTraceVTStageData',
     'UTraceData',
     'UTraceDataList',
     'UTraceOpen',

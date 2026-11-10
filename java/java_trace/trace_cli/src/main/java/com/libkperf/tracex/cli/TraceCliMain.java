@@ -83,6 +83,7 @@ public final class TraceCliMain {
             appendArg(agentArgs, "nativeLibPath", opts.get("--native-lib"));
             appendArg(agentArgs, "includeFile", opts.get("--include-file"));
             appendArg(agentArgs, "configFile", opts.get("--config-file"));
+            appendArg(agentArgs, "enableVTStage", opts.get("--vt-stage"));
         }
 
         VirtualMachineAccess vmAccess = VirtualMachineAccess.load();

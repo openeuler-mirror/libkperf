@@ -585,18 +585,60 @@ type UTraceAttr struct {
 	SymSrc  []SymbolSource
 	PidList []int
 	FetchG  bool
+	VTStage bool
 }
 
-type UTraceData struct {
-	Addr	  uint64
-	Comm	  string
-	Tid 	  int
-	Cpu       int
+// UTraceFormat mirrors enum UTraceFormat in pmu.h.
+const (
+	UTraceFormatMethod   = 0
+	UTraceFormatVTStage  = 1
+)
+
+// UTraceVTStage mirrors enum UTraceVTStage in pmu.h.
+const (
+	UTraceVTStageRun                = 0
+	UTraceVTStageDequeue            = 1
+	UTraceVTStageCreateRegistration = 2
+	UTraceVTStageUnparkReturn       = 3
+	UTraceVTStagePollReturn         = 4
+	UTraceVTStageSocketRead         = 5
+	UTraceVTStageSocketWrite        = 6
+	UTraceVTStageParkEnter          = 7
+	UTraceVTStageParkReturn         = 8
+)
+
+type UTraceMethodData struct {
 	Timestamp int64
+	Addr      uint64
 	GPtr      uint64
+	Tid       int
+	Cpu       int
+	IsRet     uint32 // 0 = method enter, 1 = method exit
+	Comm      string
 	Module    string
 	Func      string
-	IsRet     bool
+}
+
+type UTraceVTStageData struct {
+	Timestamp  int64
+	CarrierTid uint64
+	VtId       uint64
+	StageId    uint32
+	Cpu        int
+	Fd         int32
+	BytesRead  int64
+	OsTid      uint32
+	Comm       string
+}
+
+// UTraceData is a fixed-size header; event fields live in format-specific
+// payload structs. Check Format, then use Method or VTStage. Size gates
+// forward-compatible access when payload structs grow new fields.
+type UTraceData struct {
+	Format  uint32
+	Size    uint32
+	Method  *UTraceMethodData  // non-nil when Format is UTraceFormatMethod
+	VTStage *UTraceVTStageData // non-nil when Format is UTraceFormatVTStage
 }
 
 func FreePmuAttr(attr *C.struct_PmuAttr) {
@@ -1667,6 +1709,10 @@ func UTraceOpen(attr UTraceAttr) (int, error) {
 		cAttr.fetchG = C.uint(1)
 	}
 
+	if attr.VTStage {
+		cAttr.vtStage = C.uint(1)
+	}
+
 	pd := C.UTraceOpen(cAttr)
 	if int(pd) == -1 {
 		return -1, errors.New(C.GoString(C.Perror()))
@@ -1690,6 +1736,15 @@ func UTraceDisable(pd int) error {
 	return nil
 }
 
+// goStringInBlob resolves a uint32 string offset stored inside a self-contained
+// UTraceData payload blob (see payload ABI rules in pmu.h). 0 means absent.
+func goStringInBlob(payload unsafe.Pointer, off C.uint32_t) string {
+	if off == 0 {
+		return ""
+	}
+	return C.GoString((*C.char)(unsafe.Pointer(uintptr(payload) + uintptr(off))))
+}
+
 func UTraceRead(pd int) ([]UTraceData, *C.struct_UTraceData, error) {
 	var cTraceData *C.struct_UTraceData
 	length := int(C.UTraceRead(C.int(pd), &cTraceData))
@@ -1705,17 +1760,41 @@ func UTraceRead(pd int) ([]UTraceData, *C.struct_UTraceData, error) {
 		elem := (*C.struct_UTraceData)(unsafe.Pointer(
 			uintptr(unsafe.Pointer(cTraceData)) + uintptr(i)*unsafe.Sizeof(*cTraceData),
 		))
-		result[i] = UTraceData{
-			Addr: 	   uint64(elem.addr),
-			Comm:      C.GoString(elem.comm),
-			Tid:       int(elem.tid),
-			Cpu:       int(elem.cpu),
-			Timestamp: int64(elem.timestamp),
-			GPtr:      uint64(elem.gPtr),
-			Module:    C.GoString(elem.module),
-			Func:      C.GoString(elem._func),
-			IsRet:     elem.isRet != 0,
+		item := UTraceData{
+			Format: uint32(elem.format),
+			Size:   uint32(elem.size),
 		}
+		if elem.payload != nil {
+			switch item.Format {
+			case UTraceFormatMethod:
+				m := (*C.struct_UTraceMethodPayload)(elem.payload)
+				item.Method = &UTraceMethodData{
+					Timestamp: int64(m.timestamp),
+					Addr:      uint64(m.addr),
+					GPtr:      uint64(m.gPtr),
+					Tid:       int(m.tid),
+					Cpu:       int(m.cpu),
+					IsRet:     uint32(m.isRet),
+					Comm:      goStringInBlob(elem.payload, m.commOff),
+					Module:    goStringInBlob(elem.payload, m.moduleOff),
+					Func:      goStringInBlob(elem.payload, m.funcOff),
+				}
+			case UTraceFormatVTStage:
+				v := (*C.struct_UTraceVTStagePayload)(elem.payload)
+				item.VTStage = &UTraceVTStageData{
+					Timestamp:  int64(v.timestamp),
+					CarrierTid: uint64(v.carrierTid),
+					VtId:       uint64(v.vtId),
+					StageId:    uint32(v.stageId),
+					Cpu:        int(v.cpu),
+					Fd:         int32(v.fd),
+					BytesRead:  int64(v.bytesRead),
+					OsTid:      uint32(v.osTid),
+					Comm:       goStringInBlob(elem.payload, v.commOff),
+				}
+			}
+		}
+		result[i] = item
 	}
 
 	return result, cTraceData, nil

@@ -150,8 +150,8 @@ int ProcDataManager::ParseProcFile(ProcSource source, int pid, const string &fil
         result.filePath = actualPaths;
     }
 
-    if (content.empty() && source != PROC_PID_FD && source != PROC_PID_STACK
-        && source != PROC_PID_WCHAN && source != PROC_PID_COMM && source != PROC_PID_TASK_STAT) {
+    if (content.empty() && source != PROC_PID_FD && source != PROC_PID_STACK &&
+        source != PROC_PID_WCHAN && source != PROC_PID_COMM && source != PROC_PID_TASK_STAT) {
         return LIBPERF_ERR_PROC_READ_FAILED;
     }
 

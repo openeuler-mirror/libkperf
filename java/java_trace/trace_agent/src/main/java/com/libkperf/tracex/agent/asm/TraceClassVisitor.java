@@ -10,7 +10,8 @@
  * See the Mulan PSL v2 for more details.
  * Author: Wu
  * Create: 2026-04-27
- * Description: ASM ClassVisitor that delegates method instrumentation to TraceMethodVisitor
+ * Description: ASM ClassVisitor that chains trace (TraceMethodVisitor) and virtual-thread stage
+ * (VTStageMethodVisitor) instrumentation for matching methods
  ******************************************************************************/
 package com.libkperf.tracex.agent.asm;
 
@@ -24,30 +25,51 @@ public final class TraceClassVisitor extends ClassVisitor {
 
     private final TraceConfig config;
     private final String owner;
+    private final boolean virtualThreadMode;
     private int instrumented;
 
     public TraceClassVisitor(ClassVisitor cv, TraceConfig config, String owner) {
+        this(cv, config, owner, false);
+    }
+
+    public TraceClassVisitor(ClassVisitor cv, TraceConfig config, String owner, boolean virtualThreadMode) {
         super(Opcodes.ASM9, cv);
         this.config = config;
         this.owner = owner;
+        this.virtualThreadMode = virtualThreadMode;
     }
 
     @Override
     public MethodVisitor visitMethod(int access, String name, String desc,
-                                    String signature, String[] exceptions) {
+                                     String signature, String[] exceptions) {
         MethodVisitor next = super.visitMethod(access, name, desc, signature, exceptions);
-        if (!needTrace(next, access, name, desc)) {
+        if (next == null || (access & SKIP_ACCESS) != 0 || isSpecialMethod(name)) {
             return next;
         }
+        boolean isRunContinuation = virtualThreadMode
+                && VirtualThreadMethodVisitor.isRunContinuation(access, name, desc);
+        // Layered chain: TraceMethodVisitor emits enter/exit probes only when the
+        // method matches the trace config; VirtualThreadMethodVisitor wraps the
+        // result to inject carrier-side hooks around the mount/unmount call sites.
+        MethodVisitor mv = next;
+        if (config.shouldTransformMethod(owner, name, desc)) {
+            mv = new TraceMethodVisitor(api, mv, access, name, desc, owner);
+        }
+        if (isRunContinuation) {
+            mv = new VirtualThreadMethodVisitor(api, mv);
+        }
 
-        instrumented++;
-        return new TraceMethodVisitor(api, next, access, name, desc, owner);
-    }
+        int vtType = config.enableVTStage
+        ? VTStageInstrumentation.getInstrumentationType(owner, name, desc)
+        : VTStageInstrumentation.TYPE_NONE;
+        if (vtType != VTStageInstrumentation.TYPE_NONE) {
+            mv = new VTStageMethodVisitor(api, mv, access, name, desc, vtType);
+        }
 
-    private boolean needTrace(MethodVisitor mv, int access, String name, String desc) {
-        return mv != null && (access & SKIP_ACCESS) == 0
-                && !isSpecialMethod(name)
-                && config.shouldTransformMethod(owner, name, desc);
+        if (mv != next) {
+            instrumented++;
+        }
+        return mv;
     }
 
     private static boolean isSpecialMethod(String name) {

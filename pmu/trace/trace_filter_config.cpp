@@ -28,6 +28,7 @@ static constexpr int K_NUMBER_BASE_DECIMAL = 10;
 static constexpr const char *K_NATIVE_SAMPLE_PERIOD_KEY = "native_sample_period";
 static constexpr const char *K_KERNEL_FTRACE_BUFFER_SIZE_KB_KEY = "kernel_ftrace_buffer_size_kb";
 static constexpr const char *K_KERNEL_FTRACE_IRQS_KEY = "kernel_ftrace_irqs";
+static constexpr const char *K_LOG_LEVEL_KEY = "log_level";
 static constexpr const char *K_DIGITS = "0123456789";
 static constexpr uint32_t K_MAX_FTRACE_BUFFER_SIZE_KB = 16U * 1024U;
 
@@ -161,6 +162,16 @@ UTraceSymbolFilterConfig LoadUTraceSymbolFilterConfig(const std::string &path)
                 out.valid = false;
                 out.error = "Invalid native_sample_period: " + value + "; expected an integer in [1, 4294967295]";
                 break;
+            }
+            if (key == K_LOG_LEVEL_KEY) {
+                TraceLogLevel parsed = TraceLogLevel::INFO;
+                if (!TraceLogLevelFromString(value, &parsed)) {
+                    out.valid = false;
+                    out.error = "Invalid log_level: " + value +
+                        "; expected one of error, warning, info, debug";
+                    break;
+                }
+                out.logLevel = parsed;
             }
             continue;
         }

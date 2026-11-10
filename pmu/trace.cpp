@@ -355,15 +355,17 @@ static void AppendKernelTraceData(KernelUTraceBlock &block, const KernelTraceDat
     }
     block.data.reserve(static_cast<size_t>(len));
     for (int i = 0; i < len; ++i) {
+        unsigned payloadSize = 0;
+        void *payload = BuildMethodPayload(data[i].timestamp, static_cast<unsigned long>(data[i].address),
+            0, data[i].tid, data[i].cpu, data[i].isRet, data[i].comm, "[kernel]",
+            data[i].function == nullptr ? "" : data[i].function, &payloadSize);
+        if (payload == nullptr) {
+            continue;
+        }
         UTraceData event = {0};
-        event.addr = static_cast<unsigned long>(data[i].address);
-        event.comm = data[i].comm;
-        event.tid = data[i].tid;
-        event.cpu = data[i].cpu;
-        event.timestamp = data[i].timestamp;
-        event.module = "[kernel]";
-        event.func = data[i].function == nullptr ? "" : data[i].function;
-        event.isRet = data[i].isRet;
+        event.format = UTRACE_FMT_METHOD;
+        event.size = payloadSize;
+        event.payload = payload;
         block.data.emplace_back(event);
     }
 }
@@ -383,15 +385,81 @@ static bool IsInTraceWindow(const UTraceData &data, int64_t windowStartNs, int64
     if (windowStartNs <= 0 || windowEndNs < windowStartNs) {
         return true;
     }
-    return data.timestamp >= windowStartNs && data.timestamp <= windowEndNs;
+    int64_t ts = UTraceDataTimestamp(&data);
+    return ts >= windowStartNs && ts <= windowEndNs;
+}
+
+// Payload accessors: UTraceData is now {format, size, payload}; per-field data lives
+// in the format-specific payload blob. Non-method records return neutral defaults so
+// the thread-name / virtual-thread reconciliation logic naturally skips VT_STAGE events.
+static const UTraceMethodPayload *MethodPayload(const UTraceData &data)
+{
+    if (!UTraceIsMethodFormat(&data) || data.payload == nullptr) {
+        return nullptr;
+    }
+    return static_cast<const UTraceMethodPayload *>(data.payload);
+}
+
+static UTraceMethodPayload *MutableMethodPayload(UTraceData &data)
+{
+    if (!UTraceIsMethodFormat(&data) || data.payload == nullptr) {
+        return nullptr;
+    }
+    return static_cast<UTraceMethodPayload *>(data.payload);
+}
+
+static uint64_t TraceDataGPtr(const UTraceData &data)
+{
+    const UTraceMethodPayload *p = MethodPayload(data);
+    return p != nullptr ? p->gPtr : 0;
+}
+
+static int TraceDataTid(const UTraceData &data)
+{
+    const UTraceMethodPayload *p = MethodPayload(data);
+    return p != nullptr ? p->tid : 0;
+}
+
+static uint32_t TraceDataIsRet(const UTraceData &data)
+{
+    const UTraceMethodPayload *p = MethodPayload(data);
+    return p != nullptr ? p->isRet : 0;
+}
+
+static const char *TraceDataComm(const UTraceData &data)
+{
+    const UTraceMethodPayload *p = MethodPayload(data);
+    return p != nullptr ? UTracePayloadStringAt(data.payload, p->commOff) : nullptr;
+}
+
+// Replace a method record's comm by rebuilding its self-contained payload blob;
+// fixed-region fields and the module/function strings are copied through unchanged.
+static bool SetMethodComm(UTraceData &data, const std::string &comm)
+{
+    UTraceMethodPayload *p = MutableMethodPayload(data);
+    if (p == nullptr) {
+        return false;
+    }
+    unsigned newSize = 0;
+    void *payload = BuildMethodPayload(p->timestamp, p->addr, p->gPtr, p->tid, p->cpu, p->isRet,
+        comm.c_str(), UTracePayloadStringAt(data.payload, p->moduleOff),
+        UTracePayloadStringAt(data.payload, p->funcOff), &newSize);
+    if (payload == nullptr) {
+        return false;
+    }
+    std::free(data.payload);
+    data.payload = payload;
+    data.size = newSize;
+    return true;
 }
 
 static bool IsVirtualThreadTransition(const UTraceData &data)
 {
-    return data.isRet == K_VTHREAD_MOUNT_EVENT
-        || data.isRet == K_VTHREAD_UNMOUNT_EVENT
-        || data.isRet == K_VTHREAD_MOUNT_DEGRADED_EVENT
-        || data.isRet == K_VTHREAD_UNMOUNT_DEGRADED_EVENT;
+    uint32_t isRet = TraceDataIsRet(data);
+    return isRet == K_VTHREAD_MOUNT_EVENT ||
+        isRet == K_VTHREAD_UNMOUNT_EVENT ||
+        isRet == K_VTHREAD_MOUNT_DEGRADED_EVENT ||
+        isRet == K_VTHREAD_UNMOUNT_DEGRADED_EVENT;
 }
 
 static bool ShouldMergeTraceData(const UTraceData &data, int64_t windowStartNs, int64_t windowEndNs)
@@ -432,8 +500,9 @@ static void LogTraceMergeInput(const TraceMergeInputStats &stats)
 
 static bool IsUsableJavaThreadName(const UTraceData &event)
 {
-    return event.gPtr == 0 && event.comm != nullptr && event.comm[0] != '\0'
-        && std::strcmp(event.comm, "unknown") != 0 && std::strcmp(event.comm, "carrier") != 0;
+    const char *comm = TraceDataComm(event);
+    return TraceDataGPtr(event) == 0 && comm != nullptr && comm[0] != '\0' &&
+        std::strcmp(comm, "unknown") != 0 && std::strcmp(comm, "carrier") != 0;
 }
 
 static std::unordered_map<int, std::string> BuildJavaThreadNamesByTid(
@@ -448,9 +517,10 @@ static std::unordered_map<int, std::string> BuildJavaThreadNamesByTid(
         if (!IsUsableJavaThreadName(event)) {
             continue;
         }
-        std::string &name = names[event.tid];
-        if (std::strlen(event.comm) > name.size()) {
-            name = event.comm;
+        const char *comm = TraceDataComm(event);
+        std::string &name = names[TraceDataTid(event)];
+        if (std::strlen(comm) > name.size()) {
+            name = comm;
         }
     }
     return names;
@@ -459,20 +529,16 @@ static std::unordered_map<int, std::string> BuildJavaThreadNamesByTid(
 static void PreferJavaThreadName(UTraceData &event,
     const std::unordered_map<int, std::string> &javaThreadNames)
 {
-    if (event.gPtr != 0) {
+    if (TraceDataGPtr(event) != 0) {
         return;
     }
-    auto name = javaThreadNames.find(event.tid);
-    if (name == javaThreadNames.end()
-        || (event.comm != nullptr && std::strlen(event.comm) >= name->second.size())) {
+    auto name = javaThreadNames.find(TraceDataTid(event));
+    const char *comm = TraceDataComm(event);
+    if (name == javaThreadNames.end() ||
+        (comm != nullptr && std::strlen(comm) >= name->second.size())) {
         return;
     }
-    char *fullComm = TraceDupString(name->second);
-    if (fullComm == nullptr) {
-        return;
-    }
-    std::free(const_cast<char *>(event.comm));
-    event.comm = fullComm;
+    SetMethodComm(event, name->second);
 }
 
 static void AssociateVirtualThreadContext(UTraceData *data, int len)
@@ -481,41 +547,42 @@ static void AssociateVirtualThreadContext(UTraceData *data, int len)
     std::unordered_map<uint64_t, std::unordered_map<int, std::string>> javaCommByContextTid;
     for (int i = 0; i < len; ++i) {
         const UTraceData &event = data[i];
-        // bit 63 distinguishes Java virtual-thread IDs from zero and Go g pointers
-        if ((event.gPtr & K_JAVA_VTHREAD_CONTEXT_FLAG) == 0 || event.comm == nullptr || event.comm[0] == '\0'
-            || std::strcmp(event.comm, "unknown") == 0 || std::strcmp(event.comm, "carrier") == 0) {
+        const char *comm = TraceDataComm(event);
+        uint64_t gPtr = TraceDataGPtr(event);
+        if ((gPtr & K_JAVA_VTHREAD_CONTEXT_FLAG) == 0 || comm == nullptr || comm[0] == '\0' ||
+            std::strcmp(comm, "unknown") == 0 || std::strcmp(comm, "carrier") == 0) {
             continue;
         }
-        std::string &comm = javaCommByContextTid[event.gPtr][event.tid];
-        // The same thread may have both an OS-truncated comm and the full Java thread name. Prefer the longer one
-        if (std::strlen(event.comm) > comm.size()) {
-            comm = event.comm;
+        std::string &contextComm = javaCommByContextTid[gPtr][TraceDataTid(event)];
+        if (std::strlen(comm) > contextComm.size()) {
+            contextComm = comm;
         }
     }
 
     // Phase 2: apply mount intervals to native/kernel events that have no context ID
     std::unordered_map<int, uint64_t> mountedByTid;
     for (int i = 0; i < len; ++i) {
-        UTraceData &event = data[i];
-        if (event.isRet == K_VTHREAD_MOUNT_EVENT
-            || event.isRet == K_VTHREAD_MOUNT_DEGRADED_EVENT) {
-            if (event.gPtr != 0) {
-                mountedByTid[event.tid] = event.gPtr;
+        UTraceMethodPayload *p = MutableMethodPayload(data[i]);
+        if (p == nullptr) {
+            continue;
+        }
+        if (p->isRet == K_VTHREAD_MOUNT_EVENT || p->isRet == K_VTHREAD_MOUNT_DEGRADED_EVENT) {
+            if (p->gPtr != 0) {
+                mountedByTid[p->tid] = p->gPtr;
             }
             continue;
         }
-        if (event.isRet == K_VTHREAD_UNMOUNT_EVENT
-            || event.isRet == K_VTHREAD_UNMOUNT_DEGRADED_EVENT) {
-            auto mounted = mountedByTid.find(event.tid);
-            if (mounted != mountedByTid.end() && mounted->second == event.gPtr) {
+        if (p->isRet == K_VTHREAD_UNMOUNT_EVENT || p->isRet == K_VTHREAD_UNMOUNT_DEGRADED_EVENT) {
+            auto mounted = mountedByTid.find(p->tid);
+            if (mounted != mountedByTid.end() && mounted->second == p->gPtr) {
                 mountedByTid.erase(mounted);
             }
             continue;
         }
-        if (event.gPtr == 0) {
-            auto mounted = mountedByTid.find(event.tid);
+        if (p->gPtr == 0) {
+            auto mounted = mountedByTid.find(p->tid);
             if (mounted != mountedByTid.end()) {
-                event.gPtr = mounted->second;
+                p->gPtr = mounted->second;
             }
         }
     }
@@ -523,21 +590,21 @@ static void AssociateVirtualThreadContext(UTraceData *data, int len)
     // Phase 3: propagate the selected name only to events from the same virtual-thread context and carrier TID
     for (int i = 0; i < len; ++i) {
         UTraceData &event = data[i];
-        auto context = javaCommByContextTid.find(event.gPtr);
+        const UTraceMethodPayload *p = MethodPayload(event);
+        if (p == nullptr) {
+            continue;
+        }
+        auto context = javaCommByContextTid.find(p->gPtr);
         if (context == javaCommByContextTid.end()) {
             continue;
         }
-        auto thread = context->second.find(event.tid);
-        if (thread == context->second.end()
-            || (event.comm != nullptr && thread->second == event.comm)) {
+        auto thread = context->second.find(p->tid);
+        const char *comm = UTracePayloadStringAt(event.payload, p->commOff);
+        if (thread == context->second.end() ||
+            (comm != nullptr && thread->second == comm)) {
             continue;
         }
-
-        char *fullComm = TraceDupString(thread->second);
-        if (fullComm != nullptr) {
-            std::free(const_cast<char *>(event.comm));
-            event.comm = fullComm;
-        }
+        SetMethodComm(event, thread->second);
     }
 }
 
@@ -878,7 +945,8 @@ static int OpenJavaBackend(UTraceAttr *attr)
 
     // if java symbol list is empty, includeRules will be nullptr
     std::string includeRules = BuildJavaSymSrc(attr);
-    int err = JavaTraceManager::GetInstance().Open(pd, jvmPid, includeRules.empty() ? nullptr : includeRules.c_str());
+    int err = JavaTraceManager::GetInstance().Open(pd, jvmPid,
+        includeRules.empty() ? nullptr : includeRules.c_str(), attr->vtStage != 0);
     if (err != 0) {
         PmuList::GetInstance()->Close(pd);
         return -1;
@@ -1033,6 +1101,7 @@ int UTraceOpen(struct UTraceAttr *attr)
         pcerr::New(LIBPERF_ERR_INVALID_TRACE_CONF, filter.error);
         return -1;
     }
+    SetTraceLogLevel(filter.logLevel);
     UTraceSymbolSplit symbols = SplitUTraceSymbols(attr, filter);
     AppendConfiguredNativeSymbols(symbols, filter, attr->pidList[0]);
     UTraceAttr userAttr = MakeSubAttr(attr, symbols.userSymbols);
@@ -1045,6 +1114,10 @@ int UTraceOpen(struct UTraceAttr *attr)
         return -1;
     }
     bool hasJavaRequest = hasJavaSymbols || (hasJavaConfig && isJvm);
+    if (attr->vtStage != 0 && !hasJavaRequest) {
+        TraceLog("[trace] vtStage is set but no Java trace is requested; "
+                 "virtual thread stages are only collected for JVM targets\n");
+    }
     if (!hasJavaRequest) {
         FilterNativeSymbols(symbols.userSymbols, filter);
         userAttr = MakeSubAttr(attr, symbols.userSymbols);
@@ -1455,6 +1528,11 @@ int UTraceRead(int pd, struct UTraceData **traceData)
         kernelSession->windowStartNs, kernelSession->windowEndNs, false, &mergedLen, &finalStats);
     stats.kernelInput = finalStats.kernelInput;
     stats.kernelKept = finalStats.kernelKept;
+
+    for (UTraceData &event : kernelBlock.data) {
+        FreeTraceDataFields(event);
+    }
+    kernelBlock.data.clear();
 
     if (userData != nullptr) {
         UTraceDataFree(userData);
