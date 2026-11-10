@@ -603,70 +603,83 @@ struct RingReadShard {
 };
 
 // Decode one published slot into a UTraceData record. Returns false only when the
+// Decode one published VT_STAGE slot and build its payload. Returns nullptr on allocation failure.
+static void *DecodeVtStageSlot(RingReadShard *shard, const uint8_t *slot, int64_t *outTs,
+                               unsigned *outPayloadSize)
+{
+    const uint8_t *mem = shard->mem;
+    // VT_STAGE field group: only the lifecycle fields are present.
+    const uint64_t carrierTid = LoadAt<uint64_t>(slot, K_SLOT_VT_CARRIER_TID);
+    const uint64_t vtId = LoadAt<uint64_t>(slot, K_SLOT_VT_VT_ID);
+    const uint32_t stageId = LoadAt<uint32_t>(slot, K_SLOT_VT_STAGE_ID);
+    const int cpu = LoadAt<int32_t>(slot, K_SLOT_VT_CPU);
+    const int64_t timestamp = LoadAt<int64_t>(slot, K_SLOT_VT_TIMESTAMP);
+    const int fd = LoadAt<int32_t>(slot, K_SLOT_VT_FD);
+    const int64_t bytes = LoadAt<int64_t>(slot, K_SLOT_VT_BYTES);
+    const uint32_t osTid = LoadAt<uint32_t>(slot, K_SLOT_VT_OS_TID);
+    const int32_t commId = LoadAt<int32_t>(slot, K_SLOT_VT_COMM_ID);
+    bool vtMismatched = false;
+    const std::string carrierComm = ResolveCarrierComm(mem, commId, static_cast<int32_t>(osTid),
+                                                       vtMismatched);
+    if (vtMismatched) {
+        ++shard->metadataMismatch;
+    }
+    *outTs = timestamp;
+    return BuildVTStagePayload(timestamp, carrierTid, vtId, stageId, cpu, fd, bytes, osTid,
+                               carrierComm.c_str(), outPayloadSize);
+}
+
+// Decode one published METHOD slot and build its payload. Returns nullptr on allocation failure.
+static void *DecodeMethodSlot(RingReadShard *shard, const uint8_t *slot, int64_t *outTs,
+                              unsigned *outPayloadSize)
+{
+    const uint8_t *mem = shard->mem;
+    // METHOD field group.
+    const uint64_t addr = LoadAt<uint64_t>(slot, K_SLOT_METHOD_ADDR);
+    const int32_t namespaceTid = LoadAt<int32_t>(slot, K_SLOT_METHOD_TID);
+    const int cpu = LoadAt<int32_t>(slot, K_SLOT_METHOD_CPU);
+    const int64_t timestamp = LoadAt<int64_t>(slot, K_SLOT_METHOD_TIMESTAMP);
+    const uint64_t gPtr = LoadAt<uint64_t>(slot, K_SLOT_METHOD_GPTR);
+    const int32_t isRet = LoadAt<int32_t>(slot, K_SLOT_METHOD_IS_RET);
+    const uint32_t methodId = LoadAt<uint32_t>(slot, K_SLOT_METHOD_METHOD_ID);
+    const int32_t commId = LoadAt<int32_t>(slot, K_SLOT_METHOD_COMM_ID);
+    std::string comm;
+    std::string module;
+    std::string func;
+    bool mismatched = false;
+    ResolveTraceDataStrings(comm, module, func, mem, addr, namespaceTid, methodId, commId, mismatched);
+    if (mismatched) {
+        ++shard->metadataMismatch;
+    }
+    int tid = -1;
+    auto hostTid = shard->impl->hostTidByNamespaceTid.find(namespaceTid);
+    if (hostTid != shard->impl->hostTidByNamespaceTid.end()) {
+        tid = hostTid->second;
+    }
+    // DATA_TYPE_METHOD: METHOD_IS_RET is the enter/exit or vthread-transition marker.
+    *outTs = timestamp;
+    return BuildMethodPayload(timestamp, static_cast<unsigned long>(addr), gPtr, tid, cpu,
+                              static_cast<unsigned>(isRet), comm.c_str(), module.c_str(), func.c_str(),
+                              outPayloadSize);
+}
+
+// Decode one published slot into a UTraceData record. Returns false only when the
 // payload allocation failed; the caller frees already decoded records in that case.
 static bool DecodeSlotRecord(RingReadShard *shard, const uint8_t *slot, UTraceData *out, int64_t *outTs)
 {
-    const uint8_t *mem = shard->mem;
-    const int16_t dataType = LoadAt<int16_t>(slot, K_SLOT_DATA_TYPE);
-
-    unsigned format = UTRACE_FMT_METHOD;
     unsigned payloadSize = 0;
     void *payload = nullptr;
-    if (dataType == K_DATA_TYPE_VT_STAGE) {
-        // VT_STAGE field group: only the lifecycle fields are present.
-        const uint64_t carrierTid = LoadAt<uint64_t>(slot, K_SLOT_VT_CARRIER_TID);
-        const uint64_t vtId = LoadAt<uint64_t>(slot, K_SLOT_VT_VT_ID);
-        const uint32_t stageId = LoadAt<uint32_t>(slot, K_SLOT_VT_STAGE_ID);
-        const int cpu = LoadAt<int32_t>(slot, K_SLOT_VT_CPU);
-        const int64_t timestamp = LoadAt<int64_t>(slot, K_SLOT_VT_TIMESTAMP);
-        const int fd = LoadAt<int32_t>(slot, K_SLOT_VT_FD);
-        const int64_t bytes = LoadAt<int64_t>(slot, K_SLOT_VT_BYTES);
-        const uint32_t osTid = LoadAt<uint32_t>(slot, K_SLOT_VT_OS_TID);
-        const int32_t commId = LoadAt<int32_t>(slot, K_SLOT_VT_COMM_ID);
-        bool vtMismatched = false;
-        const std::string carrierComm = ResolveCarrierComm(mem, commId, static_cast<int32_t>(osTid),
-                                                           vtMismatched);
-        if (vtMismatched) {
-            ++shard->metadataMismatch;
-        }
-        format = UTRACE_FMT_VT_STAGE;
-        payload = BuildVTStagePayload(timestamp, carrierTid, vtId, stageId, cpu, fd, bytes, osTid,
-                                      carrierComm.c_str(), &payloadSize);
-        *outTs = timestamp;
+    if (LoadAt<int16_t>(slot, K_SLOT_DATA_TYPE) == K_DATA_TYPE_VT_STAGE) {
+        payload = DecodeVtStageSlot(shard, slot, outTs, &payloadSize);
+        out->format = UTRACE_FMT_VT_STAGE;
     } else {
-        // METHOD field group.
-        const uint64_t addr = LoadAt<uint64_t>(slot, K_SLOT_METHOD_ADDR);
-        const int32_t namespaceTid = LoadAt<int32_t>(slot, K_SLOT_METHOD_TID);
-        const int cpu = LoadAt<int32_t>(slot, K_SLOT_METHOD_CPU);
-        const int64_t timestamp = LoadAt<int64_t>(slot, K_SLOT_METHOD_TIMESTAMP);
-        const uint64_t gPtr = LoadAt<uint64_t>(slot, K_SLOT_METHOD_GPTR);
-        const int32_t isRet = LoadAt<int32_t>(slot, K_SLOT_METHOD_IS_RET);
-        const uint32_t methodId = LoadAt<uint32_t>(slot, K_SLOT_METHOD_METHOD_ID);
-        const int32_t commId = LoadAt<int32_t>(slot, K_SLOT_METHOD_COMM_ID);
-        std::string comm;
-        std::string module;
-        std::string func;
-        bool mismatched = false;
-        ResolveTraceDataStrings(comm, module, func, mem, addr, namespaceTid, methodId, commId, mismatched);
-        if (mismatched) {
-            ++shard->metadataMismatch;
-        }
-        int tid = -1;
-        auto hostTid = shard->impl->hostTidByNamespaceTid.find(namespaceTid);
-        if (hostTid != shard->impl->hostTidByNamespaceTid.end()) {
-            tid = hostTid->second;
-        }
-        // DATA_TYPE_METHOD: METHOD_IS_RET is the enter/exit or vthread-transition marker.
-        payload = BuildMethodPayload(timestamp, static_cast<unsigned long>(addr), gPtr, tid, cpu,
-                                     static_cast<unsigned>(isRet), comm.c_str(), module.c_str(), func.c_str(),
-                                     &payloadSize);
-        *outTs = timestamp;
+        payload = DecodeMethodSlot(shard, slot, outTs, &payloadSize);
+        out->format = UTRACE_FMT_METHOD;
     }
     if (payload == nullptr) {
         shard->allocFailed = true;
         return false;
     }
-    out->format = format;
     out->size = payloadSize;
     out->payload = payload;
     return true;
