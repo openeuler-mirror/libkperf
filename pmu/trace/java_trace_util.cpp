@@ -610,7 +610,7 @@ bool TraceLogLevelFromString(const std::string &name, TraceLogLevel *level)
         return true;
     }
     if (lower == "debug") {
-        *level = TraceLogLevel::DEBUG;
+        *level = TraceLogLevel::VERBOSE;
         return true;
     }
     return false;

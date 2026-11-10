@@ -31,8 +31,8 @@ struct UTraceSymbolFilterConfig {
     uint32_t kernelFtraceBufferSizeKb = 1024;
     // Include selected functions that execute in interrupt context.
     bool kernelFtraceIrqs = true;
-    // Runtime TraceLog threshold. Default INFO; set to DEBUG to surface
-    // verbose diagnostics emitted by TraceLog(TraceLogLevel::DEBUG, ...).
+    // Runtime TraceLog threshold. Default INFO; set to "debug" (VERBOSE) to
+    // surface verbose diagnostics emitted by TraceLog(TraceLogLevel::VERBOSE, ...).
     TraceLogLevel logLevel = TraceLogLevel::INFO;
     bool valid = true;
     std::string error;

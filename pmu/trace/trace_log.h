@@ -20,12 +20,12 @@
 // Trace log severity. Higher numeric values are more verbose.
 // A message is emitted only when its level is less than or equal to the
 // current threshold (see SetTraceLogLevel). Default threshold is INFO, so
-// DEBUG diagnostics are suppressed unless the user opts in via trace_filter.
+// VERBOSE ("debug") diagnostics are suppressed unless the user opts in via trace_filter.
 enum class TraceLogLevel {
     ERROR = 0,
     WARNING = 1,
     INFO = 2,
-    DEBUG = 3
+    VERBOSE = 3
 };
 
 // Set the runtime log threshold used by TraceLog. Persisted for the process
