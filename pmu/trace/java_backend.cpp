@@ -126,6 +126,16 @@ static constexpr size_t K_DESC_OFFSET = K_HEADER_SIZE + K_METHOD_BYTES + K_THREA
 
 static constexpr mode_t K_TRACE_FILE_MODE = 0600;
 
+// JavaBackendRead result codes. Callers only branch on zero/non-zero; the values are
+// diagnostics embedded in "read failed, ret=" logs, so keep them stable across releases.
+static constexpr int K_READ_ERR_INVALID_ARG = -1;
+static constexpr int K_READ_ERR_NOT_MAPPED = -2;
+static constexpr int K_READ_ERR_BAD_MAGIC = -3;
+static constexpr int K_READ_ERR_BAD_VERSION = -4;
+static constexpr int K_READ_ERR_BAD_LAYOUT = -5;
+static constexpr int K_READ_ERR_RESULT_ALLOC = -6;
+static constexpr int K_READ_ERR_PAYLOAD_ALLOC = -7;
+
 template <typename T> static T LoadAt(const uint8_t *p, size_t offset)
 {
     T v{};
@@ -795,22 +805,22 @@ int JavaBackendDisable(JavaBackendImpl *impl)
 int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_count)
 {
     if (!impl || !out_data || !out_count) {
-        return -1;
+        return K_READ_ERR_INVALID_ARG;
     }
 
     *out_data = nullptr;
     *out_count = 0;
     if (!impl->mapped) {
-        return -2;
+        return K_READ_ERR_NOT_MAPPED;
     }
 
     RefreshHostTidMap(impl);
     const uint8_t *mem = static_cast<const uint8_t *>(impl->mapped);
     if (LoadAtAcquire<uint64_t>(mem, K_HEADER_MAGIC) != K_MAGIC) {
-        return -3;
+        return K_READ_ERR_BAD_MAGIC;
     }
     if (LoadAtAcquire<uint32_t>(mem, K_HEADER_VERSION) != K_VERSION) {
-        return -4;
+        return K_READ_ERR_BAD_VERSION;
     }
 
     const uint32_t ringCount = LoadAtAcquire<uint32_t>(mem, K_HEADER_RING_COUNT);
@@ -832,7 +842,7 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
         methodCount > methodCapacity || threadCount > threadCapacity ||
         descOffset != K_DESC_OFFSET ||
         eventOffset != descOffset + static_cast<uint64_t>(ringCount) * K_DESC_SIZE) {
-        return -5;
+        return K_READ_ERR_BAD_LAYOUT;
     }
 
     // The agent sizes the file from its own CPU count; if it sees more CPUs than the
@@ -844,7 +854,7 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
         static_cast<uint64_t>(ringCount) * slotsPerRing * K_SLOT_SIZE;
     if (neededSize > impl->shmSize) {
         if (!TryExtendShmMapping(impl) || neededSize > impl->shmSize) {
-            return -5;
+            return K_READ_ERR_BAD_LAYOUT;
         }
     }
     if (mem != impl->mapped) {
@@ -924,7 +934,7 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
         }
         JavaTraceLog(MakeLogMessage(
             "[trace-java] JavaBackendRead failed: payload alloc failed, decoded=", total, "\n"));
-        return -7;
+        return K_READ_ERR_PAYLOAD_ALLOC;
     }
 
     // No new events in any ring yet: keep the original single-shot empty diagnostic.
@@ -960,7 +970,7 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
         for (auto &record : flat) {
             FreeTraceDataFields(record.data);
         }
-        return -6;
+        return K_READ_ERR_RESULT_ALLOC;
     }
     UTraceData *block = reinterpret_cast<UTraceData *>(raw + sizeof(size_t));
     for (size_t i = 0; i < flat.size(); ++i) {
