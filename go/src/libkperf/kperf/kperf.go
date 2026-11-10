@@ -1737,9 +1737,11 @@ func UTraceDisable(pd int) error {
 }
 
 // goStringInBlob resolves a uint32 string offset stored inside a self-contained
-// UTraceData payload blob (see payload ABI rules in pmu.h). 0 means absent.
-func goStringInBlob(payload unsafe.Pointer, off C.uint32_t) string {
-	if off == 0 {
+// UTraceData payload blob (see payload ABI rules in pmu.h). 0 means absent; an
+// offset at or beyond the blob's size is a truncated/foreign payload and yields
+// "" so a corrupt producer can never send C.GoString past the blob boundary.
+func goStringInBlob(payload unsafe.Pointer, size uint32, off C.uint32_t) string {
+	if off == 0 || uint64(off) >= uint64(size) {
 		return ""
 	}
 	return C.GoString((*C.char)(unsafe.Pointer(uintptr(payload) + uintptr(off))))
@@ -1767,30 +1769,39 @@ func UTraceRead(pd int) ([]UTraceData, *C.struct_UTraceData, error) {
 		if elem.payload != nil {
 			switch item.Format {
 			case UTraceFormatMethod:
-				m := (*C.struct_UTraceMethodPayload)(elem.payload)
-				item.Method = &UTraceMethodData{
-					Timestamp: int64(m.timestamp),
-					Addr:      uint64(m.addr),
-					GPtr:      uint64(m.gPtr),
-					Tid:       int(m.tid),
-					Cpu:       int(m.cpu),
-					IsRet:     uint32(m.isRet),
-					Comm:      goStringInBlob(elem.payload, m.commOff),
-					Module:    goStringInBlob(elem.payload, m.moduleOff),
-					Func:      goStringInBlob(elem.payload, m.funcOff),
+				// Gate on size before dereferencing (pmu.h payload ABI): a shorter blob
+				// from an older or corrupt producer must not read past its end. Leave the
+				// record undecoded rather than fabricate field values.
+				var mp C.struct_UTraceMethodPayload
+				if uint64(item.Size) >= uint64(unsafe.Sizeof(mp)) {
+					m := (*C.struct_UTraceMethodPayload)(elem.payload)
+					item.Method = &UTraceMethodData{
+						Timestamp: int64(m.timestamp),
+						Addr:      uint64(m.addr),
+						GPtr:      uint64(m.gPtr),
+						Tid:       int(m.tid),
+						Cpu:       int(m.cpu),
+						IsRet:     uint32(m.isRet),
+						Comm:      goStringInBlob(elem.payload, item.Size, m.commOff),
+						Module:    goStringInBlob(elem.payload, item.Size, m.moduleOff),
+						Func:      goStringInBlob(elem.payload, item.Size, m.funcOff),
+					}
 				}
 			case UTraceFormatVTStage:
-				v := (*C.struct_UTraceVTStagePayload)(elem.payload)
-				item.VTStage = &UTraceVTStageData{
-					Timestamp:  int64(v.timestamp),
-					CarrierTid: uint64(v.carrierTid),
-					VtId:       uint64(v.vtId),
-					StageId:    uint32(v.stageId),
-					Cpu:        int(v.cpu),
-					Fd:         int32(v.fd),
-					BytesRead:  int64(v.bytesRead),
-					OsTid:      uint32(v.osTid),
-					Comm:       goStringInBlob(elem.payload, v.commOff),
+				var vp C.struct_UTraceVTStagePayload
+				if uint64(item.Size) >= uint64(unsafe.Sizeof(vp)) {
+					v := (*C.struct_UTraceVTStagePayload)(elem.payload)
+					item.VTStage = &UTraceVTStageData{
+						Timestamp:  int64(v.timestamp),
+						CarrierTid: uint64(v.carrierTid),
+						VtId:       uint64(v.vtId),
+						StageId:    uint32(v.stageId),
+						Cpu:        int(v.cpu),
+						Fd:         int32(v.fd),
+						BytesRead:  int64(v.bytesRead),
+						OsTid:      uint32(v.osTid),
+						Comm:       goStringInBlob(elem.payload, item.Size, v.commOff),
+					}
 				}
 			}
 		}
