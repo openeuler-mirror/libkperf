@@ -126,18 +126,34 @@ public final class TraceRuntime {
     }
 
     public static synchronized void stop() {
+        closeSink(detachSink());
+    }
+
+    // Quiesce immediately: disable the runtime gates, detach the sink (all record paths
+    // null-check it) AND mark it inactive (closed flag + header ACTIVE=0), so every record*
+    // entry bails on the closed check even through cached sink references. No unmapping:
+    // the caller closes the returned sink once the instrumentation sources have been
+    // removed.
+    public static synchronized AutoCloseable detachSink() {
         enabled = false;
         virtualThreadCarrierHooksEnabled = false;
 
         SharedEventSink old = sink;
         sink = null;
-
         if (old != null) {
-            try {
-                old.close();
-            } catch (Throwable t) {
-                TraceLog.warn("[trace-java-runtime] stop close sink failed: " + t, t);
-            }
+            old.markInactive();
+        }
+        return old;
+    }
+
+    public static void closeSink(AutoCloseable old) {
+        if (old == null) {
+            return;
+        }
+        try {
+            old.close();
+        } catch (Throwable t) {
+            TraceLog.warn("[trace-java-runtime] close sink failed: " + t, t);
         }
     }
 
