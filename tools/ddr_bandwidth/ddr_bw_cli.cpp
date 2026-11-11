@@ -20,6 +20,9 @@ using namespace std;
 
 static constexpr double BYTES_PER_MIB_LOCAL = 1024.0 * 1024.0;
 static constexpr double OPS_PER_MILLION = 1000.0 * 1000.0;
+static constexpr char TABLE_COLUMN_GAP[] = "  ";
+static constexpr int TABLE_COLUMN_GAP_WIDTH = sizeof(TABLE_COLUMN_GAP) - 1;
+static constexpr int RATE_CELL_WIDTH = 14;
 static const char* SHORT_OPS = "ap:d:i:h";
 static const struct option LONG_OPS[] = {
     {"all", no_argument, nullptr, 'a'},
@@ -274,9 +277,9 @@ static string ShortenRight(const string& value, size_t width)
 static void PrintRateCell(double rate, bool calibrated)
 {
     if (rate <= 0.0) {
-        cout << setw(14) << "-";
+        cout << setw(RATE_CELL_WIDTH) << "-";
     } else {
-        cout << setw(14) << rate /
+        cout << setw(RATE_CELL_WIDTH) << rate /
             (calibrated ? BYTES_PER_MIB_LOCAL : OPS_PER_MILLION);
     }
 }
@@ -314,8 +317,9 @@ static void PrintFunctionTable(BwContext& ctx, bool calibrated,
     constexpr int FUNC_WIDTH = 72;
     constexpr int MODULE_WIDTH = 45;
     constexpr int PID_WIDTH = 12;
+    constexpr int COLUMN_COUNT = 8;
     const int tableWidth = PID_WIDTH + FUNC_WIDTH + MODULE_WIDTH +
-        14 + 14 + 14 + 14 + 14;
+        RATE_CELL_WIDTH * 5 + TABLE_COLUMN_GAP_WIDTH * (COLUMN_COUNT - 1);
 
     cout << string(tableWidth, '=') << "\n"
          << (calibrated
@@ -325,19 +329,27 @@ static void PrintFunctionTable(BwContext& ctx, bool calibrated,
                                   : "SPE MEMORY OPERATION ESTIMATES BY USER FUNCTION")) << "\n"
          << string(tableWidth, '=') << "\n"
          << left << setw(PID_WIDTH) << "PID"
-         << setw(FUNC_WIDTH) << "Function"
-         << setw(MODULE_WIDTH) << "Module"
-         << right << setw(14) << (calibrated ? "Read BW" : "Read loads")
-         << setw(14) << (calibrated ? "Write BW(est*)" : "Stores(est*)")
-         << setw(14) << (calibrated ? "Total BW" : "Total(est*)")
-         << setw(14) << "Read samples" << setw(14) << "Store samples" << "\n"
+         << TABLE_COLUMN_GAP << setw(FUNC_WIDTH) << "Function"
+         << TABLE_COLUMN_GAP << setw(MODULE_WIDTH) << "Module"
+         << right << TABLE_COLUMN_GAP << setw(RATE_CELL_WIDTH)
+         << (calibrated ? "Read BW" : "Read loads")
+         << TABLE_COLUMN_GAP << setw(RATE_CELL_WIDTH)
+         << (calibrated ? "Write BW(est*)" : "Stores(est*)")
+         << TABLE_COLUMN_GAP << setw(RATE_CELL_WIDTH)
+         << (calibrated ? "Total BW" : "Total(est*)")
+         << TABLE_COLUMN_GAP << setw(RATE_CELL_WIDTH) << "Read samples"
+         << TABLE_COLUMN_GAP << setw(RATE_CELL_WIDTH) << "Store samples" << "\n"
          << left << setw(PID_WIDTH) << ""
-         << setw(FUNC_WIDTH) << ""
-         << setw(MODULE_WIDTH) << ""
-         << right << setw(14) << (calibrated ? "(MiB/s)" : "(Mops/s)")
-         << setw(14) << (calibrated ? "(MiB/s)" : "(Mops/s)")
-         << setw(14) << (calibrated ? "(MiB/s)" : "(Mops/s)")
-         << setw(10) << "" << "\n"
+         << TABLE_COLUMN_GAP << setw(FUNC_WIDTH) << ""
+         << TABLE_COLUMN_GAP << setw(MODULE_WIDTH) << ""
+         << right << TABLE_COLUMN_GAP << setw(RATE_CELL_WIDTH)
+         << (calibrated ? "(MiB/s)" : "(Mops/s)")
+         << TABLE_COLUMN_GAP << setw(RATE_CELL_WIDTH)
+         << (calibrated ? "(MiB/s)" : "(Mops/s)")
+         << TABLE_COLUMN_GAP << setw(RATE_CELL_WIDTH)
+         << (calibrated ? "(MiB/s)" : "(Mops/s)")
+         << TABLE_COLUMN_GAP << setw(RATE_CELL_WIDTH) << ""
+         << TABLE_COLUMN_GAP << setw(RATE_CELL_WIDTH) << "" << "\n"
          << string(tableWidth, '-') << "\n";
 
     int shown = 0;
@@ -346,14 +358,19 @@ static void PrintFunctionTable(BwContext& ctx, bool calibrated,
         if (stat.totalRate <= 0.0 && stat.readSamples == 0 && stat.writeSamples == 0) continue;
 
         cout << left << setw(PID_WIDTH) << stat.pid
-             << setw(FUNC_WIDTH) << ShortenLeft(stat.funcName, FUNC_WIDTH - 2)
-             << setw(MODULE_WIDTH) << ShortenRight(stat.moduleName, MODULE_WIDTH - 2)
+             << TABLE_COLUMN_GAP << setw(FUNC_WIDTH)
+             << ShortenLeft(stat.funcName, FUNC_WIDTH - 2)
+             << TABLE_COLUMN_GAP << setw(MODULE_WIDTH)
+             << ShortenRight(stat.moduleName, MODULE_WIDTH - 2)
              << right << fixed << setprecision(2);
+        cout << TABLE_COLUMN_GAP;
         PrintRateCell(stat.readRate, calibrated);
+        cout << TABLE_COLUMN_GAP;
         PrintRateCell(stat.writeRate, calibrated);
-        cout << setw(14) << stat.totalRate /
-            (calibrated ? BYTES_PER_MIB_LOCAL : OPS_PER_MILLION);
-        cout << setw(14) << stat.readSamples << setw(14) << stat.writeSamples << "\n";
+        cout << TABLE_COLUMN_GAP << setw(RATE_CELL_WIDTH) << stat.totalRate /
+                (calibrated ? BYTES_PER_MIB_LOCAL : OPS_PER_MILLION)
+             << TABLE_COLUMN_GAP << setw(RATE_CELL_WIDTH) << stat.readSamples
+             << TABLE_COLUMN_GAP << setw(RATE_CELL_WIDTH) << stat.writeSamples << "\n";
         ++shown;
     }
     if (shown == 0) cout << "No eligible SPE load/store samples.\n";
@@ -386,21 +403,34 @@ static void PrintProcessTable(const BwContext& ctx, bool calibrated,
         process.samples += stat.readSamples + stat.writeSamples;
     }
 
-    cout << "\n" << string(78, '=') << "\n"
+    constexpr int PID_WIDTH = 12;
+    constexpr int RATE_WIDTH = 16;
+    constexpr int SAMPLE_WIDTH = 14;
+    constexpr int COLUMN_COUNT = 5;
+    constexpr int TABLE_WIDTH = PID_WIDTH + RATE_WIDTH * 3 + SAMPLE_WIDTH +
+        TABLE_COLUMN_GAP_WIDTH * (COLUMN_COUNT - 1);
+
+    cout << "\n" << string(TABLE_WIDTH, '=') << "\n"
          << (calibrated ? "CPU DDR BANDWIDTH BY PROCESS (USER-SPACE)"
                         : "SPE MEMORY OPERATION ESTIMATES BY PROCESS (USER-SPACE)") << "\n"
-         << string(78, '=') << "\n"
-         << left << setw(12) << "PID"
-         << right << setw(16) << (calibrated ? "Read BW" : "Read loads")
-         << setw(16) << (calibrated ? "Write BW(est*)" : "Stores(est*)")
-         << setw(16) << (calibrated ? "Total BW" : "Total(est*)")
-         << setw(14) << "Samples" << "\n"
-         << left << setw(12) << ""
-         << right << setw(16) << (calibrated ? "(MiB/s)" : "(Mops/s)")
-         << setw(16) << (calibrated ? "(MiB/s)" : "(Mops/s)")
-         << setw(16) << (calibrated ? "(MiB/s)" : "(Mops/s)")
-         << setw(14) << "" << "\n"
-         << string(78, '-') << "\n";
+         << string(TABLE_WIDTH, '=') << "\n"
+         << left << setw(PID_WIDTH) << "PID"
+         << right << TABLE_COLUMN_GAP << setw(RATE_WIDTH)
+         << (calibrated ? "Read BW" : "Read loads")
+         << TABLE_COLUMN_GAP << setw(RATE_WIDTH)
+         << (calibrated ? "Write BW(est*)" : "Stores(est*)")
+         << TABLE_COLUMN_GAP << setw(RATE_WIDTH)
+         << (calibrated ? "Total BW" : "Total(est*)")
+         << TABLE_COLUMN_GAP << setw(SAMPLE_WIDTH) << "Samples" << "\n"
+         << left << setw(PID_WIDTH) << ""
+         << right << TABLE_COLUMN_GAP << setw(RATE_WIDTH)
+         << (calibrated ? "(MiB/s)" : "(Mops/s)")
+         << TABLE_COLUMN_GAP << setw(RATE_WIDTH)
+         << (calibrated ? "(MiB/s)" : "(Mops/s)")
+         << TABLE_COLUMN_GAP << setw(RATE_WIDTH)
+         << (calibrated ? "(MiB/s)" : "(Mops/s)")
+         << TABLE_COLUMN_GAP << setw(SAMPLE_WIDTH) << "" << "\n"
+         << string(TABLE_WIDTH, '-') << "\n";
 
     vector<ProcessBwStat> rows;
     rows.reserve(processes.size());
@@ -436,14 +466,14 @@ static void PrintProcessTable(const BwContext& ctx, bool calibrated,
         }
 
         const double unitScale = calibrated ? BYTES_PER_MIB_LOCAL : OPS_PER_MILLION;
-        cout << left << setw(12) << p.pid
+        cout << left << setw(PID_WIDTH) << p.pid
              << right << fixed << setprecision(2)
-             << setw(16) << readRate / unitScale
-             << setw(16) << writeRate / unitScale
-             << setw(16) << (readRate + writeRate) / unitScale
-             << setw(14) << p.samples << "\n";
+             << TABLE_COLUMN_GAP << setw(RATE_WIDTH) << readRate / unitScale
+             << TABLE_COLUMN_GAP << setw(RATE_WIDTH) << writeRate / unitScale
+             << TABLE_COLUMN_GAP << setw(RATE_WIDTH) << (readRate + writeRate) / unitScale
+             << TABLE_COLUMN_GAP << setw(SAMPLE_WIDTH) << p.samples << "\n";
     }
-    cout << string(78, '-') << "\n";
+    cout << string(TABLE_WIDTH, '-') << "\n";
 }
 
 static void PrintPcieTable(const BwContext& ctx, double durationSec)
