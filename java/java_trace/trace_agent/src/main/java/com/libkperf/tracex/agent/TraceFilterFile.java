@@ -28,7 +28,6 @@ public final class TraceFilterFile {
     private static final int MAX_CONTEXT_DEPTH = 5;
     private static final int MAX_CONTEXT_METHODS = 4096;
     private static final long MAX_SLOTS_PER_RING = 1L << 22;
-    private static final long MAX_CONSUMER_THREADS = 64L;
     private static final long MAX_RING_COUNT = 65536L;
     private static final String JAVA_INCLUDE = "java_include";
     private static final String JAVA_EXCLUDE = "java_exclude";
@@ -133,13 +132,6 @@ public final class TraceFilterFile {
                                 return invalid(out, path, lineNo, "invalid ring_count", v);
                             }
                             out.ringCount = parsed.longValue();
-                        }
-                    } else if ("consumer_threads".equals(k)) {
-                        // Consumer-side knob, validated by the collector. The agent must accept
-                        // the key because the same trace_filter.conf is shipped to the JVM.
-                        Long parsed = parsePositiveLong(v);
-                        if (parsed == null || parsed.longValue() > MAX_CONSUMER_THREADS) {
-                            return invalid(out, path, lineNo, "invalid consumer_threads", v);
                         }
                     } else if ("log_level".equals(k)) {
                         if (!isValidLogLevel(v)) {

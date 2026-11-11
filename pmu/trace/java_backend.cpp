@@ -28,7 +28,6 @@
 #include <dirent.h>
 #include <fstream>
 #include <sstream>
-#include <thread>
 #include <vector>
 #include <fcntl.h>
 #include <signal.h>
@@ -502,7 +501,6 @@ static int PrepareJavaBackendOpen(JavaBackendImpl *impl, int pid, const char *in
         return -1;
     }
     impl->slotsPerRing = localConfig.slotsPerRing;
-    impl->consumerThreads = localConfig.consumerThreads;
     impl->enableVTStage = localConfig.enableVTStage || enableVTStage;
     impl->shmName = "utrace_java_" + std::to_string(pid) + "_" + TimestampSuffix();
     // One ring per usable CPU of the target, matching the agent's availableProcessors().
@@ -582,13 +580,11 @@ struct DecodedRecord {
     UTraceData data{};
 };
 
-// Per-shard state for parallel ring scanning. Shards own disjoint ring ranges and
-// disjoint ringReadSeq slots, so no additional synchronization is needed.
-struct RingReadShard {
+// State shared by the ring scan helpers of one read round. Rings are visited one by
+// one, so ringReadSeq needs no synchronization beyond the single consumer thread.
+struct RingDecoder {
     const uint8_t *mem{nullptr};
     JavaBackendImpl *impl{nullptr};
-    uint32_t beginRing{0};
-    uint32_t endRing{0};
     uint64_t descOffset{0};
     uint64_t eventOffset{0};
     uint64_t ringDataBytes{0};
@@ -602,12 +598,11 @@ struct RingReadShard {
     bool allocFailed{false};
 };
 
-// Decode one published slot into a UTraceData record. Returns false only when the
 // Decode one published VT_STAGE slot and build its payload. Returns nullptr on allocation failure.
-static void *DecodeVtStageSlot(RingReadShard *shard, const uint8_t *slot, int64_t *outTs,
+static void *DecodeVtStageSlot(RingDecoder *decoder, const uint8_t *slot, int64_t *outTs,
                                unsigned *outPayloadSize)
 {
-    const uint8_t *mem = shard->mem;
+    const uint8_t *mem = decoder->mem;
     // VT_STAGE field group: only the lifecycle fields are present.
     const uint64_t carrierTid = LoadAt<uint64_t>(slot, K_SLOT_VT_CARRIER_TID);
     const uint64_t vtId = LoadAt<uint64_t>(slot, K_SLOT_VT_VT_ID);
@@ -622,7 +617,7 @@ static void *DecodeVtStageSlot(RingReadShard *shard, const uint8_t *slot, int64_
     const std::string carrierComm = ResolveCarrierComm(mem, commId, static_cast<int32_t>(osTid),
                                                        vtMismatched);
     if (vtMismatched) {
-        ++shard->metadataMismatch;
+        ++decoder->metadataMismatch;
     }
     *outTs = timestamp;
     return BuildVTStagePayload(timestamp, carrierTid, vtId, stageId, cpu, fd, bytes, osTid,
@@ -630,10 +625,10 @@ static void *DecodeVtStageSlot(RingReadShard *shard, const uint8_t *slot, int64_
 }
 
 // Decode one published METHOD slot and build its payload. Returns nullptr on allocation failure.
-static void *DecodeMethodSlot(RingReadShard *shard, const uint8_t *slot, int64_t *outTs,
+static void *DecodeMethodSlot(RingDecoder *decoder, const uint8_t *slot, int64_t *outTs,
                               unsigned *outPayloadSize)
 {
-    const uint8_t *mem = shard->mem;
+    const uint8_t *mem = decoder->mem;
     // METHOD field group.
     const uint64_t addr = LoadAt<uint64_t>(slot, K_SLOT_METHOD_ADDR);
     const int32_t namespaceTid = LoadAt<int32_t>(slot, K_SLOT_METHOD_TID);
@@ -649,11 +644,11 @@ static void *DecodeMethodSlot(RingReadShard *shard, const uint8_t *slot, int64_t
     bool mismatched = false;
     ResolveTraceDataStrings(comm, module, func, mem, addr, namespaceTid, methodId, commId, mismatched);
     if (mismatched) {
-        ++shard->metadataMismatch;
+        ++decoder->metadataMismatch;
     }
     int tid = -1;
-    auto hostTid = shard->impl->hostTidByNamespaceTid.find(namespaceTid);
-    if (hostTid != shard->impl->hostTidByNamespaceTid.end()) {
+    auto hostTid = decoder->impl->hostTidByNamespaceTid.find(namespaceTid);
+    if (hostTid != decoder->impl->hostTidByNamespaceTid.end()) {
         tid = hostTid->second;
     }
     // DATA_TYPE_METHOD: METHOD_IS_RET is the enter/exit or vthread-transition marker.
@@ -665,19 +660,19 @@ static void *DecodeMethodSlot(RingReadShard *shard, const uint8_t *slot, int64_t
 
 // Decode one published slot into a UTraceData record. Returns false only when the
 // payload allocation failed; the caller frees already decoded records in that case.
-static bool DecodeSlotRecord(RingReadShard *shard, const uint8_t *slot, UTraceData *out, int64_t *outTs)
+static bool DecodeSlotRecord(RingDecoder *decoder, const uint8_t *slot, UTraceData *out, int64_t *outTs)
 {
     unsigned payloadSize = 0;
     void *payload = nullptr;
     if (LoadAt<int16_t>(slot, K_SLOT_DATA_TYPE) == K_DATA_TYPE_VT_STAGE) {
-        payload = DecodeVtStageSlot(shard, slot, outTs, &payloadSize);
+        payload = DecodeVtStageSlot(decoder, slot, outTs, &payloadSize);
         out->format = UTRACE_FMT_VT_STAGE;
     } else {
-        payload = DecodeMethodSlot(shard, slot, outTs, &payloadSize);
+        payload = DecodeMethodSlot(decoder, slot, outTs, &payloadSize);
         out->format = UTRACE_FMT_METHOD;
     }
     if (payload == nullptr) {
-        shard->allocFailed = true;
+        decoder->allocFailed = true;
         return false;
     }
     out->size = payloadSize;
@@ -685,70 +680,67 @@ static bool DecodeSlotRecord(RingReadShard *shard, const uint8_t *slot, UTraceDa
     return true;
 }
 
-// Scan [beginRing, endRing) of the per-ring descriptor table and decode new events.
-static void DecodeRingRange(RingReadShard *shard)
+// Decode the unpublished slots of one ring. Stops early when a payload allocation fails,
+// leaving that ring's cursor uncommitted so the next poll re-reads the same range.
+static void DecodeRing(RingDecoder *decoder, uint32_t ring)
 {
-    for (uint32_t ring = shard->beginRing; ring < shard->endRing; ++ring) {
-        const uint8_t *desc = shard->mem + shard->descOffset + static_cast<size_t>(ring) * K_DESC_SIZE;
-        const uint64_t writeSeq = LoadAtAcquire<uint64_t>(desc, K_DESC_WRITE_SEQ);
-        shard->totalWrite += writeSeq;
-        if (writeSeq == 0) {
-            continue;
-        }
-        const uint64_t read = shard->impl->ringReadSeq[ring];
-        if (writeSeq <= read) {
-            continue;
-        }
-        const uint64_t slotsPerRing = shard->slotsPerRing;
-        const uint64_t oldest = writeSeq > slotsPerRing ? writeSeq - slotsPerRing + 1 : 1;
-        const uint64_t startSeq = std::max<uint64_t>(read + 1, oldest);
-        if (oldest > read + 1) {
-            shard->overwritten += oldest - (read + 1);
-        }
-        const uint8_t *ringBase = shard->mem + static_cast<size_t>(shard->eventOffset) +
-                                  static_cast<size_t>(ring) * shard->ringDataBytes;
-        for (uint64_t seq = startSeq; seq <= writeSeq; ++seq) {
-            const uint8_t *slot = ringBase + static_cast<size_t>((seq - 1) % slotsPerRing) * K_SLOT_SIZE;
-            const uint64_t slotSeq = LoadAtAcquire<uint64_t>(slot, K_SLOT_SEQ);
-            if (slotSeq != seq) {
-                ++shard->seqMismatch;
-                continue;
-            }
-            DecodedRecord record;
-            if (!DecodeSlotRecord(shard, slot, &record.data, &record.timestamp)) {
-                return;
-            }
-            // Seqlock revalidation: the acquire fence orders the payload loads above before
-            // the marker re-read, so an overwrite that started after the first check is
-            // detected here and the record is dropped (not delivered) instead of torn.
-            std::atomic_thread_fence(std::memory_order_acquire);
-            if (LoadAt<uint64_t>(slot, K_SLOT_SEQ) != seq) {
-                ++shard->seqMismatch;
-                FreeTraceDataFields(record.data);
-                continue;
-            }
-            shard->records.push_back(record);
-        }
-        shard->cursors.emplace_back(ring, writeSeq);
+    const uint8_t *desc = decoder->mem + decoder->descOffset + static_cast<size_t>(ring) * K_DESC_SIZE;
+    const uint64_t writeSeq = LoadAtAcquire<uint64_t>(desc, K_DESC_WRITE_SEQ);
+    decoder->totalWrite += writeSeq;
+    if (writeSeq == 0) {
+        return;
     }
+    const uint64_t read = decoder->impl->ringReadSeq[ring];
+    if (writeSeq <= read) {
+        return;
+    }
+    const uint64_t slotsPerRing = decoder->slotsPerRing;
+    const uint64_t oldest = writeSeq > slotsPerRing ? writeSeq - slotsPerRing + 1 : 1;
+    const uint64_t startSeq = std::max<uint64_t>(read + 1, oldest);
+    if (oldest > read + 1) {
+        decoder->overwritten += oldest - (read + 1);
+    }
+    const uint8_t *ringBase = decoder->mem + static_cast<size_t>(decoder->eventOffset) +
+                              static_cast<size_t>(ring) * decoder->ringDataBytes;
+    for (uint64_t seq = startSeq; seq <= writeSeq; ++seq) {
+        const uint8_t *slot = ringBase + static_cast<size_t>((seq - 1) % slotsPerRing) * K_SLOT_SIZE;
+        const uint64_t slotSeq = LoadAtAcquire<uint64_t>(slot, K_SLOT_SEQ);
+        if (slotSeq != seq) {
+            ++decoder->seqMismatch;
+            continue;
+        }
+        DecodedRecord record;
+        if (!DecodeSlotRecord(decoder, slot, &record.data, &record.timestamp)) {
+            return;
+        }
+        // Seqlock revalidation: the acquire fence orders the payload loads above before
+        // the marker re-read, so an overwrite that started after the first check is
+        // detected here and the record is dropped (not delivered) instead of torn.
+        std::atomic_thread_fence(std::memory_order_acquire);
+        if (LoadAt<uint64_t>(slot, K_SLOT_SEQ) != seq) {
+            ++decoder->seqMismatch;
+            FreeTraceDataFields(record.data);
+            continue;
+        }
+        decoder->records.push_back(record);
+    }
+    decoder->cursors.emplace_back(ring, writeSeq);
 }
 
 // Commit per-ring read cursors so the next poll continues after the decoded range.
-static void CommitRingCursors(JavaBackendImpl *impl, const std::vector<RingReadShard> &shards)
+static void CommitRingCursors(JavaBackendImpl *impl, const RingDecoder *decoder)
 {
-    for (const auto &shard : shards) {
-        for (const auto &cursor : shard.cursors) {
-            impl->ringReadSeq[cursor.first] = cursor.second;
-        }
+    for (const auto &cursor : decoder->cursors) {
+        impl->ringReadSeq[cursor.first] = cursor.second;
     }
 }
 
-static void FreeShardRecords(RingReadShard *shard)
+static void FreeDecodedRecords(std::vector<DecodedRecord> *records)
 {
-    for (auto &record : shard->records) {
+    for (auto &record : *records) {
         FreeTraceDataFields(record.data);
     }
-    shard->records.clear();
+    records->clear();
 }
 } // namespace
 
@@ -882,69 +874,32 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
         impl->ringReadSeq.resize(ringCount, 0);
     }
 
-    // Split the active ring range over the configured consumer threads.
-    size_t shardCount = impl->consumerThreads > 0 ? impl->consumerThreads : 1;
-    if (shardCount > scanRings) {
-        shardCount = scanRings == 0 ? 1 : scanRings;
-    }
-    std::vector<RingReadShard> shards(shardCount);
-    for (size_t i = 0; i < shardCount; ++i) {
-        RingReadShard &shard = shards[i];
-        shard.mem = mem;
-        shard.impl = impl;
-        shard.beginRing = static_cast<uint32_t>(static_cast<uint64_t>(scanRings) * i / shardCount);
-        shard.endRing = static_cast<uint32_t>(static_cast<uint64_t>(scanRings) * (i + 1) / shardCount);
-        shard.descOffset = descOffset;
-        shard.eventOffset = eventOffset;
-        shard.ringDataBytes = static_cast<uint64_t>(slotsPerRing) * K_SLOT_SIZE;
-        shard.slotsPerRing = slotsPerRing;
-    }
-    if (shardCount == 1) {
-        DecodeRingRange(&shards[0]);
-    } else {
-        std::vector<std::thread> pool;
-        pool.reserve(shardCount - 1);
-        for (size_t i = 1; i < shardCount; ++i) {
-            pool.emplace_back(DecodeRingRange, &shards[i]);
-        }
-        DecodeRingRange(&shards[0]);
-        for (auto &worker : pool) {
-            worker.join();
-        }
+    RingDecoder decoder;
+    decoder.mem = mem;
+    decoder.impl = impl;
+    decoder.descOffset = descOffset;
+    decoder.eventOffset = eventOffset;
+    decoder.ringDataBytes = static_cast<uint64_t>(slotsPerRing) * K_SLOT_SIZE;
+    decoder.slotsPerRing = slotsPerRing;
+    for (uint32_t ring = 0; ring < scanRings && !decoder.allocFailed; ++ring) {
+        DecodeRing(&decoder, ring);
     }
 
-    uint64_t totalWrite = 0;
-    uint64_t overwritten = 0;
-    uint64_t seqMismatch = 0;
-    uint64_t metadataMismatch = 0;
     uint64_t lateDropped = 0;
-    size_t total = 0;
-    bool allocFailed = false;
     for (uint32_t r = 0; r < scanRings; ++r) {
         const uint8_t *desc = mem + descOffset + static_cast<size_t>(r) * K_DESC_SIZE;
         lateDropped += LoadAtAcquire<uint64_t>(desc, K_DESC_LATE_DROPS);
     }
-    for (auto &shard : shards) {
-        totalWrite += shard.totalWrite;
-        overwritten += shard.overwritten;
-        seqMismatch += shard.seqMismatch;
-        metadataMismatch += shard.metadataMismatch;
-        total += shard.records.size();
-        if (shard.allocFailed) {
-            allocFailed = true;
-        }
-    }
+    const size_t total = decoder.records.size();
 
-    if (overwritten > 0) {
-        JavaTraceLog(MakeLogMessage("[trace-java] warning: consumer lagged behind, ", overwritten,
+    if (decoder.overwritten > 0) {
+        JavaTraceLog(MakeLogMessage("[trace-java] warning: consumer lagged behind, ", decoder.overwritten,
             " events overwritten this round: increase slots_per_ring in trace_filter.conf",
             " or shorten the read interval\n"));
     }
 
-    if (allocFailed) {
-        for (auto &shard : shards) {
-            FreeShardRecords(&shard);
-        }
+    if (decoder.allocFailed) {
+        FreeDecodedRecords(&decoder.records);
         JavaTraceLog(MakeLogMessage(
             "[trace-java] JavaBackendRead failed: payload alloc failed, decoded=", total, "\n"));
         return K_READ_ERR_PAYLOAD_ALLOC;
@@ -952,62 +907,52 @@ int JavaBackendRead(JavaBackendImpl *impl, UTraceData **out_data, size_t *out_co
 
     // No new events in any ring yet: keep the original single-shot empty diagnostic.
     if (total == 0) {
-        CommitRingCursors(impl, shards);
-        if (impl->lastEmptyReadTotalSeq != totalWrite) {
+        CommitRingCursors(impl, &decoder);
+        if (impl->lastEmptyReadTotalSeq != decoder.totalWrite) {
             JavaTraceLog(MakeLogMessage("[trace-java] collected: events=0", ", methods=", methodCount,
                 ", threads=", threadCount, ", dropped=", dropped,
                 ", late_dropped=", lateDropped, "\n"));
-            impl->lastEmptyReadTotalSeq = totalWrite;
+            impl->lastEmptyReadTotalSeq = decoder.totalWrite;
         }
         return 0;
     }
 
-    // Merge shards by timestamp: records inside one ring keep issue order and the
-    // final stable sort restores a globally time-ordered stream for the pipeline.
-    std::vector<DecodedRecord> flat;
-    flat.reserve(total);
-    for (auto &shard : shards) {
-        for (auto &record : shard.records) {
-            flat.push_back(record);
-        }
-        shard.records.clear();
-    }
-    std::stable_sort(flat.begin(), flat.end(),
+    // Records inside one ring keep issue order; the stable sort restores a globally
+    // time-ordered stream for the pipeline.
+    std::stable_sort(decoder.records.begin(), decoder.records.end(),
                      [](const DecodedRecord &left, const DecodedRecord &right) {
                          return left.timestamp < right.timestamp;
                      });
 
-    size_t allocSize = sizeof(size_t) + flat.size() * sizeof(UTraceData);
+    size_t allocSize = sizeof(size_t) + total * sizeof(UTraceData);
     uint8_t *raw = static_cast<uint8_t *>(std::calloc(1, allocSize));
     if (raw == nullptr) {
-        for (auto &record : flat) {
-            FreeTraceDataFields(record.data);
-        }
+        FreeDecodedRecords(&decoder.records);
         return K_READ_ERR_RESULT_ALLOC;
     }
     UTraceData *block = reinterpret_cast<UTraceData *>(raw + sizeof(size_t));
-    for (size_t i = 0; i < flat.size(); ++i) {
-        block[i] = flat[i].data;
+    for (size_t i = 0; i < total; ++i) {
+        block[i] = decoder.records[i].data;
     }
 
     // Advance per-ring cursors only after the output block exists; alloc failures above
     // keep the old cursors so the next poll re-reads the same range.
-    CommitRingCursors(impl, shards);
+    CommitRingCursors(impl, &decoder);
 
-    size_t stored = flat.size();
+    size_t stored = total;
     std::memcpy(raw, &stored, sizeof(size_t));
     *out_data = block;
     *out_count = stored;
-    impl->lastEmptyReadTotalSeq = totalWrite;
+    impl->lastEmptyReadTotalSeq = decoder.totalWrite;
     JavaTraceLog(MakeLogMessage("[trace-java] collected: events=", stored,
                                 ", methods=", methodCount,
                                 ", threads=", threadCount,
                                 ", rings=", scanRings,
                                 ", dropped=", dropped,
                                 ", late_dropped=", lateDropped,
-                                ", overwritten=", overwritten,
-                                ", seqMismatch=", seqMismatch,
-                                ", metadataMismatch=", metadataMismatch, "\n"));
+                                ", overwritten=", decoder.overwritten,
+                                ", seqMismatch=", decoder.seqMismatch,
+                                ", metadataMismatch=", decoder.metadataMismatch, "\n"));
     return 0;
 }
 

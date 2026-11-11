@@ -37,7 +37,6 @@ struct SplitTraceAttr {
 
 struct JavaTraceLocalConfig {
     uint32_t slotsPerRing;
-    uint32_t consumerThreads;
     // -1: one ring per target-affinity CPU (auto); >0: use min(configured, affinity CPUs).
     int32_t ringCount;
     bool enableVTStage;
