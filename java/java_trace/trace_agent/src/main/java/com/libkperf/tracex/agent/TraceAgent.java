@@ -67,13 +67,16 @@ public final class TraceAgent {
         try {
             start(config, inst);
         } catch (Throwable t) {
-            TraceRuntime.stop();
+            // Same quiesce-before-unmap order as runControlAction: detach + mark inactive
+            // first, remove the transformer, only then unmap.
+            AutoCloseable oldSink = TraceRuntime.detachSink();
             VTStageCollector.setEnabled(false);
             try {
                 removeActiveTransformer();
             } catch (Throwable removeError) {
                 t.addSuppressed(removeError);
             }
+            TraceRuntime.closeSink(oldSink);
             TraceLog.warn("[trace-java-agent] start failed: " + t, t);
             rethrow(t);
         }
@@ -94,10 +97,15 @@ public final class TraceAgent {
 
     private static void runControlAction(String action, Instrumentation inst) {
         try {
-            TraceRuntime.stop();
+            // Cut off record sources first (sink detached + marked inactive, collectors
+            // disabled), then remove the transformer and restore bytecode, and only then
+            // unmap: close no longer races still-instrumented callers writing into a
+            // munmapped region.
+            AutoCloseable oldSink = TraceRuntime.detachSink();
             VTStageCollector.setEnabled(false);
             if ("stop".equalsIgnoreCase(action)) {
                 removeActiveTransformer();
+                TraceRuntime.closeSink(oldSink);
                 return;
             }
             if (removeActiveTransformer()) {
@@ -109,6 +117,7 @@ public final class TraceAgent {
             } else {
                 TraceLog.warn("[trace-java-agent] restore deferred: active transformer removal failed", null);
             }
+            TraceRuntime.closeSink(oldSink);
         } catch (ThreadDeath t) {
             throw t;
         } catch (VirtualMachineError e) {

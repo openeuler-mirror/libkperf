@@ -171,6 +171,7 @@ final class SharedEventSink implements AutoCloseable {
             new ConcurrentHashMap<Integer, Integer>();
     private final AtomicLong droppedEvents = new AtomicLong(0L);
     private volatile boolean closed;
+    private boolean unmapped;
 
     private static final class ThreadMetadataKey {
         private final int tid;
@@ -706,8 +707,11 @@ final class SharedEventSink implements AutoCloseable {
         target.putLong(offset, value);
     }
 
-    @Override
-    public synchronized void close() {
+    // Cut off new writers immediately without unmapping: isActive() checks the local closed
+    // flag first, so every record*/register* entry bails here; the header flag stops
+    // external consumers. The unmap happens later in close(), after the callers have
+    // quiesced the instrumentation sources (detachSink + removeActiveTransformer).
+    synchronized void markInactive() {
         if (closed) {
             return;
         }
@@ -716,15 +720,30 @@ final class SharedEventSink implements AutoCloseable {
             putIntRelease(HEADER_ACTIVE, 0);
         } catch (RuntimeException | LinkageError ignored) {
         }
+    }
 
-        // Fixed grace period replaces per-writer accounting: a writer that passed its
-        // isActive check finishes its stores within a few hundred nanoseconds, so unmapping
-        // after 1 s is safe for every interleaving except a multi-second OS preemption.
-        long deadline = System.nanoTime() + CLOSE_WAIT_NANOS;
-        while (System.nanoTime() - deadline < 0L) {
-            Thread.yield();
+    @Override
+    public synchronized void close() {
+        markInactive();
+        if (unmapped) {
+            return;
         }
 
+        // Fixed grace period: a writer that passed its isActive check finishes its stores
+        // within a few hundred nanoseconds, and sources are already quiesced (detachSink +
+        // removeActiveTransformer), so unmapping after 1 s is safe for every interleaving
+        // except a multi-second OS preemption. Sleep (not a yield spin) so the waiting
+        // thread burns no CPU on the control path.
+        long deadline = System.nanoTime() + CLOSE_WAIT_NANOS;
+        for (long remain = CLOSE_WAIT_NANOS; remain > 0L; remain = deadline - System.nanoTime()) {
+            try {
+                Thread.sleep(remain / 1000000L, (int) (remain % 1000000L));
+            } catch (InterruptedException ignored) {
+                // Keep waiting out the full grace period; an interrupt must not shorten it.
+            }
+        }
+
+        unmapped = true;
         for (Ring ring : rings) {
             BufferCleaner.clean(ring.data);
         }
