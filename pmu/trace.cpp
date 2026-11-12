@@ -1109,6 +1109,8 @@ int UTraceOpen(struct UTraceAttr *attr)
     bool hasJavaSymbols = !split.javaSymSrc.empty();
     bool hasJavaConfig = !filter.javaIncludes.empty();
     bool wantVtStage = attr->vtStage != 0;
+    TraceLog(MakeLogMessage("[trace] java trace request: hasJavaSymbols=", hasJavaSymbols ? "true" : "false",
+        ", hasJavaConfig=", hasJavaConfig ? "true" : "false", ", vtStage=", wantVtStage ? "true" : "false", "\n"));
     bool isJvm = (hasJavaSymbols || hasJavaConfig || wantVtStage) && IsJvmProcess(attr->pidList[0]);
     if (hasJavaSymbols && !isJvm) {
         pcerr::New(LIBPERF_ERR_UTRACE_JAVA_PROCESS_FAILED, "Java symbols were requested, but target process is not a JVM");
