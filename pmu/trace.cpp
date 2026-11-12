@@ -1108,14 +1108,16 @@ int UTraceOpen(struct UTraceAttr *attr)
     SplitTraceAttr split = SplitSymbolsByRegex(&userAttr);
     bool hasJavaSymbols = !split.javaSymSrc.empty();
     bool hasJavaConfig = !filter.javaIncludes.empty();
-    bool isJvm = (hasJavaSymbols || hasJavaConfig) && IsJvmProcess(attr->pidList[0]);
+    bool wantVtStage = attr->vtStage != 0;
+    bool isJvm = (hasJavaSymbols || hasJavaConfig || wantVtStage) && IsJvmProcess(attr->pidList[0]);
     if (hasJavaSymbols && !isJvm) {
         pcerr::New(LIBPERF_ERR_UTRACE_JAVA_PROCESS_FAILED, "Java symbols were requested, but target process is not a JVM");
         return -1;
     }
-    bool hasJavaRequest = hasJavaSymbols || (hasJavaConfig && isJvm);
-    if (attr->vtStage != 0 && !hasJavaRequest) {
-        TraceLog("[trace] vtStage is set but no Java trace is requested; "
+    // A JVM target with vtStage instruments even without Java symbols or [java_include] rules.
+    bool hasJavaRequest = hasJavaSymbols || (isJvm && (hasJavaConfig || wantVtStage));
+    if (wantVtStage && !hasJavaRequest) {
+        TraceLog("[trace] vtStage is set but the target is not instrumented as a JVM; "
                  "virtual thread stages are only collected for JVM targets\n");
     }
     if (!hasJavaRequest) {
