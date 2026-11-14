@@ -440,7 +440,8 @@ static bool OpenSpeCollector(const ArgsContext& act, CollectorSet& set)
     attr.dataFilter = static_cast<SpeFilter>(LOAD_FILTER | STORE_FILTER | TS_ENABLE | JITTER);
     attr.evFilter = SPE_EVENT_RETIRED;
     attr.minLatency = act.minLatency;
-    attr.symbolMode = RESOLVE_ELF;
+    // Function symbols are resolved only after the tool filters each SPE sample.
+    attr.symbolMode = NO_SYMBOL_RESOLVE;
     attr.excludeKernel = false;
     attr.pidList = nullptr;
     attr.numPid = 0;
