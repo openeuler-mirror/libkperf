@@ -60,6 +60,8 @@ void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
                      const std::vector<int>& targetPids, SpeWindowState& windows,
                      int64_t readEndNs);
 bool ReadDdrcInterval(int pd, PmuDeviceAttr* attrs, unsigned attrLen, double& readBytes, double& writeBytes);
+bool IsValidPcieBdf(const std::string& bdf);
+bool PcieBdfExists(const std::string& bdf);
 bool IsPciBridge(const std::string& bdf);
 bool PrimePmuRead(int pd, double& readSec, std::string& error);
 bool OpenPcieCollector(const std::string& bdf, PcieCollector& collector, std::string& error);

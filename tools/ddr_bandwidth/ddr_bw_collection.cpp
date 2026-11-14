@@ -279,7 +279,7 @@ static size_t SealWindow(BwContext& ctx, SpeWindowState& windows,
     window.speValid = windows.open.valid;
     window.pcieValid = pcieReadOk;
     const bool pcieIncomplete = pcieAttempted && !pcieReadOk;
-    window.valid = window.ddrcValid && window.speValid && !pcieIncomplete;
+    window.valid = window.ddrcValid && window.speValid;
     window.ddrcReadBytes = ddrcRead;
     window.ddrcWriteBytes = ddrcWrite;
 
@@ -288,7 +288,7 @@ static size_t SealWindow(BwContext& ctx, SpeWindowState& windows,
         ctx.traffic.ddrcWriteBytes += ddrcWrite;
     }
     // An incomplete PCIe snapshot has an unknown DMA component. Keep the DDRC
-    // physical total, but do not deduct DMA or attribute that window to functions.
+    // physical total and continue SPE attribution without deducting DMA.
     if (ddrcReadOk && pcieIncomplete) {
         ++ctx.traffic.pcieIncompleteWindows;
     }
@@ -521,7 +521,8 @@ static bool EnableCollectors(CollectorSet& set)
     if (set.pcieOpened) {
         for (auto& collector : set.pcieCollectors) {
             if (PmuEnable(collector.pd) != 0) {
-                cerr << "Warning: failed to enable PCIe PMU for BDF " << collector.bdf << " (" << Perror() << ").\n";
+                cerr << "Warning: failed to enable PCIe PMU for BDF " << collector.bdf
+                     << " (" << Perror() << ").\n";
                 PmuClose(collector.pd);
                 collector.pd = -1;
             } else {
@@ -557,7 +558,8 @@ static bool PrimeCollectors(CollectorSet& set)
             collector.synchronized = true;
             ++primed;
         } else {
-            cerr << "Warning: PCIe baseline read failed for BDF " << collector.bdf << " (" << error << ").\n";
+            cerr << "Warning: PCIe baseline read failed for BDF " << collector.bdf
+                 << " (" << error << ").\n";
             PmuClose(collector.pd);
             collector.pd = -1;
         }
@@ -711,7 +713,7 @@ static void CollectCounterWindow(const ArgsContext& act, CollectorSet& set, BwCo
             cerr << "Warning: incomplete PCIe counter window (successful="
                  << pcieResult.succeeded << ", failed=" << pcieResult.failed
                  << ", resynchronized=" << pcieResult.resynchronized
-                 << "); DMA deduction and function attribution are skipped";
+                 << "); DMA deduction is skipped and SPE/DDRC attribution continues";
             if (!pcieResult.incompleteBdfs.empty()) {
                 cerr << " for BDF(s):";
                 for (const auto& bdf : pcieResult.incompleteBdfs) {

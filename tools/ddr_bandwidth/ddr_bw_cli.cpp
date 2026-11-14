@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
+#include <cmath>
 #include <limits>
 #include <cstdio>
 #include <cstdlib>
@@ -16,6 +17,7 @@
 #include <vector>
 #include "ddr_bw_cli.h"
 #include "ddr_bw_collection.h"
+#include "ddr_bw_pmu.h"
 using namespace std;
 
 static constexpr double BYTES_PER_MIB_LOCAL = 1024.0 * 1024.0;
@@ -189,6 +191,15 @@ bool ParseArgs(int argc, char** argv, ArgsContext& act)
             case 1004:
                 if (optarg == nullptr || *optarg == '\0') {
                     cerr << "Error: --pcie-bdf requires a non-empty BDF.\n";
+                    return false;
+                }
+                if (!IsValidPcieBdf(optarg)) {
+                    cerr << "Error: invalid --pcie-bdf '" << optarg
+                         << "'; expected bb:dd.f.\n";
+                    return false;
+                }
+                if (!PcieBdfExists(optarg)) {
+                    cerr << "Error: PCIe BDF '" << optarg << "' does not exist.\n";
                     return false;
                 }
                 act.pcieBdfs.emplace_back(optarg);
@@ -466,11 +477,13 @@ static void PrintProcessTable(const BwContext& ctx, bool calibrated,
         }
 
         const double unitScale = calibrated ? BYTES_PER_MIB_LOCAL : OPS_PER_MILLION;
+        const double readDisplay = round(readRate / unitScale * 100.0) / 100.0;
+        const double writeDisplay = round(writeRate / unitScale * 100.0) / 100.0;
         cout << left << setw(PID_WIDTH) << p.pid
              << right << fixed << setprecision(2)
-             << TABLE_COLUMN_GAP << setw(RATE_WIDTH) << readRate / unitScale
-             << TABLE_COLUMN_GAP << setw(RATE_WIDTH) << writeRate / unitScale
-             << TABLE_COLUMN_GAP << setw(RATE_WIDTH) << (readRate + writeRate) / unitScale
+             << TABLE_COLUMN_GAP << setw(RATE_WIDTH) << readDisplay
+             << TABLE_COLUMN_GAP << setw(RATE_WIDTH) << writeDisplay
+             << TABLE_COLUMN_GAP << setw(RATE_WIDTH) << readDisplay + writeDisplay
              << TABLE_COLUMN_GAP << setw(SAMPLE_WIDTH) << p.samples << "\n";
     }
     cout << string(TABLE_WIDTH, '-') << "\n";
@@ -581,8 +594,8 @@ void PrintSummary(BwContext& ctx, bool ddrcOpened, bool pcieOpened,
         }
         if (ctx.traffic.pcieIncompleteWindows > 0) {
             cout << "PCIe: " << ctx.traffic.pcieIncompleteWindows
-                 << " incomplete windows; DMA deduction and function attribution "
-                    "were skipped for those windows.\n";
+                 << " incomplete windows; DMA deduction was skipped and "
+                    "SPE/DDRC attribution used undeducted traffic.\n";
         }
 
         if (ctx.traffic.dmaDeductionClamped) {

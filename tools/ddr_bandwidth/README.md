@@ -166,8 +166,9 @@ sudo tools/bin/ddr_bandwidth \
 
 工具优先从 `/sys/bus/event_source/devices/<pmu>/events/` 读取 PCIe payload
 事件配置。部分旧版或裁剪版内核没有导出事件别名时，会使用 HiSilicon PCIe
-PMU ABI 定义的 raw event code。任一指定或自动发现的 BDF 无法打开、启用或完成
-baseline 时，本次采集不使用残缺的 PCIe 数据做 DMA 扣减。
+PMU ABI 定义的 raw event code。显式指定的 BDF 格式错误或设备不存在时直接报错并停止采集。
+BDF 存在但 PCIe PMU 无法打开、启用或完成 baseline 时仅输出告警；自动发现的 BDF 采集失败
+也采用相同的降级处理。此时 SPE/DDRC 继续采集，但不使用残缺的 PCIe 数据做 DMA 扣减。
 
 常用参数：
 
@@ -302,7 +303,7 @@ Read BW 表示对 **physical DDR read traffic** 的统计归因结果，不等�
 
 Write BW 基于 store sample 数进行统计归因，不使用 store 指令访问宽度作为正式权重。由于 store retirement 与 dirty cache line 最终写回 DRAM 存在时间差，同时 SPE 对不同 store 指令的采样密度可能存在差异，因此 Write BW 应视为估算值。
 
-## 重复采集不一致：参数影响和本次修正
+## 重复采集结果差异及参数影响
 
 函数级带宽是按 SPE 样本比例分配系统剩余流量的统计估计，不是函数独立的硬件字节计数器。即使 attribution coverage 为 100%，也不代表准确率为 100%。表格使用整个采集时段作为分母，不是函数实际运行时间。
 
@@ -322,5 +323,6 @@ Write BW 基于 store sample 数进行统计归因，不使用 store 指令访�
 - 先读取计数器确定窗口边界，再读取及解析 SPE；每条 SPE 记录按自身时间戳放入半开窗口 [start, end)，迟到记录会回填已封口窗口。各 PMU 仍是顺序操作，窗口并非硬件原子同步。
 - 处理耗时超过调度周期时跳过过期截止点，合并到实际较长窗口，避免连续补出极短窗口。实际采集时间可能超过请求时间。
 - 结束或中断时先读取尾部 DDRC 边界，再停止并 drain SPE；边界后的 SPE 样本不进入最终窗口。已报告 SPE 读取失败的窗口、DDRC 失败后的首个恢复窗口不参与函数分配。
-- 任一 PCIe collector 读取失败或需要重新同步时，该窗口仍计入 DDRC 物理总量，但不执行 DMA 扣除和函数归因，避免把未知 DMA 流量误算给 CPU 函数。
+- 任一 PCIe collector 读取失败或需要重新同步时，该窗口不执行 DMA 扣除，但仍使用未扣除的 DDRC
+  流量继续进行 SPE 归因，并输出结果可能包含 DMA 流量的告警。
 - DDRC 不可用时，表格以 `Mops/s` 输出 `样本数 × period / 时间` 的 SPE 操作率估计；它不是字节数，也不是物理 DDR 带宽。

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -383,14 +384,53 @@ bool ReadDdrcInterval(int pd, PmuDeviceAttr* attrs, unsigned attrLen, double& re
     return hasRead && hasWrite;
 }
 
+static bool ParsePcieBdf(const string& bdf, unsigned& bus, unsigned& device,
+                         unsigned& function)
+{
+    if (bdf.size() != 7 || bdf[2] != ':' || bdf[5] != '.' ||
+        !isxdigit(static_cast<unsigned char>(bdf[0])) ||
+        !isxdigit(static_cast<unsigned char>(bdf[1])) ||
+        !isxdigit(static_cast<unsigned char>(bdf[3])) ||
+        !isxdigit(static_cast<unsigned char>(bdf[4])) ||
+        !isxdigit(static_cast<unsigned char>(bdf[6]))) {
+        return false;
+    }
+    char trailing = 0;
+    if (sscanf(bdf.c_str(), "%x:%x.%x%c", &bus, &device, &function, &trailing) != 3 ||
+        bus > 0xff || device > 0x1f || function > 0x7) {
+        return false;
+    }
+    return true;
+}
+
+bool IsValidPcieBdf(const string& bdf)
+{
+    unsigned bus = 0;
+    unsigned device = 0;
+    unsigned function = 0;
+    return ParsePcieBdf(bdf, bus, device, function);
+}
+
+bool PcieBdfExists(const string& bdf)
+{
+    unsigned bus = 0;
+    unsigned device = 0;
+    unsigned function = 0;
+    if (!ParsePcieBdf(bdf, bus, device, function)) {
+        return false;
+    }
+    char canonicalBdf[8];
+    snprintf(canonicalBdf, sizeof(canonicalBdf), "%02x:%02x.%x", bus, device, function);
+    const string path = "/sys/bus/pci/devices/0000:" + string(canonicalBdf);
+    return access(path.c_str(), F_OK) == 0;
+}
+
 static bool BdfToConfigValue(const string& bdf, string& configValue)
 {
     unsigned bus = 0;
     unsigned device = 0;
     unsigned function = 0;
-    char trailing = 0;
-    if (sscanf(bdf.c_str(), "%x:%x.%x%c", &bus, &device, &function, &trailing) != 3 ||
-        bus > 0xff || device > 0x1f || function > 0x7) {
+    if (!ParsePcieBdf(bdf, bus, device, function)) {
         return false;
     }
 
