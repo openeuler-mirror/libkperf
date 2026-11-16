@@ -12,6 +12,7 @@ target_include_directories(ddr_bw_core PUBLIC
 )
 target_include_directories(ddr_bw_core PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}/../../util"
+    "${CMAKE_CURRENT_LIST_DIR}/../../pmu"
 )
 
 if (TARGET tools_deps)

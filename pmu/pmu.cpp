@@ -29,6 +29,7 @@
 #include "pcerr.h"
 #include "safe_handler.h"
 #include "pmu_metric.h"
+#include "pmu_internal.h"
 #include "trace_point_parser.h"
 #include "pmu.h"
 #if defined(IS_X86) && defined(LBR_DRIVER_ENABLED)
@@ -1053,6 +1054,11 @@ int PmuRead(int pd, struct PmuData** pmuData)
         New(UNKNOWN_ERROR, ex.what());
         return -1;
     }
+}
+
+vector<unsigned long> KUNPENG_PMU::GetSampleIpsInternal(PmuData* pmuData)
+{
+    return PmuList::GetInstance()->GetSampleIps(pmuData);
 }
 
 int ResolvePmuDataSymbol(struct PmuData* pmuData)
