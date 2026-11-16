@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cerrno>
+#include <time.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
@@ -147,6 +148,48 @@ static uint64_t TscToPerfTime(uint64_t cyc, struct PerfTscConversion *tc)
 
     return tc->timeZero + quot * tc->timeMult + ((rem * tc->timeMult) >> tc->timeShift);
 }
+
+#if defined(__aarch64__)
+static uint64_t ReadVirtualCounter()
+{
+    uint64_t counter;
+    asm volatile("isb; mrs %0, cntvct_el0" : "=r"(counter));
+    return counter;
+}
+
+static uint64_t MonotonicNs()
+{
+    struct timespec ts = {};
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+        return 0;
+    }
+    return static_cast<uint64_t>(ts.tv_sec) * 1000000000ULL + ts.tv_nsec;
+}
+
+static int64_t PerfTimeMonotonicOffset(struct PerfTscConversion *tc)
+{
+    const uint64_t monotonicBefore = MonotonicNs();
+    const uint64_t cntvct = ReadVirtualCounter();
+    const uint64_t monotonicAfter = MonotonicNs();
+    if (monotonicBefore == 0 || monotonicAfter == 0) {
+        return 0;
+    }
+
+    const uint64_t monotonicMid = monotonicBefore + (monotonicAfter - monotonicBefore) / 2;
+    return static_cast<int64_t>(TscToPerfTime(cntvct, tc)) - static_cast<int64_t>(monotonicMid);
+}
+
+static void AdjustTimestampsToMonotonic(struct SpeRecord *buf, struct SpeRecord *bufEnd, int64_t offset)
+{
+    for (struct SpeRecord *record = buf; record < bufEnd; ++record) {
+        if (offset >= 0) {
+            record->timestamp -= static_cast<uint64_t>(offset);
+        } else {
+            record->timestamp += static_cast<uint64_t>(-offset);
+        }
+    }
+}
+#endif
 
 static void CoreSpeClose(struct SpeCoreContext *ctx, struct SpeContext *speCtx)
 {
@@ -538,7 +581,13 @@ static struct SpeRecord *CoreAuxData(struct SpeCoreContext *ctx, AuxContext *aux
         pcerr::New(err);
         return nullptr;
     }
+#if defined(__aarch64__)
+    const int64_t perfTimeMonotonicOffset = PerfTimeMonotonicOffset(&tc);
+#endif
     SetTidByTimestamp(auxCtx->dummyData, auxCtx->dummyIdx, buf, bufEnd, auxCtx->cpu, &tc);
+#if defined(__aarch64__)
+    AdjustTimestampsToMonotonic(buf, bufEnd, perfTimeMonotonicOffset);
+#endif
 
     return bufEnd;
 }
