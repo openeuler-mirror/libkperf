@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -11,6 +12,7 @@
 #include <unistd.h>
 #include "pcerrc.h"
 #include "cpu_map.h"
+#include "pmu_internal.h"
 #include "symbol.h"
 #include "ddr_bw_pmu.h"
 #include "ddr_bw_collection.h"
@@ -160,7 +162,7 @@ static string ProcessSymbolName(const Symbol* sym)
     return buf;
 }
 
-static SampleInfo PrepSample(const PmuData& data)
+static SampleInfo PrepSample(const PmuData& data, unsigned long pc)
 {
     SampleInfo sample{};
     if (data.ext == nullptr) {
@@ -179,19 +181,42 @@ static SampleInfo PrepSample(const PmuData& data)
     sample.isLoad = (data.ext->op & SPE_OP_LD) != 0 || isAtomic;
     sample.isStore = (data.ext->op & SPE_OP_ST) != 0 || isAtomic;
     sample.pid = data.pid;
-    if (data.stack != nullptr && data.stack->symbol != nullptr) {
-        sample.sym = data.stack->symbol;
-        sample.pc = sample.sym->codeMapAddr > 0 ? sample.sym->codeMapAddr : sample.sym->addr;
-        sample.hasSym = true;
-    }
+    sample.pc = pc;
     return sample;
 }
 
 static bool IsKernelSample(const SampleInfo& sample)
 {
-    return sample.hasSym && sample.sym != nullptr &&
-           sample.sym->module != nullptr &&
-           strcmp(sample.sym->module, "[kernel]") == 0;
+    // Arm64 kernel virtual addresses use the upper canonical range. This is
+    // the same boundary used by libsym when selecting kernel symbol maps.
+    constexpr unsigned long KERNEL_START_ADDR = 0xffff000000000000UL;
+    return sample.pc > KERNEL_START_ADDR;
+}
+
+static bool IsOutsideCollectionRange(const SpeWindowState& windows, int64_t timestampNs)
+{
+    return timestampNs <= 0 || timestampNs < windows.collectionStartNs ||
+        (windows.finalEndNs > 0 && timestampNs >= windows.finalEndNs);
+}
+
+static void ResolveSampleSymbol(SampleInfo& sample)
+{
+    static thread_local unordered_set<int> recordedPids;
+    if (sample.pc == 0 || sample.pid < 0) {
+        return;
+    }
+    if (recordedPids.find(sample.pid) == recordedPids.end()) {
+        if (SymResolverRecordModuleNoDwarf(sample.pid) != 0) {
+            return;
+        }
+        recordedPids.insert(sample.pid);
+    }
+
+    Stack* stack = StackToHash(sample.pid, &sample.pc, 1);
+    if (stack != nullptr && stack->symbol != nullptr) {
+        sample.sym = stack->symbol;
+        sample.hasSym = true;
+    }
 }
 
 void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
@@ -199,6 +224,12 @@ void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
                      int64_t readEndNs)
 {
     if (data == nullptr || len <= 0) {
+        return;
+    }
+
+    const vector<unsigned long> sampleIps = KUNPENG_PMU::GetSampleIpsInternal(data);
+    if (sampleIps.size() != static_cast<size_t>(len)) {
+        cerr << "Warning: unable to read SPE instruction addresses; skipping this SPE batch.\n";
         return;
     }
 
@@ -228,7 +259,7 @@ void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
             continue;
         }
 
-        SampleInfo sample = PrepSample(record);
+        SampleInfo sample = PrepSample(record, sampleIps[static_cast<size_t>(i)]);
         if (!sample.hasExt) {
             if (decode != nullptr) ++decode->missingExt;
             continue;
@@ -268,12 +299,6 @@ void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
         }
         string funcName = UNKNOWN;
         string moduleName = UNKNOWN;
-        if (isTargetUser && sample.hasSym) {
-            funcName = ProcessSymbolName(sample.sym);
-            if (sample.sym->module != nullptr) {
-                moduleName = sample.sym->module;
-            }
-        }
         if (isTargetUser && sample.isLoad && !accountRead) {
             ++ctx.spe.filteredSamples;
         }
@@ -281,16 +306,32 @@ void ProcessSpeChunk(PmuData* data, int len, BwContext& ctx,
             continue;
         }
 
-        string funcKey;
-        if (isTargetUser) {
-            funcKey = to_string(sample.pid) + ':' + funcName + "@" + moduleName;
-        }
         SpeContribution contribution;
         contribution.timestampNs = record.ts;
         contribution.target = isTargetUser;
         contribution.kernel = isKernel;
         contribution.read = accountRead;
         contribution.write = accountWrite;
+        if (IsOutsideCollectionRange(windows, record.ts)) {
+            BucketSpeContribution(ctx, windows, contribution);
+            if (decode != nullptr) ++decode->bucketRejected;
+            continue;
+        }
+
+        if (isTargetUser) {
+            ResolveSampleSymbol(sample);
+            if (sample.hasSym) {
+                funcName = ProcessSymbolName(sample.sym);
+                if (sample.sym->module != nullptr) {
+                    moduleName = sample.sym->module;
+                }
+            }
+        }
+
+        string funcKey;
+        if (isTargetUser) {
+            funcKey = to_string(sample.pid) + ':' + funcName + "@" + moduleName;
+        }
         contribution.funcKey = funcKey;
         if (!BucketSpeContribution(ctx, windows, contribution)) {
             if (decode != nullptr) ++decode->bucketRejected;
@@ -383,14 +424,53 @@ bool ReadDdrcInterval(int pd, PmuDeviceAttr* attrs, unsigned attrLen, double& re
     return hasRead && hasWrite;
 }
 
+static bool ParsePcieBdf(const string& bdf, unsigned& bus, unsigned& device,
+                         unsigned& function)
+{
+    if (bdf.size() != 7 || bdf[2] != ':' || bdf[5] != '.' ||
+        !isxdigit(static_cast<unsigned char>(bdf[0])) ||
+        !isxdigit(static_cast<unsigned char>(bdf[1])) ||
+        !isxdigit(static_cast<unsigned char>(bdf[3])) ||
+        !isxdigit(static_cast<unsigned char>(bdf[4])) ||
+        !isxdigit(static_cast<unsigned char>(bdf[6]))) {
+        return false;
+    }
+    char trailing = 0;
+    if (sscanf(bdf.c_str(), "%x:%x.%x%c", &bus, &device, &function, &trailing) != 3 ||
+        bus > 0xff || device > 0x1f || function > 0x7) {
+        return false;
+    }
+    return true;
+}
+
+bool IsValidPcieBdf(const string& bdf)
+{
+    unsigned bus = 0;
+    unsigned device = 0;
+    unsigned function = 0;
+    return ParsePcieBdf(bdf, bus, device, function);
+}
+
+bool PcieBdfExists(const string& bdf)
+{
+    unsigned bus = 0;
+    unsigned device = 0;
+    unsigned function = 0;
+    if (!ParsePcieBdf(bdf, bus, device, function)) {
+        return false;
+    }
+    char canonicalBdf[8];
+    snprintf(canonicalBdf, sizeof(canonicalBdf), "%02x:%02x.%x", bus, device, function);
+    const string path = "/sys/bus/pci/devices/0000:" + string(canonicalBdf);
+    return access(path.c_str(), F_OK) == 0;
+}
+
 static bool BdfToConfigValue(const string& bdf, string& configValue)
 {
     unsigned bus = 0;
     unsigned device = 0;
     unsigned function = 0;
-    char trailing = 0;
-    if (sscanf(bdf.c_str(), "%x:%x.%x%c", &bus, &device, &function, &trailing) != 3 ||
-        bus > 0xff || device > 0x1f || function > 0x7) {
+    if (!ParsePcieBdf(bdf, bus, device, function)) {
         return false;
     }
 
