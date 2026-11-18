@@ -28,13 +28,7 @@ Kernel 样本不会进入目标函数表或进程表，也不会按样本携带�
 
 ### Read 归因
 
-当 SPE 数据具有 source 字段时，Read 侧只使用 source 为以下值的 load sample：
-
-```text
-HIP_LOCAL_MEM
-HIP_REMOTE_MEM
-```
-
+当 SPE 数据具有 source 字段时，Read 侧只使用 source 为 DRAM 的 load sample：`HIP_LOCAL_MEM`和`HIP_REMOTE_MEM`
 在不支持 source 字段的环境中，降级使用所有具有有效 OP 信息的 SPE load sample 作为统计分配权重。
 首次处理 load 时会输出警告。回退权重会包含 cache hit，因此只能用于近似函数热点分配，
 精度低于基于 source 字段的判断。DDRC 汇总流量仍是物理流量，但函数级 Read BW 不是独立硬件计数值。
@@ -217,7 +211,7 @@ PID    Function   Module                 Read BW   Write BW(est*)   Total BW   R
 * **Function**：SPE 样本解析得到的用户态函数名。
 * **Module**：函数所属的可执行文件或共享库。
 * **Read BW**：归因到该函数的物理 DDR Read 带宽。
-* **Write BW(est*)**：根据 SPE store sample 数估算的 DDR Write 带宽。
+* **Write BW(est\*)**：根据 SPE store sample 数估算的 DDR Write 带宽。
 * **Total BW**：Read BW + Write BW。
 * **Read samples / Store samples**：该用户态函数采集到的有效 Read load / store 样本数，
   包含因窗口证据不足而未用于分配流量的样本。SPE source 字段有效时，Read samples 仅包含
