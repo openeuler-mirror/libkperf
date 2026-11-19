@@ -549,10 +549,14 @@ void PrintSummary(BwContext& ctx, bool ddrcOpened, bool pcieOpened,
              << string(80, '-') << "\n";
 
         auto printBw = [calibratedDurationSec](const char* name, double read, double write) {
+            const long long readHundredths = llround(
+                read / calibratedDurationSec / BYTES_PER_MIB_LOCAL * 100.0);
+            const long long writeHundredths = llround(
+                write / calibratedDurationSec / BYTES_PER_MIB_LOCAL * 100.0);
             cout << left << setw(38) << name << right << fixed << setprecision(2)
-                 << setw(14) << read / calibratedDurationSec / BYTES_PER_MIB_LOCAL
-                 << setw(14) << write / calibratedDurationSec / BYTES_PER_MIB_LOCAL
-                 << setw(14) << (read + write) / calibratedDurationSec / BYTES_PER_MIB_LOCAL << "\n";
+                 << setw(14) << static_cast<double>(readHundredths) / 100.0
+                 << setw(14) << static_cast<double>(writeHundredths) / 100.0
+                 << setw(14) << static_cast<double>(readHundredths + writeHundredths) / 100.0 << "\n";
         };
 
         printBw("DDRC physical traffic", ctx.traffic.ddrcReadBytes, ctx.traffic.ddrcWriteBytes);
